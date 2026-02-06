@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>K4Controller — Download</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>K4Controller</h1>
+      <p class="tagline">Remote control software for the Elecraft K4</p>
+    </header>
+
+    <div id="loading" class="loading">Loading release info&hellip;</div>
+    <div id="error" class="error" hidden>
+      No releases available yet. Check back soon.
+    </div>
+
+    <div id="release-info" hidden>
+      <p class="version-line">
+        <span id="version-badge" class="badge"></span>
+        <span id="release-date" class="date"></span>
+      </p>
+
+      <div class="cards">
+        <a id="card-macos" class="card" href="#">
+          <div class="card-icon">&#63743;</div>
+          <h2>macOS</h2>
+          <p class="filename" id="fn-macos"></p>
+          <p class="filesize" id="sz-macos"></p>
+          <span class="btn">Download</span>
+        </a>
+
+        <a id="card-windows" class="card" href="#">
+          <div class="card-icon">&#8862;</div>
+          <h2>Windows</h2>
+          <p class="filename" id="fn-windows"></p>
+          <p class="filesize" id="sz-windows"></p>
+          <span class="btn">Download</span>
+        </a>
+
+        <a id="card-raspberry-pi" class="card" href="#">
+          <div class="card-icon">&pi;</div>
+          <h2>Raspberry Pi</h2>
+          <p class="filename" id="fn-raspberry-pi"></p>
+          <p class="filesize" id="sz-raspberry-pi"></p>
+          <span class="btn">Download</span>
+        </a>
+      </div>
+    </div>
+
+    <footer>
+      <p>&copy; 2025 Michael Garcia</p>
+    </footer>
+  </main>
+
+  <script>
+    (async () => {
+      const loading = document.getElementById('loading');
+      const error = document.getElementById('error');
+      const info = document.getElementById('release-info');
+
+      try {
+        const resp = await fetch('releases.json');
+        if (!resp.ok) throw new Error(resp.statusText);
+        const rel = await resp.json();
+
+        // Version badge
+        const badge = document.getElementById('version-badge');
+        badge.textContent = rel.tag;
+        if (rel.prerelease) badge.classList.add('pre');
+
+        // Date
+        document.getElementById('release-date').textContent = rel.date;
+
+        // Platform cards
+        for (const [platform, asset] of Object.entries(rel.assets)) {
+          const card = document.getElementById('card-' + platform);
+          card.href = asset.url;
+          document.getElementById('fn-' + platform).textContent = asset.name;
+          document.getElementById('sz-' + platform).textContent = asset.size;
+        }
+
+        loading.hidden = true;
+        info.hidden = false;
+      } catch {
+        loading.hidden = true;
+        error.hidden = false;
+      }
+    })();
+  </script>
+</body>
+</html>

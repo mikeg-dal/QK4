@@ -1,0 +1,162 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  background: #0f1117;
+  color: #e0e0e0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 3rem 1rem;
+}
+
+main {
+  max-width: 720px;
+  width: 100%;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.tagline {
+  margin-top: 0.4rem;
+  color: #888;
+  font-size: 1rem;
+}
+
+/* Version / date */
+.version-line {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.badge {
+  display: inline-block;
+  background: #1a6eff;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.2rem 0.65rem;
+  border-radius: 4px;
+}
+
+.badge.pre {
+  background: #b35e00;
+}
+
+.date {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+/* Cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  color: #e0e0e0;
+  background: #1a1d27;
+  border: 1px solid #2a2d37;
+  border-radius: 8px;
+  padding: 1.5rem 1rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.card:hover {
+  border-color: #1a6eff;
+  background: #1e2230;
+}
+
+.card-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  opacity: 0.7;
+}
+
+.card h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.4rem;
+}
+
+.filename {
+  font-size: 0.75rem;
+  color: #666;
+  word-break: break-all;
+  text-align: center;
+}
+
+.filesize {
+  font-size: 0.8rem;
+  color: #888;
+  margin: 0.3rem 0 0.8rem;
+}
+
+.btn {
+  display: inline-block;
+  background: #1a6eff;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 1.2rem;
+  border-radius: 5px;
+  transition: background 0.15s;
+}
+
+.card:hover .btn {
+  background: #3d85ff;
+}
+
+/* Loading / error */
+.loading,
+.error {
+  text-align: center;
+  color: #888;
+  padding: 3rem 0;
+}
+
+.error {
+  color: #cc6666;
+}
+
+/* Footer */
+footer {
+  margin-top: 3rem;
+  text-align: center;
+  color: #555;
+  font-size: 0.8rem;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}
