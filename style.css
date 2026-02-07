@@ -188,6 +188,14 @@ h1 {
   background: #3d85ff;
 }
 
+.hash {
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.7rem;
+  color: #555;
+  margin-top: 0.6rem;
+  cursor: default;
+}
+
 /* Info panels */
 .info-panels {
   display: grid;

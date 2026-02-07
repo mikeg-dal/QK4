@@ -47,6 +47,7 @@
           <p class="filename" id="fn-macos"></p>
           <p class="filesize" id="sz-macos"></p>
           <span class="btn">Download</span>
+          <p class="hash" id="hash-macos"></p>
         </a>
 
         <a id="card-windows" class="card" href="#">
@@ -55,6 +56,7 @@
           <p class="filename" id="fn-windows"></p>
           <p class="filesize" id="sz-windows"></p>
           <span class="btn">Download</span>
+          <p class="hash" id="hash-windows"></p>
         </a>
 
         <a id="card-raspberry-pi" class="card" href="#">
@@ -63,6 +65,7 @@
           <p class="filename" id="fn-raspberry-pi"></p>
           <p class="filesize" id="sz-raspberry-pi"></p>
           <span class="btn">Download</span>
+          <p class="hash" id="hash-raspberry-pi"></p>
         </a>
       </div>
     </div>
@@ -171,6 +174,11 @@
           card.href = asset.url;
           document.getElementById('fn-' + platform).textContent = asset.name;
           document.getElementById('sz-' + platform).textContent = asset.size;
+          const hashEl = document.getElementById('hash-' + platform);
+          if (asset.sha256) {
+            hashEl.textContent = 'SHA256: ' + asset.sha256.substring(0, 12) + '\u2026';
+            hashEl.title = asset.sha256;
+          }
         }
 
         loading.hidden = true;
