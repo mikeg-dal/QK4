@@ -1,22 +1,22 @@
 {
-  "tag": "v0.3.0-beta.2",
-  "version": "0.3.0-beta.2",
+  "tag": "v0.3.0-beta.3",
+  "version": "0.3.0-beta.3",
   "date": "2026-02-07",
   "prerelease": true,
   "assets": {
     "macos": {
       "name": "K4Controller-macos.dmg",
-      "url": "./downloads/v0.3.0-beta.2/K4Controller-macos.dmg",
+      "url": "./downloads/v0.3.0-beta.3/K4Controller-macos.dmg",
       "size": "43M"
     },
     "windows": {
       "name": "K4Controller-windows.zip",
-      "url": "./downloads/v0.3.0-beta.2/K4Controller-windows.zip",
+      "url": "./downloads/v0.3.0-beta.3/K4Controller-windows.zip",
       "size": "64M"
     },
     "raspberry-pi": {
       "name": "K4Controller-raspberry-pi-arm64.tar.gz",
-      "url": "./downloads/v0.3.0-beta.2/K4Controller-raspberry-pi-arm64.tar.gz",
+      "url": "./downloads/v0.3.0-beta.3/K4Controller-raspberry-pi-arm64.tar.gz",
       "size": "21M"
     }
   }
