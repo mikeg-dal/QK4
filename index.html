@@ -176,7 +176,7 @@
           document.getElementById('sz-' + platform).textContent = asset.size;
           const hashEl = document.getElementById('hash-' + platform);
           if (asset.sha256) {
-            hashEl.textContent = 'SHA256: ' + asset.sha256.substring(0, 12) + '\u2026';
+            hashEl.textContent = 'SHA256: ' + asset.sha256;
             hashEl.title = asset.sha256;
           }
         }
