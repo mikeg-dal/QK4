@@ -191,7 +191,7 @@ h1 {
 /* Info panels */
 .info-panels {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
   margin-top: 2rem;
 }
@@ -274,6 +274,24 @@ h1 {
 .req-detail {
   color: #777;
   font-size: 0.8rem;
+}
+
+.req-detail a {
+  color: #5a9eff;
+  text-decoration: none;
+}
+
+.req-detail a:hover {
+  color: #82b5ff;
+  text-decoration: underline;
+}
+
+.req-table code {
+  background: #22252f;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  color: #ddd;
 }
 
 /* Loading / error */

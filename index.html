@@ -74,8 +74,7 @@
           K4Controller was created to fill a gap in the Elecraft ecosystem &mdash;
           a native, purpose-built remote control application that runs on any platform.
           No emulators, no workarounds, no compromises. Full spectrum and waterfall display,
-          dual VFO control, audio streaming, and CW/voice operation over your local network
-          or remotely via VPN.
+          dual VFO control, audio streaming, and CW/voice operation over your local network.
         </p>
         <h4>Links</h4>
         <ul class="link-list">
@@ -106,6 +105,35 @@
               <td>
                 Pi 4 or 5, ARM64<br>
                 <span class="req-detail">Debian Trixie / Pi OS Bookworm+</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>Getting Started</h3>
+        <table class="req-table">
+          <tbody>
+            <tr>
+              <td class="req-platform">macOS</td>
+              <td>
+                Open the DMG and drag to Applications.<br>
+                <span class="req-detail">Signed and notarized &mdash; no Gatekeeper warnings.</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="req-platform">Windows</td>
+              <td>
+                Extract the ZIP and run <code>K4Controller.exe</code>.<br>
+                <span class="req-detail">Install <a href="https://aka.ms/vs/17/release/vc_redist.x64.exe">VC++ Redistributable</a> if prompted.</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="req-platform">Raspberry Pi</td>
+              <td>
+                Extract the tarball and run <code>./K4Controller/run.sh</code>.<br>
+                <span class="req-detail">First run requires <code>sudo</code> to install a udev rule for KPOD USB access. After that, sudo is not needed.</span>
               </td>
             </tr>
           </tbody>
