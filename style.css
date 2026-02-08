@@ -39,6 +39,33 @@ h1 {
   font-size: 1rem;
 }
 
+/* Beta notice */
+.beta-notice {
+  text-align: center;
+  color: #cca350;
+  background: #1a1810;
+  border: 1px solid #3d3520;
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.beta-notice strong {
+  color: #e0b860;
+}
+
+.beta-notice a {
+  color: #5a9eff;
+  text-decoration: none;
+}
+
+.beta-notice a:hover {
+  color: #82b5ff;
+  text-decoration: underline;
+}
+
 /* YouTube banner */
 .yt-banner {
   display: block;
