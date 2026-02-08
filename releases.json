@@ -1,26 +1,26 @@
 {
-  "tag": "v0.3.0-beta.4",
-  "version": "0.3.0-beta.4",
-  "date": "2026-02-07",
+  "tag": "v0.3.0-beta.5",
+  "version": "0.3.0-beta.5",
+  "date": "2026-02-08",
   "prerelease": true,
   "assets": {
     "macos": {
       "name": "K4Controller-macos.dmg",
-      "url": "./downloads/v0.3.0-beta.4/K4Controller-macos.dmg",
+      "url": "./downloads/v0.3.0-beta.5/K4Controller-macos.dmg",
       "size": "43M",
-      "sha256": "644779b09516d5a7b52ba2235cbbdb6343529073f9dc97eea4e48070a505446b"
+      "sha256": "d976647572c8d86520550ece61000b2adcdb07a76c26b8b74999a489ce443dbc"
     },
     "windows": {
       "name": "K4Controller-windows.zip",
-      "url": "./downloads/v0.3.0-beta.4/K4Controller-windows.zip",
+      "url": "./downloads/v0.3.0-beta.5/K4Controller-windows.zip",
       "size": "64M",
-      "sha256": "c794728dbac886398d9d6b6a7693fb4a9f06ff91be1bb7a6c8b142cab7152155"
+      "sha256": "5dd3c87a1c2a0a25917de4ded6f43710128f7795e9831382be523ef7adea25a5"
     },
     "raspberry-pi": {
       "name": "K4Controller-raspberry-pi-arm64.tar.gz",
-      "url": "./downloads/v0.3.0-beta.4/K4Controller-raspberry-pi-arm64.tar.gz",
+      "url": "./downloads/v0.3.0-beta.5/K4Controller-raspberry-pi-arm64.tar.gz",
       "size": "21M",
-      "sha256": "36762bce05ce5939f0ff104ea59f2088864e81f70e1eecaf370f0a798d24be98"
+      "sha256": "ebc0149d8e3aded37a37354d848a9bfb27fd76e91a4570a2469f608c52142660"
     }
   }
 }
