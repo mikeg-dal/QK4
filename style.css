@@ -342,6 +342,54 @@ h1 {
   color: #cc6666;
 }
 
+/* Development & Feedback section */
+.dev-section {
+  background: #1a1d27;
+  border: 1px solid #2a2d37;
+  border-radius: 8px;
+  padding: 1.5rem 2rem;
+  margin-top: 2rem;
+  text-align: center;
+}
+
+.dev-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.6rem;
+}
+
+.dev-section p {
+  font-size: 0.85rem;
+  color: #aaa;
+  line-height: 1.55;
+  max-width: 600px;
+  margin: 0 auto 1rem;
+}
+
+.issues-link {
+  display: inline-block;
+  color: #fff;
+  background: #1a6eff;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem 1.3rem;
+  border-radius: 5px;
+  transition: background 0.15s;
+}
+
+.issues-link:hover {
+  background: #3d85ff;
+}
+
+.issues-icon {
+  color: #4caf50;
+  margin-right: 0.4rem;
+  font-size: 0.7rem;
+  vertical-align: middle;
+}
+
 /* Footer */
 footer {
   margin-top: 2.5rem;
