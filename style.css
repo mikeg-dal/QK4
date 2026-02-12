@@ -149,6 +149,18 @@ h1 {
   font-size: 0.85rem;
 }
 
+.release-notes-link {
+  color: #5a9eff;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.release-notes-link:hover {
+  color: #82b5ff;
+  text-decoration: underline;
+}
+
 /* Cards */
 .cards {
   display: grid;

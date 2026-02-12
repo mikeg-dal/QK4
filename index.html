@@ -43,6 +43,7 @@
       <p class="version-line">
         <span id="version-badge" class="badge"></span>
         <span id="release-date" class="date"></span>
+        <a id="release-notes-link" class="release-notes-link" href="#" target="_blank" rel="noopener">Release Notes</a>
       </p>
 
       <div class="cards">
@@ -183,8 +184,10 @@
         badge.textContent = rel.tag;
         if (rel.prerelease) badge.classList.add('pre');
 
-        // Date
+        // Date and release notes link
         document.getElementById('release-date').textContent = rel.date;
+        document.getElementById('release-notes-link').href =
+          'https://github.com/mikeg-dal/QK4/releases/tag/' + rel.tag;
 
         // Platform cards
         for (const [platform, asset] of Object.entries(rel.assets)) {
