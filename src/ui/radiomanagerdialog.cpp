@@ -1,6 +1,11 @@
 #include "radiomanagerdialog.h"
 #include "k4styles.h"
 #include "network/protocol.h"
+#include <QBoxLayout>
+#include <QFrame>
+#include <QScrollArea>
+#include <QScroller>
+#include <QScreen>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -15,20 +20,51 @@ RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QDialog(parent), m_cur
 }
 
 void RadioManagerDialog::setupUi() {
+    const bool compact = K4Styles::isCompactLayout();
     setWindowTitle("Server Manager");
-    setFixedSize(580, 395);
+    if (compact) {
+        setMinimumSize(320, 360);
+        if (QScreen *sc = screen()) {
+            const QSize avail = sc->availableGeometry().size();
+            resize(qMax(320, avail.width() - 24), qMax(360, avail.height() - 24));
+        } else {
+            resize(420, 700);
+        }
+    } else {
+        setFixedSize(580, 395);
+    }
 
-    // Dark theme for the dialog
+    // Dark popup surface theme
     setStyleSheet(QString("QDialog { background-color: %1; }").arg(K4Styles::Colors::Background));
 
-    auto *mainLayout = new QVBoxLayout(this);
+    auto *dialogLayout = new QVBoxLayout(this);
+    dialogLayout->setContentsMargins(0, 0, 0, 0);
+    dialogLayout->setSpacing(0);
+
+    auto *scrollArea = new QScrollArea(this);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setVerticalScrollBarPolicy(compact ? Qt::ScrollBarAlwaysOn : Qt::ScrollBarAsNeeded);
+    scrollArea->setStyleSheet(QString("QScrollArea { background-color: %1; border: none; }").arg(K4Styles::Colors::Background));
+    scrollArea->viewport()->setAutoFillBackground(true);
+    scrollArea->viewport()->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
+    dialogLayout->addWidget(scrollArea);
+
+    auto *contentWidget = new QWidget(scrollArea);
+    contentWidget->setObjectName("radioManagerContent");
+    contentWidget->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
+    scrollArea->setWidget(contentWidget);
+
+    auto *mainLayout = new QVBoxLayout(contentWidget);
     mainLayout->setSpacing(K4Styles::Dimensions::PopupContentMargin);
     mainLayout->setContentsMargins(K4Styles::Dimensions::PaddingLarge, K4Styles::Dimensions::PaddingLarge,
                                    K4Styles::Dimensions::PaddingLarge, K4Styles::Dimensions::PaddingLarge);
 
-    // Top horizontal section - servers list on left, edit fields on right
-    auto *topLayout = new QHBoxLayout();
-    topLayout->setSpacing(K4Styles::Dimensions::DialogMargin);
+    // Top section: horizontal on desktop, stacked on compact phone layouts
+    QBoxLayout *topLayout =
+        compact ? static_cast<QBoxLayout *>(new QVBoxLayout()) : static_cast<QBoxLayout *>(new QHBoxLayout());
+    topLayout->setSpacing(compact ? K4Styles::Dimensions::PaddingLarge : K4Styles::Dimensions::DialogMargin);
 
     // === LEFT SIDE: Available Servers ===
     auto *leftSection = new QVBoxLayout();
@@ -41,8 +77,14 @@ void RadioManagerDialog::setupUi() {
     leftSection->addWidget(serversTitle);
 
     m_radioList = new QListWidget(this);
-    m_radioList->setMinimumWidth(180);
-    m_radioList->setMaximumWidth(200);
+    if (compact) {
+        m_radioList->setMinimumHeight(120);
+        m_radioList->setMaximumHeight(180);
+        m_radioList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    } else {
+        m_radioList->setMinimumWidth(180);
+        m_radioList->setMaximumWidth(200);
+    }
     m_radioList->setStyleSheet(
         QString("QListWidget { "
                 "  background-color: %1; "
@@ -82,17 +124,19 @@ void RadioManagerDialog::setupUi() {
     formLayout->setHorizontalSpacing(K4Styles::Dimensions::PaddingMedium);
     formLayout->setVerticalSpacing(K4Styles::Dimensions::PaddingMedium);
 
-    QString lineEditStyle =
-        QString("QLineEdit { "
-                "  background-color: %1; "
-                "  color: %2; "
-                "  border: 1px solid %3; "
-                "  border-radius: 4px; "
-                "  padding: %4px; "
-                "  min-width: 150px; "
-                "}")
-            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
-            .arg(K4Styles::Dimensions::PaddingSmall);
+    const int lineEditMinWidth = compact ? 110 : 150;
+    QString lineEditStyle = QString("QLineEdit { "
+                                    "  background-color: #FFFFFF; "
+                                    "  color: #111111; "
+                                    "  border: 1px solid %1; "
+                                    "  border-radius: 4px; "
+                                    "  padding: %2px; "
+                                    "  min-width: %3px; "
+                                    "} "
+                                    "QLineEdit::placeholder { color: #6A6A6A; }")
+                                .arg(K4Styles::Colors::DialogBorder)
+                                .arg(K4Styles::Dimensions::PaddingSmall)
+                                .arg(lineEditMinWidth);
 
     QString labelStyle = QString("QLabel { color: %1; font-size: %2px; }")
                              .arg(K4Styles::Colors::TextGray)
@@ -160,11 +204,11 @@ void RadioManagerDialog::setupUi() {
     m_encodeModeCombo = new QComboBox(this);
     m_encodeModeCombo->setStyleSheet(
         QString("QComboBox { "
-                "  background-color: %1; "
-                "  color: %2; "
-                "  border: 1px solid %3; "
+                "  background-color: #FFFFFF; "
+                "  color: #111111; "
+                "  border: 1px solid %1; "
                 "  border-radius: 4px; "
-                "  padding: %4px; "
+                "  padding: %2px; "
                 "} "
                 "QComboBox::drop-down { "
                 "  border: none; "
@@ -174,14 +218,14 @@ void RadioManagerDialog::setupUi() {
                 "  image: none; "
                 "  border-left: 5px solid transparent; "
                 "  border-right: 5px solid transparent; "
-                "  border-top: 5px solid %2; "
+                "  border-top: 5px solid #111111; "
                 "} "
                 "QComboBox QAbstractItemView { "
-                "  background-color: %1; "
-                "  color: %2; "
-                "  selection-background-color: %5; "
+                "  background-color: #FFFFFF; "
+                "  color: #111111; "
+                "  selection-background-color: %3; "
                 "}")
-            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Colors::DialogBorder)
             .arg(K4Styles::Dimensions::PaddingSmall)
             .arg(K4Styles::Colors::AccentAmber));
     m_encodeModeCombo->addItem("EM3 - Opus Float", 3); // Default
@@ -209,40 +253,60 @@ void RadioManagerDialog::setupUi() {
     m_identityEdit->setVisible(false);
 
     rightSection->addLayout(formLayout);
-    rightSection->addStretch();
+    if (!compact) {
+        rightSection->addStretch();
+    }
     topLayout->addLayout(rightSection);
-    topLayout->addStretch();
+    if (!compact) {
+        topLayout->addStretch();
+    }
 
     mainLayout->addLayout(topLayout);
 
     // === BOTTOM: Button Row ===
-    auto *buttonLayout = new QHBoxLayout();
-    buttonLayout->setSpacing(16); // More spacing between buttons
-
     m_connectButton = new QPushButton("Connect", this);
     m_connectButton->setStyleSheet(K4Styles::dialogButton());
-    buttonLayout->addWidget(m_connectButton);
 
     m_newButton = new QPushButton("Add", this);
     m_newButton->setStyleSheet(K4Styles::dialogButton());
-    buttonLayout->addWidget(m_newButton);
 
     m_saveButton = new QPushButton("Save", this);
     m_saveButton->setStyleSheet(K4Styles::dialogButton());
-    buttonLayout->addWidget(m_saveButton);
 
     m_deleteButton = new QPushButton("Delete", this);
     m_deleteButton->setStyleSheet(K4Styles::dialogButton());
-    buttonLayout->addWidget(m_deleteButton);
 
     // Back button - smaller with curved arrow
     m_backButton = new QPushButton(QString::fromUtf8("\xE2\x86\xA9"), this); // ↩ Curved arrow
     m_backButton->setStyleSheet(K4Styles::dialogButton());
     m_backButton->setFixedSize(K4Styles::Dimensions::ButtonHeightMedium, K4Styles::Dimensions::ButtonHeightMedium);
     m_backButton->setToolTip("Back / Exit");
-    buttonLayout->addWidget(m_backButton);
 
-    mainLayout->addLayout(buttonLayout);
+    if (compact) {
+        auto *buttonGrid = new QGridLayout();
+        buttonGrid->setHorizontalSpacing(K4Styles::Dimensions::PaddingSmall);
+        buttonGrid->setVerticalSpacing(K4Styles::Dimensions::PaddingSmall);
+        buttonGrid->addWidget(m_connectButton, 0, 0);
+        buttonGrid->addWidget(m_newButton, 0, 1);
+        buttonGrid->addWidget(m_saveButton, 0, 2);
+        buttonGrid->addWidget(m_deleteButton, 1, 0);
+        buttonGrid->addWidget(m_backButton, 1, 2, Qt::AlignRight);
+        mainLayout->addLayout(buttonGrid);
+    } else {
+        auto *buttonLayout = new QHBoxLayout();
+        buttonLayout->setSpacing(16); // More spacing between buttons
+        buttonLayout->addWidget(m_connectButton);
+        buttonLayout->addWidget(m_newButton);
+        buttonLayout->addWidget(m_saveButton);
+        buttonLayout->addWidget(m_deleteButton);
+        buttonLayout->addWidget(m_backButton);
+        mainLayout->addLayout(buttonLayout);
+    }
+
+    if (compact) {
+        scrollArea->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
+        QScroller::grabGesture(scrollArea->viewport(), QScroller::TouchGesture);
+    }
 
     // Connections
     connect(m_connectButton, &QPushButton::clicked, this, &RadioManagerDialog::onConnectClicked);

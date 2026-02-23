@@ -17,14 +17,15 @@ void RightSidePanel::setupUi() {
     setFixedWidth(K4Styles::Dimensions::SidePanelWidth);
 
     m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(6, 8, 6, 8);
-    m_layout->setSpacing(4);
+    m_layout->setContentsMargins(K4Styles::Dimensions::PaddingSmall, K4Styles::Dimensions::PopupButtonSpacing,
+                                 K4Styles::Dimensions::PaddingSmall, K4Styles::Dimensions::PopupButtonSpacing);
+    m_layout->setSpacing(K4Styles::Dimensions::PopupButtonSpacing);
 
     // Create 5×2 button grid
     auto *buttonGrid = new QGridLayout();
     buttonGrid->setContentsMargins(0, 0, 0, 0);
-    buttonGrid->setHorizontalSpacing(4);
-    buttonGrid->setVerticalSpacing(8);
+    buttonGrid->setHorizontalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+    buttonGrid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
 
     // Row 0: PRE/ATTN, NB/LEVEL
     buttonGrid->addWidget(createFunctionButton("PRE", "ATTN", m_preBtn), 0, 0);
@@ -79,8 +80,8 @@ void RightSidePanel::setupUi() {
     // Create 2×2 PF button grid (B SET, CLR, RIT, XIT)
     auto *pfGrid = new QGridLayout();
     pfGrid->setContentsMargins(0, 0, 0, 0);
-    pfGrid->setHorizontalSpacing(4);
-    pfGrid->setVerticalSpacing(8);
+    pfGrid->setHorizontalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+    pfGrid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
 
     // Row 0: B SET/PF 1, CLR/PF 2 (lighter grey)
     pfGrid->addWidget(createFunctionButton("B SET", "PF 1", m_bsetBtn, true), 0, 0);
@@ -105,13 +106,13 @@ void RightSidePanel::setupUi() {
     m_xitBtn->installEventFilter(this);
 
     // Add spacing between PF grid and bottom grid (25px gap)
-    m_layout->addSpacing(33);
+    m_layout->addSpacing(K4Styles::Dimensions::PaddingLarge * 2 + K4Styles::Dimensions::PaddingSmall);
 
     // Create 2×2 bottom button grid (FREQ ENT, RATE, LOCK A, SUB)
     auto *bottomGrid = new QGridLayout();
     bottomGrid->setContentsMargins(0, 0, 0, 0);
-    bottomGrid->setHorizontalSpacing(4);
-    bottomGrid->setVerticalSpacing(8);
+    bottomGrid->setHorizontalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+    bottomGrid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
 
     // Row 0: FREQ ENT/SCAN (stacked text), RATE/KHZ
     bottomGrid->addWidget(createFunctionButton("FREQ\nENT", "SCAN", m_freqEntBtn), 0, 0);
@@ -140,8 +141,8 @@ QWidget *RightSidePanel::createFunctionButton(const QString &mainText, const QSt
     // Container widget for button + sub-text label
     auto *container = new QWidget(this);
     auto *layout = new QVBoxLayout(container);
-    layout->setContentsMargins(0, 2, 0, 2);
-    layout->setSpacing(5);
+    layout->setContentsMargins(0, K4Styles::Dimensions::SeparatorHeight + 1, 0, K4Styles::Dimensions::SeparatorHeight + 1);
+    layout->setSpacing(K4Styles::Dimensions::PaddingSmall);
 
     // Button - scaled down from bottom menu bar style (matching left panel TX buttons)
     auto *btn = new QPushButton(mainText, container);
@@ -158,11 +159,11 @@ QWidget *RightSidePanel::createFunctionButton(const QString &mainText, const QSt
 
     // Sub-text label (orange) - add top margin to prevent overlap with button
     auto *subLabel = new QLabel(subText, container);
-    subLabel->setStyleSheet(QString("color: %1; font-size: %2px; margin-top: 4px;")
+    subLabel->setStyleSheet(QString("color: %1; font-size: %2px; margin-top: 2px;")
                                 .arg(K4Styles::Colors::AccentAmber)
                                 .arg(K4Styles::Dimensions::FontSizeSmall));
     subLabel->setAlignment(Qt::AlignCenter);
-    subLabel->setFixedHeight(12);
+    subLabel->setFixedHeight(K4Styles::Dimensions::PopupContentMargin);
     layout->addWidget(subLabel);
 
     return container;

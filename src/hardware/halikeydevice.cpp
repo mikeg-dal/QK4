@@ -1,4 +1,82 @@
 #include "halikeydevice.h"
+
+#ifdef Q_OS_ANDROID
+
+#include <QDebug>
+
+HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
+    m_ditDebounceTimer = new QTimer(this);
+    m_dahDebounceTimer = new QTimer(this);
+    m_pttDebounceTimer = new QTimer(this);
+}
+
+HalikeyDevice::~HalikeyDevice() {
+    closePort();
+}
+
+void HalikeyDevice::onRawDit(bool pressed) {
+    Q_UNUSED(pressed);
+}
+
+void HalikeyDevice::onRawDah(bool pressed) {
+    Q_UNUSED(pressed);
+}
+
+void HalikeyDevice::onRawPtt(bool pressed) {
+    Q_UNUSED(pressed);
+}
+
+bool HalikeyDevice::openPort(const QString &portName) {
+    m_portName = portName;
+    emit connectionError("HaliKey is not supported on Android builds.");
+    return false;
+}
+
+void HalikeyDevice::closePort() {
+    bool wasConnected = m_connected;
+    m_connected = false;
+    m_rawDitState = false;
+    m_rawDahState = false;
+    m_rawPttState = false;
+    m_confirmedDitState = false;
+    m_confirmedDahState = false;
+    m_confirmedPttState = false;
+
+    if (wasConnected) {
+        emit disconnected();
+    }
+}
+
+bool HalikeyDevice::isConnected() const {
+    return false;
+}
+
+QString HalikeyDevice::portName() const {
+    return m_portName;
+}
+
+QStringList HalikeyDevice::availablePorts() {
+    return {};
+}
+
+QList<HaliKeyPortInfo> HalikeyDevice::availablePortsDetailed() {
+    return {};
+}
+
+QStringList HalikeyDevice::availableMidiDevices() {
+    return {};
+}
+
+bool HalikeyDevice::ditPressed() const {
+    return false;
+}
+
+bool HalikeyDevice::dahPressed() const {
+    return false;
+}
+
+#else
+
 #include "halikeymidiworker.h"
 #include "halikeyv14worker.h"
 #include "halikeyworkerbase.h"
@@ -222,3 +300,5 @@ bool HalikeyDevice::ditPressed() const {
 bool HalikeyDevice::dahPressed() const {
     return m_confirmedDahState;
 }
+
+#endif

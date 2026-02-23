@@ -6,7 +6,8 @@
 #include <QSslSocket>
 
 TcpClient::TcpClient(QObject *parent)
-    : QObject(parent), m_socket(new QSslSocket(this)), m_protocol(new Protocol(this)), m_authTimer(new QTimer(this)),
+    : QObject(parent), m_socket(new QSslSocket(this)), m_protocol(new Protocol(this)), m_connectTimer(new QTimer(this)),
+      m_authTimer(new QTimer(this)),
       m_pingTimer(new QTimer(this)), m_port(K4Protocol::DEFAULT_PORT), m_useTls(false), m_encodeMode(3),
       m_streamingLatency(3), m_state(Disconnected), m_authResponseReceived(false) {
     // Socket signals
@@ -21,6 +22,10 @@ TcpClient::TcpClient(QObject *parent)
     connect(m_socket, &QSslSocket::preSharedKeyAuthenticationRequired, this,
             &TcpClient::onPreSharedKeyAuthenticationRequired);
 
+    // Connect timeout timer (single shot) - covers TCP/TLS handshake phase
+    m_connectTimer->setSingleShot(true);
+    connect(m_connectTimer, &QTimer::timeout, this, &TcpClient::onConnectTimeout);
+
     // Auth timeout timer (single shot)
     m_authTimer->setSingleShot(true);
     connect(m_authTimer, &QTimer::timeout, this, &TcpClient::onAuthTimeout);
@@ -34,6 +39,7 @@ TcpClient::TcpClient(QObject *parent)
         Q_UNUSED(payload)
         if (m_state == Authenticating && !m_authResponseReceived) {
             m_authResponseReceived = true;
+            m_connectTimer->stop();
             m_authTimer->stop();
             qDebug() << "Authentication successful, received packet type:" << type;
             setState(Connected);
@@ -81,6 +87,7 @@ void TcpClient::connectToHost(const QString &host, quint16 port, const QString &
     m_authResponseReceived = false;
 
     setState(Connecting);
+    m_connectTimer->start(K4Protocol::CONNECTION_TIMEOUT_MS);
 
     if (m_useTls) {
         // Log OpenSSL version Qt is using
@@ -126,6 +133,7 @@ void TcpClient::connectToHost(const QString &host, quint16 port, const QString &
 
 void TcpClient::disconnectFromHost() {
     stopPingTimer();
+    m_connectTimer->stop();
     m_authTimer->stop();
 
     if (m_socket->state() != QAbstractSocket::UnconnectedState) {
@@ -192,6 +200,7 @@ void TcpClient::onSocketConnected() {
     } else {
         // Non-TLS: need to send SHA-384 password hash
         qDebug() << "Socket connected, sending authentication...";
+        m_connectTimer->stop();
         setState(Authenticating);
         sendAuthentication();
         m_authTimer->start(K4Protocol::AUTH_TIMEOUT_MS);
@@ -206,6 +215,7 @@ void TcpClient::onSocketEncrypted() {
     qDebug() << "  Protocol:" << negotiated.protocolString();
     qDebug() << "  Key exchange:" << negotiated.keyExchangeMethod();
     qDebug() << "  Encryption:" << negotiated.encryptionMethod();
+    m_connectTimer->stop();
     setState(Authenticating);
     // Start auth timeout - waiting for first packet to confirm connection works
     m_authTimer->start(K4Protocol::AUTH_TIMEOUT_MS);
@@ -215,6 +225,7 @@ void TcpClient::onSocketEncrypted() {
 void TcpClient::onSocketDisconnected() {
     qDebug() << "Socket disconnected";
     stopPingTimer();
+    m_connectTimer->stop();
     m_authTimer->stop();
 
     if (m_state == Authenticating && !m_authResponseReceived) {
@@ -233,6 +244,7 @@ void TcpClient::onReadyRead() {
 void TcpClient::onSocketError(QAbstractSocket::SocketError error) {
     Q_UNUSED(error)
     stopPingTimer();
+    m_connectTimer->stop();
     m_authTimer->stop();
 
     QString errorMsg = m_socket->errorString();
@@ -244,6 +256,14 @@ void TcpClient::onSocketError(QAbstractSocket::SocketError error) {
 
     emit errorOccurred(errorMsg);
     setState(Disconnected);
+}
+
+void TcpClient::onConnectTimeout() {
+    if (m_state == Connecting) {
+        qDebug() << "Connection timeout for" << m_host << ":" << m_port;
+        emit errorOccurred(QString("Connection timeout - cannot reach %1:%2").arg(m_host).arg(m_port));
+        disconnectFromHost();
+    }
 }
 
 void TcpClient::onSslErrors(const QList<QSslError> &errors) {

@@ -2,7 +2,9 @@
 #include <QDebug>
 #include <QSysInfo>
 #include <QGuiApplication>
+#include <QScreen>
 #include <QFontDatabase>
+#include <cmath>
 #include <rhi/qrhi.h>
 #ifdef Q_OS_MACOS
 #include <QtGui/private/qguiapplication_p.h>
@@ -102,6 +104,18 @@ int main(int argc, char *argv[]) {
     app.setApplicationVersion(QK4_VERSION);
     app.setOrganizationName("AI5QK");
     app.setOrganizationDomain("ai5qk.com");
+
+    if (QScreen *screen = app.primaryScreen()) {
+        qreal diagonalInches = 0.0;
+        const QSizeF physicalSizeMm = screen->physicalSize();
+        if (physicalSizeMm.width() > 0.0 && physicalSizeMm.height() > 0.0) {
+            const qreal diagonalMm = std::hypot(physicalSizeMm.width(), physicalSizeMm.height());
+            diagonalInches = diagonalMm / 25.4;
+        }
+        K4Styles::configureForScreen(screen->availableGeometry().size(), screen->devicePixelRatio(), diagonalInches);
+    } else {
+        K4Styles::configureForScreen(QSize(1340, 840), 1.0, 0.0);
+    }
 
     // Load embedded Inter font family
     setupFonts();

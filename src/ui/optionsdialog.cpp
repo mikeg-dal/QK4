@@ -18,6 +18,13 @@
 #include <QComboBox>
 #include <QSlider>
 #include <QPushButton>
+#include <QApplication>
+#include <QSignalBlocker>
+#include <QMessageBox>
+#include <QPointer>
+#ifdef Q_OS_ANDROID
+#include <QPermissions>
+#endif
 
 // Use K4Styles::Colors::DialogBorder for dialog-specific borders
 
@@ -406,6 +413,23 @@ QWidget *OptionsDialog::createKpodPage() {
                                K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
     layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
 
+#ifdef Q_OS_ANDROID
+    auto *androidTitleLabel = new QLabel("K-Pod", page);
+    androidTitleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                         .arg(K4Styles::Colors::AccentAmber)
+                                         .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(androidTitleLabel);
+
+    auto *helpLabel = new QLabel("K-Pod USB HID control is not available on Android in this build.", page);
+    helpLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeButton));
+    helpLabel->setWordWrap(true);
+    layout->addWidget(helpLabel);
+    layout->addStretch();
+    return page;
+#endif
+
     // Status indicator
     auto *statusLayout = new QHBoxLayout();
     auto *statusLabel = new QLabel("Status:", page);
@@ -498,10 +522,11 @@ QWidget *OptionsDialog::createKpodPage() {
 }
 
 void OptionsDialog::updateKpodStatus() {
-    if (!m_kpodStatusLabel)
+    if (!m_kpodDevice || !m_kpodStatusLabel || !m_kpodEnableCheckbox || !m_kpodHelpLabel || !m_kpodProductLabel ||
+        !m_kpodManufacturerLabel || !m_kpodVendorIdLabel || !m_kpodProductIdLabel || !m_kpodDeviceTypeLabel ||
+        !m_kpodFirmwareLabel || !m_kpodDeviceIdLabel) {
         return;
-    if (!m_kpodDevice)
-        return;
+    }
 
     KpodDeviceInfo info = m_kpodDevice->deviceInfo();
     bool detected = info.detected;
@@ -759,6 +784,40 @@ void OptionsDialog::onMicGainChanged(int value) {
 }
 
 void OptionsDialog::onMicTestToggled(bool checked) {
+#ifdef Q_OS_ANDROID
+    if (checked) {
+        QMicrophonePermission permission;
+        const Qt::PermissionStatus status = qApp->checkPermission(permission);
+
+        if (status == Qt::PermissionStatus::Undetermined) {
+            QPointer<OptionsDialog> safeThis(this);
+            qApp->requestPermission(permission, this, [safeThis](const QPermission &result) {
+                if (result.status() == Qt::PermissionStatus::Denied && safeThis) {
+                    QMessageBox::warning(safeThis, "Microphone Permission Required",
+                                         "Grant microphone permission to use microphone test.");
+                }
+            });
+            if (m_micTestBtn) {
+                QSignalBlocker block(m_micTestBtn);
+                m_micTestBtn->setChecked(false);
+                m_micTestBtn->setText("Test Microphone");
+            }
+            return;
+        }
+
+        if (status == Qt::PermissionStatus::Denied) {
+            QMessageBox::warning(this, "Microphone Permission Required",
+                                 "Microphone permission is currently denied. Enable it in Android Settings.");
+            if (m_micTestBtn) {
+                QSignalBlocker block(m_micTestBtn);
+                m_micTestBtn->setChecked(false);
+                m_micTestBtn->setText("Test Microphone");
+            }
+            return;
+        }
+    }
+#endif
+
     m_micTestActive = checked;
 
     if (m_micTestBtn) {
@@ -1080,6 +1139,30 @@ QWidget *OptionsDialog::createCwKeyerPage() {
     layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
                                K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
     layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
+
+#ifdef Q_OS_ANDROID
+    auto *androidTitleLabel = new QLabel("CW Keyer", page);
+    androidTitleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                         .arg(K4Styles::Colors::AccentAmber)
+                                         .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(androidTitleLabel);
+
+    auto *helpLabel = new QLabel("HaliKey serial/MIDI keying is not available on Android in this build.", page);
+    helpLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeButton));
+    helpLabel->setWordWrap(true);
+    layout->addWidget(helpLabel);
+
+    auto *androidSidetoneInfoLabel = new QLabel("Sidetone volume is still available from radio controls.", page);
+    androidSidetoneInfoLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
+                                                .arg(K4Styles::Colors::TextGray)
+                                                .arg(K4Styles::Dimensions::FontSizeLarge));
+    androidSidetoneInfoLabel->setWordWrap(true);
+    layout->addWidget(androidSidetoneInfoLabel);
+    layout->addStretch();
+    return page;
+#endif
 
     // Title
     auto *titleLabel = new QLabel("CW Keyer", page);

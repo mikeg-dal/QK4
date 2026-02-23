@@ -4,6 +4,7 @@
 #include <QFont>
 #include <QLinearGradient>
 #include <QPainter>
+#include <QSize>
 #include <QString>
 
 /**
@@ -243,95 +244,130 @@ namespace Dimensions {
 // =============================================================================
 // Border & Radius
 // =============================================================================
-constexpr int BorderWidth = 2;
-constexpr int BorderRadius = 6;
-constexpr int BorderRadiusLarge = 8;
+inline int BorderWidth = 2;
+inline int BorderRadius = 6;
+inline int BorderRadiusLarge = 8;
 
 // =============================================================================
 // Shadow (for popup widgets)
 // =============================================================================
-constexpr int ShadowRadius = 16;
-constexpr int ShadowOffsetX = 2;
-constexpr int ShadowOffsetY = 4;
-constexpr int ShadowMargin = ShadowRadius + 4; // 20px
-constexpr int ShadowLayers = 8;
+inline int ShadowRadius = 16;
+inline int ShadowOffsetX = 2;
+inline int ShadowOffsetY = 4;
+inline int ShadowMargin = ShadowRadius + 4; // 20px
+inline int ShadowLayers = 8;
 
 // =============================================================================
 // Button Heights
 // =============================================================================
-constexpr int ButtonHeightLarge = 44;  // Menu overlay nav buttons
-constexpr int ButtonHeightMedium = 36; // Bottom menu bar, popup buttons
-constexpr int ButtonHeightSmall = 28;  // Function buttons (side panels)
-constexpr int ButtonHeightMini = 24;   // Compact toggle buttons (MON, NORM, BAL, etc.)
+inline int ButtonHeightLarge = 44;  // Menu overlay nav buttons
+inline int ButtonHeightMedium = 36; // Bottom menu bar, popup buttons
+inline int ButtonHeightSmall = 28;  // Function buttons (side panels)
+inline int ButtonHeightMini = 24;   // Compact toggle buttons (MON, NORM, BAL, etc.)
 
 // =============================================================================
 // Popup Layout
 // =============================================================================
-constexpr int PopupButtonWidth = 70;
-constexpr int PopupButtonHeight = 44;
-constexpr int PopupButtonSpacing = 8;
-constexpr int MenuBarButtonWidth = 90; // Bottom menu bar buttons (fits "MAIN RX")
-constexpr int PopupContentMargin = 12;
+inline int PopupButtonWidth = 70;
+inline int PopupButtonHeight = 44;
+inline int PopupButtonSpacing = 8;
+inline int MenuBarButtonWidth = 90; // Bottom menu bar buttons (fits "MAIN RX")
+inline int PopupContentMargin = 12;
 
 // =============================================================================
 // Common UI Heights
 // =============================================================================
-constexpr int SeparatorHeight = 1; // Horizontal/vertical separator lines
-constexpr int MenuItemHeight = 40; // Menu overlay items, frequency labels
-constexpr int MenuBarHeight = 52;  // Bottom menu bar container height
+inline int SeparatorHeight = 1; // Horizontal/vertical separator lines
+inline int MenuItemHeight = 40; // Menu overlay items, frequency labels
+inline int MenuBarHeight = 52;  // Bottom menu bar container height
 
 // =============================================================================
 // Common UI Widths
 // =============================================================================
-constexpr int FormLabelWidth = 80;    // Form field labels in dialogs
-constexpr int VfoSquareSize = 45;     // VFO A/B indicator squares and mode labels
-constexpr int NavButtonWidth = 54;    // Navigation buttons in overlays
-constexpr int SidePanelWidth = 105;   // Left and right side panels
-constexpr int MemoryButtonWidth = 42; // M1-M4, REC, STORE, RCL buttons
+inline int FormLabelWidth = 80;    // Form field labels in dialogs
+inline int VfoSquareSize = 45;     // VFO A/B indicator squares and mode labels
+inline int NavButtonWidth = 54;    // Navigation buttons in overlays
+inline int SidePanelWidth = 105;   // Left and right side panels
+inline int MemoryButtonWidth = 42; // M1-M4, REC, STORE, RCL buttons
+
+// Main layout widths/heights
+inline int CenterPanelWidth = 330;   // Center controls column between VFO A/B
+inline int VfoColumnWidth = 270;     // VFO A/B column width
+inline int VfoContentHeight = 150;   // VFO normal/mini-pan content height
+inline int VfoMeterWidth = 260;      // TX meter width inside VFO column
+inline int SpectrumMinHeight = 300;  // Minimum spectrum/waterfall section height
+inline int VfoIndicatorBadgeWidth = 34;
+inline int VfoIndicatorBadgeHeight = 30;
+
+// VFO row internals
+inline int VfoSquareWidgetSize = 30;
+inline int VfoSquareWidgetTotalHeight = 40;
+inline int VfoRowHeight = 65;
+inline int VfoSubDivLabelWidth = 36;
+inline int VfoSubDivLabelHeight = 14;
 
 // =============================================================================
 // Font Sizes (in pixels) - use with QFont::setPixelSize() or paintFont()
 // =============================================================================
-constexpr int FontSizeTiny = 7;       // Sub-labels (BANK, AF REC, MESSAGE)
-constexpr int FontSizeSmall = 8;      // Scale fonts, secondary text
-constexpr int FontSizeNormal = 9;     // Alt/secondary button text
-constexpr int FontSizeMedium = 10;    // Labels, descriptions
-constexpr int FontSizeLarge = 11;     // Feature labels, primary labels
-constexpr int FontSizeButton = 12;    // Button text, value displays
-constexpr int FontSizePopup = 14;     // Notifications, popup titles
-constexpr int FontSizeTitle = 16;     // Large control buttons (+/-)
-constexpr int FontSizeFrequency = 32; // VFO frequency displays (FrequencyDisplayWidget, VfoWidget)
+inline int FontSizeTiny = 7;       // Sub-labels (BANK, AF REC, MESSAGE)
+inline int FontSizeSmall = 8;      // Scale fonts, secondary text
+inline int FontSizeNormal = 9;     // Alt/secondary button text
+inline int FontSizeMedium = 10;    // Labels, descriptions
+inline int FontSizeLarge = 11;     // Feature labels, primary labels
+inline int FontSizeButton = 12;    // Button text, value displays
+inline int FontSizePopup = 14;     // Notifications, popup titles
+inline int FontSizeTitle = 16;     // Large control buttons (+/-)
+inline int FontSizeFrequency = 32; // VFO frequency displays (FrequencyDisplayWidget, VfoWidget)
 
 // =============================================================================
 // Popup Menu Font Sizes (standardized for horizontal control bar popups)
 // =============================================================================
-constexpr int PopupTitleSize = 12;   // Popup title labels (e.g., "MIC INPUT", "ATTENUATOR")
-constexpr int PopupButtonSize = 11;  // Popup selection buttons (e.g., "FRONT", "REAR")
-constexpr int PopupValueSize = 12;   // Value displays (e.g., "6 dB", "184 Hz")
-constexpr int PopupAltTextSize = 10; // Alternate/secondary text on buttons
+inline int PopupTitleSize = 12;   // Popup title labels (e.g., "MIC INPUT", "ATTENUATOR")
+inline int PopupButtonSize = 11;  // Popup selection buttons (e.g., "FRONT", "REAR")
+inline int PopupValueSize = 12;   // Value displays (e.g., "6 dB", "184 Hz")
+inline int PopupAltTextSize = 10; // Alternate/secondary text on buttons
 
 // =============================================================================
 // Slider Dimensions
 // =============================================================================
-constexpr int SliderGrooveHeight = 6;     // Horizontal slider groove height
-constexpr int SliderHandleWidth = 16;     // Slider handle width
-constexpr int SliderHandleMargin = -5;    // Vertical margin for handle positioning
-constexpr int SliderBorderRadius = 3;     // Groove border radius
-constexpr int SliderHandleRadius = 8;     // Handle border radius (half of width)
-constexpr int SliderValueLabelWidth = 40; // Width for percentage value labels
+inline int SliderGrooveHeight = 6;     // Horizontal slider groove height
+inline int SliderHandleWidth = 16;     // Slider handle width
+inline int SliderHandleMargin = -5;    // Vertical margin for handle positioning
+inline int SliderBorderRadius = 3;     // Groove border radius
+inline int SliderHandleRadius = 8;     // Handle border radius (half of width)
+inline int SliderValueLabelWidth = 40; // Width for percentage value labels
 
 // =============================================================================
 // Dialog Dimensions
 // =============================================================================
-constexpr int DialogMargin = 20;           // Dialog content margins
-constexpr int TabListWidth = 150;          // Options dialog tab list width
-constexpr int InputFieldWidthSmall = 100;  // Port number, small inputs
-constexpr int InputFieldWidthMedium = 120; // Version labels, medium fields
-constexpr int CheckboxSize = 18;           // Checkbox indicator dimensions
-constexpr int PaddingSmall = 6;            // Small padding (inputs)
-constexpr int PaddingMedium = 10;          // Medium padding (buttons)
-constexpr int PaddingLarge = 15;           // Large padding (list items)
+inline int DialogMargin = 20;           // Dialog content margins
+inline int TabListWidth = 150;          // Options dialog tab list width
+inline int InputFieldWidthSmall = 100;  // Port number, small inputs
+inline int InputFieldWidthMedium = 120; // Version labels, medium fields
+inline int CheckboxSize = 18;           // Checkbox indicator dimensions
+inline int PaddingSmall = 6;            // Small padding (inputs)
+inline int PaddingMedium = 10;          // Medium padding (buttons)
+inline int PaddingLarge = 15;           // Large padding (list items)
 } // namespace Dimensions
+
+/**
+ * @brief Configure responsive dimensions for the current display.
+ *
+ * On phone-sized screens, this enables a compact profile with tighter spacing
+ * and smaller fixed widths so the full UI remains usable.
+ *
+ * @param availableSize Available screen size in logical pixels
+ * @param devicePixelRatio Screen DPR
+ * @param physicalDiagonalInches Optional physical diagonal size in inches (0 if unknown)
+ * @param forceCompact Force compact profile regardless of screen metrics
+ */
+void configureForScreen(const QSize &availableSize, qreal devicePixelRatio = 1.0,
+                        qreal physicalDiagonalInches = 0.0, bool forceCompact = false);
+
+/**
+ * @brief True when compact phone layout profile is active.
+ */
+bool isCompactLayout();
 
 namespace Fonts {
 // =============================================================================

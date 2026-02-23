@@ -32,9 +32,9 @@ void VFOWidget::setupUi() {
     connect(m_frequencyDisplay, &FrequencyDisplayWidget::frequencyScrolled, this, &VFOWidget::frequencyScrolled);
 
     // VFO A: frequency on left, VFO B: frequency on right
-    // Frequency container width matches stacked widget (270px) for vertical alignment
+    // Frequency container width matches stacked widget width for vertical alignment
     auto *freqContainer = new QWidget(this);
-    freqContainer->setFixedWidth(270);
+    freqContainer->setFixedWidth(K4Styles::Dimensions::VfoColumnWidth);
     auto *freqContainerLayout = new QHBoxLayout(freqContainer);
     freqContainerLayout->setContentsMargins(0, 0, 0, 0);
     freqContainerLayout->setSpacing(0);
@@ -56,12 +56,12 @@ void VFOWidget::setupUi() {
     // Use Maximum horizontal policy so it doesn't expand beyond content width
     m_stackedWidget = new QStackedWidget(this);
     m_stackedWidget->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    m_stackedWidget->setMaximumWidth(270); // Fit all indicators with values (ATT-6, NTCH-A/M, APF-150)
+    m_stackedWidget->setMaximumWidth(K4Styles::Dimensions::VfoColumnWidth);
 
     // Page 0: Normal content (multifunction meter + features)
-    // Height must match MiniPanRhiWidget (150px) to prevent layout shift when toggling
+    // Height must match MiniPanRhiWidget to prevent layout shift when toggling
     m_normalContent = new QWidget(m_stackedWidget);
-    m_normalContent->setFixedSize(270, 150); // Fit all indicators with values (ATT-6, NTCH-A/M, APF-150)
+    m_normalContent->setFixedSize(K4Styles::Dimensions::VfoColumnWidth, K4Styles::Dimensions::VfoContentHeight);
     auto *normalLayout = new QVBoxLayout(m_normalContent);
     normalLayout->setContentsMargins(0, 0, 0, 0);
     normalLayout->setSpacing(2);
@@ -69,7 +69,7 @@ void VFOWidget::setupUi() {
     // Row 2: Multifunction Meter (S/Po, ALC, COMP, SWR, Id) - replaces old S-meter
     // Meter fills full width of normal content (both are 200px)
     m_txMeter = new TxMeterWidget(m_normalContent);
-    m_txMeter->setFixedWidth(260); // Match expanded indicator row
+    m_txMeter->setFixedWidth(K4Styles::Dimensions::VfoMeterWidth);
     normalLayout->addWidget(m_txMeter);
 
     // Row 3: AGC, PRE, ATT, NB, NR labels (aligned with meter)

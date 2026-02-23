@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(QK4 VERSION 0.2.0 LANGUAGES CXX)
 
+# Optional override paths for Opus when cross-compiling (primarily Android)
+set(QK4_OPUS_INCLUDE_DIR "" CACHE PATH "Directory containing opus/opus.h for the target platform")
+set(QK4_OPUS_LIBRARY "" CACHE FILEPATH "Path to libopus library for the target platform")
+
 # Full version string can include prerelease info (e.g., "0.1.0-alpha.123")
 # CI sets this via -DQK4_VERSION_FULL="x.y.z-prerelease"
 # If not set, defaults to PROJECT_VERSION
@@ -14,6 +18,52 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
+
+if(ANDROID)
+    # Packaging mode can differ from CMAKE_BUILD_TYPE:
+    # - DEBUG: debug-signed APK for direct adb install/testing.
+    # - RELEASE: requires explicit keystore signing for production distribution.
+    set(QK4_ANDROID_DEPLOYMENT_TYPE "DEBUG" CACHE STRING
+        "Android packaging mode: DEBUG (local testing) or RELEASE (production signed)")
+    set_property(CACHE QK4_ANDROID_DEPLOYMENT_TYPE PROPERTY STRINGS DEBUG RELEASE)
+    string(TOUPPER "${QK4_ANDROID_DEPLOYMENT_TYPE}" _qk4_android_deployment_type)
+    if(NOT _qk4_android_deployment_type STREQUAL "DEBUG"
+       AND NOT _qk4_android_deployment_type STREQUAL "RELEASE")
+        message(FATAL_ERROR
+            "QK4_ANDROID_DEPLOYMENT_TYPE must be DEBUG or RELEASE. "
+            "Got '${QK4_ANDROID_DEPLOYMENT_TYPE}'.")
+    endif()
+    set(QT_ANDROID_DEPLOYMENT_TYPE "${_qk4_android_deployment_type}" CACHE STRING
+        "Qt Android deployment type" FORCE)
+
+    if(_qk4_android_deployment_type STREQUAL "RELEASE")
+        # Qt's Android CMake integration passes only --sign; signing details are read from env vars.
+        # Enforce required env vars at configure time so packaging never produces an unsigned release APK.
+        set(QT_ANDROID_SIGN_APK ON CACHE BOOL "Sign Android APK during deployment" FORCE)
+        set(_qk4_missing_signing_env "")
+        foreach(_qk4_var
+                QT_ANDROID_KEYSTORE_PATH
+                QT_ANDROID_KEYSTORE_ALIAS
+                QT_ANDROID_KEYSTORE_STORE_PASS
+                QT_ANDROID_KEYSTORE_KEY_PASS)
+            if(NOT DEFINED ENV{${_qk4_var}} OR "$ENV{${_qk4_var}}" STREQUAL "")
+                list(APPEND _qk4_missing_signing_env "${_qk4_var}")
+            endif()
+        endforeach()
+        if(_qk4_missing_signing_env)
+            string(JOIN ", " _qk4_missing_signing_env_list ${_qk4_missing_signing_env})
+            message(FATAL_ERROR
+                "Android RELEASE packaging requires signing credentials. Missing environment variables: "
+                "${_qk4_missing_signing_env_list}. "
+                "For local device testing, configure with -DQK4_ANDROID_DEPLOYMENT_TYPE=DEBUG.")
+        endif()
+        unset(_qk4_missing_signing_env_list)
+        unset(_qk4_missing_signing_env)
+    endif()
+
+    message(STATUS "QK4 Android deployment type: ${_qk4_android_deployment_type}")
+    unset(_qk4_android_deployment_type)
+endif()
 
 # Core Qt components (GuiPrivate handled separately for cross-platform compatibility)
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Multimedia ShaderTools Gui SerialPort Svg)
@@ -45,7 +95,39 @@ else()
 endif()
 
 # Platform-specific dependency handling
-if(APPLE)
+if(ANDROID)
+    # Android: HID/MIDI hardware features are disabled, Opus is still required for RX/TX audio.
+    set(HIDAPI_INCLUDE_DIRS "")
+    set(HIDAPI_LIBRARIES "")
+    set(OPUS_INCLUDE_DIRS "")
+    set(OPUS_LIBRARIES "")
+
+    if(QK4_OPUS_INCLUDE_DIR AND QK4_OPUS_LIBRARY)
+        # Accept both "<prefix>/include" and "<prefix>/include/opus" from callers.
+        get_filename_component(_qk4_opus_inc_leaf "${QK4_OPUS_INCLUDE_DIR}" NAME)
+        if(_qk4_opus_inc_leaf STREQUAL "opus" AND EXISTS "${QK4_OPUS_INCLUDE_DIR}/opus.h")
+            get_filename_component(OPUS_INCLUDE_DIRS "${QK4_OPUS_INCLUDE_DIR}" DIRECTORY)
+        else()
+            set(OPUS_INCLUDE_DIRS "${QK4_OPUS_INCLUDE_DIR}")
+        endif()
+        unset(_qk4_opus_inc_leaf)
+        set(OPUS_LIBRARIES "${QK4_OPUS_LIBRARY}")
+    else()
+        find_package(Opus CONFIG QUIET)
+        if(TARGET Opus::opus)
+            set(OPUS_LIBRARIES Opus::opus)
+        else()
+            find_path(OPUS_INCLUDE_DIRS NAMES opus/opus.h)
+            find_library(OPUS_LIBRARIES NAMES opus)
+        endif()
+    endif()
+
+    if(NOT TARGET Opus::opus AND (NOT OPUS_INCLUDE_DIRS OR NOT OPUS_LIBRARIES))
+        message(FATAL_ERROR
+            "Android build requires Opus. Provide -DQK4_OPUS_INCLUDE_DIR and -DQK4_OPUS_LIBRARY, "
+            "or install an Opus package that exports Opus::opus.")
+    endif()
+elseif(APPLE)
     # macOS with Homebrew
     set(OPUS_PREFIX "/opt/homebrew/opt/opus")
     set(OPUS_INCLUDE_DIRS "${OPUS_PREFIX}/include")
@@ -122,13 +204,24 @@ set(SOURCES
     src/ui/monoverlay.cpp
     src/ui/baloverlay.cpp
     src/ui/wheelaccumulator.cpp
-    src/hardware/kpoddevice.cpp
-    src/hardware/halikeydevice.cpp
-    src/hardware/halikeyworkerbase.cpp
-    src/hardware/halikeyv14worker.cpp
-    src/hardware/halikeymidiworker.cpp
-    third_party/rtmidi/RtMidi.cpp
 )
+
+if(ANDROID)
+    # Keep class availability on Android via no-op implementations.
+    list(APPEND SOURCES
+        src/hardware/kpoddevice.cpp
+        src/hardware/halikeydevice.cpp
+    )
+else()
+    list(APPEND SOURCES
+        src/hardware/kpoddevice.cpp
+        src/hardware/halikeydevice.cpp
+        src/hardware/halikeyworkerbase.cpp
+        src/hardware/halikeyv14worker.cpp
+        src/hardware/halikeymidiworker.cpp
+        third_party/rtmidi/RtMidi.cpp
+    )
+endif()
 
 set(HEADERS
     src/mainwindow.h
@@ -183,15 +276,28 @@ set(HEADERS
     src/ui/monoverlay.h
     src/ui/baloverlay.h
     src/ui/wheelaccumulator.h
-    src/hardware/kpoddevice.h
-    src/hardware/halikeydevice.h
-    src/hardware/halikeyworkerbase.h
-    src/hardware/halikeyv14worker.h
-    src/hardware/halikeymidiworker.h
 )
 
+if(ANDROID)
+    list(APPEND HEADERS
+        src/hardware/kpoddevice.h
+        src/hardware/halikeydevice.h
+    )
+else()
+    list(APPEND HEADERS
+        src/hardware/kpoddevice.h
+        src/hardware/halikeydevice.h
+        src/hardware/halikeyworkerbase.h
+        src/hardware/halikeyv14worker.h
+        src/hardware/halikeymidiworker.h
+    )
+endif()
+
+# On Android, create Qt executable package target
+if(ANDROID)
+    qt_add_executable(${PROJECT_NAME} MANUAL_FINALIZATION ${SOURCES} ${HEADERS})
 # On macOS, create an app bundle
-if(APPLE)
+elseif(APPLE)
     set(MACOSX_BUNDLE_BUNDLE_NAME ${PROJECT_NAME})
     set(MACOSX_BUNDLE_BUNDLE_VERSION ${QK4_VERSION_FULL})
     set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${QK4_VERSION_FULL})
@@ -276,6 +382,8 @@ if(APPLE)
 elseif(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE __WINDOWS_MM__)
     target_link_libraries(${PROJECT_NAME} PRIVATE winmm)
+elseif(ANDROID)
+    # No RtMidi backend on Android (HaliKey/KPOD features disabled).
 else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE __LINUX_ALSA__)
     target_link_libraries(${PROJECT_NAME} PRIVATE asound)
@@ -316,6 +424,18 @@ qt_add_resources(${PROJECT_NAME} "icons"
         resources/icons/globe.svg
         resources/icons/help.svg
 )
+
+if(ANDROID)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        QT_ANDROID_PACKAGE_NAME "com.ai5qk.qk4"
+        QT_ANDROID_MIN_SDK_VERSION 26
+        QT_ANDROID_TARGET_SDK_VERSION 34
+    )
+    set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY QT_ANDROID_PERMISSIONS
+        "android.permission.INTERNET"
+        "android.permission.RECORD_AUDIO"
+    )
+endif()
 
 # =============================================================================
 # Deployment / Bundling - Create self-contained distributable app
@@ -411,3 +531,6 @@ elseif(WIN32)
     )
 endif()
 
+if(ANDROID)
+    qt_finalize_executable(${PROJECT_NAME})
+endif()
