@@ -54,11 +54,18 @@
 #include <QDateTime>
 #include <QPainter>
 #include <QFrame>
+#include <QScrollArea>
+#include <QScroller>
 #include <QEvent>
 #include <QResizeEvent>
 #include <QRegularExpression>
 #include <QMouseEvent>
 #include <QShowEvent>
+#include <QPointer>
+#include <QScreen>
+#ifdef Q_OS_ANDROID
+#include <QPermissions>
+#endif
 
 // K4 Span range: 5 kHz to 368 kHz
 // UP (zoom out): +1 kHz until 144, then +4 kHz until 368
@@ -89,6 +96,32 @@ static int getNextSpanDown(int currentSpan) {
     int newSpan = currentSpan - decrement;
     return qMax(newSpan, SPAN_MIN);
 }
+
+#ifdef Q_OS_ANDROID
+static bool ensureMicrophonePermission(QWidget *parent) {
+    QMicrophonePermission permission;
+    Qt::PermissionStatus status = qApp->checkPermission(permission);
+
+    if (status == Qt::PermissionStatus::Granted) {
+        return true;
+    }
+
+    if (status == Qt::PermissionStatus::Undetermined) {
+        QPointer<QWidget> safeParent(parent);
+        qApp->requestPermission(permission, parent, [safeParent](const QPermission &result) {
+            if (result.status() == Qt::PermissionStatus::Denied && safeParent) {
+                QMessageBox::warning(safeParent, "Microphone Permission Required",
+                                     "Grant microphone permission to transmit audio.");
+            }
+        });
+        return false;
+    }
+
+    QMessageBox::warning(parent, "Microphone Permission Required",
+                         "Microphone permission is currently denied. Enable it in Android Settings to transmit audio.");
+    return false;
+}
+#endif
 
 // ============== MainWindow Implementation ==============
 MainWindow::MainWindow(QWidget *parent)
@@ -1803,11 +1836,19 @@ MainWindow::MainWindow(QWidget *parent)
     // TX;/RX; from external apps controls audio input gate
     // Audio stream itself triggers K4 TX - timing-critical for FT8/FT4
     connect(m_catServer, &CatServer::pttRequested, this, [this](bool on) {
+#ifdef Q_OS_ANDROID
+        if (on && !ensureMicrophonePermission(this)) {
+            m_pttActive = false;
+            m_bottomMenuBar->setPttActive(false);
+            QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, false));
+            return;
+        }
+#endif
         m_pttActive = on;
         if (on) {
             m_txSequence = 0;
         }
-        m_audioEngine->setMicEnabled(on);
+        QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, on));
         m_bottomMenuBar->setPttActive(on);
     });
 
@@ -1830,6 +1871,11 @@ MainWindow::MainWindow(QWidget *parent)
     if (RadioSettings::instance()->catServerEnabled()) {
         m_catServer->start(RadioSettings::instance()->catServerPort());
     }
+
+#ifdef Q_OS_ANDROID
+    // Prime Android runtime permission early, before the first TX attempt.
+    ensureMicrophonePermission(this);
+#endif
 
     // resize directly instead of deferring - testing if deferred resize affects QRhi
     // QTimer::singleShot(0, this, [this]() { resize(1340, 800); });
@@ -1929,8 +1975,12 @@ void MainWindow::setupMenuBar() {
 
 void MainWindow::setupUi() {
     setWindowTitle("QK4");
-    setMinimumSize(1340, 840);
-    resize(1340, 840); // Default to minimum size on launch
+    if (K4Styles::isCompactLayout()) {
+        setMinimumSize(0, 0);
+    } else {
+        setMinimumSize(1340, 840);
+        resize(1340, 840); // Default to minimum size on launch
+    }
 
     // NOTE: Do NOT set WA_NativeWindow here!
     // Qt 6.10.1 bug on macOS Tahoe: WA_NativeWindow forces native window creation
@@ -1950,7 +2000,11 @@ void MainWindow::setupUi() {
 
     // Top status bar
     setupTopStatusBar(centralWidget);
-    mainLayout->addWidget(m_titleLabel->parentWidget());
+    QWidget *topStatusBar = m_titleLabel->parentWidget();
+    mainLayout->addWidget(topStatusBar);
+    if (K4Styles::isCompactLayout()) {
+        topStatusBar->hide();
+    }
 
     // Middle section: Side Panel + Main Content (L-shaped)
     auto *middleWidget = new QWidget(centralWidget);
@@ -1958,15 +2012,32 @@ void MainWindow::setupUi() {
     middleLayout->setContentsMargins(0, 0, 0, 0);
     middleLayout->setSpacing(0);
 
-    // Side Control Panel (left)
-    m_sideControlPanel = new SideControlPanel(middleWidget);
-    middleLayout->addWidget(m_sideControlPanel);
+    // Side Control Panel (left) in a scroll container for short phone screens
+    const int sidePanelScrollExtra = K4Styles::isCompactLayout() ? 18 : 2;
+    auto *leftPanelScroll = new QScrollArea(middleWidget);
+    leftPanelScroll->setFrameShape(QFrame::NoFrame);
+    leftPanelScroll->setWidgetResizable(false);
+    leftPanelScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    leftPanelScroll->setVerticalScrollBarPolicy(K4Styles::isCompactLayout() ? Qt::ScrollBarAlwaysOn
+                                                                             : Qt::ScrollBarAlwaysOff);
+    leftPanelScroll->setFixedWidth(K4Styles::Dimensions::SidePanelWidth + sidePanelScrollExtra);
+    m_sideControlPanel = new SideControlPanel(leftPanelScroll);
+    leftPanelScroll->setWidget(m_sideControlPanel);
+    if (K4Styles::isCompactLayout()) {
+        m_sideControlPanel->setMinimumHeight(m_sideControlPanel->sizeHint().height());
+        m_sideControlPanel->resize(m_sideControlPanel->sizeHint());
+        leftPanelScroll->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
+        QScroller::grabGesture(leftPanelScroll->viewport(), QScroller::TouchGesture);
+        QScroller::grabGesture(m_sideControlPanel, QScroller::TouchGesture);
+    }
+    middleLayout->addWidget(leftPanelScroll);
 
     // Main content (VFO + Spectrum)
     auto *contentWidget = new QWidget(middleWidget);
     auto *contentLayout = new QVBoxLayout(contentWidget);
-    contentLayout->setContentsMargins(4, 4, 4, 4);
-    contentLayout->setSpacing(2);
+    contentLayout->setContentsMargins(K4Styles::Dimensions::PaddingSmall, K4Styles::Dimensions::PaddingSmall,
+                                      K4Styles::Dimensions::PaddingSmall, K4Styles::Dimensions::PaddingSmall);
+    contentLayout->setSpacing(K4Styles::isCompactLayout() ? 1 : 2);
 
     // VFO section (A | Center | B)
     auto *vfoWidget = new QWidget(contentWidget);
@@ -1980,8 +2051,23 @@ void MainWindow::setupUi() {
     middleLayout->addWidget(contentWidget, 1);
 
     // Right Side Panel (mirrors left panel dimensions)
-    m_rightSidePanel = new RightSidePanel(middleWidget);
-    middleLayout->addWidget(m_rightSidePanel);
+    auto *rightPanelScroll = new QScrollArea(middleWidget);
+    rightPanelScroll->setFrameShape(QFrame::NoFrame);
+    rightPanelScroll->setWidgetResizable(false);
+    rightPanelScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    rightPanelScroll->setVerticalScrollBarPolicy(K4Styles::isCompactLayout() ? Qt::ScrollBarAlwaysOn
+                                                                              : Qt::ScrollBarAlwaysOff);
+    rightPanelScroll->setFixedWidth(K4Styles::Dimensions::SidePanelWidth + sidePanelScrollExtra);
+    m_rightSidePanel = new RightSidePanel(rightPanelScroll);
+    rightPanelScroll->setWidget(m_rightSidePanel);
+    if (K4Styles::isCompactLayout()) {
+        m_rightSidePanel->setMinimumHeight(m_rightSidePanel->sizeHint().height());
+        m_rightSidePanel->resize(m_rightSidePanel->sizeHint());
+        rightPanelScroll->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
+        QScroller::grabGesture(rightPanelScroll->viewport(), QScroller::TouchGesture);
+        QScroller::grabGesture(m_rightSidePanel, QScroller::TouchGesture);
+    }
+    middleLayout->addWidget(rightPanelScroll);
 
     mainLayout->addWidget(middleWidget, 1);
 
@@ -2776,67 +2862,83 @@ void MainWindow::setupTopStatusBar(QWidget *parent) {
     statusBar->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DarkBackground));
 
     auto *layout = new QHBoxLayout(statusBar);
-    layout->setContentsMargins(8, 2, 8, 2);
-    layout->setSpacing(20);
+    layout->setContentsMargins(K4Styles::Dimensions::PaddingSmall, 2, K4Styles::Dimensions::PaddingSmall, 2);
+    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
 
     // Elecraft K4 title
     m_titleLabel = new QLabel("Elecraft K4", statusBar);
     m_titleLabel->setStyleSheet(
-        QString("color: %1; font-weight: bold; font-size: 14px;").arg(K4Styles::Colors::TextWhite));
+        QString("color: %1; font-weight: bold; font-size: %2px;")
+            .arg(K4Styles::Colors::TextWhite)
+            .arg(K4Styles::Dimensions::FontSizePopup));
     layout->addWidget(m_titleLabel);
 
     // Date/Time
     m_dateTimeLabel = new QLabel("--/-- --:--:-- Z", statusBar);
-    m_dateTimeLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::TextGray));
+    m_dateTimeLabel->setStyleSheet(
+        QString("color: %1; font-size: %2px;").arg(K4Styles::Colors::TextGray).arg(K4Styles::Dimensions::FontSizeButton));
     layout->addWidget(m_dateTimeLabel);
 
     layout->addStretch();
 
     // Power
     m_powerLabel = new QLabel("--- W", statusBar);
-    m_powerLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::AccentAmber));
+    m_powerLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                    .arg(K4Styles::Colors::AccentAmber)
+                                    .arg(K4Styles::Dimensions::FontSizeButton));
     layout->addWidget(m_powerLabel);
 
     // SWR
     m_swrLabel = new QLabel("-.-:1", statusBar);
-    m_swrLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::AccentAmber));
+    m_swrLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                  .arg(K4Styles::Colors::AccentAmber)
+                                  .arg(K4Styles::Dimensions::FontSizeButton));
     layout->addWidget(m_swrLabel);
 
     // Voltage
     m_voltageLabel = new QLabel("--.- V", statusBar);
-    m_voltageLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::AccentAmber));
+    m_voltageLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                      .arg(K4Styles::Colors::AccentAmber)
+                                      .arg(K4Styles::Dimensions::FontSizeButton));
     layout->addWidget(m_voltageLabel);
 
     // Current
     m_currentLabel = new QLabel("-.- A", statusBar);
-    m_currentLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::AccentAmber));
+    m_currentLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                      .arg(K4Styles::Colors::AccentAmber)
+                                      .arg(K4Styles::Dimensions::FontSizeButton));
     layout->addWidget(m_currentLabel);
 
     layout->addStretch();
 
     // KPA1500 status (to left of K4 status)
     m_kpa1500StatusLabel = new QLabel("", statusBar);
-    m_kpa1500StatusLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::InactiveGray));
+    m_kpa1500StatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                            .arg(K4Styles::Colors::InactiveGray)
+                                            .arg(K4Styles::Dimensions::FontSizeButton));
     m_kpa1500StatusLabel->hide(); // Hidden when not enabled
     layout->addWidget(m_kpa1500StatusLabel);
 
     // K4 Connection status
     m_connectionStatusLabel = new QLabel("K4", statusBar);
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::InactiveGray));
+    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                               .arg(K4Styles::Colors::InactiveGray)
+                                               .arg(K4Styles::Dimensions::FontSizeButton));
     layout->addWidget(m_connectionStatusLabel);
 }
 
 void MainWindow::setupVfoSection(QWidget *parent) {
     // Main vertical layout: VFO row on top, antenna row below
     auto *mainVLayout = new QVBoxLayout(parent);
-    mainVLayout->setContentsMargins(4, 4, 4, 4);
-    mainVLayout->setSpacing(4);
+    mainVLayout->setContentsMargins(K4Styles::Dimensions::PaddingSmall, K4Styles::Dimensions::PaddingSmall,
+                                    K4Styles::Dimensions::PaddingSmall, K4Styles::Dimensions::PaddingSmall);
+    mainVLayout->setSpacing(K4Styles::isCompactLayout() ? 2 : 4);
 
     // Top row: VFO A | Center | VFO B
     auto *vfoRowWidget = new QWidget(parent);
     auto *layout = new QHBoxLayout(vfoRowWidget);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(K4Styles::Dimensions::PopupButtonSpacing);
 
     // ===== VFO A (Left - Amber) - Using VFOWidget =====
     m_vfoA = new VFOWidget(VFOWidget::VFO_A, parent);
@@ -2882,7 +2984,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
 
     // ===== Center Section =====
     auto *centerWidget = new QWidget(parent);
-    centerWidget->setFixedWidth(330);
+    centerWidget->setFixedWidth(K4Styles::Dimensions::CenterPanelWidth);
     centerWidget->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
     auto *centerLayout = new QVBoxLayout(centerWidget);
     centerLayout->setContentsMargins(4, 4, 4, 4);
@@ -3162,6 +3264,14 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     m_rclBtn = rclContainer->findChild<QPushButton *>();
     memoryRow->addWidget(rclContainer);
 
+    if (K4Styles::isCompactLayout()) {
+        // On phones, reclaim vertical space by hiding the least-used memory strip.
+        messageGroup->hide();
+        recContainer->hide();
+        storeContainer->hide();
+        rclContainer->hide();
+    }
+
     memoryRow->addStretch();
     centerLayout->addLayout(memoryRow);
 
@@ -3228,45 +3338,55 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // NOTE: TX meters are now integrated into VFOWidgets as multifunction S/Po meters
     // (see VFOWidget::m_txMeter - displays S-meter when RX, Po when TX)
 
-    // ===== Antenna Row (below VFO section) =====
-    // Layout: [RX Ant A (left)] --- [TX Antenna (center)] --- [RX Ant B (right)]
-    auto *antennaRow = new QHBoxLayout();
-    antennaRow->setContentsMargins(8, 0, 8, 0);
-    antennaRow->setSpacing(0);
+    if (!K4Styles::isCompactLayout()) {
+        // ===== Antenna Row (below VFO section) =====
+        // Layout: [RX Ant A (left)] --- [TX Antenna (center)] --- [RX Ant B (right)]
+        auto *antennaRow = new QHBoxLayout();
+        antennaRow->setContentsMargins(8, 0, 8, 0);
+        antennaRow->setSpacing(0);
 
-    // RX Antenna A (Main) - white color, left-justified
-    m_rxAntALabel = new QLabel("1:ANT1", parent);
-    m_rxAntALabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    m_rxAntALabel->setStyleSheet(
-        QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::TextWhite));
-    antennaRow->addWidget(m_rxAntALabel);
+        // RX Antenna A (Main) - white color, left-justified
+        m_rxAntALabel = new QLabel("1:ANT1", parent);
+        m_rxAntALabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        m_rxAntALabel->setStyleSheet(
+            QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::TextWhite));
+        antennaRow->addWidget(m_rxAntALabel);
 
-    antennaRow->addStretch(1); // Push TX antenna to center
+        antennaRow->addStretch(1); // Push TX antenna to center
 
-    // TX Antenna - orange color, centered
-    m_txAntennaLabel = new QLabel("1:ANT1", parent);
-    m_txAntennaLabel->setAlignment(Qt::AlignCenter);
-    m_txAntennaLabel->setStyleSheet(
-        QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::AccentAmber));
-    antennaRow->addWidget(m_txAntennaLabel);
+        // TX Antenna - orange color, centered
+        m_txAntennaLabel = new QLabel("1:ANT1", parent);
+        m_txAntennaLabel->setAlignment(Qt::AlignCenter);
+        m_txAntennaLabel->setStyleSheet(
+            QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::AccentAmber));
+        antennaRow->addWidget(m_txAntennaLabel);
 
-    antennaRow->addStretch(1); // Push RX Ant B to right
+        antennaRow->addStretch(1); // Push RX Ant B to right
 
-    // RX Antenna B (Sub) - white color, right-justified
-    m_rxAntBLabel = new QLabel("1:ANT1", parent);
-    m_rxAntBLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_rxAntBLabel->setStyleSheet(
-        QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::TextWhite));
-    antennaRow->addWidget(m_rxAntBLabel);
+        // RX Antenna B (Sub) - white color, right-justified
+        m_rxAntBLabel = new QLabel("1:ANT1", parent);
+        m_rxAntBLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_rxAntBLabel->setStyleSheet(
+            QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::TextWhite));
+        antennaRow->addWidget(m_rxAntBLabel);
 
-    mainVLayout->addLayout(antennaRow);
+        mainVLayout->addLayout(antennaRow);
+    } else {
+        // Keep pointers valid for downstream updates while hidden in compact mode.
+        m_rxAntALabel = new QLabel(parent);
+        m_txAntennaLabel = new QLabel(parent);
+        m_rxAntBLabel = new QLabel(parent);
+        m_rxAntALabel->hide();
+        m_txAntennaLabel->hide();
+        m_rxAntBLabel->hide();
+    }
 }
 
 void MainWindow::setupSpectrumPlaceholder(QWidget *parent) {
     // Container for spectrum displays
     m_spectrumContainer = new QWidget(parent);
     m_spectrumContainer->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DarkBackground));
-    m_spectrumContainer->setMinimumHeight(300);
+    m_spectrumContainer->setMinimumHeight(K4Styles::Dimensions::SpectrumMinHeight);
 
     // Use QHBoxLayout for side-by-side panadapters (Main left, Sub right)
     auto *layout = new QHBoxLayout(m_spectrumContainer);
@@ -3353,12 +3473,14 @@ void MainWindow::setupSpectrumPlaceholder(QWidget *parent) {
 
     m_vfoIndicatorA = new QLabel("A", m_panadapterA);
     m_vfoIndicatorA->setStyleSheet(vfoIndicatorStyle);
-    m_vfoIndicatorA->setFixedSize(34, 30);
+    m_vfoIndicatorA->setFixedSize(K4Styles::Dimensions::VfoIndicatorBadgeWidth,
+                                  K4Styles::Dimensions::VfoIndicatorBadgeHeight);
     m_vfoIndicatorA->setAlignment(Qt::AlignCenter);
 
     m_vfoIndicatorB = new QLabel("B", m_panadapterB);
     m_vfoIndicatorB->setStyleSheet(vfoIndicatorStyle);
-    m_vfoIndicatorB->setFixedSize(34, 30);
+    m_vfoIndicatorB->setFixedSize(K4Styles::Dimensions::VfoIndicatorBadgeWidth,
+                                  K4Styles::Dimensions::VfoIndicatorBadgeHeight);
     m_vfoIndicatorB->setAlignment(Qt::AlignCenter);
 
     // Position buttons (will be repositioned in resizeEvent of panadapter)
@@ -3372,8 +3494,8 @@ void MainWindow::setupSpectrumPlaceholder(QWidget *parent) {
     m_centerBtnB->move(m_panadapterB->width() - 52, m_panadapterB->height() - 73);
 
     // VFO indicators at bottom-left corner, flush with edges
-    m_vfoIndicatorA->move(0, m_panadapterA->height() - 30);
-    m_vfoIndicatorB->move(0, m_panadapterB->height() - 30);
+    m_vfoIndicatorA->move(0, m_panadapterA->height() - K4Styles::Dimensions::VfoIndicatorBadgeHeight);
+    m_vfoIndicatorB->move(0, m_panadapterB->height() - K4Styles::Dimensions::VfoIndicatorBadgeHeight);
 
     // Span adjustment for Main: K4 span steps, inverted controls
     // - button = zoom out (increase span), + button = zoom in (decrease span)
@@ -3795,15 +3917,27 @@ void MainWindow::showRadioManager() {
 }
 
 void MainWindow::connectToRadio(const RadioEntry &radio) {
+    if (m_connectionState == TcpClient::Connecting || m_connectionState == TcpClient::Authenticating) {
+        if (m_notificationWidget) {
+            const QString target = m_currentRadio.name.isEmpty() ? m_currentRadio.host : m_currentRadio.name;
+            m_notificationWidget->showMessage(QString("Still connecting to %1...").arg(target), 2200);
+        }
+        return;
+    }
+
     if (m_tcpClient->isConnected()) {
         QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::QueuedConnection);
     }
 
     m_currentRadio = radio;
+    m_connectionState = TcpClient::Connecting;
     m_titleLabel->setText("Elecraft K4 - " + radio.name);
 
     qDebug() << "Connecting to" << radio.host << ":" << radio.port << (radio.useTls ? "(TLS/PSK)" : "(unencrypted)")
              << "encodeMode:" << radio.encodeMode << "streamingLatency:" << radio.streamingLatency;
+    if (m_notificationWidget) {
+        m_notificationWidget->showMessage(QString("Connecting to %1...").arg(radio.host), 6000);
+    }
     QMetaObject::invokeMethod(m_tcpClient, "connectToHost", Qt::QueuedConnection, Q_ARG(QString, radio.host),
                               Q_ARG(quint16, radio.port), Q_ARG(QString, radio.password), Q_ARG(bool, radio.useTls),
                               Q_ARG(QString, radio.identity), Q_ARG(int, radio.encodeMode),
@@ -3819,6 +3953,7 @@ void MainWindow::onDisconnectClicked() {
 }
 
 void MainWindow::onStateChanged(TcpClient::ConnectionState state) {
+    m_connectionState = state;
     updateConnectionState(state);
 }
 
@@ -3826,10 +3961,17 @@ void MainWindow::onError(const QString &error) {
     m_connectionStatusLabel->setText("Error: " + error);
     m_connectionStatusLabel->setStyleSheet(
         QString("color: %1; font-size: 12px; font-weight: bold;").arg(K4Styles::Colors::TxRed));
+    if (m_notificationWidget) {
+        m_notificationWidget->showMessage(QString("Connection Error: %1").arg(error), 5000);
+    }
 }
 
 void MainWindow::onAuthenticated() {
     qDebug() << "Successfully authenticated with K4 radio";
+    if (m_notificationWidget) {
+        const QString target = m_currentRadio.name.isEmpty() ? m_currentRadio.host : m_currentRadio.name;
+        m_notificationWidget->showMessage(QString("Connected to %1").arg(target), 3500);
+    }
 
     // Start audio engine on its dedicated thread (BlockingQueued to get return value)
     bool audioStarted = false;
@@ -3869,6 +4011,9 @@ void MainWindow::onAuthenticationFailed() {
     m_connectionStatusLabel->setText("Auth Failed");
     m_connectionStatusLabel->setStyleSheet(
         QString("color: %1; font-size: 12px; font-weight: bold;").arg(K4Styles::Colors::TxRed));
+    if (m_notificationWidget) {
+        m_notificationWidget->showMessage("Authentication Failed", 5000);
+    }
 }
 
 void MainWindow::onCatResponse(const QString &response) {
@@ -4143,19 +4288,19 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
         break;
 
     case TcpClient::Connecting:
-        m_connectionStatusLabel->setText("K4");
+        m_connectionStatusLabel->setText("K4...");
         m_connectionStatusLabel->setStyleSheet(
             QString("color: %1; font-size: 12px; font-weight: bold;").arg(K4Styles::Colors::AccentAmber));
         break;
 
     case TcpClient::Authenticating:
-        m_connectionStatusLabel->setText("K4");
+        m_connectionStatusLabel->setText("AUTH");
         m_connectionStatusLabel->setStyleSheet(
             QString("color: %1; font-size: 12px; font-weight: bold;").arg(K4Styles::Colors::AccentAmber));
         break;
 
     case TcpClient::Connected:
-        m_connectionStatusLabel->setText("K4");
+        m_connectionStatusLabel->setText("K4 OK");
         m_connectionStatusLabel->setStyleSheet(
             QString("color: %1; font-size: 12px; font-weight: bold;").arg(K4Styles::Colors::StatusGreen));
         break;
@@ -4469,6 +4614,12 @@ void MainWindow::onPttPressed() {
     if (!m_tcpClient->isConnected()) {
         return;
     }
+
+#ifdef Q_OS_ANDROID
+    if (!ensureMicrophonePermission(this)) {
+        return;
+    }
+#endif
 
     m_pttActive = true;
     m_txSequence = 0; // Reset sequence on new PTT press

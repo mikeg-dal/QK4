@@ -1,4 +1,6 @@
 #include "k4styles.h"
+#include <QtGlobal>
+#include <algorithm>
 
 namespace {
 // Internal helper to generate CSS linear-gradient strings
@@ -14,9 +16,204 @@ QString gradientCssReversed(const char *top, const char *mid1, const char *mid2,
                    "stop:0 %1, stop:0.4 %2, stop:0.6 %3, stop:1 %4)")
         .arg(bottom, mid2, mid1, top);
 }
+
+bool g_compactLayout = false;
+
+void applyDefaultDimensions() {
+    using namespace K4Styles::Dimensions;
+
+    BorderWidth = 2;
+    BorderRadius = 6;
+    BorderRadiusLarge = 8;
+
+    ShadowRadius = 16;
+    ShadowOffsetX = 2;
+    ShadowOffsetY = 4;
+    ShadowMargin = ShadowRadius + 4;
+    ShadowLayers = 8;
+
+    ButtonHeightLarge = 44;
+    ButtonHeightMedium = 36;
+    ButtonHeightSmall = 28;
+    ButtonHeightMini = 24;
+
+    PopupButtonWidth = 70;
+    PopupButtonHeight = 44;
+    PopupButtonSpacing = 8;
+    MenuBarButtonWidth = 90;
+    PopupContentMargin = 12;
+
+    SeparatorHeight = 1;
+    MenuItemHeight = 40;
+    MenuBarHeight = 52;
+
+    FormLabelWidth = 80;
+    VfoSquareSize = 45;
+    NavButtonWidth = 54;
+    SidePanelWidth = 105;
+    MemoryButtonWidth = 42;
+
+    CenterPanelWidth = 330;
+    VfoColumnWidth = 270;
+    VfoContentHeight = 150;
+    VfoMeterWidth = 260;
+    SpectrumMinHeight = 300;
+    VfoIndicatorBadgeWidth = 34;
+    VfoIndicatorBadgeHeight = 30;
+
+    VfoSquareWidgetSize = 30;
+    VfoSquareWidgetTotalHeight = 40;
+    VfoRowHeight = 65;
+    VfoSubDivLabelWidth = 36;
+    VfoSubDivLabelHeight = 14;
+
+    FontSizeTiny = 7;
+    FontSizeSmall = 8;
+    FontSizeNormal = 9;
+    FontSizeMedium = 10;
+    FontSizeLarge = 11;
+    FontSizeButton = 12;
+    FontSizePopup = 14;
+    FontSizeTitle = 16;
+    FontSizeFrequency = 32;
+
+    PopupTitleSize = 12;
+    PopupButtonSize = 11;
+    PopupValueSize = 12;
+    PopupAltTextSize = 10;
+
+    SliderGrooveHeight = 6;
+    SliderHandleWidth = 16;
+    SliderHandleMargin = -5;
+    SliderBorderRadius = 3;
+    SliderHandleRadius = 8;
+    SliderValueLabelWidth = 40;
+
+    DialogMargin = 20;
+    TabListWidth = 150;
+    InputFieldWidthSmall = 100;
+    InputFieldWidthMedium = 120;
+    CheckboxSize = 18;
+    PaddingSmall = 6;
+    PaddingMedium = 10;
+    PaddingLarge = 15;
+}
+
+void applyCompactDimensions() {
+    using namespace K4Styles::Dimensions;
+
+    BorderWidth = 1;
+    BorderRadius = 5;
+    BorderRadiusLarge = 6;
+
+    ShadowRadius = 10;
+    ShadowOffsetX = 1;
+    ShadowOffsetY = 2;
+    ShadowMargin = ShadowRadius + 4;
+    ShadowLayers = 6;
+
+    ButtonHeightLarge = 34;
+    ButtonHeightMedium = 30;
+    ButtonHeightSmall = 24;
+    ButtonHeightMini = 22;
+
+    PopupButtonWidth = 58;
+    PopupButtonHeight = 34;
+    PopupButtonSpacing = 4;
+    MenuBarButtonWidth = 68;
+    PopupContentMargin = 8;
+
+    MenuItemHeight = 32;
+    MenuBarHeight = 42;
+
+    VfoSquareSize = 38;
+    NavButtonWidth = 42;
+    SidePanelWidth = 82;
+    MemoryButtonWidth = 34;
+
+    CenterPanelWidth = 250;
+    VfoColumnWidth = 215;
+    VfoContentHeight = 120;
+    VfoMeterWidth = 205;
+    SpectrumMinHeight = 180;
+    VfoIndicatorBadgeWidth = 28;
+    VfoIndicatorBadgeHeight = 24;
+
+    VfoSquareWidgetSize = 24;
+    VfoSquareWidgetTotalHeight = 32;
+    VfoRowHeight = 52;
+    VfoSubDivLabelWidth = 28;
+    VfoSubDivLabelHeight = 12;
+
+    FontSizeTiny = 6;
+    FontSizeSmall = 7;
+    FontSizeNormal = 8;
+    FontSizeMedium = 9;
+    FontSizeLarge = 10;
+    FontSizeButton = 10;
+    FontSizePopup = 12;
+    FontSizeTitle = 13;
+    FontSizeFrequency = 24;
+
+    PopupTitleSize = 10;
+    PopupButtonSize = 9;
+    PopupValueSize = 10;
+    PopupAltTextSize = 9;
+
+    // Phone touch targets: make horizontal sliders easier to drag with thumb
+    SliderGrooveHeight = 9;
+    SliderHandleWidth = 24;
+    SliderHandleMargin = -8;
+    SliderBorderRadius = 4;
+    SliderHandleRadius = 12;
+    SliderValueLabelWidth = 32;
+
+    DialogMargin = 12;
+    TabListWidth = 120;
+    InputFieldWidthSmall = 84;
+    InputFieldWidthMedium = 96;
+    CheckboxSize = 16;
+    PaddingSmall = 4;
+    PaddingMedium = 6;
+    PaddingLarge = 10;
+}
 } // anonymous namespace
 
 namespace K4Styles {
+
+void configureForScreen(const QSize &availableSize, qreal devicePixelRatio, qreal physicalDiagonalInches,
+                        bool forceCompact) {
+    applyDefaultDimensions();
+
+    bool forceCompactEnvOk = false;
+    bool forceRegularEnvOk = false;
+    const int forceCompactEnv = qEnvironmentVariableIntValue("QK4_FORCE_COMPACT_UI", &forceCompactEnvOk);
+    const int forceRegularEnv = qEnvironmentVariableIntValue("QK4_FORCE_REGULAR_UI", &forceRegularEnvOk);
+    const bool forceCompactByEnv = forceCompactEnvOk && forceCompactEnv > 0;
+    const bool forceRegularByEnv = forceRegularEnvOk && forceRegularEnv > 0;
+
+    const int shortEdge = std::min(availableSize.width(), availableSize.height());
+    const int longEdge = std::max(availableSize.width(), availableSize.height());
+    const int nativeShortEdge = qRound(static_cast<qreal>(shortEdge) * qMax<qreal>(1.0, devicePixelRatio));
+
+    const bool logicalPhone = (shortEdge <= 540) || (shortEdge <= 700 && longEdge <= 1200);
+    const bool densePhone = (shortEdge <= 900 && nativeShortEdge <= 1300 && longEdge <= 2600);
+    const bool physicalPhone = (physicalDiagonalInches > 0.0 && physicalDiagonalInches <= 7.2);
+
+    bool useCompact = forceCompact || forceCompactByEnv || logicalPhone || densePhone || physicalPhone;
+    if (forceRegularByEnv) {
+        useCompact = false;
+    }
+
+    g_compactLayout = useCompact;
+    if (useCompact) {
+        applyCompactDimensions();
+    }
+}
+
+bool isCompactLayout() {
+    return g_compactLayout;
+}
 
 QString popupButtonNormal() {
     return QString(R"(

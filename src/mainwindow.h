@@ -305,6 +305,7 @@ private:
     ModePopupWidget *m_modePopup;
 
     RadioEntry m_currentRadio;
+    TcpClient::ConnectionState m_connectionState = TcpClient::Disconnected;
     int m_currentBandNum = -1;  // Current band number for VFO A (BN command)
     int m_currentBandNumB = -1; // Current band number for VFO B (BN$ command)
 

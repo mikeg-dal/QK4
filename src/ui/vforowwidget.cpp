@@ -7,8 +7,8 @@
 
 VfoSquareWidget::VfoSquareWidget(const QString &text, const QColor &color, QWidget *parent)
     : QWidget(parent), m_text(text), m_color(color) {
-    // Size: 30 wide x 40 high (30 for square + 10 for arc space at top)
-    setFixedSize(30, 40);
+    // Size includes square + lock-arc headroom
+    setFixedSize(K4Styles::Dimensions::VfoSquareWidgetSize, K4Styles::Dimensions::VfoSquareWidgetTotalHeight);
     setCursor(Qt::PointingHandCursor);
 }
 
@@ -23,8 +23,8 @@ void VfoSquareWidget::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    const int arcHeight = 10; // Space reserved for lock arc at top
-    const int squareSize = 30;
+    const int squareSize = K4Styles::Dimensions::VfoSquareWidgetSize;
+    const int arcHeight = qMax(0, K4Styles::Dimensions::VfoSquareWidgetTotalHeight - squareSize);
     const int borderRadius = 4;
 
     // Draw the rounded square (offset down by arcHeight)
@@ -36,7 +36,7 @@ void VfoSquareWidget::paintEvent(QPaintEvent *) {
     // Draw "A" or "B" text
     p.setPen(QColor(K4Styles::Colors::DarkBackground));
     QFont font;
-    font.setPixelSize(16);
+    font.setPixelSize(K4Styles::Dimensions::FontSizeTitle);
     font.setBold(true);
     p.setFont(font);
     p.drawText(squareRect, Qt::AlignCenter, m_text);
@@ -61,9 +61,7 @@ void VfoSquareWidget::paintEvent(QPaintEvent *) {
 
 VfoRowWidget::VfoRowWidget(QWidget *parent) : QWidget(parent) {
     setupWidgets();
-    // Set fixed height to match content (A/B squares + mode labels)
-    // Increased from 55 to 65 to accommodate lock arc
-    setFixedHeight(65);
+    setFixedHeight(K4Styles::Dimensions::VfoRowHeight);
 }
 
 void VfoRowWidget::setLockA(bool locked) {
@@ -165,7 +163,7 @@ void VfoRowWidget::setupWidgets() {
 
     m_subLabel = new QLabel("SUB", m_subDivContainer);
     m_subLabel->setAlignment(Qt::AlignCenter);
-    m_subLabel->setFixedSize(36, 14);
+    m_subLabel->setFixedSize(K4Styles::Dimensions::VfoSubDivLabelWidth, K4Styles::Dimensions::VfoSubDivLabelHeight);
     m_subLabel->setStyleSheet(QString("background-color: %1;"
                                       "color: %2;"
                                       "font-size: %3px;"
@@ -178,7 +176,7 @@ void VfoRowWidget::setupWidgets() {
 
     m_divLabel = new QLabel("DIV", m_subDivContainer);
     m_divLabel->setAlignment(Qt::AlignCenter);
-    m_divLabel->setFixedSize(36, 14);
+    m_divLabel->setFixedSize(K4Styles::Dimensions::VfoSubDivLabelWidth, K4Styles::Dimensions::VfoSubDivLabelHeight);
     m_divLabel->setStyleSheet(QString("background-color: %1;"
                                       "color: %2;"
                                       "font-size: %3px;"
@@ -209,12 +207,12 @@ void VfoRowWidget::positionWidgets() {
     m_txContainer->move(centerX - txWidth / 2, txY);
 
     // A container - left of TX with gap
-    int gap = 15;
+    int gap = K4Styles::Dimensions::PaddingLarge;
     m_vfoAContainer->move(centerX - txWidth / 2 - gap - m_vfoAContainer->width(), y);
 
     // B container - right of TX with gap (symmetric with A)
     m_vfoBContainer->move(centerX + txWidth / 2 + gap, y);
 
     // SUB/DIV - to right of B (doesn't affect centering), offset down to align
-    m_subDivContainer->move(m_vfoBContainer->x() + m_vfoBContainer->width() + 10, txY);
+    m_subDivContainer->move(m_vfoBContainer->x() + m_vfoBContainer->width() + K4Styles::Dimensions::PaddingMedium, txY);
 }

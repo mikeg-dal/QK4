@@ -1,6 +1,72 @@
 #include "kpoddevice.h"
-#include <hidapi/hidapi.h>
 #include <QDebug>
+
+#ifdef Q_OS_ANDROID
+
+KpodDevice::KpodDevice(QObject *parent)
+    : QObject(parent), m_hidDevice(nullptr), m_pollTimer(new QTimer(this)), m_lastRockerPosition(RockerCenter) {
+    m_deviceInfo.detected = false;
+}
+
+KpodDevice::~KpodDevice() {
+    stopPolling();
+    teardownHotplugMonitoring();
+}
+
+bool KpodDevice::isDetected() const {
+    return false;
+}
+
+KpodDeviceInfo KpodDevice::deviceInfo() const {
+    return m_deviceInfo;
+}
+
+bool KpodDevice::startPolling() {
+    emit pollError("K-Pod is not supported on Android builds.");
+    return false;
+}
+
+void KpodDevice::stopPolling() {
+    if (m_pollTimer) {
+        m_pollTimer->stop();
+    }
+}
+
+bool KpodDevice::isPolling() const {
+    return false;
+}
+
+KpodDevice::RockerPosition KpodDevice::rockerPosition() const {
+    return RockerCenter;
+}
+
+bool KpodDevice::openDevice() {
+    return false;
+}
+
+void KpodDevice::closeDevice() {}
+
+void KpodDevice::poll() {}
+
+void KpodDevice::processResponse(const unsigned char *) {}
+
+KpodDeviceInfo KpodDevice::detectDevice() {
+    return KpodDeviceInfo{};
+}
+
+void KpodDevice::setupHotplugMonitoring() {}
+
+void KpodDevice::teardownHotplugMonitoring() {}
+
+void KpodDevice::checkDevicePresence() {}
+
+void KpodDevice::onDeviceArrived() {}
+
+void KpodDevice::onDeviceRemoved() {}
+
+#else
+
+#include <hidapi/hidapi.h>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -556,3 +622,5 @@ void KpodDevice::onDeviceRemoved() {
     // Emit signal for UI update
     emit deviceDisconnected();
 }
+
+#endif

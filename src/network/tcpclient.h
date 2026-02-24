@@ -46,6 +46,7 @@ private slots:
     void onSocketError(QAbstractSocket::SocketError error);
     void onSslErrors(const QList<QSslError> &errors);
     void onPreSharedKeyAuthenticationRequired(QSslPreSharedKeyAuthenticator *authenticator);
+    void onConnectTimeout();
     void onAuthTimeout();
     void onPingTimer();
     void onCatResponse(const QString &response);
@@ -58,6 +59,7 @@ private:
 
     QSslSocket *m_socket;
     Protocol *m_protocol;
+    QTimer *m_connectTimer;
     QTimer *m_authTimer;
     QTimer *m_pingTimer;
 

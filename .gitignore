@@ -17,6 +17,12 @@ __pycache__/
 
 # Build artifacts
 /build/
+/build-host/
+/build-android-arm64/
+/build-android-arm64-release/
+/build-android-*/
+*.apk
+*.aab
 *.o
 *.d
 *.a

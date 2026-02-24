@@ -13,6 +13,7 @@ A cross-platform desktop application for remote control of Elecraft K4 radios ov
 | macOS | 14 (Sonoma) | Apple Silicon (M1/M2/M3/M4) |
 | Windows | 11 | x64 |
 | Linux | Debian Trixie / Ubuntu 24.04+ | ARM64 (Raspberry Pi 4/5) |
+| Android | 10+ | ARM64 (tablet/phone) |
 
 ## Features
 
@@ -32,6 +33,12 @@ A cross-platform desktop application for remote control of Elecraft K4 radios ov
 
 Pre-built releases are available on the [Releases](https://github.com/mikeg-dal/QK4/releases) page.
 
+| Platform | Download | Notes |
+|----------|----------|-------|
+| macOS | [QK4-macos.dmg](https://github.com/mikeg-dal/QK4/releases/download/v0.4.0-beta.3/QK4-macos.dmg) | Signed and notarized — open the DMG and drag to Applications |
+| Windows | [QK4-windows.zip](https://github.com/mikeg-dal/QK4/releases/download/v0.4.0-beta.3/QK4-windows.zip) | Extract and run `QK4.exe` |
+| Raspberry Pi | [QK4-raspberry-pi-arm64.tar.gz](https://github.com/mikeg-dal/QK4/releases/download/v0.4.0-beta.3/QK4-raspberry-pi-arm64.tar.gz) | Extract and run `./QK4/run.sh` |
+| Android | Build from source | No prebuilt APK published yet |
 
 ### Windows Prerequisite
 
@@ -115,6 +122,94 @@ cmake --build build -j$(nproc)
 # Run
 ./build/QK4
 ```
+
+### Android (Real Tablet / Phone)
+
+Android builds use Qt for Android and produce an APK.
+
+Run all commands from a normal shell (`Terminal.app` or VS Code integrated terminal).
+Android Studio is optional; it is only needed to install/manage SDK/NDK/JDK components.
+
+#### Prerequisites
+
+- Qt 6.7+ with Android kit installed (including `qt-cmake`)
+- Android SDK + NDK + platform tools (`adb`)
+- Java 17+
+- Opus library for Android ABI (`arm64-v8a`) and matching headers
+  - If auto-discovery fails, pass:
+    - `-DQK4_OPUS_INCLUDE_DIR=/path/to/opus/include`
+    - `-DQK4_OPUS_LIBRARY=/path/to/libopus.so` (or `.a`)
+
+#### Build APK
+
+```bash
+# One-time shell setup (adjust if your SDK/Qt paths differ)
+export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
+export ANDROID_NDK_ROOT="$(find "$ANDROID_SDK_ROOT/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+export QT_HOST_PATH="$HOME/Qt/6.10.2/macos"
+export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
+
+# Java check (required for APK packaging)
+java -version
+
+# Configure (default is DEBUG deployment, signed for direct adb install)
+"$HOME/Qt/6.10.2/android_arm64_v8a/bin/qt-cmake" -S . -B build-android-arm64 \
+  -DQT_HOST_PATH="$QT_HOST_PATH" \
+  -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
+  -DANDROID_NDK_ROOT="$ANDROID_NDK_ROOT" \
+  -DQT_CHAINLOAD_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
+  -DQK4_ANDROID_DEPLOYMENT_TYPE=DEBUG \
+  -DANDROID_ABI=arm64-v8a \
+  -DANDROID_PLATFORM=android-26 \
+  -DCMAKE_BUILD_TYPE=Release
+
+"$HOME/Qt/6.10.2/android_arm64_v8a/bin/qt-cmake" \
+  --build build-android-arm64 --target apk --parallel
+```
+
+#### Release Signing (Production)
+
+For production, configure release signing credentials before running CMake:
+
+```bash
+export QT_ANDROID_KEYSTORE_PATH="/absolute/path/to/your-release.keystore"
+export QT_ANDROID_KEYSTORE_ALIAS="your_alias"
+export QT_ANDROID_KEYSTORE_STORE_PASS="your_keystore_password"
+export QT_ANDROID_KEYSTORE_KEY_PASS="your_key_password"
+
+"$HOME/Qt/6.10.2/android_arm64_v8a/bin/qt-cmake" -S . -B build-android-arm64-release \
+  -DQT_HOST_PATH="$QT_HOST_PATH" \
+  -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
+  -DANDROID_NDK_ROOT="$ANDROID_NDK_ROOT" \
+  -DQT_CHAINLOAD_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
+  -DQK4_ANDROID_DEPLOYMENT_TYPE=RELEASE \
+  -DANDROID_ABI=arm64-v8a \
+  -DANDROID_PLATFORM=android-26 \
+  -DCMAKE_BUILD_TYPE=Release
+
+"$HOME/Qt/6.10.2/android_arm64_v8a/bin/qt-cmake" \
+  --build build-android-arm64-release --target apk --parallel
+```
+
+#### Install on Device
+
+```bash
+# Verify device is connected (USB debugging enabled)
+adb devices
+
+# Locate APK (path may vary by Qt/CMake version)
+find build-android-arm64 -name "*.apk" -print
+
+# Install/upgrade
+adb install -r <path-to-apk>
+```
+
+#### Android Notes
+
+- On first launch, grant microphone permission for TX audio.
+- K-Pod and HaliKey hardware integrations are currently unavailable on Android.
+- Connect tablet and K4 to the same LAN; then use Radio Manager as on desktop.
+- `INSTALL_PARSE_FAILED_NO_CERTIFICATES` means the APK is unsigned; use `-DQK4_ANDROID_DEPLOYMENT_TYPE=DEBUG` for local installs or configure release signing env vars.
 
 ## Usage
 

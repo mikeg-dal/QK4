@@ -29,8 +29,8 @@ void SideControlPanel::setupUi() {
     // ===== TX Function Buttons (2x3 grid) =====
     auto *txGrid = new QGridLayout();
     txGrid->setContentsMargins(0, 0, 0, 0);
-    txGrid->setHorizontalSpacing(4);
-    txGrid->setVerticalSpacing(8);
+    txGrid->setHorizontalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+    txGrid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
 
     // Row 0: TUNE, XMIT
     txGrid->addWidget(createTxFunctionButton("TUNE", "TUNE LP", m_tuneBtn), 0, 0);
@@ -64,7 +64,7 @@ void SideControlPanel::setupUi() {
     m_rxAntBtn->installEventFilter(this);
 
     // ===== Spacing after TX buttons =====
-    layout->addSpacing(16);
+    layout->addSpacing(K4Styles::Dimensions::PaddingLarge);
 
     // ===== Group 1: Global (CW/Power) - Orange bar =====
     m_wpmBtn = new DualControlButton(this);
@@ -86,7 +86,7 @@ void SideControlPanel::setupUi() {
     layout->addWidget(m_pwrBtn);
 
     // ===== Spacing between groups =====
-    layout->addSpacing(16);
+    layout->addSpacing(K4Styles::Dimensions::PaddingLarge);
 
     // ===== Group 2: Filter (BW/Shift) - Cyan bar - LINKED PAIR =====
     m_bwBtn = new DualControlButton(this);
@@ -108,7 +108,7 @@ void SideControlPanel::setupUi() {
     layout->addWidget(m_shiftBtn);
 
     // ===== Spacing between groups =====
-    layout->addSpacing(16);
+    layout->addSpacing(K4Styles::Dimensions::PaddingLarge);
 
     // ===== Group 3: RF/Squelch =====
     m_mainRfBtn = new DualControlButton(this);
@@ -130,14 +130,14 @@ void SideControlPanel::setupUi() {
     layout->addWidget(m_subSqlBtn);
 
     // ===== MON/NORM/BAL Buttons =====
-    layout->addSpacing(10);
+    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
 
     // Wrap in container widget for proper layout sizing
     auto *swBtnContainer = new QWidget(this);
     swBtnContainer->setFixedHeight(K4Styles::Dimensions::ButtonHeightMini);
     auto *swBtnRow = new QHBoxLayout(swBtnContainer);
     swBtnRow->setContentsMargins(0, 0, 0, 0);
-    swBtnRow->setSpacing(2);
+    swBtnRow->setSpacing(K4Styles::Dimensions::SeparatorHeight + 1);
 
     m_monBtn = new QPushButton("MON", swBtnContainer);
     m_monBtn->setStyleSheet(K4Styles::compactButton());
@@ -190,7 +190,7 @@ void SideControlPanel::setupUi() {
     connect(m_balOverlay, &BalOverlay::balanceChangeRequested, this, &SideControlPanel::balChangeRequested);
 
     // ===== Volume Slider =====
-    layout->addSpacing(10);
+    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
 
     m_volumeLabel = new QLabel("MAIN", this);
     m_volumeLabel->setStyleSheet(
@@ -201,6 +201,7 @@ void SideControlPanel::setupUi() {
     m_volumeSlider = new QSlider(Qt::Horizontal, this);
     m_volumeSlider->setRange(0, 100);
     m_volumeSlider->setValue(RadioSettings::instance()->volume()); // Restore from settings (default 45%)
+    m_volumeSlider->setMinimumHeight(K4Styles::isCompactLayout() ? 32 : 24);
     m_volumeSlider->setStyleSheet(
         K4Styles::sliderHorizontal(K4Styles::Colors::DarkBackground, K4Styles::Colors::VfoACyan));
     layout->addWidget(m_volumeSlider);
@@ -208,7 +209,7 @@ void SideControlPanel::setupUi() {
     connect(m_volumeSlider, &QSlider::valueChanged, this, &SideControlPanel::volumeChanged);
 
     // ===== Sub RX Volume Slider (VFO B) =====
-    layout->addSpacing(6);
+    layout->addSpacing(K4Styles::Dimensions::PaddingSmall);
 
     m_subVolumeLabel = new QLabel("SUB", this);
     m_subVolumeLabel->setStyleSheet(
@@ -219,6 +220,7 @@ void SideControlPanel::setupUi() {
     m_subVolumeSlider = new QSlider(Qt::Horizontal, this);
     m_subVolumeSlider->setRange(0, 100);
     m_subVolumeSlider->setValue(RadioSettings::instance()->subVolume()); // Restore from settings (default 45%)
+    m_subVolumeSlider->setMinimumHeight(K4Styles::isCompactLayout() ? 32 : 24);
     m_subVolumeSlider->setStyleSheet(
         K4Styles::sliderHorizontal(K4Styles::Colors::DarkBackground, K4Styles::Colors::VfoBGreen));
     layout->addWidget(m_subVolumeSlider);
@@ -251,10 +253,10 @@ void SideControlPanel::setupUi() {
 
     m_helpBtn = createIconButton("");
     m_helpBtn->setIcon(QIcon(":/icons/help.svg"));
-    m_helpBtn->setIconSize(QSize(24, 24));
+    m_helpBtn->setIconSize(QSize(K4Styles::Dimensions::ButtonHeightMini, K4Styles::Dimensions::ButtonHeightMini));
     m_connectBtn = createIconButton("");
     m_connectBtn->setIcon(QIcon(":/icons/globe.svg"));
-    m_connectBtn->setIconSize(QSize(24, 24));
+    m_connectBtn->setIconSize(QSize(K4Styles::Dimensions::ButtonHeightMini, K4Styles::Dimensions::ButtonHeightMini));
     m_connectBtn->setToolTip("Connect to Radio");
 
     iconRow->addWidget(m_helpBtn);
@@ -611,7 +613,7 @@ void SideControlPanel::setCurrent(double amps) {
 
 QPushButton *SideControlPanel::createIconButton(const QString &text) {
     auto *btn = new QPushButton(text, this);
-    btn->setFixedSize(32, 32); // Small square buttons
+    btn->setFixedSize(K4Styles::Dimensions::ButtonHeightMedium, K4Styles::Dimensions::ButtonHeightMedium);
     btn->setCursor(Qt::PointingHandCursor);
     btn->setStyleSheet(K4Styles::sidePanelButton());
     return btn;
@@ -622,8 +624,8 @@ QWidget *SideControlPanel::createTxFunctionButton(const QString &mainText, const
     // Container widget for button + sub-text label
     auto *container = new QWidget(this);
     auto *layout = new QVBoxLayout(container);
-    layout->setContentsMargins(0, 2, 0, 2);
-    layout->setSpacing(5);
+    layout->setContentsMargins(0, K4Styles::Dimensions::SeparatorHeight + 1, 0, K4Styles::Dimensions::SeparatorHeight + 1);
+    layout->setSpacing(K4Styles::Dimensions::PaddingSmall);
 
     // Button - scaled down from bottom menu bar style
     auto *btn = new QPushButton(mainText, container);
@@ -635,7 +637,9 @@ QWidget *SideControlPanel::createTxFunctionButton(const QString &mainText, const
 
     // Sub-text label (orange) - add top margin to prevent overlap with button
     auto *subLabel = new QLabel(subText, container);
-    subLabel->setStyleSheet(QString("color: %1; font-size: 8px; margin-top: 4px;").arg(K4Styles::Colors::AccentAmber));
+    subLabel->setStyleSheet(QString("color: %1; font-size: %2px; margin-top: 2px;")
+                                .arg(K4Styles::Colors::AccentAmber)
+                                .arg(K4Styles::Dimensions::FontSizeSmall));
     subLabel->setAlignment(Qt::AlignCenter);
     subLabel->setFixedHeight(K4Styles::Dimensions::PopupContentMargin);
     layout->addWidget(subLabel);
