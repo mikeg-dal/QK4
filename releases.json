@@ -1,26 +1,26 @@
 {
-  "tag": "v0.4.0-beta.8",
-  "version": "0.4.0-beta.8",
-  "date": "2026-02-24",
+  "tag": "v0.4.0-beta.9",
+  "version": "0.4.0-beta.9",
+  "date": "2026-02-25",
   "prerelease": true,
   "assets": {
     "macos": {
       "name": "QK4-macos.dmg",
-      "url": "./downloads/v0.4.0-beta.8/QK4-macos.dmg",
+      "url": "./downloads/v0.4.0-beta.9/QK4-macos.dmg",
       "size": "43M",
-      "sha256": "47ba2df59fe42ec287134043ac5f99e5bea6354a0f2341dc6744c49724a12a6d"
+      "sha256": "51698f3ec9b755929e7a485d71ab30db0f5c22b390ecf404be9c66f74eeb25ff"
     },
     "windows": {
       "name": "QK4-windows.zip",
-      "url": "./downloads/v0.4.0-beta.8/QK4-windows.zip",
+      "url": "./downloads/v0.4.0-beta.9/QK4-windows.zip",
       "size": "64M",
-      "sha256": "6587a6ea5c4761c42d11dad64e230295142732af8d1f5683127e8080876e682c"
+      "sha256": "73f1c7665a9e9446ee2a48a08e221f5f76cf345293b51cee37f690650e3099a5"
     },
     "raspberry-pi": {
       "name": "QK4-raspberry-pi-arm64.tar.gz",
-      "url": "./downloads/v0.4.0-beta.8/QK4-raspberry-pi-arm64.tar.gz",
+      "url": "./downloads/v0.4.0-beta.9/QK4-raspberry-pi-arm64.tar.gz",
       "size": "22M",
-      "sha256": "3c0619fa3c3e83366dca8c6b71a9e500e10f3bc3ca954ab4b67f6c66df6be65d"
+      "sha256": "4605412ec16effaa1f988c616422e782d96755be679f78d45e76723c518162ed"
     }
   }
 }
