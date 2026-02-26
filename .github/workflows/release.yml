@@ -401,11 +401,18 @@ jobs:
 
           Compress-Archive -Path QK4-windows -DestinationPath QK4-windows.zip
 
-      - name: Upload artifact
+      - name: Build installer
+        shell: cmd
+        run: |
+          "C:\Program Files (x86)\NSIS\makensis.exe" /DAPPVERSION=${{ steps.version.outputs.version }} installer\qk4.nsi
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: QK4-windows
-          path: QK4-windows.zip
+          path: |
+            QK4-windows.zip
+            QK4-${{ steps.version.outputs.version }}-Setup.exe
 
   build-raspberry-pi:
     runs-on: ubuntu-24.04
@@ -490,6 +497,7 @@ jobs:
           files: |
             QK4-macos.dmg
             QK4-windows.zip
+            QK4-*-Setup.exe
             QK4-raspberry-pi-arm64.tar.gz
           body_path: release_notes.md
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
@@ -533,16 +541,22 @@ jobs:
           mkdir -p "downloads/$TAG"
           cp artifacts/macos/QK4-macos.dmg "downloads/$TAG/"
           cp artifacts/windows/QK4-windows.zip "downloads/$TAG/"
+          cp artifacts/windows/QK4-*-Setup.exe "downloads/$TAG/"
           cp artifacts/raspberry-pi/QK4-raspberry-pi-arm64.tar.gz "downloads/$TAG/"
+
+          # Resolve installer filename
+          WIN_SETUP_NAME=$(basename artifacts/windows/QK4-*-Setup.exe)
 
           # Compute human-readable sizes
           SZ_MAC=$(du -h "downloads/$TAG/QK4-macos.dmg" | cut -f1 | xargs)
           SZ_WIN=$(du -h "downloads/$TAG/QK4-windows.zip" | cut -f1 | xargs)
+          SZ_WIN_SETUP=$(du -h "downloads/$TAG/$WIN_SETUP_NAME" | cut -f1 | xargs)
           SZ_PI=$(du -h "downloads/$TAG/QK4-raspberry-pi-arm64.tar.gz" | cut -f1 | xargs)
 
           # Compute SHA256 hashes
           HASH_MAC=$(sha256sum "downloads/$TAG/QK4-macos.dmg" | cut -d' ' -f1)
           HASH_WIN=$(sha256sum "downloads/$TAG/QK4-windows.zip" | cut -d' ' -f1)
+          HASH_WIN_SETUP=$(sha256sum "downloads/$TAG/$WIN_SETUP_NAME" | cut -d' ' -f1)
           HASH_PI=$(sha256sum "downloads/$TAG/QK4-raspberry-pi-arm64.tar.gz" | cut -d' ' -f1)
 
           # Detect prerelease
@@ -571,6 +585,12 @@ jobs:
                 "url": "./downloads/$TAG/QK4-windows.zip",
                 "size": "$SZ_WIN",
                 "sha256": "$HASH_WIN"
+              },
+              "windows-installer": {
+                "name": "$WIN_SETUP_NAME",
+                "url": "./downloads/$TAG/$WIN_SETUP_NAME",
+                "size": "$SZ_WIN_SETUP",
+                "sha256": "$HASH_WIN_SETUP"
               },
               "raspberry-pi": {
                 "name": "QK4-raspberry-pi-arm64.tar.gz",
