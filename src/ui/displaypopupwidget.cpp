@@ -795,18 +795,21 @@ void DisplayPopupWidget::onMenuItemClicked(MenuItem item) {
     // Emit CAT commands based on menu item
     switch (item) {
     case PanWaterfall: {
-        // Cycle DPM: 0 → 1 → 2 → 0 (use current mode based on LCD/EXT selection)
+        // Cycle DPM: 0 → 1 → 2 → 3 → 0 (mode 3 = A+B Alt, QK4-only)
         int currentMode = (m_extEnabled && !m_lcdEnabled) ? m_dualPanModeExt : m_dualPanModeLcd;
         if (currentMode < 0)
             currentMode = 0; // Handle uninitialized state
-        int newMode = (currentMode + 1) % 3;
+        int newMode = (currentMode + 1) % 4;
 
-        // Send CAT command to radio
-        if (m_lcdEnabled) {
-            emit catCommandRequested(QString("#DPM%1;").arg(newMode));
-        }
-        if (m_extEnabled) {
-            emit catCommandRequested(QString("#HDPM%1;").arg(newMode));
+        // Send CAT command to radio (skip for mode 3 = A+B Alt, locally significant)
+        if (newMode != 3) {
+            int k4Mode = newMode; // 0, 1, 2 map directly to K4 #DPM values
+            if (m_lcdEnabled) {
+                emit catCommandRequested(QString("#DPM%1;").arg(k4Mode));
+            }
+            if (m_extEnabled) {
+                emit catCommandRequested(QString("#HDPM%1;").arg(k4Mode));
+            }
         }
 
         // Update local state immediately (K4 doesn't echo #DPM commands)
@@ -829,6 +832,7 @@ void DisplayPopupWidget::onMenuItemClicked(MenuItem item) {
             m_vfoBEnabled = true;
             break;
         case 2: // Dual (A+B)
+        case 3: // Dual Alt (A+B stacked)
             m_vfoAEnabled = true;
             m_vfoBEnabled = true;
             break;
@@ -1229,6 +1233,9 @@ void DisplayPopupWidget::updateMenuButtonLabels() {
         break;
     case 2:
         panText = "PAN = A+B";
+        break;
+    case 3:
+        panText = "PAN = A/B";
         break;
     default:
         panText = "PAN = A";

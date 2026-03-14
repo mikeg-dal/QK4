@@ -61,7 +61,7 @@ class MainWindow : public QMainWindow {
 
 public:
     // Panadapter display modes
-    enum class PanadapterMode { MainOnly, Dual, SubOnly };
+    enum class PanadapterMode { MainOnly, Dual, SubOnly, DualAlt };
 
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
@@ -279,6 +279,7 @@ private:
 
     // Panadapter display mode
     PanadapterMode m_panadapterMode = PanadapterMode::MainOnly;
+    bool m_dualAltActive = false; // Track A+B Alt mode (QK4-only, locally significant)
 
     // Control panels (L-shaped layout)
     SideControlPanel *m_sideControlPanel;

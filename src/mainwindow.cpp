@@ -208,8 +208,11 @@ MainWindow::MainWindow(QWidget *parent)
         case 1: // B only
             setPanadapterMode(PanadapterMode::SubOnly);
             break;
-        case 2: // Dual (A+B)
+        case 2: // Dual (A+B) side-by-side
             setPanadapterMode(PanadapterMode::Dual);
+            break;
+        case 3: // Dual Alt (A+B) stacked vertically
+            setPanadapterMode(PanadapterMode::DualAlt);
             break;
         }
     });
@@ -1579,8 +1582,9 @@ MainWindow::MainWindow(QWidget *parent)
         case 1: // B only
             setPanadapterMode(PanadapterMode::SubOnly);
             break;
-        case 2: // Dual (A+B)
-            setPanadapterMode(PanadapterMode::Dual);
+        case 2: // Dual (A+B) — don't override if we're in DualAlt
+            if (!m_dualAltActive)
+                setPanadapterMode(PanadapterMode::Dual);
             break;
         }
     });
@@ -3573,8 +3577,8 @@ void MainWindow::setupSpectrumPlaceholder(QWidget *parent) {
                                            .arg(K4Styles::Colors::PanelBorder));
     m_spectrumContainer->setMinimumHeight(300);
 
-    // Use QHBoxLayout for side-by-side panadapters (Main left, Sub right)
-    auto *layout = new QHBoxLayout(m_spectrumContainer);
+    // Use QBoxLayout for panadapters (horizontal side-by-side, or vertical stacked in DualAlt)
+    auto *layout = new QBoxLayout(QBoxLayout::LeftToRight, m_spectrumContainer);
     layout->setContentsMargins(1, 1, 1, 1);
     layout->setSpacing(0);
 
@@ -5175,21 +5179,45 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
 
 void MainWindow::setPanadapterMode(PanadapterMode mode) {
     m_panadapterMode = mode;
+    m_dualAltActive = (mode == PanadapterMode::DualAlt);
+
+    // Get the box layout to switch direction
+    auto *boxLayout = qobject_cast<QBoxLayout *>(m_spectrumContainer->layout());
+
     switch (mode) {
     case PanadapterMode::MainOnly:
         m_panadapterA->show();
         m_spectrumSeparator->hide();
         m_panadapterB->hide();
+        if (boxLayout)
+            boxLayout->setDirection(QBoxLayout::LeftToRight);
         break;
     case PanadapterMode::Dual:
         m_panadapterA->show();
         m_spectrumSeparator->show();
         m_panadapterB->show();
+        if (boxLayout)
+            boxLayout->setDirection(QBoxLayout::LeftToRight);
+        m_spectrumSeparator->setFrameShape(QFrame::VLine);
+        m_spectrumSeparator->setFixedWidth(K4Styles::Dimensions::SeparatorHeight);
+        m_spectrumSeparator->setMaximumHeight(QWIDGETSIZE_MAX);
         break;
     case PanadapterMode::SubOnly:
         m_panadapterA->hide();
         m_spectrumSeparator->hide();
         m_panadapterB->show();
+        if (boxLayout)
+            boxLayout->setDirection(QBoxLayout::LeftToRight);
+        break;
+    case PanadapterMode::DualAlt:
+        m_panadapterA->show();
+        m_spectrumSeparator->show();
+        m_panadapterB->show();
+        if (boxLayout)
+            boxLayout->setDirection(QBoxLayout::TopToBottom);
+        m_spectrumSeparator->setFrameShape(QFrame::HLine);
+        m_spectrumSeparator->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+        m_spectrumSeparator->setMaximumWidth(QWIDGETSIZE_MAX);
         break;
     }
 }
