@@ -2,6 +2,7 @@
 #include "halikeymidiworker.h"
 #include "halikeyv14worker.h"
 #include "halikeyworkerbase.h"
+#include "iambickeyer.h" // for cwChainMs()
 #include "../settings/radiosettings.h"
 #include <QDebug>
 #include <RtMidi.h>
@@ -14,6 +15,7 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
     connect(m_ditDebounceTimer, &QTimer::timeout, this, [this]() {
         if (m_rawDitState != m_confirmedDitState) {
             m_confirmedDitState = m_rawDitState;
+            qDebug("[CW %10.3f] DEBOUNCE dit=%s", cwChainMs(), m_confirmedDitState ? "DOWN" : "UP");
             emit ditStateChanged(m_confirmedDitState);
         }
     });
@@ -24,6 +26,7 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
     connect(m_dahDebounceTimer, &QTimer::timeout, this, [this]() {
         if (m_rawDahState != m_confirmedDahState) {
             m_confirmedDahState = m_rawDahState;
+            qDebug("[CW %10.3f] DEBOUNCE dah=%s", cwChainMs(), m_confirmedDahState ? "DOWN" : "UP");
             emit dahStateChanged(m_confirmedDahState);
         }
     });
@@ -46,13 +49,14 @@ HalikeyDevice::~HalikeyDevice() {
 void HalikeyDevice::onRawDit(bool pressed) {
     m_rawDitState = pressed;
     if (pressed && !m_confirmedDitState) {
-        // Key down — emit immediately for zero latency
+        // Key down — emit immediately for zero latency (runs on RtMidi thread)
         m_confirmedDitState = true;
-        m_ditDebounceTimer->stop();
+        QMetaObject::invokeMethod(m_ditDebounceTimer, "stop", Qt::QueuedConnection);
+        qDebug("[CW %10.3f] HALIKEY dit=DOWN (immediate)", cwChainMs());
         emit ditStateChanged(true);
     } else {
-        // Key up or redundant key down — debounce
-        m_ditDebounceTimer->start();
+        // Key up or redundant key down — post debounce start to main thread (QTimer not thread-safe)
+        QMetaObject::invokeMethod(m_ditDebounceTimer, "start", Qt::QueuedConnection);
     }
 }
 
@@ -60,10 +64,11 @@ void HalikeyDevice::onRawDah(bool pressed) {
     m_rawDahState = pressed;
     if (pressed && !m_confirmedDahState) {
         m_confirmedDahState = true;
-        m_dahDebounceTimer->stop();
+        QMetaObject::invokeMethod(m_dahDebounceTimer, "stop", Qt::QueuedConnection);
+        qDebug("[CW %10.3f] HALIKEY dah=DOWN (immediate)", cwChainMs());
         emit dahStateChanged(true);
     } else {
-        m_dahDebounceTimer->start();
+        QMetaObject::invokeMethod(m_dahDebounceTimer, "start", Qt::QueuedConnection);
     }
 }
 
@@ -71,10 +76,10 @@ void HalikeyDevice::onRawPtt(bool pressed) {
     m_rawPttState = pressed;
     if (pressed && !m_confirmedPttState) {
         m_confirmedPttState = true;
-        m_pttDebounceTimer->stop();
+        QMetaObject::invokeMethod(m_pttDebounceTimer, "stop", Qt::QueuedConnection);
         emit pttStateChanged(true);
     } else {
-        m_pttDebounceTimer->start();
+        QMetaObject::invokeMethod(m_pttDebounceTimer, "start", Qt::QueuedConnection);
     }
 }
 
@@ -103,9 +108,11 @@ bool HalikeyDevice::openPort(const QString &portName) {
     m_worker->moveToThread(m_workerThread);
 
     // Wire worker signals through debounce handlers
-    connect(m_worker, &HaliKeyWorkerBase::ditStateChanged, this, &HalikeyDevice::onRawDit);
-    connect(m_worker, &HaliKeyWorkerBase::dahStateChanged, this, &HalikeyDevice::onRawDah);
-    connect(m_worker, &HaliKeyWorkerBase::pttStateChanged, this, &HalikeyDevice::onRawPtt);
+    // DirectConnection: onRaw* runs on RtMidi callback thread for zero key-down latency.
+    // Thread safety: key-down emits immediately; key-up posts timer start to main thread via QueuedConnection.
+    connect(m_worker, &HaliKeyWorkerBase::ditStateChanged, this, &HalikeyDevice::onRawDit, Qt::DirectConnection);
+    connect(m_worker, &HaliKeyWorkerBase::dahStateChanged, this, &HalikeyDevice::onRawDah, Qt::DirectConnection);
+    connect(m_worker, &HaliKeyWorkerBase::pttStateChanged, this, &HalikeyDevice::onRawPtt, Qt::DirectConnection);
     connect(m_worker, &HaliKeyWorkerBase::portOpened, this, [this]() {
         m_connected = true;
         emit connected();

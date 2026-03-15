@@ -1881,53 +1881,98 @@ MainWindow::MainWindow(QWidget *parent)
         m_sidetoneGenerator->setKeyerSpeed(m_radioState->keyerSpeed());
     }
 
-    // Iambic keyer state machine — replaces ad-hoc repeat timers with proper
-    // iambic A/B logic, paddle reversal, and squeeze keying support
-    m_iambicKeyer = new IambicKeyer(this);
+    // Iambic keyer state machine — runs on its own HighPriority thread to
+    // isolate CW element timing from main-thread jitter (spectrum, UI paint)
+    m_iambicKeyer = new IambicKeyer(nullptr);
+    m_keyerThread = new QThread(this);
+    m_keyerThread->setObjectName("Keyer");
+    m_iambicKeyer->moveToThread(m_keyerThread);
+    m_keyerThread->start(QThread::HighPriority);
 
     // Initialize keyer from RadioState KP settings
     int initWpm = m_radioState->keyerSpeed();
     if (initWpm <= 0)
         initWpm = 20;
-    m_iambicKeyer->setSpeed(initWpm);
-    m_iambicKeyer->setMode(m_radioState->iambicMode() == 'B' ? IambicKeyer::IambicB : IambicKeyer::IambicA);
-    m_iambicKeyer->setReversed(m_radioState->paddleOrientation() == 'R');
+    QMetaObject::invokeMethod(m_iambicKeyer, "setSpeed", Qt::QueuedConnection, Q_ARG(int, initWpm));
+    QMetaObject::invokeMethod(
+        m_iambicKeyer, "setMode", Qt::QueuedConnection,
+        Q_ARG(IambicKeyer::Mode, m_radioState->iambicMode() == 'B' ? IambicKeyer::IambicB : IambicKeyer::IambicA));
+    QMetaObject::invokeMethod(m_iambicKeyer, "setReversed", Qt::QueuedConnection,
+                              Q_ARG(bool, m_radioState->paddleOrientation() == 'R'));
 
     // Update sidetone and keyer speed when WPM changes
     connect(m_radioState, &RadioState::keyerSpeedChanged, this, [this](int wpm) {
         m_sidetoneGenerator->setKeyerSpeed(wpm);
-        m_iambicKeyer->setSpeed(wpm);
+        QMetaObject::invokeMethod(m_iambicKeyer, "setSpeed", Qt::QueuedConnection, Q_ARG(int, wpm));
+        // Sync element length with K4 server
+        int ditMs = 1200 / wpm;
+        m_tcpClient->sendCAT(QString("KZL%1;").arg(ditMs, 2, 10, QChar('0')));
     });
 
     // Update keyer mode/reversal when KP settings change
     connect(m_radioState, &RadioState::keyerPaddleChanged, this, [this](QChar iambic, QChar paddle, int /*weight*/) {
-        m_iambicKeyer->setMode(iambic == 'B' ? IambicKeyer::IambicB : IambicKeyer::IambicA);
-        m_iambicKeyer->setReversed(paddle == 'R');
+        QMetaObject::invokeMethod(
+            m_iambicKeyer, "setMode", Qt::QueuedConnection,
+            Q_ARG(IambicKeyer::Mode, iambic == 'B' ? IambicKeyer::IambicB : IambicKeyer::IambicA));
+        QMetaObject::invokeMethod(m_iambicKeyer, "setReversed", Qt::QueuedConnection, Q_ARG(bool, paddle == 'R'));
     });
 
-    // Keyer element started — send CAT command + local sidetone
-    connect(m_iambicKeyer, &IambicKeyer::elementStarted, this, [this](bool isDit) {
-        m_tcpClient->sendCAT(isDit ? "KZ.;" : "KZ-;");
-        QMetaObject::invokeMethod(m_sidetoneGenerator, isDit ? "playSingleDit" : "playSingleDah", Qt::QueuedConnection);
+    // Keyer element started — send KZ command to I/O thread + sidetone to sidetone thread.
+    // Using target objects as receiver context routes signals directly to their threads,
+    // bypassing the main thread to eliminate UI-induced jitter on CW timing.
+    connect(m_iambicKeyer, &IambicKeyer::elementStarted, m_tcpClient, [tc = m_tcpClient](bool isDit) {
+        qDebug("[CW %10.3f] IO-SEND %s (thread=%s)", cwChainMs(), isDit ? "KZ." : "KZ-",
+               QThread::currentThread()->objectName().toLatin1().constData());
+        tc->sendCAT(isDit ? "KZ.;" : "KZ-;");
+    });
+    connect(m_iambicKeyer, &IambicKeyer::elementStarted, m_sidetoneGenerator, [sg = m_sidetoneGenerator](bool isDit) {
+        qDebug("[CW %10.3f] SIDETONE %s (thread=%s)", cwChainMs(), isDit ? "dit" : "dah",
+               QThread::currentThread()->objectName().toLatin1().constData());
+        isDit ? sg->playSingleDit() : sg->playSingleDah();
     });
 
     // Keyer finished — stop local sidetone (K4 unkeys itself after each KZ element)
-    connect(m_iambicKeyer, &IambicKeyer::keyingFinished, this,
-            [this]() { QMetaObject::invokeMethod(m_sidetoneGenerator, "stopElement", Qt::QueuedConnection); });
-
-    // Connect HaliKey paddle signals to iambic keyer (guarded by connection state)
-    connect(m_halikeyDevice, &HalikeyDevice::ditStateChanged, this, [this](bool pressed) {
-        if (m_tcpClient->isConnected())
-            m_iambicKeyer->setDitPaddle(pressed);
+    connect(m_iambicKeyer, &IambicKeyer::keyingFinished, m_sidetoneGenerator, [sg = m_sidetoneGenerator]() {
+        qDebug("[CW %10.3f] SIDETONE stop (thread=%s)", cwChainMs(),
+               QThread::currentThread()->objectName().toLatin1().constData());
+        sg->stopElement();
     });
-    connect(m_halikeyDevice, &HalikeyDevice::dahStateChanged, this, [this](bool pressed) {
-        if (m_tcpClient->isConnected())
-            m_iambicKeyer->setDahPaddle(pressed);
+
+    // Character boundary — keyer went idle between elements
+    connect(m_iambicKeyer, &IambicKeyer::characterSpace, m_tcpClient, [tc = m_tcpClient]() {
+        qDebug("[CW %10.3f] IO-SEND KZ_space (thread=%s)", cwChainMs(),
+               QThread::currentThread()->objectName().toLatin1().constData());
+        tc->sendCAT("KZ ;");
+    });
+
+    // Restart after pause — send KZP with elapsed ms before next element
+    connect(m_iambicKeyer, &IambicKeyer::restartAfterPause, m_tcpClient, [tc = m_tcpClient](int ms) {
+        qDebug("[CW %10.3f] IO-SEND KZP%04d (thread=%s)", cwChainMs(), ms,
+               QThread::currentThread()->objectName().toLatin1().constData());
+        tc->sendCAT(QString("KZP%1;").arg(ms, 4, 10, QChar('0')));
+    });
+
+    // Connect HaliKey paddle signals directly to keyer via DirectConnection.
+    // setDitPaddle/setDahPaddle write atomic bools immediately on the calling thread,
+    // so onTimerFired() always sees real-time paddle state with zero queue delay.
+    // They then post handlePaddleChange() to the keyer thread to wake from idle.
+    connect(m_halikeyDevice, &HalikeyDevice::ditStateChanged, m_iambicKeyer, &IambicKeyer::setDitPaddle,
+            Qt::DirectConnection);
+    connect(m_halikeyDevice, &HalikeyDevice::dahStateChanged, m_iambicKeyer, &IambicKeyer::setDahPaddle,
+            Qt::DirectConnection);
+
+    // Enable keyer when radio connects, disable on disconnect
+    connect(m_tcpClient, &TcpClient::authenticated, this, [this]() {
+        QMetaObject::invokeMethod(m_iambicKeyer, "setEnabled", Qt::QueuedConnection, Q_ARG(bool, true));
+    });
+    connect(m_tcpClient, &TcpClient::disconnected, this, [this]() {
+        QMetaObject::invokeMethod(m_iambicKeyer, "setEnabled", Qt::QueuedConnection, Q_ARG(bool, false));
     });
 
     // Stop keyer when HaliKey disconnects (prevents runaway keying
     // if paddle was held when disconnected — Note Off never arrives)
-    connect(m_halikeyDevice, &HalikeyDevice::disconnected, this, [this]() { m_iambicKeyer->stop(); });
+    connect(m_halikeyDevice, &HalikeyDevice::disconnected, this,
+            [this]() { QMetaObject::invokeMethod(m_iambicKeyer, "stop", Qt::QueuedConnection); });
 
     // KPA1500 amplifier client
     m_kpa1500Client = new KPA1500Client(this);
@@ -2032,14 +2077,22 @@ MainWindow::MainWindow(QWidget *parent)
 }
 
 MainWindow::~MainWindow() {
-    // Close HaliKey FIRST — its closePort() emits disconnected(), which triggers
-    // lambdas that call invokeMethod on m_sidetoneGenerator/m_tcpClient.
-    // Must happen while those objects are still alive.
+    // Shutdown order: HaliKey → Keyer → I/O → Sidetone → Audio
+    // HaliKey stops paddle events, then keyer (the producer of KZ commands) stops
+    // before its targets (I/O thread, sidetone thread) are torn down.
     if (m_halikeyDevice) {
         m_halikeyDevice->closePort();
     }
 
-    // Shut down I/O thread first (stop producing audio before stopping consumer)
+    // Shut down keyer thread — stops producing KZ/sidetone signals before targets go away
+    if (m_keyerThread) {
+        QMetaObject::invokeMethod(m_iambicKeyer, "stop", Qt::BlockingQueuedConnection);
+        m_keyerThread->quit();
+        m_keyerThread->wait(2000);
+    }
+    delete m_iambicKeyer; // No parent, must delete manually
+
+    // Shut down I/O thread (safe — keyer is already stopped, no more incoming signals)
     if (m_ioThread) {
         QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::BlockingQueuedConnection);
         m_ioThread->quit();
@@ -4197,6 +4250,12 @@ void MainWindow::onAuthenticated() {
     m_tcpClient->sendCAT("SIRC1;"); // Enable 1-second client stats updates
     // Note: ML and KP commands come in RDY; dump - no need to query
 
+    // Sync element length with K4 server (sent in RDY dump as KZLnn)
+    if (m_radioState->keyerSpeed() > 0) {
+        int ditMs = 1200 / m_radioState->keyerSpeed();
+        m_tcpClient->sendCAT(QString("KZL%1;").arg(ditMs, 2, 10, QChar('0')));
+    }
+
     // Create synthetic "Display FPS" menu item with stored preference
     m_menuModel->addSyntheticDisplayFpsItem(m_currentRadio.displayFps);
 
@@ -4219,6 +4278,10 @@ void MainWindow::onCatResponse(const QString &response) {
     // Parse CAT commands (may contain multiple commands separated by ;)
     QStringList commands = response.split(';', Qt::SkipEmptyParts);
     for (const QString &cmd : commands) {
+        // PONG is handled by TcpClient for latency measurement — skip
+        if (cmd.startsWith("PONG"))
+            continue;
+
         m_radioState->parseCATCommand(cmd + ";");
 
         // Parse MEDF (menu definitions) from RDY response

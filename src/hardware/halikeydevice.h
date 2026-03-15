@@ -72,7 +72,7 @@ private:
     QTimer *m_ditDebounceTimer = nullptr;
     QTimer *m_dahDebounceTimer = nullptr;
     QTimer *m_pttDebounceTimer = nullptr;
-    static constexpr int DEBOUNCE_MS = 10;
+    static constexpr int DEBOUNCE_MS = 3;
 };
 
 #endif // HALIKEYDEVICE_H

@@ -1,6 +1,7 @@
 #ifndef TCPCLIENT_H
 #define TCPCLIENT_H
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QSslSocket>
 #include <QThread>
@@ -30,6 +31,8 @@ public:
 
     Protocol *protocol() { return m_protocol; }
 
+    int latencyMs() const { return m_latencyMs; }
+
 signals:
     void stateChanged(ConnectionState state);
     void connected();
@@ -37,6 +40,7 @@ signals:
     void errorOccurred(const QString &error);
     void authenticated();
     void authenticationFailed();
+    void latencyChanged(int ms);
 
 private slots:
     void onSocketConnected();
@@ -73,6 +77,9 @@ private:
     ConnectionState m_state;
     std::atomic<bool> m_connected{false}; // Thread-safe read for isConnected()
     bool m_authResponseReceived;
+
+    QElapsedTimer m_pingElapsed;
+    int m_latencyMs = -1;
 };
 
 #endif // TCPCLIENT_H

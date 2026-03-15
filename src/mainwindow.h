@@ -323,6 +323,7 @@ private:
     // HaliKey CW paddle device
     HalikeyDevice *m_halikeyDevice;
     IambicKeyer *m_iambicKeyer;
+    QThread *m_keyerThread = nullptr;
 
     // Local sidetone generator for CW keying
     SidetoneGenerator *m_sidetoneGenerator;

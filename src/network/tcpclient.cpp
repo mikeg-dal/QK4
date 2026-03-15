@@ -1,4 +1,5 @@
 #include "tcpclient.h"
+#include <QDateTime>
 #include <QDebug>
 #include <QSslCipher>
 #include <QSslConfiguration>
@@ -297,13 +298,17 @@ void TcpClient::onAuthTimeout() {
 
 void TcpClient::onPingTimer() {
     if (m_state == Connected) {
-        sendCAT(K4Protocol::Commands::PING);
+        qint64 epoch = QDateTime::currentSecsSinceEpoch();
+        sendCAT(QString("PING%1;").arg(epoch));
+        m_pingElapsed.start();
     }
 }
 
 void TcpClient::onCatResponse(const QString &response) {
-    Q_UNUSED(response);
-    // Verbose logging removed for performance
+    if (response.startsWith("PONG")) {
+        m_latencyMs = static_cast<int>(m_pingElapsed.elapsed());
+        emit latencyChanged(m_latencyMs);
+    }
 }
 
 void TcpClient::sendAuthentication() {

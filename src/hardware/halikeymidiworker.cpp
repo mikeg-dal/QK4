@@ -1,4 +1,5 @@
 #include "halikeymidiworker.h"
+#include "iambickeyer.h" // for cwChainMs()
 #include <RtMidi.h>
 #include <QDebug>
 
@@ -88,7 +89,6 @@ void HaliKeyMidiWorker::midiCallback(double deltaTime, std::vector<unsigned char
 }
 
 void HaliKeyMidiWorker::handleMidiMessage(double deltaTime, const std::vector<unsigned char> &message) {
-    Q_UNUSED(deltaTime);
     if (message.size() < 3)
         return;
 
@@ -117,7 +117,8 @@ void HaliKeyMidiWorker::handleMidiMessage(double deltaTime, const std::vector<un
             pressed = true;
             if (data2 > 0 && data2 < 127) {
                 int timeDeltaMs = (data2 - 1) + m_pendingTimeMsb * 126;
-                Q_UNUSED(timeDeltaMs);
+                qDebug("[CW %10.3f] MOMIDI timeDelta=%dms (msb=%d lsb=%d)", cwChainMs(), timeDeltaMs, m_pendingTimeMsb,
+                       data2);
             }
             m_pendingTimeMsb = 0;
         } else {
@@ -133,9 +134,13 @@ void HaliKeyMidiWorker::handleMidiMessage(double deltaTime, const std::vector<un
 
     switch (data1) {
     case NOTE_LEFT_PADDLE:
+        qDebug("[CW %10.3f] MIDI dit=%s (note=%d vel=%d dt=%.1fms)", cwChainMs(), pressed ? "DOWN" : "UP", data1, data2,
+               deltaTime * 1000.0);
         emit ditStateChanged(pressed);
         break;
     case NOTE_RIGHT_PADDLE:
+        qDebug("[CW %10.3f] MIDI dah=%s (note=%d vel=%d dt=%.1fms)", cwChainMs(), pressed ? "DOWN" : "UP", data1, data2,
+               deltaTime * 1000.0);
         emit dahStateChanged(pressed);
         break;
     case NOTE_PTT:
