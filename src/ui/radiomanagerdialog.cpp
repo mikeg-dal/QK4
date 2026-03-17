@@ -60,6 +60,10 @@ void RadioManagerDialog::setupUi() {
                 "} "
                 "QListWidget::item:hover { "
                 "  background-color: %6; "
+                "} "
+                "QListWidget::item:selected:hover { "
+                "  background-color: %5; "
+                "  color: %1; "
                 "}")
             .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
             .arg(K4Styles::Dimensions::PaddingSmall)

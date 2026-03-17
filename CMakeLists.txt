@@ -73,6 +73,7 @@ set(SOURCES
     src/mainwindow.cpp
     src/network/tcpclient.cpp
     src/network/protocol.cpp
+    src/network/networkmetrics.cpp
     src/network/kpa1500client.cpp
     src/network/catserver.cpp
     src/audio/audioengine.cpp
@@ -102,6 +103,7 @@ set(SOURCES
     src/ui/featuremenubar.cpp
     src/ui/modepopupwidget.cpp
     src/ui/txmeterwidget.cpp
+    src/ui/nethealthwidget.cpp
     src/ui/fnpopupwidget.cpp
     src/ui/rxeqpopupwidget.cpp
     src/ui/antennacfgpopup.cpp
@@ -136,6 +138,7 @@ set(HEADERS
     src/mainwindow.h
     src/network/tcpclient.h
     src/network/protocol.h
+    src/network/networkmetrics.h
     src/network/kpa1500client.h
     src/network/catserver.h
     src/audio/audioengine.h
@@ -165,6 +168,7 @@ set(HEADERS
     src/ui/featuremenubar.h
     src/ui/modepopupwidget.h
     src/ui/txmeterwidget.h
+    src/ui/nethealthwidget.h
     src/ui/fnpopupwidget.h
     src/ui/rxeqpopupwidget.h
     src/ui/antennacfgpopup.h

@@ -77,6 +77,12 @@ private:
     // so onTimerFired() always sees real-time paddle state.
     std::atomic<bool> m_physDit{false};
     std::atomic<bool> m_physDah{false};
+
+    // Paddle latches — capture any press during an active element so that
+    // onTimerFired() doesn't miss a paddle-down that was released before
+    // the element timer fired.  Set on key-down, cleared at element start.
+    std::atomic<bool> m_ditLatch{false};
+    std::atomic<bool> m_dahLatch{false};
 };
 
 #endif // IAMBICKEYER_H

@@ -68,7 +68,8 @@ void OptionsDialog::setupUi() {
                           "             font-size: %6px; outline: none; }"
                           "QListWidget::item { padding: 10px 15px; border-bottom: 1px solid %4; }"
                           "QListWidget::item:selected { background-color: %5; color: %3; }"
-                          "QListWidget::item:hover { background-color: %7; }")
+                          "QListWidget::item:hover { background-color: %7; }"
+                          "QListWidget::item:selected:hover { background-color: %5; color: %3; }")
                       .arg(K4Styles::Colors::Background, K4Styles::Colors::TextWhite, K4Styles::Colors::DarkBackground,
                            K4Styles::Colors::DialogBorder, K4Styles::Colors::AccentAmber)
                       .arg(K4Styles::Dimensions::FontSizePopup)

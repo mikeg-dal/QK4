@@ -388,10 +388,18 @@ void RadioState::setCwPitch(int pitchHz) {
 }
 
 void RadioState::setRfPower(double watts) {
+    bool qrp = (watts <= 10.0);
+    bool changed = false;
     if (m_rfPower != watts) {
         m_rfPower = watts;
-        emit rfPowerChanged(m_rfPower, m_isQrpMode);
+        changed = true;
     }
+    if (qrp != m_isQrpMode) {
+        m_isQrpMode = qrp;
+        changed = true;
+    }
+    if (changed)
+        emit rfPowerChanged(m_rfPower, m_isQrpMode);
 }
 
 void RadioState::setFilterBandwidth(int bwHz) {

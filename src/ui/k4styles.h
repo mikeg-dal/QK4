@@ -171,9 +171,9 @@ constexpr const char *MeterOrange = "#FF6600";
 constexpr const char *MeterOrangeRed = "#FF3300";
 constexpr const char *MeterRed = "#FF0000";
 
-// Id Meter Colors (PA drain current - maroon theme)
-constexpr const char *MeterIdDark = "#8B0000";  // Dark red/maroon
-constexpr const char *MeterIdLight = "#CD5C5C"; // Lighter red highlight
+// Id Meter Colors (PA drain current - subtle green theme)
+constexpr const char *MeterIdDark = "#2E7D32";  // Muted forest green
+constexpr const char *MeterIdLight = "#66BB6A"; // Lighter sage green
 
 // Text Colors
 constexpr const char *TextWhite = "#FFFFFF";

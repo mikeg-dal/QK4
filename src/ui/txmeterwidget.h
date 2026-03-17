@@ -16,7 +16,7 @@
  *
  * Appears below S-meter on the TX VFO side (follows split state).
  * Uses S-meter gradient (green→red) for Po, ALC, COMP, SWR.
- * Id remains red.
+ * Id uses a subtle green theme.
  */
 class TxMeterWidget : public QWidget {
     Q_OBJECT
@@ -30,6 +30,7 @@ public:
     void setCompression(int dB);  // 0-30
     void setSwr(double ratio);    // 1.0-3.0+
     void setCurrent(double amps); // 0-25
+    void setQrp(bool isQrp);
 
     // Set all TX meters at once (from txMeterChanged signal)
     void setTxMeters(int alc, int compDb, double fwdPower, double swr);

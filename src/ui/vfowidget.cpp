@@ -356,6 +356,11 @@ void VFOWidget::setTxMeterCurrent(double amps) {
         m_txMeter->setCurrent(amps);
 }
 
+void VFOWidget::setTxMeterQrp(bool isQrp) {
+    if (m_txMeter)
+        m_txMeter->setQrp(isQrp);
+}
+
 bool VFOWidget::isFrequencyEntryActive() const {
     return m_frequencyDisplay && m_frequencyDisplay->isEditing();
 }

@@ -68,6 +68,7 @@ signals:
     void microphoneData(const QByteArray &pcmData);    // Raw Float32 mic data (variable size)
     void microphoneFrame(const QByteArray &s16leData); // Complete frame (240 samples, S16LE @ 12kHz)
     void micLevelChanged(float level);                 // RMS level 0.0-1.0 for meter display
+    void bufferStatus(int queueBytes, int maxBytes, bool prebuffering);
 
 private slots:
     void onMicDataReady();

@@ -214,6 +214,8 @@ void AudioEngine::feedAudioDevice() {
 
     // Drain queue under a short lock, then write outside the lock
     QList<QByteArray> localPackets;
+    int preDrainQueueBytes;
+    bool snapshotPrebuffering;
     {
         QMutexLocker lock(&m_queueMutex);
 
@@ -227,6 +229,10 @@ void AudioEngine::feedAudioDevice() {
             m_prebuffering = false;
         }
 
+        // Snapshot queue depth BEFORE draining (steady-state depth)
+        preDrainQueueBytes = m_queueBytes;
+        snapshotPrebuffering = m_prebuffering;
+
         // Drain packets that fit in the sink's free space
         while (!m_audioQueue.isEmpty()) {
             int headSize = m_audioQueue.head().size();
@@ -239,6 +245,8 @@ void AudioEngine::feedAudioDevice() {
             localPackets.append(std::move(pkt));
         }
     }
+
+    emit bufferStatus(preDrainQueueBytes, MAX_QUEUE_BYTES, snapshotPrebuffering);
 
     // Apply mix/volume and write to audio sink without holding the lock
     for (QByteArray &packet : localPackets) {

@@ -42,6 +42,8 @@
 #include "ui/kpa1500window.h"
 #include "ui/kpa1500panel.h"
 #include "network/catserver.h"
+#include "network/networkmetrics.h"
+#include "ui/nethealthwidget.h"
 #include "settings/radiosettings.h"
 #include <QVBoxLayout>
 #include <QInputDialog>
@@ -61,6 +63,7 @@
 #include <QRegularExpression>
 #include <QMouseEvent>
 #include <QShowEvent>
+#include <QMoveEvent>
 
 // K4 Span range: 5 kHz to 368 kHz
 // UP (zoom out): +1 kHz until 144, then +4 kHz until 368
@@ -127,6 +130,9 @@ MainWindow::MainWindow(QWidget *parent)
     m_ioThread->setObjectName("I/O");
     m_tcpClient->moveToThread(m_ioThread);
     m_ioThread->start();
+
+    // NetworkMetrics must be created before setupUi() — NetHealthWidget connects to it
+    m_networkMetrics = new NetworkMetrics(this);
 
     // IMPORTANT: setupUi() MUST be called BEFORE setupMenuBar()!
     // Qt 6.10.1 bug on macOS Tahoe: calling menuBar() before creating QRhiWidget
@@ -1809,6 +1815,16 @@ MainWindow::MainWindow(QWidget *parent)
                 }
             });
 
+    // Network health metrics signal connections (m_networkMetrics created before setupUi)
+    connect(m_tcpClient, &TcpClient::latencyChanged, m_networkMetrics, &NetworkMetrics::onLatencyChanged);
+    connect(m_tcpClient->protocol(), &Protocol::audioSequenceReceived, m_networkMetrics,
+            &NetworkMetrics::onAudioSequence);
+    connect(m_audioEngine, &AudioEngine::bufferStatus, m_networkMetrics, &NetworkMetrics::onBufferStatus);
+    connect(m_tcpClient, &TcpClient::connected, m_networkMetrics,
+            [this]() { m_networkMetrics->onConnectionStateChanged(true); });
+    connect(m_tcpClient, &TcpClient::disconnected, m_networkMetrics,
+            [this]() { m_networkMetrics->onConnectionStateChanged(false); });
+
     // Clock timer for date/time display
     connect(m_clockTimer, &QTimer::timeout, this, &MainWindow::updateDateTime);
     m_clockTimer->start(1000);
@@ -1859,6 +1875,19 @@ MainWindow::MainWindow(QWidget *parent)
     m_sidetoneGenerator->moveToThread(m_sidetoneThread);
     m_sidetoneThread->start();
     QMetaObject::invokeMethod(m_sidetoneGenerator, "start", Qt::QueuedConnection);
+
+    // Set sidetone to same output device as AudioEngine
+    QString savedSidetoneDevice = RadioSettings::instance()->speakerDevice();
+    if (!savedSidetoneDevice.isEmpty()) {
+        QMetaObject::invokeMethod(m_sidetoneGenerator, "setOutputDevice", Qt::QueuedConnection,
+                                  Q_ARG(QString, savedSidetoneDevice));
+    }
+
+    // Follow speaker device changes at runtime
+    connect(RadioSettings::instance(), &RadioSettings::speakerDeviceChanged, this, [this](const QString &deviceId) {
+        QMetaObject::invokeMethod(m_sidetoneGenerator, "setOutputDevice", Qt::QueuedConnection,
+                                  Q_ARG(QString, deviceId));
+    });
 
     // Set initial sidetone frequency from radio state if available
     if (m_radioState->cwPitch() > 0) {
@@ -1971,8 +2000,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Stop keyer when HaliKey disconnects (prevents runaway keying
     // if paddle was held when disconnected — Note Off never arrives)
-    connect(m_halikeyDevice, &HalikeyDevice::disconnected, this,
-            [this]() { QMetaObject::invokeMethod(m_iambicKeyer, "stop", Qt::QueuedConnection); });
+    connect(m_halikeyDevice, &HalikeyDevice::disconnected, this, [this]() {
+        QMetaObject::invokeMethod(m_sidetoneGenerator, "stopElement", Qt::QueuedConnection);
+        QMetaObject::invokeMethod(m_iambicKeyer, "stop", Qt::QueuedConnection);
+    });
 
     // KPA1500 amplifier client
     m_kpa1500Client = new KPA1500Client(this);
@@ -3196,10 +3227,15 @@ void MainWindow::setupTopStatusBar(QWidget *parent) {
     m_kpa1500StatusLabel->hide(); // Hidden when not enabled
     layout->addWidget(m_kpa1500StatusLabel);
 
+    // Network health bar
     // K4 Connection status
     m_connectionStatusLabel = new QLabel("K4", statusBar);
     m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::InactiveGray));
     layout->addWidget(m_connectionStatusLabel);
+
+    // Network health signal bars
+    m_netHealthWidget = new NetHealthWidget(m_networkMetrics, statusBar);
+    layout->addWidget(m_netHealthWidget);
 }
 
 void MainWindow::setupVfoSection(QWidget *parent) {
@@ -4627,10 +4663,9 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
 
 void MainWindow::onRfPowerChanged(double watts, bool isQrp) {
     Q_UNUSED(watts)
-    Q_UNUSED(isQrp)
-    // NOTE: This is the power SETTING (PC command), not actual TX power.
-    // The power display is updated from txMeterChanged signal during TX.
-    // We don't update the display here - it should show 0 when not transmitting.
+    // Propagate QRP mode to TX meter widgets so they use the correct scale
+    m_vfoA->setTxMeterQrp(isQrp);
+    m_vfoB->setTxMeterQrp(isQrp);
 }
 
 void MainWindow::onSupplyVoltageChanged(double volts) {
@@ -5228,6 +5263,11 @@ void MainWindow::changeEvent(QEvent *event) {
     QMainWindow::changeEvent(event);
 }
 
+void MainWindow::moveEvent(QMoveEvent *event) {
+    QMainWindow::moveEvent(event);
+    closeAllPopups();
+}
+
 void MainWindow::keyPressEvent(QKeyEvent *event) {
     // Handle F1-F12 for keyboard macros
     if (event->key() >= Qt::Key_F1 && event->key() <= Qt::Key_F12) {
@@ -5470,6 +5510,20 @@ void MainWindow::closeAllPopups() {
             m_bottomMenuBar->setTxActive(false);
         }
     }
+
+    // Close secondary popups (opened from RX/TX button rows)
+    if (m_rxEqPopup && m_rxEqPopup->isVisible())
+        m_rxEqPopup->hidePopup();
+    if (m_txEqPopup && m_txEqPopup->isVisible())
+        m_txEqPopup->hidePopup();
+    if (m_mainRxAntCfgPopup && m_mainRxAntCfgPopup->isVisible())
+        m_mainRxAntCfgPopup->hidePopup();
+    if (m_subRxAntCfgPopup && m_subRxAntCfgPopup->isVisible())
+        m_subRxAntCfgPopup->hidePopup();
+    if (m_txAntCfgPopup && m_txAntCfgPopup->isVisible())
+        m_txAntCfgPopup->hidePopup();
+    if (m_modePopup && m_modePopup->isVisible())
+        m_modePopup->hidePopup();
 }
 
 void MainWindow::toggleBandPopup() {

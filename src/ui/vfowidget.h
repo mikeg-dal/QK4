@@ -36,6 +36,7 @@ public:
     void setTransmitting(bool isTx); // Switch meter between RX (S-meter) and TX (Po) mode
     void setTxMeters(int alc, int compDb, double fwdPower, double swr);
     void setTxMeterCurrent(double amps);
+    void setTxMeterQrp(bool isQrp);
 
     // Mini-pan support
     void updateMiniPan(const QByteArray &data);

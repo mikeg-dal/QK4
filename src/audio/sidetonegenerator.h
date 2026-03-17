@@ -23,6 +23,7 @@ public:
     // Initialize/shutdown audio (called on sidetone thread via invokeMethod)
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
+    Q_INVOKABLE void setOutputDevice(const QString &deviceId);
 
     // Start repeating element while paddle is held (V14 modem-line interface)
     Q_INVOKABLE void startDit();
@@ -52,6 +53,7 @@ private:
     QAudioSink *m_audioSink = nullptr;
     QIODevice *m_pushDevice = nullptr;
     QTimer *m_repeatTimer = nullptr;
+    QString m_selectedOutputDeviceId;
     std::atomic<int> m_frequency{600};
     std::atomic<float> m_volume{0.3f};
     std::atomic<int> m_keyerWpm{20};

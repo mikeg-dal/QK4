@@ -106,6 +106,7 @@ public:
 
 signals:
     void audioDataReady(const QByteArray &opusData);
+    void audioSequenceReceived(quint8 seq);
     // receiver: 0 = Main (VFO A), 1 = Sub (VFO B)
     void spectrumDataReady(int receiver, const QByteArray &spectrumData, qint64 centerFreq, qint32 sampleRate,
                            float noiseFloor);

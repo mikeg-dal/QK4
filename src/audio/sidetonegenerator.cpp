@@ -23,13 +23,37 @@ SidetoneGenerator::~SidetoneGenerator() {
     }
 }
 
+void SidetoneGenerator::setOutputDevice(const QString &deviceId) {
+    if (m_selectedOutputDeviceId == deviceId)
+        return;
+    m_selectedOutputDeviceId = deviceId;
+
+    if (m_audioSink) {
+        m_audioSink->stop();
+        delete m_audioSink;
+        m_audioSink = nullptr;
+        m_pushDevice = nullptr;
+        initAudio();
+    }
+}
+
 void SidetoneGenerator::initAudio() {
     QAudioFormat format;
     format.setSampleRate(48000);
     format.setChannelCount(1);
     format.setSampleFormat(QAudioFormat::Int16);
 
-    QAudioDevice device = QMediaDevices::defaultAudioOutput();
+    QAudioDevice device;
+    if (!m_selectedOutputDeviceId.isEmpty()) {
+        for (const QAudioDevice &d : QMediaDevices::audioOutputs()) {
+            if (d.id() == m_selectedOutputDeviceId) {
+                device = d;
+                break;
+            }
+        }
+    }
+    if (device.isNull())
+        device = QMediaDevices::defaultAudioOutput();
 
     if (!device.isFormatSupported(format)) {
         qWarning() << "SidetoneGenerator: Default format not supported, trying nearest";
@@ -128,6 +152,8 @@ int SidetoneGenerator::dahDurationMs() const {
 }
 
 void SidetoneGenerator::playElement(int durationMs) {
+    if (!m_audioSink)
+        return;
     if (!m_pushDevice) {
         // Try to restart audio sink if it stopped
         m_pushDevice = m_audioSink->start();

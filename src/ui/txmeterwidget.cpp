@@ -88,6 +88,13 @@ void TxMeterWidget::setCurrent(double amps) {
     update();
 }
 
+void TxMeterWidget::setQrp(bool isQrp) {
+    if (m_isQrp != isQrp) {
+        m_isQrp = isQrp;
+        update();
+    }
+}
+
 void TxMeterWidget::setTxMeters(int alc, int compDb, double fwdPower, double swr) {
     // Power - use appropriate max based on mode
     double maxPower = m_isQrp ? 10.0 : 110.0; // K4 goes to 110W (or 10W QRP)
@@ -323,7 +330,7 @@ void TxMeterWidget::drawMeterRow(QPainter &painter, int y, int rowHeight, const 
             // Standard meter gradient: green → yellow → orange → red
             gradient = K4Styles::meterGradient(barStartX, 0, barStartX + barWidth, 0);
         } else {
-            // Red style for Id meter (PA drain current)
+            // Green style for Id meter (PA drain current)
             gradient.setColorAt(0.0, QColor(K4Styles::Colors::MeterIdDark));
             gradient.setColorAt(0.7, QColor(K4Styles::Colors::MeterIdDark));
             gradient.setColorAt(1.0, QColor(K4Styles::Colors::MeterIdLight));

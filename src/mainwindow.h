@@ -18,6 +18,8 @@
 
 class PanadapterRhiWidget;
 class AudioEngine;
+class NetHealthWidget;
+class NetworkMetrics;
 class OpusDecoder;
 class OpusEncoder;
 class SideControlPanel;
@@ -74,6 +76,7 @@ protected:
     void showEvent(QShowEvent *event) override;
     void changeEvent(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void moveEvent(QMoveEvent *event) override;
 
 private slots:
     void onConnectClicked();
@@ -180,6 +183,7 @@ private:
     void checkAndHideMiniPanB();
 
     TcpClient *m_tcpClient;
+    NetworkMetrics *m_networkMetrics;
     RadioState *m_radioState;
     QTimer *m_clockTimer;
 
@@ -204,6 +208,7 @@ private:
     QLabel *m_voltageLabel;
     QLabel *m_currentLabel;
     QLabel *m_connectionStatusLabel;
+    NetHealthWidget *m_netHealthWidget;
     QLabel *m_kpa1500StatusLabel;
     KPA1500Window *m_kpa1500Window;
 
