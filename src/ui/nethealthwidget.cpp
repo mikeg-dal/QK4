@@ -84,7 +84,6 @@ void NetHealthWidget::showMetricsPopup() {
 
     m_popup = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint);
     m_popup->setAttribute(Qt::WA_ShowWithoutActivating);
-    m_popup->setAttribute(Qt::WA_DeleteOnClose);
     m_popup->setStyleSheet(
         QString("background-color: %1; border: 1px solid #444444;").arg(K4Styles::Colors::PopupBackground));
 
@@ -160,7 +159,8 @@ void NetHealthWidget::showMetricsPopup() {
 
 void NetHealthWidget::hideMetricsPopup() {
     if (m_popup) {
-        m_popup->close(); // WA_DeleteOnClose handles deletion
+        m_popup->hide();
+        m_popup->deleteLater();
         m_popup = nullptr;
     }
 }

@@ -28,7 +28,6 @@ private:
 
     // MoMIDI protocol state
     bool m_momidiDetected = false;
-    int m_momidiVersion = -1;
     int m_pendingTimeMsb = 0;
 };
 

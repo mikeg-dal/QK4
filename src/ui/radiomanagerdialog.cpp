@@ -6,12 +6,14 @@
 #include <QGridLayout>
 #include <QLabel>
 
-RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QDialog(parent), m_currentIndex(-1) {
+RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QDialog(parent), m_currentIndex(-1), m_discovery(nullptr) {
     setupUi();
     refreshList();
     updateButtonStates();
 
     connect(RadioSettings::instance(), &RadioSettings::radiosChanged, this, &RadioManagerDialog::refreshList);
+
+    startDiscovery();
 }
 
 void RadioManagerDialog::setupUi() {
@@ -239,6 +241,12 @@ void RadioManagerDialog::setupUi() {
     m_deleteButton->setStyleSheet(K4Styles::dialogButton());
     buttonLayout->addWidget(m_deleteButton);
 
+    m_scanButton = new QPushButton("Scan", this);
+    m_scanButton->setStyleSheet(K4Styles::dialogButton());
+    m_scanButton->setToolTip("Scan LAN for K4 radios");
+    connect(m_scanButton, &QPushButton::clicked, this, &RadioManagerDialog::startDiscovery);
+    buttonLayout->addWidget(m_scanButton);
+
     // Back button - smaller with curved arrow
     m_backButton = new QPushButton(QString::fromUtf8("\xE2\x86\xA9"), this); // ↩ Curved arrow
     m_backButton->setStyleSheet(K4Styles::dialogButton());
@@ -270,8 +278,24 @@ void RadioManagerDialog::refreshList() {
         m_radioList->addItem(radio.name.isEmpty() ? radio.host : radio.name);
     }
 
+    // Re-add discovered (unconfigured) entries — prune any that were just saved
+    QList<K4RadioInfo> stillUnconfigured;
+    for (const auto &radio : m_discoveredRadios) {
+        if (!isAlreadyConfigured(radio)) {
+            stillUnconfigured.append(radio);
+            auto *item = new QListWidgetItem(radio.hostname());
+            QFont font = item->font();
+            font.setItalic(true);
+            item->setFont(font);
+            item->setData(Qt::UserRole, QStringLiteral("discovered"));
+            item->setData(Qt::UserRole + 1, radio.ipAddress);
+            m_radioList->addItem(item);
+        }
+    }
+    m_discoveredRadios = stillUnconfigured;
+
     int lastIndex = RadioSettings::instance()->lastSelectedIndex();
-    if (lastIndex >= 0 && lastIndex < m_radioList->count()) {
+    if (lastIndex >= 0 && lastIndex < RadioSettings::instance()->radios().size()) {
         m_radioList->setCurrentRow(lastIndex);
         m_currentIndex = lastIndex;
         populateFieldsFromSelection();
@@ -389,7 +413,37 @@ void RadioManagerDialog::onBackClicked() {
 
 void RadioManagerDialog::onSelectionChanged() {
     int row = m_radioList->currentRow();
-    if (row >= 0) {
+    if (row < 0) {
+        updateButtonStates();
+        return;
+    }
+
+    QListWidgetItem *item = m_radioList->item(row);
+    if (item && item->data(Qt::UserRole).toString() == QStringLiteral("discovered")) {
+        // Discovered but unconfigured entry — look up by IP stored in the item
+        QString ip = item->data(Qt::UserRole + 1).toString();
+        const K4RadioInfo *foundRadio = nullptr;
+        for (const auto &r : m_discoveredRadios) {
+            if (r.ipAddress == ip) {
+                foundRadio = &r;
+                break;
+            }
+        }
+        if (foundRadio) {
+            const K4RadioInfo &radio = *foundRadio;
+            m_currentIndex = -1;                              // Not a saved entry
+            m_nameEdit->setText(radio.hostname().chopped(6)); // Strip ".local"
+            m_hostEdit->setText(radio.ipAddress);
+            m_portEdit->setText(QString::number(K4Protocol::TLS_PORT));
+            m_passwordEdit->clear();
+            m_tlsCheckbox->setChecked(true);
+            m_identityEdit->clear();
+            m_identityLabel->setVisible(true);
+            m_identityEdit->setVisible(true);
+            m_encodeModeCombo->setCurrentIndex(0);       // EM3 default
+            m_streamingLatencyCombo->setCurrentIndex(3); // SL3 default
+        }
+    } else {
         m_currentIndex = row;
         populateFieldsFromSelection();
     }
@@ -397,21 +451,29 @@ void RadioManagerDialog::onSelectionChanged() {
 }
 
 void RadioManagerDialog::onItemDoubleClicked(QListWidgetItem *item) {
-    Q_UNUSED(item)
+    // Don't allow double-click connect on discovered (unconfigured) entries
+    if (item && item->data(Qt::UserRole).toString() == QStringLiteral("discovered"))
+        return;
     onConnectClicked();
 }
 
 void RadioManagerDialog::updateButtonStates() {
-    bool hasSelection = m_currentIndex >= 0 && m_currentIndex < RadioSettings::instance()->radios().size();
+    bool isSavedEntry = m_currentIndex >= 0 && m_currentIndex < RadioSettings::instance()->radios().size();
     QString host = m_hostEdit->text().trimmed();
     bool hasHost = !host.isEmpty();
 
     // Check if the selected radio is the connected one
     bool isConnectedRadio = !m_connectedHost.isEmpty() && host == m_connectedHost;
 
-    m_connectButton->setEnabled(hasHost);
+    // Check if currently viewing a discovered (unconfigured) entry
+    int row = m_radioList->currentRow();
+    QListWidgetItem *currentItem = (row >= 0) ? m_radioList->item(row) : nullptr;
+    bool isDiscoveredEntry = currentItem && currentItem->data(Qt::UserRole).toString() == QStringLiteral("discovered");
+
+    // Connect disabled for discovered entries — user must Save first
+    m_connectButton->setEnabled(hasHost && !isDiscoveredEntry);
     m_connectButton->setText(isConnectedRadio ? "Disconnect" : "Connect");
-    m_deleteButton->setEnabled(hasSelection);
+    m_deleteButton->setEnabled(isSavedEntry);
     m_saveButton->setEnabled(hasHost);
 }
 
@@ -479,4 +541,74 @@ bool RadioManagerDialog::hasSelection() const {
 void RadioManagerDialog::setConnectedHost(const QString &host) {
     m_connectedHost = host;
     updateButtonStates();
+}
+
+void RadioManagerDialog::startDiscovery() {
+    if (m_discovery)
+        return; // Already scanning
+    m_discovery = new K4Discovery(this);
+    connect(m_discovery, &K4Discovery::radioFound, this, &RadioManagerDialog::onRadioFound);
+    connect(m_discovery, &K4Discovery::discoveryFinished, this, &RadioManagerDialog::onDiscoveryFinished);
+    m_scanButton->setEnabled(false);
+
+    // Start countdown display on the button
+    m_scanSecondsLeft = K4Discovery::TIMEOUT_MS / 1000;
+    m_scanButton->setText(QString("Scanning (%1s)").arg(m_scanSecondsLeft));
+    if (!m_scanCountdown) {
+        m_scanCountdown = new QTimer(this);
+        m_scanCountdown->setInterval(1000);
+        connect(m_scanCountdown, &QTimer::timeout, this, [this]() {
+            if (--m_scanSecondsLeft > 0) {
+                m_scanButton->setText(QString("Scanning (%1s)").arg(m_scanSecondsLeft));
+            } else {
+                m_scanCountdown->stop();
+            }
+        });
+    }
+    m_scanCountdown->start();
+
+    m_discovery->startDiscovery();
+}
+
+bool RadioManagerDialog::isAlreadyConfigured(const K4RadioInfo &radio) const {
+    const auto radios = RadioSettings::instance()->radios();
+    for (const auto &entry : radios) {
+        // Match by IP address or hostname
+        if (entry.host == radio.ipAddress || entry.host == radio.hostname())
+            return true;
+    }
+    return false;
+}
+
+void RadioManagerDialog::onRadioFound(const K4RadioInfo &radio) {
+    // Skip if already in the configured server list
+    if (isAlreadyConfigured(radio))
+        return;
+
+    // Skip if already in our discovered list
+    for (const auto &existing : m_discoveredRadios) {
+        if (existing.ipAddress == radio.ipAddress)
+            return;
+    }
+
+    m_discoveredRadios.append(radio);
+
+    // Add to list widget in italics
+    auto *item = new QListWidgetItem(radio.hostname());
+    QFont font = item->font();
+    font.setItalic(true);
+    item->setFont(font);
+    item->setData(Qt::UserRole, QStringLiteral("discovered"));
+    item->setData(Qt::UserRole + 1, radio.ipAddress);
+    m_radioList->addItem(item);
+}
+
+void RadioManagerDialog::onDiscoveryFinished(int count) {
+    Q_UNUSED(count)
+    m_discovery->deleteLater();
+    m_discovery = nullptr;
+    if (m_scanCountdown)
+        m_scanCountdown->stop();
+    m_scanButton->setEnabled(true);
+    m_scanButton->setText("Scan");
 }

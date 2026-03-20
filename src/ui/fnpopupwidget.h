@@ -2,12 +2,17 @@
 #define FNPOPUPWIDGET_H
 
 #include "k4popupbase.h"
+#include <QRegularExpression>
+#include <QStringList>
 #include <QVector>
 
 class QVBoxLayout;
 
 // Function ID constants for macro system
 namespace MacroIds {
+// Startup macro (executed on radio connect)
+const QString Startup = "Startup";
+
 // Programmable Function keys (K4 front panel)
 const QString PF1 = "PF1";
 const QString PF2 = "PF2";
@@ -58,6 +63,33 @@ const QString KbdF9 = "Keyboard-F9";
 const QString KbdF10 = "Keyboard-F10";
 const QString KbdF11 = "Keyboard-F11";
 const QString KbdF12 = "Keyboard-F12";
+
+// CAT command patterns forbidden in Startup macro.
+// Each entry is a regex pattern matched against uppercase command text.
+// Only truly destructive or init-conflicting commands are blocked;
+// the user is trusted for everything else.
+inline const QStringList ForbiddenStartupPatterns = {
+    "PS\\d*;", // PS0; PS1; etc — power state commands
+    "EE\\d*;", // EE; EE0; — EEPROM write/reset
+    "RDY;",    // Would cause a double state dump
+    "EM\\d;",  // Audio encode mode — conflicts with init sequence
+    "SL\\d;",  // Streaming latency — conflicts with init sequence
+    "K4[01];", // Protocol mode — conflicts with init sequence
+    "AI\\d*;", // Auto-info mode — conflicts with server-managed state
+};
+
+// Returns the first forbidden pattern found in command, or empty string if clean
+inline QString checkForbiddenStartupCommand(const QString &command) {
+    QString upper = command.toUpper();
+    for (const QString &pattern : ForbiddenStartupPatterns) {
+        QRegularExpression re(pattern, QRegularExpression::CaseInsensitiveOption);
+        QRegularExpressionMatch match = re.match(upper);
+        if (match.hasMatch()) {
+            return match.captured(0);
+        }
+    }
+    return {};
+}
 
 // Built-in functions (not user-configurable)
 const QString ScrnCap = "SCRN_CAP";

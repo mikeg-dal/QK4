@@ -1,5 +1,7 @@
 #include "kpa1500client.h"
-#include <QDebug>
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(netKpa, "net.kpa")
 
 // Poll commands - based on KPA1500 Programming Reference
 // ^AI = ATU Inline state, ^AN = Antenna selection
@@ -89,13 +91,13 @@ void KPA1500Client::setState(ConnectionState state) {
 }
 
 void KPA1500Client::onSocketConnected() {
-    qDebug() << "KPA1500Client: Connected to" << m_host << ":" << m_port;
+    qCDebug(netKpa) << "KPA1500Client: Connected to" << m_host << ":" << m_port;
     setState(Connected);
     emit connected();
 }
 
 void KPA1500Client::onSocketDisconnected() {
-    qDebug() << "KPA1500Client: Disconnected";
+    qCDebug(netKpa) << "KPA1500Client: Disconnected";
     stopPolling();
     setState(Disconnected);
     emit disconnected();

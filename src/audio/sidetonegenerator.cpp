@@ -10,7 +10,6 @@ SidetoneGenerator::SidetoneGenerator(QObject *parent) : QObject(parent) {
     // Audio init deferred to start() which runs on the sidetone thread
     m_repeatTimer = new QTimer(this);
     m_repeatTimer->setTimerType(Qt::PreciseTimer);
-    connect(m_repeatTimer, &QTimer::timeout, this, &SidetoneGenerator::onRepeatTimer);
 }
 
 SidetoneGenerator::~SidetoneGenerator() {
@@ -96,26 +95,6 @@ void SidetoneGenerator::setKeyerSpeed(int wpm) {
     m_keyerWpm.store(qBound(5, wpm, 60), std::memory_order_relaxed);
 }
 
-void SidetoneGenerator::startDit() {
-    m_currentElement = ElementDit;
-    m_repeatTimer->stop(); // Stop any existing repeat timer
-    playElement(ditDurationMs());
-
-    // Start repeat timer: element + inter-element space
-    int repeatInterval = ditDurationMs() * 2; // dit + space
-    m_repeatTimer->start(repeatInterval);
-}
-
-void SidetoneGenerator::startDah() {
-    m_currentElement = ElementDah;
-    m_repeatTimer->stop(); // Stop any existing repeat timer
-    playElement(dahDurationMs());
-
-    // Start repeat timer: element + inter-element space
-    int repeatInterval = dahDurationMs() + ditDurationMs(); // dah + space
-    m_repeatTimer->start(repeatInterval);
-}
-
 void SidetoneGenerator::stopElement() {
     m_currentElement = ElementNone;
     m_repeatTimer->stop();
@@ -131,16 +110,6 @@ void SidetoneGenerator::playSingleDah() {
     m_currentElement = ElementNone; // No repeat
     m_repeatTimer->stop();
     playElement(dahDurationMs());
-}
-
-void SidetoneGenerator::onRepeatTimer() {
-    if (m_currentElement == ElementDit) {
-        playElement(ditDurationMs());
-        emit ditRepeated(); // Signal for mainwindow to send KZ.; again
-    } else if (m_currentElement == ElementDah) {
-        playElement(dahDurationMs());
-        emit dahRepeated(); // Signal for mainwindow to send KZ-; again
-    }
 }
 
 int SidetoneGenerator::ditDurationMs() const {

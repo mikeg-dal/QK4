@@ -238,14 +238,13 @@ void ControlGroupWidget::paintEvent(QPaintEvent *event) {
     painter.drawText(valueRect, Qt::AlignCenter, m_value);
     painter.setPen(Qt::white); // Reset for buttons
 
-    // Draw minus button with larger font
+    // Draw minus/plus buttons (faded when auto mode disables them)
     QFont buttonFont = font();
     buttonFont.setPixelSize(K4Styles::Dimensions::FontSizeTitle);
     buttonFont.setBold(true);
     painter.setFont(buttonFont);
+    painter.setPen(m_autoEnabled ? QColor(K4Styles::Colors::TextFaded) : Qt::white);
     painter.drawText(m_minusRect, Qt::AlignCenter, "-");
-
-    // Draw plus button
     painter.drawText(m_plusRect, Qt::AlignCenter, "+");
 }
 
@@ -255,14 +254,18 @@ void ControlGroupWidget::mousePressEvent(QMouseEvent *event) {
         if (m_showAutoButton && m_autoRect.contains(pos)) {
             emit autoClicked();
         } else if (m_minusRect.contains(pos)) {
-            emit decrementClicked();
+            if (!m_autoEnabled)
+                emit decrementClicked();
         } else if (m_plusRect.contains(pos)) {
-            emit incrementClicked();
+            if (!m_autoEnabled)
+                emit incrementClicked();
         }
     }
 }
 
 void ControlGroupWidget::wheelEvent(QWheelEvent *event) {
+    if (m_autoEnabled)
+        return;
     int steps = m_wheelAccumulator.accumulate(event);
     for (int i = 0; i < qAbs(steps); ++i) {
         if (steps > 0)

@@ -2,13 +2,16 @@
 #include "k4styles.h"
 #include "../settings/radiosettings.h"
 #include "fnpopupwidget.h"
-#include <QDebug>
 #include <QKeyEvent>
+#include <QLoggingCategory>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QTimer>
+
+Q_LOGGING_CATEGORY(uiMacro, "ui.macro")
 
 namespace {
 // Layout constants
@@ -405,6 +408,8 @@ void MacroDialog::populateItems() {
     };
 
     QVector<MacroSlot> macroSlots = {
+        // Startup macro (executed on radio connect)
+        {MacroIds::Startup, "Startup"},
         // PF buttons
         {MacroIds::PF1, "PF1"},
         {MacroIds::PF2, "PF2"},
@@ -645,14 +650,41 @@ void MacroDialog::onLabelChanged(const QString &functionId, const QString &label
     auto settings = RadioSettings::instance();
     MacroEntry macro = settings->macro(functionId);
     settings->setMacro(functionId, label, macro.command);
-    qDebug() << "Macro label updated:" << functionId << "->" << label;
+    qCDebug(uiMacro) << "Macro label updated:" << functionId << "->" << label;
 }
 
 void MacroDialog::onCommandChanged(const QString &functionId, const QString &command) {
+    // Validate Startup macro against forbidden commands
+    if (functionId == MacroIds::Startup && !command.isEmpty()) {
+        QString forbidden = MacroIds::checkForbiddenStartupCommand(command);
+        if (!forbidden.isEmpty()) {
+            qWarning() << "Startup macro rejected: contains forbidden command" << forbidden;
+            // Revert the widget to the previous saved command
+            auto settings = RadioSettings::instance();
+            MacroEntry macro = settings->macro(functionId);
+            for (auto *widget : m_itemWidgets) {
+                if (widget->functionId() == functionId) {
+                    widget->setCommand(macro.command);
+                    break;
+                }
+            }
+            // Notify user
+            auto *notification = new QLabel(QString("Forbidden command in Startup macro: %1").arg(forbidden), this);
+            notification->setStyleSheet("QLabel { color: #ff4444; background: #331111; padding: 8px; "
+                                        "border-radius: 4px; font-size: 13px; }");
+            notification->setAlignment(Qt::AlignCenter);
+            notification->move((width() - 350) / 2, 50);
+            notification->setFixedWidth(350);
+            notification->show();
+            QTimer::singleShot(3000, notification, &QLabel::deleteLater);
+            return;
+        }
+    }
+
     auto settings = RadioSettings::instance();
     MacroEntry macro = settings->macro(functionId);
     settings->setMacro(functionId, macro.label, command);
-    qDebug() << "Macro command updated:" << functionId << "->" << command;
+    qCDebug(uiMacro) << "Macro command updated:" << functionId << "->" << command;
 }
 
 void MacroDialog::updateSelection() {

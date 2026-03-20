@@ -52,7 +52,7 @@
 #include <QGroupBox>
 #include <QAction>
 #include <QCoreApplication>
-#include <QDebug>
+#include <QLoggingCategory>
 #include <QMessageBox>
 #include <QFont>
 #include <QDateTime>
@@ -64,6 +64,8 @@
 #include <QMouseEvent>
 #include <QShowEvent>
 #include <QMoveEvent>
+
+Q_LOGGING_CATEGORY(qk4Main, "qk4.main")
 
 // K4 Span range: 5 kHz to 368 kHz
 // UP (zoom out): +1 kHz until 144, then +4 kHz until 368
@@ -164,7 +166,7 @@ MainWindow::MainWindow(QWidget *parent)
         const MenuItem *item = m_menuModel->getMenuItem(menuId);
         if (item && item->name == "Spectrum Amplitude Units") {
             bool useSUnits = (item->currentValue == 1);
-            qDebug() << "Initial spectrum amplitude units:" << (useSUnits ? "S-UNITS" : "dBm");
+            qCDebug(qk4Main) << "Initial spectrum amplitude units:" << (useSUnits ? "S-UNITS" : "dBm");
             if (m_panadapterA) {
                 m_panadapterA->setAmplitudeUnits(useSUnits);
             }
@@ -175,12 +177,12 @@ MainWindow::MainWindow(QWidget *parent)
         if (item && item->name == "Mouse L/R Button QSY") {
             m_mouseQsyMenuId = item->id;
             m_mouseQsyMode = item->currentValue;
-            qDebug() << "Mouse L/R Button QSY: menuId=" << m_mouseQsyMenuId << "mode=" << m_mouseQsyMode;
+            qCDebug(qk4Main) << "Mouse L/R Button QSY: menuId=" << m_mouseQsyMenuId << "mode=" << m_mouseQsyMode;
         }
         if (item && item->name == "FSK Mark-Tone") {
             m_fskMarkToneMenuId = item->id;
             int toneHz = item->options[item->currentValue].toInt();
-            qDebug() << "FSK Mark-Tone: menuId=" << m_fskMarkToneMenuId << "tone=" << toneHz << "Hz";
+            qCDebug(qk4Main) << "FSK Mark-Tone: menuId=" << m_fskMarkToneMenuId << "tone=" << toneHz << "Hz";
             if (m_panadapterA)
                 m_panadapterA->setFskMarkTone(toneHz);
             if (m_panadapterB)
@@ -950,7 +952,7 @@ MainWindow::MainWindow(QWidget *parent)
         }
         QString cmdPrefix = isMainRx ? "TD" : "TD$";
         QString cmd = QString("%1%2%3%4;").arg(cmdPrefix).arg(mode).arg(threshold).arg(window->maxLines());
-        qDebug() << "Sending TD command:" << cmd;
+        qCDebug(qk4Main) << "Sending TD command:" << cmd;
         m_tcpClient->sendCAT(cmd);
     };
 
@@ -1949,37 +1951,21 @@ MainWindow::MainWindow(QWidget *parent)
     // Keyer element started — send KZ command to I/O thread + sidetone to sidetone thread.
     // Using target objects as receiver context routes signals directly to their threads,
     // bypassing the main thread to eliminate UI-induced jitter on CW timing.
-    connect(m_iambicKeyer, &IambicKeyer::elementStarted, m_tcpClient, [tc = m_tcpClient](bool isDit) {
-        qDebug("[CW %10.3f] IO-SEND %s (thread=%s)", cwChainMs(), isDit ? "KZ." : "KZ-",
-               QThread::currentThread()->objectName().toLatin1().constData());
-        tc->sendCAT(isDit ? "KZ.;" : "KZ-;");
-    });
-    connect(m_iambicKeyer, &IambicKeyer::elementStarted, m_sidetoneGenerator, [sg = m_sidetoneGenerator](bool isDit) {
-        qDebug("[CW %10.3f] SIDETONE %s (thread=%s)", cwChainMs(), isDit ? "dit" : "dah",
-               QThread::currentThread()->objectName().toLatin1().constData());
-        isDit ? sg->playSingleDit() : sg->playSingleDah();
-    });
+    connect(m_iambicKeyer, &IambicKeyer::elementStarted, m_tcpClient,
+            [tc = m_tcpClient](bool isDit) { tc->sendCAT(isDit ? "KZ.;" : "KZ-;"); });
+    connect(m_iambicKeyer, &IambicKeyer::elementStarted, m_sidetoneGenerator,
+            [sg = m_sidetoneGenerator](bool isDit) { isDit ? sg->playSingleDit() : sg->playSingleDah(); });
 
     // Keyer finished — stop local sidetone (K4 unkeys itself after each KZ element)
-    connect(m_iambicKeyer, &IambicKeyer::keyingFinished, m_sidetoneGenerator, [sg = m_sidetoneGenerator]() {
-        qDebug("[CW %10.3f] SIDETONE stop (thread=%s)", cwChainMs(),
-               QThread::currentThread()->objectName().toLatin1().constData());
-        sg->stopElement();
-    });
+    connect(m_iambicKeyer, &IambicKeyer::keyingFinished, m_sidetoneGenerator,
+            [sg = m_sidetoneGenerator]() { sg->stopElement(); });
 
     // Character boundary — keyer went idle between elements
-    connect(m_iambicKeyer, &IambicKeyer::characterSpace, m_tcpClient, [tc = m_tcpClient]() {
-        qDebug("[CW %10.3f] IO-SEND KZ_space (thread=%s)", cwChainMs(),
-               QThread::currentThread()->objectName().toLatin1().constData());
-        tc->sendCAT("KZ ;");
-    });
+    connect(m_iambicKeyer, &IambicKeyer::characterSpace, m_tcpClient, [tc = m_tcpClient]() { tc->sendCAT("KZ ;"); });
 
     // Restart after pause — send KZP with elapsed ms before next element
-    connect(m_iambicKeyer, &IambicKeyer::restartAfterPause, m_tcpClient, [tc = m_tcpClient](int ms) {
-        qDebug("[CW %10.3f] IO-SEND KZP%04d (thread=%s)", cwChainMs(), ms,
-               QThread::currentThread()->objectName().toLatin1().constData());
-        tc->sendCAT(QString("KZP%1;").arg(ms, 4, 10, QChar('0')));
-    });
+    connect(m_iambicKeyer, &IambicKeyer::restartAfterPause, m_tcpClient,
+            [tc = m_tcpClient](int ms) { tc->sendCAT(QString("KZP%1;").arg(ms, 4, 10, QChar('0'))); });
 
     // Connect HaliKey paddle signals directly to keyer via DirectConnection.
     // setDitPaddle/setDahPaddle write atomic bools immediately on the calling thread,
@@ -2527,7 +2513,7 @@ void MainWindow::setupUi() {
         if (match.hasMatch()) {
             bool isSubRx = !match.captured(1).isEmpty(); // DT$ = Sub RX
             int subMode = match.captured(2).toInt();
-            qDebug() << "Optimistic DT update: isSubRx=" << isSubRx << "subMode=" << subMode;
+            qCDebug(qk4Main) << "Optimistic DT update: isSubRx=" << isSubRx << "subMode=" << subMode;
             if (isSubRx) {
                 m_radioState->setDataSubModeB(subMode);
             } else {
@@ -2573,7 +2559,7 @@ void MainWindow::setupUi() {
 
     // B SET indicator visibility and side panel indicator color
     connect(m_radioState, &RadioState::bSetChanged, this, [this](bool enabled) {
-        qDebug() << "B SET changed:" << enabled;
+        qCDebug(qk4Main) << "B SET changed:" << enabled;
         // Show/hide B SET indicator (hide SPLIT when B SET active)
         m_bSetLabel->setVisible(enabled);
         m_splitLabel->setVisible(!enabled);
@@ -3578,7 +3564,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         // Block mini pan B if VFOs are on different bands and SUB RX is off
         // (K4 cannot provide separate Sub RX spectrum without SUB RX enabled)
         if (areVfosOnDifferentBands() && !m_radioState->subReceiverEnabled()) {
-            qDebug() << "Mini-Pan B blocked: VFOs on different bands and SUB RX is off";
+            qCDebug(qk4Main) << "Mini-Pan B blocked: VFOs on different bands and SUB RX is off";
             return;
         }
         m_vfoB->showMiniPan();
@@ -3931,9 +3917,9 @@ void MainWindow::setupSpectrumPlaceholder(QWidget *parent) {
         m_radioState->setScale(newScale);
     });
 
-    // Ctrl+Wheel: Adjust reference level for Main RX
+    // Ctrl+Wheel: Adjust reference level for Main RX (blocked when auto-ref is active)
     connect(m_panadapterA, &PanadapterRhiWidget::refLevelScrolled, this, [this](int steps) {
-        if (!m_tcpClient->isConnected())
+        if (!m_tcpClient->isConnected() || m_radioState->autoRefLevel())
             return;
         int currentRef = m_radioState->refLevel();
         if (currentRef < -200)
@@ -4089,9 +4075,9 @@ void MainWindow::setupSpectrumPlaceholder(QWidget *parent) {
         m_radioState->setScale(newScale);
     });
 
-    // Ctrl+Wheel on panadapter B: Adjust reference level for Sub RX
+    // Ctrl+Wheel on panadapter B: Adjust reference level for Sub RX (blocked when auto-ref is active)
     connect(m_panadapterB, &PanadapterRhiWidget::refLevelScrolled, this, [this](int steps) {
-        if (!m_tcpClient->isConnected())
+        if (!m_tcpClient->isConnected() || m_radioState->autoRefLevel())
             return;
         int currentRef = m_radioState->refLevelB();
         if (currentRef < -200)
@@ -4229,6 +4215,8 @@ void MainWindow::showRadioManager() {
 }
 
 void MainWindow::connectToRadio(const RadioEntry &radio) {
+    qCDebug(qk4Main) << "connectToRadio: isConnected=" << m_tcpClient->isConnected()
+                     << "connectionState=" << m_tcpClient->connectionState();
     if (m_tcpClient->isConnected()) {
         QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::QueuedConnection);
     }
@@ -4236,8 +4224,23 @@ void MainWindow::connectToRadio(const RadioEntry &radio) {
     m_currentRadio = radio;
     m_titleLabel->setText("Elecraft K4 - " + radio.name);
 
-    qDebug() << "Connecting to" << radio.host << ":" << radio.port << (radio.useTls ? "(TLS/PSK)" : "(unencrypted)")
-             << "encodeMode:" << radio.encodeMode << "streamingLatency:" << radio.streamingLatency;
+    // Load startup macro so TcpClient can send it before RDY (state dump reflects changes)
+    {
+        MacroEntry startupMacro = RadioSettings::instance()->macro(MacroIds::Startup);
+        if (!startupMacro.command.isEmpty()) {
+            QString forbidden = MacroIds::checkForbiddenStartupCommand(startupMacro.command);
+            if (!forbidden.isEmpty()) {
+                qWarning() << "Startup macro blocked: contains forbidden command" << forbidden;
+            } else {
+                QMetaObject::invokeMethod(m_tcpClient, "setStartupMacro", Qt::QueuedConnection,
+                                          Q_ARG(QString, startupMacro.command));
+            }
+        }
+    }
+
+    qCDebug(qk4Main) << "Connecting to" << radio.host << ":" << radio.port
+                     << (radio.useTls ? "(TLS/PSK)" : "(unencrypted)") << "encodeMode:" << radio.encodeMode
+                     << "streamingLatency:" << radio.streamingLatency;
     QMetaObject::invokeMethod(m_tcpClient, "connectToHost", Qt::QueuedConnection, Q_ARG(QString, radio.host),
                               Q_ARG(quint16, radio.port), Q_ARG(QString, radio.password), Q_ARG(bool, radio.useTls),
                               Q_ARG(QString, radio.identity), Q_ARG(int, radio.encodeMode),
@@ -4263,7 +4266,7 @@ void MainWindow::onError(const QString &error) {
 }
 
 void MainWindow::onAuthenticated() {
-    qDebug() << "Successfully authenticated with K4 radio";
+    qCDebug(qk4Main) << "Successfully authenticated with K4 radio";
 
     // Start audio engine asynchronously on its dedicated thread.
     // Must NOT use BlockingQueuedConnection — setupAudioInput() (now deferred to
@@ -4295,6 +4298,8 @@ void MainWindow::onAuthenticated() {
     // Create synthetic "Display FPS" menu item with stored preference
     m_menuModel->addSyntheticDisplayFpsItem(m_currentRadio.displayFps);
 
+    // Startup macro is sent pre-RDY by TcpClient so the state dump reflects changes.
+
     // Connect KPA1500 if enabled and configured
     if (RadioSettings::instance()->kpa1500Enabled() && !RadioSettings::instance()->kpa1500Host().isEmpty()) {
         m_kpa1500Client->connectToHost(RadioSettings::instance()->kpa1500Host(),
@@ -4303,7 +4308,7 @@ void MainWindow::onAuthenticated() {
 }
 
 void MainWindow::onAuthenticationFailed() {
-    qDebug() << "Authentication failed";
+    qCDebug(qk4Main) << "Authentication failed";
     m_connectionStatusLabel->setText("Auth Failed");
     m_connectionStatusLabel->setStyleSheet(
         QString("color: %1; font-size: 12px; font-weight: bold;").arg(K4Styles::Colors::TxRed));
@@ -4689,8 +4694,8 @@ void MainWindow::onDisplayFpsChanged(int fps) {
 
     // Compare to stored preference and send if different
     if (m_tcpClient->isConnected() && m_currentRadio.displayFps != fps) {
-        qDebug() << "Display FPS mismatch: stored=" << m_currentRadio.displayFps << "radio=" << fps << "-> sending #FPS"
-                 << m_currentRadio.displayFps;
+        qCDebug(qk4Main) << "Display FPS mismatch: stored=" << m_currentRadio.displayFps << "radio=" << fps
+                         << "-> sending #FPS" << m_currentRadio.displayFps;
         m_tcpClient->sendCAT(QString("#FPS%1;").arg(m_currentRadio.displayFps));
     }
 }
@@ -5059,14 +5064,14 @@ void MainWindow::onPttPressed() {
     m_txSequence = 0; // Reset sequence on new PTT press
     QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, true));
     m_bottomMenuBar->setPttActive(true);
-    qDebug() << "PTT pressed - microphone enabled";
+    qCDebug(qk4Main) << "PTT pressed - microphone enabled";
 }
 
 void MainWindow::onPttReleased() {
     m_pttActive = false;
     QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, false));
     m_bottomMenuBar->setPttActive(false);
-    qDebug() << "PTT released - microphone disabled";
+    qCDebug(qk4Main) << "PTT released - microphone disabled";
 }
 
 void MainWindow::onMicrophoneFrame(const QByteArray &s16leData) {
@@ -5373,7 +5378,7 @@ void MainWindow::onMenuValueChangeRequested(int menuId, const QString &action) {
 
         // Send #FPS command (not ME command)
         if (m_tcpClient->isConnected()) {
-            qDebug() << "Display FPS change:" << QString("#FPS%1;").arg(newValue);
+            qCDebug(qk4Main) << "Display FPS change:" << QString("#FPS%1;").arg(newValue);
             m_tcpClient->sendCAT(QString("#FPS%1;").arg(newValue));
         }
 
@@ -5385,7 +5390,7 @@ void MainWindow::onMenuValueChangeRequested(int menuId, const QString &action) {
     // Build and send ME command for real K4 menu items
     // action: "+" = increment, "-" = decrement, "/" = toggle
     QString cmd = QString("ME%1.%2;").arg(menuId, 4, 10, QChar('0')).arg(action);
-    qDebug() << "Menu value change:" << cmd;
+    qCDebug(qk4Main) << "Menu value change:" << cmd;
 
     // For prototype: update local model immediately (optimistic update)
     MenuItem *item = m_menuModel->getMenuItem(menuId);
@@ -5414,7 +5419,7 @@ void MainWindow::onMenuModelValueChanged(int menuId, int newValue) {
     if (item && item->name == "Spectrum Amplitude Units") {
         // 0 = dBm, 1 = S-UNITS
         bool useSUnits = (newValue == 1);
-        qDebug() << "Spectrum amplitude units changed:" << (useSUnits ? "S-UNITS" : "dBm");
+        qCDebug(qk4Main) << "Spectrum amplitude units changed:" << (useSUnits ? "S-UNITS" : "dBm");
 
         if (m_panadapterA) {
             m_panadapterA->setAmplitudeUnits(useSUnits);
@@ -5427,7 +5432,7 @@ void MainWindow::onMenuModelValueChanged(int menuId, int newValue) {
     // Track "Mouse L/R Button QSY" setting changes (from radio or menu overlay)
     if (menuId == m_mouseQsyMenuId) {
         m_mouseQsyMode = newValue;
-        qDebug() << "Mouse L/R Button QSY changed to:" << m_mouseQsyMode;
+        qCDebug(qk4Main) << "Mouse L/R Button QSY changed to:" << m_mouseQsyMode;
     }
 
     // Track "FSK Mark-Tone" setting changes
@@ -5435,7 +5440,7 @@ void MainWindow::onMenuModelValueChanged(int menuId, int newValue) {
         auto *item = m_menuModel->getMenuItem(menuId);
         if (item && newValue >= 0 && newValue < item->options.size()) {
             int toneHz = item->options[newValue].toInt();
-            qDebug() << "FSK Mark-Tone changed to:" << toneHz << "Hz";
+            qCDebug(qk4Main) << "FSK Mark-Tone changed to:" << toneHz << "Hz";
             if (m_panadapterA)
                 m_panadapterA->setFskMarkTone(toneHz);
             if (m_panadapterB)
@@ -5577,14 +5582,14 @@ void MainWindow::toggleTxPopup() {
 }
 
 void MainWindow::onBandSelected(const QString &bandName) {
-    qDebug() << "Band selected:" << bandName;
+    qCDebug(qk4Main) << "Band selected:" << bandName;
 
     // Get band number from name
     int newBandNum = m_bandPopup->getBandNumber(bandName);
 
     // GEN and MEM are special modes, not band changes (-1 returned)
     if (newBandNum < 0) {
-        qDebug() << "Special mode selected (GEN/MEM) - no BN command";
+        qCDebug(qk4Main) << "Special mode selected (GEN/MEM) - no BN command";
         return;
     }
 
@@ -5597,12 +5602,12 @@ void MainWindow::onBandSelected(const QString &bandName) {
         if (newBandNum == currentBand) {
             // Same band tapped - invoke band stack
             QString bandStackCmd = bSetEnabled ? "BN$^;" : "BN^;";
-            qDebug() << "Same band - invoking band stack with" << bandStackCmd;
+            qCDebug(qk4Main) << "Same band - invoking band stack with" << bandStackCmd;
             m_tcpClient->sendCAT(bandStackCmd);
         } else {
             // Different band selected - change band
             QString cmd = QString("%1%2;").arg(cmdPrefix).arg(newBandNum, 2, 10, QChar('0'));
-            qDebug() << "Changing band:" << cmd;
+            qCDebug(qk4Main) << "Changing band:" << cmd;
             m_tcpClient->sendCAT(cmd);
         }
         // Request current band to update UI
@@ -5725,7 +5730,7 @@ void MainWindow::onErrorNotification(int errorCode, const QString &message) {
 // ============== KPA1500 Amplifier Slots ==============
 
 void MainWindow::onKpa1500Connected() {
-    qDebug() << "KPA1500: Connected to amplifier";
+    qCDebug(qk4Main) << "KPA1500: Connected to amplifier";
     // Start polling with configured interval
     int pollInterval = RadioSettings::instance()->kpa1500PollInterval();
     m_kpa1500Client->startPolling(pollInterval);
@@ -5733,7 +5738,7 @@ void MainWindow::onKpa1500Connected() {
 }
 
 void MainWindow::onKpa1500Disconnected() {
-    qDebug() << "KPA1500: Disconnected from amplifier";
+    qCDebug(qk4Main) << "KPA1500: Disconnected from amplifier";
     updateKpa1500Status();
 }
 
@@ -5793,26 +5798,26 @@ void MainWindow::updateKpa1500Status() {
 // ============== Fn Popup / Macro Slots ==============
 
 void MainWindow::onFnFunctionTriggered(const QString &functionId) {
-    qDebug() << "Fn function triggered:" << functionId;
+    qCDebug(qk4Main) << "Fn function triggered:" << functionId;
 
     // Handle built-in functions
     if (functionId == MacroIds::ScrnCap) {
         // SS0; triggers K4 screenshot (saved to internal SD card)
         if (m_tcpClient && m_tcpClient->isConnected()) {
             m_tcpClient->sendCAT("SS0;");
-            qDebug() << "Screenshot captured (SS0;)";
+            qCDebug(qk4Main) << "Screenshot captured (SS0;)";
         }
     } else if (functionId == MacroIds::Macros) {
         openMacroDialog();
     } else if (functionId == MacroIds::SwList) {
         // TODO: Show software list
-        qDebug() << "Software list - not yet implemented";
+        qCDebug(qk4Main) << "Software list - not yet implemented";
     } else if (functionId == MacroIds::Update) {
         // TODO: Check for updates
-        qDebug() << "Update check - not yet implemented";
+        qCDebug(qk4Main) << "Update check - not yet implemented";
     } else if (functionId == MacroIds::DxList) {
         // TODO: Show DX list
-        qDebug() << "DX list - not yet implemented";
+        qCDebug(qk4Main) << "DX list - not yet implemented";
     } else {
         // User-configurable macro - execute CAT command
         executeMacro(functionId);
@@ -5822,12 +5827,12 @@ void MainWindow::onFnFunctionTriggered(const QString &functionId) {
 void MainWindow::executeMacro(const QString &functionId) {
     MacroEntry macro = RadioSettings::instance()->macro(functionId);
     if (!macro.command.isEmpty()) {
-        qDebug() << "Executing macro" << functionId << ":" << macro.command;
+        qCDebug(qk4Main) << "Executing macro" << functionId << ":" << macro.command;
         if (m_tcpClient && m_tcpClient->isConnected()) {
             m_tcpClient->sendCAT(macro.command);
         }
     } else {
-        qDebug() << "No macro configured for" << functionId;
+        qCDebug(qk4Main) << "No macro configured for" << functionId;
     }
 }
 

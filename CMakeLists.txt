@@ -76,6 +76,7 @@ set(SOURCES
     src/network/networkmetrics.cpp
     src/network/kpa1500client.cpp
     src/network/catserver.cpp
+    src/network/k4discovery.cpp
     src/audio/audioengine.cpp
     src/audio/opusdecoder.cpp
     src/audio/opusencoder.cpp
@@ -141,6 +142,7 @@ set(HEADERS
     src/network/networkmetrics.h
     src/network/kpa1500client.h
     src/network/catserver.h
+    src/network/k4discovery.h
     src/audio/audioengine.h
     src/audio/opusdecoder.h
     src/audio/opusencoder.h

@@ -25,9 +25,6 @@ public:
     Q_INVOKABLE void stop();
     Q_INVOKABLE void setOutputDevice(const QString &deviceId);
 
-    // Start repeating element while paddle is held (V14 modem-line interface)
-    Q_INVOKABLE void startDit();
-    Q_INVOKABLE void startDah();
     Q_INVOKABLE void stopElement(); // Call when paddle is released
 
     // Play a single element without repeat (MIDI interface — K4 keyer handles repeat)
@@ -35,12 +32,6 @@ public:
     Q_INVOKABLE void playSingleDah();
 
 signals:
-    // Emitted when repeat timer fires (for sending KZ commands)
-    void ditRepeated();
-    void dahRepeated();
-
-private slots:
-    void onRepeatTimer();
 
 private:
     void initAudio();

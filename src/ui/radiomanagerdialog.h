@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include "settings/radiosettings.h"
+#include "network/k4discovery.h"
 
 class RadioManagerDialog : public QDialog {
     Q_OBJECT
@@ -37,12 +38,16 @@ private slots:
     void onItemDoubleClicked(QListWidgetItem *item);
     void onTlsCheckboxToggled(bool checked);
     void refreshList();
+    void onRadioFound(const K4RadioInfo &radio);
+    void onDiscoveryFinished(int count);
 
 private:
     void setupUi();
     void updateButtonStates();
     void clearFields();
     void populateFieldsFromSelection();
+    void startDiscovery();
+    bool isAlreadyConfigured(const K4RadioInfo &radio) const;
 
     QListWidget *m_radioList;
     QLineEdit *m_nameEdit;
@@ -60,9 +65,15 @@ private:
     QPushButton *m_saveButton;
     QPushButton *m_deleteButton;
     QPushButton *m_backButton;
+    QPushButton *m_scanButton;
+    QTimer *m_scanCountdown = nullptr;
+    int m_scanSecondsLeft = 0;
 
     int m_currentIndex;
     QString m_connectedHost; // Host of currently connected radio (empty if disconnected)
+
+    K4Discovery *m_discovery;
+    QList<K4RadioInfo> m_discoveredRadios; // Unconfigured discovered radios shown in list
 };
 
 #endif // RADIOMANAGERDIALOG_H

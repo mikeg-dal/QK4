@@ -1,6 +1,4 @@
 #include "networkmetrics.h"
-#include "../hardware/iambickeyer.h" // for cwChainMs()
-#include <QDebug>
 #include <cmath>
 
 NetworkMetrics::NetworkMetrics(QObject *parent) : QObject(parent) {
@@ -16,11 +14,6 @@ void NetworkMetrics::onLatencyChanged(int ms) {
     if (static_cast<int>(m_rttSamples.size()) > RTT_WINDOW)
         m_rttSamples.pop_front();
     updateRttStats();
-
-    // RTT spike event: must exceed both 3x average AND 20ms absolute floor
-    if (m_rttSamples.size() > 3 && ms > 20 && (ms > m_rttAvg * 3.0 || ms > 200)) {
-        qDebug("[NET %10.3f] RTT SPIKE: %dms (avg:%.0fms)", cwChainMs(), ms, m_rttAvg);
-    }
 }
 
 void NetworkMetrics::updateRttStats() {
@@ -62,8 +55,6 @@ void NetworkMetrics::onAudioSequence(quint8 seq) {
             if (gap > 0 && gap < 128) {
                 m_lostPacketsInterval += gap;
                 m_lostPacketsTotal += gap;
-                qDebug("[NET %10.3f] LOSS: %d audio packet(s) lost (seq %d->%d, expected %d)", cwChainMs(), gap,
-                       m_lastAudioSeq, seq, expected);
             }
         }
     }
@@ -79,7 +70,6 @@ void NetworkMetrics::onBufferStatus(int queueBytes, int maxBytes, bool prebuffer
 void NetworkMetrics::onConnectionStateChanged(bool connected) {
     m_connected = connected;
     if (connected) {
-        qDebug("[NET %10.3f] CONNECTED", cwChainMs());
         m_summaryTimer->start();
         // Reset state for new connection
         m_rttSamples.clear();
@@ -102,7 +92,6 @@ void NetworkMetrics::onConnectionStateChanged(bool connected) {
         m_tier = Green;
         emit healthTierChanged(m_tier);
     } else {
-        qDebug("[NET %10.3f] DISCONNECTED", cwChainMs());
         m_summaryTimer->stop();
         m_audioActive = false;
         m_rttCurrent = -1;
@@ -166,15 +155,6 @@ void NetworkMetrics::onSummaryTimer() {
         return;
 
     computeHealthTier();
-
-    double bufferMs = m_bufferBytes / 96.0; // BYTES_PER_MS = 96
-
-    static const char *tierNames[] = {"GREEN", "YELLOW", "ORANGE", "RED"};
-
-    qDebug("[NET %10.3f] RTT %dms (avg:%.0f min:%d max:%d jit:%.1f) | "
-           "BUF %.0fms | PKT %d/2s | %s",
-           cwChainMs(), m_rttCurrent, m_rttAvg, m_rttMin, m_rttMax, m_rttJitter, bufferMs, m_totalPacketsInterval,
-           tierNames[m_tier]);
 
     // Track stale ping (reset in onLatencyChanged when PONG arrives)
     m_stalePingCount++;

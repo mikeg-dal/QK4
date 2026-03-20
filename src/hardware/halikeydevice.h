@@ -33,10 +33,6 @@ public:
     static QList<HaliKeyPortInfo> availablePortsDetailed();
     static QStringList availableMidiDevices();
 
-    // Current paddle state
-    bool ditPressed() const;
-    bool dahPressed() const;
-
 signals:
     void connected();
     void disconnected();
@@ -68,7 +64,7 @@ private:
     bool m_confirmedDahState = false;
     bool m_confirmedPttState = false;
 
-    // Debounce timers — emit ON immediately, delay OFF by 10ms to absorb bounce
+    // Debounce timers — emit ON immediately, delay OFF by 3ms to absorb bounce
     QTimer *m_ditDebounceTimer = nullptr;
     QTimer *m_dahDebounceTimer = nullptr;
     QTimer *m_pttDebounceTimer = nullptr;

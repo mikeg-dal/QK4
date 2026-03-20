@@ -1,7 +1,7 @@
 #include "kpoddevice.h"
 #include <hidapi/hidapi.h>
-#include <QDebug>
 #include <QDateTime>
+#include <QLoggingCategory>
 #include <QDir>
 #include <QFile>
 #include <QStandardPaths>
@@ -12,9 +12,11 @@
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
+Q_LOGGING_CATEGORY(hwKpod, "hw.kpod")
+
 // Debug logging helper for KPOD troubleshooting
 static void kpodLog(const QString &msg) {
-    qDebug() << "KPOD:" << msg;
+    qCDebug(hwKpod) << "KPOD:" << msg;
 #ifdef Q_OS_WIN
     // Write to TEMP directory - guaranteed to exist and be writable
     static QString logPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/kpod_debug.log";

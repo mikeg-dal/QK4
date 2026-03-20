@@ -2,7 +2,6 @@
 #include "halikeymidiworker.h"
 #include "halikeyv14worker.h"
 #include "halikeyworkerbase.h"
-#include "iambickeyer.h" // for cwChainMs()
 #include "../settings/radiosettings.h"
 #include <QDebug>
 #include <RtMidi.h>
@@ -15,7 +14,6 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
     connect(m_ditDebounceTimer, &QTimer::timeout, this, [this]() {
         if (m_rawDitState != m_confirmedDitState) {
             m_confirmedDitState = m_rawDitState;
-            qDebug("[CW %10.3f] DEBOUNCE dit=%s", cwChainMs(), m_confirmedDitState ? "DOWN" : "UP");
             emit ditStateChanged(m_confirmedDitState);
         }
     });
@@ -26,7 +24,6 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
     connect(m_dahDebounceTimer, &QTimer::timeout, this, [this]() {
         if (m_rawDahState != m_confirmedDahState) {
             m_confirmedDahState = m_rawDahState;
-            qDebug("[CW %10.3f] DEBOUNCE dah=%s", cwChainMs(), m_confirmedDahState ? "DOWN" : "UP");
             emit dahStateChanged(m_confirmedDahState);
         }
     });
@@ -52,7 +49,6 @@ void HalikeyDevice::onRawDit(bool pressed) {
         // Key down — emit immediately for zero latency (runs on RtMidi thread)
         m_confirmedDitState = true;
         QMetaObject::invokeMethod(m_ditDebounceTimer, "stop", Qt::QueuedConnection);
-        qDebug("[CW %10.3f] HALIKEY dit=DOWN (immediate)", cwChainMs());
         emit ditStateChanged(true);
     } else {
         // Key up or redundant key down — post debounce start to main thread (QTimer not thread-safe)
@@ -65,7 +61,6 @@ void HalikeyDevice::onRawDah(bool pressed) {
     if (pressed && !m_confirmedDahState) {
         m_confirmedDahState = true;
         QMetaObject::invokeMethod(m_dahDebounceTimer, "stop", Qt::QueuedConnection);
-        qDebug("[CW %10.3f] HALIKEY dah=DOWN (immediate)", cwChainMs());
         emit dahStateChanged(true);
     } else {
         QMetaObject::invokeMethod(m_dahDebounceTimer, "start", Qt::QueuedConnection);
@@ -223,12 +218,4 @@ QStringList HalikeyDevice::availableMidiDevices() {
         qWarning() << "HalikeyDevice: MIDI enumeration failed:" << QString::fromStdString(error.getMessage());
     }
     return devices;
-}
-
-bool HalikeyDevice::ditPressed() const {
-    return m_confirmedDitState;
-}
-
-bool HalikeyDevice::dahPressed() const {
-    return m_confirmedDahState;
 }

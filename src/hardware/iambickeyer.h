@@ -6,17 +6,6 @@
 #include <QTimer>
 #include <atomic>
 
-// Shared high-resolution timer for CW chain diagnostics.
-// Returns ms since first call — all CW log entries share this epoch.
-inline double cwChainMs() {
-    static QElapsedTimer t = []() {
-        QElapsedTimer timer;
-        timer.start();
-        return timer;
-    }();
-    return t.nsecsElapsed() / 1e6;
-}
-
 class IambicKeyer : public QObject {
     Q_OBJECT
 

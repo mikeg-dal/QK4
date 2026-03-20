@@ -29,6 +29,11 @@ public:
     Q_INVOKABLE void sendCAT(const QString &command);
     Q_INVOKABLE void sendRaw(const QByteArray &data);
 
+    // Pre-RDY command string sent before the state dump on connect.
+    // Must be called before connectToHost() — both are queued to the IO thread,
+    // so ordering is guaranteed as long as the caller doesn't interleave.
+    Q_INVOKABLE void setStartupMacro(const QString &macro) { m_startupMacro = macro; }
+
     Protocol *protocol() { return m_protocol; }
 
     int latencyMs() const { return m_latencyMs; }
@@ -60,12 +65,15 @@ private:
     void sendAuthentication();
     void startPingTimer();
     void stopPingTimer();
+    void attemptConnection();
 
     QSslSocket *m_socket;
     Protocol *m_protocol;
     QTimer *m_authTimer;
     QTimer *m_connectTimer;
     QTimer *m_pingTimer;
+    QTimer *m_retryTimer;
+    int m_retryCount = 0;
 
     QString m_host;
     quint16 m_port;
@@ -80,6 +88,7 @@ private:
 
     QElapsedTimer m_pingElapsed;
     int m_latencyMs = -1;
+    QString m_startupMacro; // Sent before RDY so state dump reflects macro changes
 };
 
 #endif // TCPCLIENT_H

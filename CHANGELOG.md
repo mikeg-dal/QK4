@@ -4,6 +4,23 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
+## [0.5.0-beta.7] - 2026-03-20
+
+### Added
+
+- **net**: Add K4 UDP discovery with LAN scan button in Server Manager (PR #74, ny4i)
+- **ui**: Add startup macro support — CAT commands sent pre-RDY on connect (PR #74, ny4i)
+
+### Fixed
+
+- **net**: Resolve mDNS `.local` hostnames before connecting — fixes TLS timeout (PR #76, ny4i)
+- **net**: Handle ARP-cold connect failure on fresh app launch
+- **ui**: Block ref level +/- and wheel when auto-ref is active
+- **ui**: Prevent crash on app close when health bar popup is visible
+- **cw,net**: Remove debug logging and dead code from CW/network paths
+
+---
+
 ## [0.4.0-beta.3] - 2026-02-12
 
 ### Added
