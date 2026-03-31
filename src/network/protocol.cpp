@@ -112,8 +112,8 @@ void Protocol::processPacket(const QByteArray &payload) {
                 qFromLittleEndian<qint32>(reinterpret_cast<const uchar *>(payload.constData() + NOISE_FLOOR_OFFSET));
             float noiseFloor = noiseFloorRaw / 10.0f;
 
-            QByteArray bins = payload.mid(BINS_OFFSET);
-            emit spectrumDataReady(receiver, bins, centerFreq, sampleRate, noiseFloor);
+            int binCount = payload.size() - BINS_OFFSET;
+            emit spectrumDataReady(receiver, payload, BINS_OFFSET, binCount, centerFreq, sampleRate, noiseFloor);
         }
         break;
     }
@@ -122,8 +122,8 @@ void Protocol::processPacket(const QByteArray &payload) {
         using namespace K4Protocol::MiniPanPacket;
         if (payload.size() > HEADER_SIZE) {
             int receiver = static_cast<quint8>(payload[RECEIVER_OFFSET]);
-            QByteArray bins = payload.mid(BINS_OFFSET);
-            emit miniSpectrumDataReady(receiver, bins);
+            int binCount = payload.size() - BINS_OFFSET;
+            emit miniSpectrumDataReady(receiver, payload, BINS_OFFSET, binCount);
         }
         break;
     }

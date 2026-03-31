@@ -283,13 +283,7 @@ void RadioManagerDialog::refreshList() {
     for (const auto &radio : m_discoveredRadios) {
         if (!isAlreadyConfigured(radio)) {
             stillUnconfigured.append(radio);
-            auto *item = new QListWidgetItem(radio.hostname());
-            QFont font = item->font();
-            font.setItalic(true);
-            item->setFont(font);
-            item->setData(Qt::UserRole, QStringLiteral("discovered"));
-            item->setData(Qt::UserRole + 1, radio.ipAddress);
-            m_radioList->addItem(item);
+            addDiscoveredItem(radio);
         }
     }
     m_discoveredRadios = stillUnconfigured;
@@ -580,6 +574,23 @@ bool RadioManagerDialog::isAlreadyConfigured(const K4RadioInfo &radio) const {
     return false;
 }
 
+void RadioManagerDialog::addDiscoveredItem(const K4RadioInfo &radio) {
+    bool isK4Z = radio.isK4Zero();
+    QString label = isK4Z ? QString("%1 (info only)").arg(radio.hostname()) : radio.hostname();
+    auto *item = new QListWidgetItem(label);
+    QFont font = item->font();
+    font.setItalic(true);
+    item->setFont(font);
+    item->setData(Qt::UserRole, QStringLiteral("discovered"));
+    item->setData(Qt::UserRole + 1, radio.ipAddress);
+    if (isK4Z) {
+        // K4Z (K4/0) is not supported by QK4 — show grayed out and unselectable
+        item->setFlags(item->flags() & ~(Qt::ItemIsSelectable | Qt::ItemIsEnabled));
+        item->setForeground(QColor(K4Styles::Colors::TextGray));
+    }
+    m_radioList->addItem(item);
+}
+
 void RadioManagerDialog::onRadioFound(const K4RadioInfo &radio) {
     // Skip if already in the configured server list
     if (isAlreadyConfigured(radio))
@@ -592,15 +603,7 @@ void RadioManagerDialog::onRadioFound(const K4RadioInfo &radio) {
     }
 
     m_discoveredRadios.append(radio);
-
-    // Add to list widget in italics
-    auto *item = new QListWidgetItem(radio.hostname());
-    QFont font = item->font();
-    font.setItalic(true);
-    item->setFont(font);
-    item->setData(Qt::UserRole, QStringLiteral("discovered"));
-    item->setData(Qt::UserRole + 1, radio.ipAddress);
-    m_radioList->addItem(item);
+    addDiscoveredItem(radio);
 }
 
 void RadioManagerDialog::onDiscoveryFinished(int count) {

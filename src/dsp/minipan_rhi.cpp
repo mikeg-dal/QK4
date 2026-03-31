@@ -2,7 +2,6 @@
 #include "panadapter_constants.h"
 #include "rhi_utils.h"
 #include "ui/k4styles.h"
-#include <QFile>
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QtMath>
@@ -34,55 +33,7 @@ MiniPanRhiWidget::~MiniPanRhiWidget() {
 }
 
 void MiniPanRhiWidget::initColorLUT() {
-    // Create 256-entry RGBA color LUT for waterfall (matches main panadapter)
-    // 8-stage: Black -> Dark Blue -> Royal Blue -> Cyan -> Green -> Yellow -> Red
-    m_colorLUT.resize(256 * 4);
-
-    for (int i = 0; i < 256; ++i) {
-        float value = i / 255.0f;
-        int r, g, b;
-
-        if (value < 0.10f) {
-            r = 0;
-            g = 0;
-            b = 0;
-        } else if (value < 0.25f) {
-            float t = (value - 0.10f) / 0.15f;
-            r = 0;
-            g = 0;
-            b = static_cast<int>(t * 51);
-        } else if (value < 0.40f) {
-            float t = (value - 0.25f) / 0.15f;
-            r = 0;
-            g = 0;
-            b = static_cast<int>(51 + t * 102);
-        } else if (value < 0.55f) {
-            float t = (value - 0.40f) / 0.15f;
-            r = 0;
-            g = static_cast<int>(t * 128);
-            b = static_cast<int>(153 + t * 102);
-        } else if (value < 0.70f) {
-            float t = (value - 0.55f) / 0.15f;
-            r = 0;
-            g = static_cast<int>(128 + t * 127);
-            b = static_cast<int>(255 * (1.0f - t));
-        } else if (value < 0.85f) {
-            float t = (value - 0.70f) / 0.15f;
-            r = static_cast<int>(t * 255);
-            g = 255;
-            b = 0;
-        } else {
-            float t = (value - 0.85f) / 0.15f;
-            r = 255;
-            g = static_cast<int>(255 * (1.0f - t));
-            b = 0;
-        }
-
-        m_colorLUT[i * 4 + 0] = static_cast<quint8>(qBound(0, r, 255));
-        m_colorLUT[i * 4 + 1] = static_cast<quint8>(qBound(0, g, 255));
-        m_colorLUT[i * 4 + 2] = static_cast<quint8>(qBound(0, b, 255));
-        m_colorLUT[i * 4 + 3] = 255;
-    }
+    RhiUtils::generateWaterfallColorLUT(m_colorLUT);
 }
 
 void MiniPanRhiWidget::initialize(QRhiCommandBuffer *cb) {

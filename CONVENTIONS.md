@@ -315,3 +315,62 @@ K4Styles::drawDropShadow(painter, contentRect, cornerRadius)
 - Used for small toggle buttons in horizontal rows
 
 **Creating popups:** See `PATTERNS.md` → "Adding a Popup Menu" for current patterns.
+
+---
+
+## Architecture Rules
+
+These rules prevent the architectural issues identified in the 2026-03-30 audit. They are non-negotiable for all new code and refactoring work.
+
+### 1. No Duplicated Static Functions
+
+If a function is needed in more than one translation unit, it goes in `src/utils/` with a namespace (e.g., `RadioUtils::`). Copy-pasting a static function into another `.cpp` file is a defect. Fix it immediately.
+
+### 2. Controllers Do Not Expose Owned Objects
+
+Controllers expose **task-level APIs**, not internal workers. No `audioEngine()`, `kpodDevice()`, or `tcpClient()` accessors in the public interface. If external code needs to configure a device, add a method to the controller (e.g., `audioController->setInputDevice(...)` instead of `audioController->audioEngine()->setInputDevice(...)`).
+
+**Exception:** `tcpClient()` is exposed for AudioController's performance-sensitive audio data path and CatServer's direct TCP forwarding. These are documented exceptions, not precedent.
+
+### 3. No Non-Const References to Shared State
+
+Never return `Type&` from a getter when multiple callers may read or write. Use `const Type&` for read access and typed setters for mutations. This prevents data races and makes state changes auditable.
+
+### 4. RadioState is Main-Thread Only
+
+`parseCATCommand()` is enforced by `Q_ASSERT(QThread::currentThread() == thread())`. All callers must be on the main (GUI) thread. If cross-thread parsing is ever needed, use `QMetaObject::invokeMethod` with `Qt::QueuedConnection`.
+
+### 5. Network Buffers Have Explicit Size Limits
+
+Any buffer that accumulates data from an external source must check against a maximum size and handle overflow (disconnect, discard, or reset). Use `K4Protocol::MAX_BUFFER_SIZE` (1MB) as the default limit.
+
+### 6. Parser Changes Require Test Cases
+
+Any modification to `RadioState::parseCATCommand()` or its handlers must include a corresponding test case in `tests/test_radiostate.cpp`. No merge without test coverage for the changed behavior.
+
+### 7. No File Over 800 Lines
+
+If a `.cpp` or `.h` file grows past 800 lines, split it by responsibility before merging. Check with `wc -l` before committing.
+
+### 8. Every Extraction is Traced First
+
+Before moving code between classes: read every member variable, method, signal, and `connect()` call involved. Document what moves, what stays, and what the cross-domain dependencies are. Missing a dependency means a broken extraction.
+
+### 9. One Commit Per Logical Change
+
+Never combine structural moves with logic changes in the same commit. If a refactor introduces a new class AND fixes a bug, those are two commits. This enables `git bisect` and clean `git revert`.
+
+### 10. Build + Format + Tests Before Every Commit
+
+```bash
+clang-format -i <changed files>
+find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+All four must pass. No exceptions.
+
+### 11. Controlled Shutdown Order
+
+Every controller and MainWindow calls `disconnect(this)` as the first statement in its destructor. This prevents queued signals from arriving during partial destruction. Thread shutdown follows the dependency chain: producers stop before consumers.

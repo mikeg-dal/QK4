@@ -5,7 +5,7 @@
 #include <QVBoxLayout>
 
 NetHealthWidget::NetHealthWidget(NetworkMetrics *metrics, QWidget *parent) : QWidget(parent), m_metrics(metrics) {
-    setFixedSize(20, 16);
+    setFixedSize(K4Styles::Dimensions::SmallIconSize, 16);
     connect(m_metrics, &NetworkMetrics::healthTierChanged, this, &NetHealthWidget::onHealthTierChanged);
 }
 
@@ -91,8 +91,12 @@ void NetHealthWidget::showMetricsPopup() {
     layout->setContentsMargins(8, 6, 8, 6);
     layout->setSpacing(2);
 
-    QString labelStyle = QString("color: %1; font-size: 10px; border: none;").arg(K4Styles::Colors::TextGray);
-    QString valueStyle = QString("color: %1; font-size: 10px; border: none;").arg(K4Styles::Colors::TextWhite);
+    QString labelStyle = QString("color: %1; font-size: %2px; border: none;")
+                             .arg(K4Styles::Colors::TextGray)
+                             .arg(K4Styles::Dimensions::FontSizeMedium);
+    QString valueStyle = QString("color: %1; font-size: %2px; border: none;")
+                             .arg(K4Styles::Colors::TextWhite)
+                             .arg(K4Styles::Dimensions::FontSizeMedium);
 
     // RTT line
     auto *rttLabel = new QLabel(m_popup);
@@ -127,7 +131,9 @@ void NetHealthWidget::showMetricsPopup() {
     static const char *tierNames[] = {"GREEN", "YELLOW", "ORANGE", "RED"};
     static const char *tierColors[] = {K4Styles::Colors::StatusGreen, K4Styles::Colors::MeterYellow,
                                        K4Styles::Colors::MeterOrange, K4Styles::Colors::TxRed};
-    QString tierStyle = QString("color: %1; font-size: 10px; font-weight: bold; border: none;").arg(tierColors[m_tier]);
+    QString tierStyle = QString("color: %1; font-size: %2px; font-weight: bold; border: none;")
+                            .arg(tierColors[m_tier])
+                            .arg(K4Styles::Dimensions::FontSizeMedium);
     if (m_metrics->rttCurrent() >= 0) {
         pktLabel->setText(QString("<span style='%1'>PKT </span><span style='%2'>%3/2s</span>"
                                   "   <span style='%4'>%5</span>")

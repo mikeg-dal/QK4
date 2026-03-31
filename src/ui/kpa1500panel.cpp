@@ -238,28 +238,18 @@ void KPA1500Panel::paintEvent(QPaintEvent *event) {
     painter.setPen(QPen(QColor(K4Styles::Colors::BorderNormal), 1));
     painter.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 6, 6);
 
-    // Header: "KPA1500" + status text labels
-    const int headerY = 6;
-    const int headerHeight = 16;
-
-    // Title
-    QFont titleFont = font();
-    titleFont.setPixelSize(K4Styles::Dimensions::FontSizeMedium);
-    titleFont.setBold(true);
-    painter.setFont(titleFont);
-    painter.setPen(QColor(K4Styles::Colors::AccentAmber));
-    painter.drawText(8, headerY, 70, headerHeight, Qt::AlignLeft | Qt::AlignVCenter, "KPA1500");
-
-    // Status text labels
-    drawStatusLabels(painter, headerY, headerHeight);
+    // Status labels drawn at top
+    const int statusY = 4;
+    const int statusHeight = 14;
+    drawStatusLabels(painter, statusY, statusHeight);
 
     // Separator line
     painter.setPen(QColor(K4Styles::Colors::BorderNormal));
-    painter.drawLine(8, headerY + headerHeight + 2, w - 8, headerY + headerHeight + 2);
+    painter.drawLine(8, statusY + statusHeight + 2, w - 8, statusY + statusHeight + 2);
 
     // Meter layout constants
     const int meterSpacing = 50; // Height per full meter
-    int meterY = 28;
+    int meterY = statusY + statusHeight + 6;
 
     // FWD meter (0-1500W)
     float fwdRatio = m_displayForwardPower / 1500.0f;
@@ -296,22 +286,25 @@ void KPA1500Panel::drawStatusLabels(QPainter &painter, int y, int height) {
     labelFont.setBold(true);
     painter.setFont(labelFont);
 
-    // OPERATE/STANDBY label (after title, left side)
+    int margin = 8;
+    int thirdW = (w - margin * 2) / 3;
+
+    // OPERATE/STANDBY (left third)
     QString modeText = m_operate ? "OPERATE" : "STANDBY";
     QColor modeColor = m_operate ? QColor(K4Styles::Colors::StatusGreen) : QColor(K4Styles::Colors::InactiveGray);
     painter.setPen(modeColor);
-    painter.drawText(80, y, 60, height, Qt::AlignLeft | Qt::AlignVCenter, modeText);
+    painter.drawText(margin, y, thirdW, height, Qt::AlignCenter, modeText);
 
-    // ATU IN/BYP label (right of center)
+    // ATU IN/BYP (center third)
     QString atuText = m_atuIn ? "ATU IN" : "ATU BYP";
     QColor atuColor = m_atuIn ? QColor(K4Styles::Colors::StatusGreen) : QColor(K4Styles::Colors::InactiveGray);
     painter.setPen(atuColor);
-    painter.drawText(w / 2 + 15, y, 55, height, Qt::AlignCenter | Qt::AlignVCenter, atuText);
+    painter.drawText(margin + thirdW, y, thirdW, height, Qt::AlignCenter, atuText);
 
-    // Fault label (right side, only if fault)
+    // FAULT (right third, only if fault)
     if (m_fault) {
         painter.setPen(QColor(K4Styles::Colors::MeterRed));
-        painter.drawText(w - 50, y, 45, height, Qt::AlignRight | Qt::AlignVCenter, "FAULT");
+        painter.drawText(margin + thirdW * 2, y, thirdW, height, Qt::AlignCenter, "FAULT");
     }
 }
 
@@ -349,7 +342,7 @@ void KPA1500Panel::drawMeter(QPainter &painter, int y, const QString &label, con
     // Meter track
     QRect trackRect(barX, barY, barWidth, barHeight);
     painter.fillRect(trackRect, QColor(K4Styles::Colors::DarkBackground));
-    painter.setPen(QColor("#2a2a2a"));
+    painter.setPen(QColor(K4Styles::Colors::GradientBottom));
     painter.drawRect(trackRect);
 
     // Filled bar

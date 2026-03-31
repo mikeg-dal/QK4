@@ -19,9 +19,6 @@ public:
     bool initialize(int sampleRate = 12000, int channels = 1, int bitrate = 24000);
     QByteArray encode(const QByteArray &pcmData);
 
-    int frameSamples() const { return FRAME_SAMPLES; }
-    int frameBytes() const { return FRAME_BYTES; }
-
 private:
     ::OpusEncoder *m_encoder;
     int m_sampleRate;

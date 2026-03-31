@@ -1,6 +1,6 @@
 #include "menumodel.h"
+#include <QSet>
 #include <QUrl>
-#include <QDebug>
 #include <algorithm>
 
 MenuModel::MenuModel(QObject *parent) : QObject(parent) {}

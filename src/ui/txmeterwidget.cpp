@@ -21,7 +21,7 @@ TxMeterWidget::TxMeterWidget(QWidget *parent) : QWidget(parent) {
 
 void TxMeterWidget::setPower(double watts, bool isQrp) {
     m_isQrp = isQrp;
-    double maxPower = isQrp ? 10.0 : 100.0;
+    double maxPower = isQrp ? MaxPowerQRP : MaxPowerDefault;
     double ratio = qMin(watts / maxPower, 1.0);
     m_powerTarget = ratio;
     if (ratio > m_powerDisplay) {
@@ -36,7 +36,7 @@ void TxMeterWidget::setPower(double watts, bool isQrp) {
 
 void TxMeterWidget::setAlc(int bars) {
     // K4 ALC meter is 0-7 bars (labeled 1, 3, 5, 7)
-    double ratio = qBound(0, bars, 7) / 7.0;
+    double ratio = qBound(0, bars, MaxAlcBars) / static_cast<double>(MaxAlcBars);
     m_alcTarget = ratio;
     if (ratio > m_alcDisplay) {
         m_alcDisplay = ratio;
@@ -49,7 +49,7 @@ void TxMeterWidget::setAlc(int bars) {
 }
 
 void TxMeterWidget::setCompression(int dB) {
-    double ratio = qBound(0, dB, 25) / 25.0; // Scale to 25 dB for visual
+    double ratio = qBound(0, dB, MaxCompressionDb) / static_cast<double>(MaxCompressionDb);
     m_compTarget = ratio;
     if (ratio > m_compDisplay) {
         m_compDisplay = ratio;
@@ -63,7 +63,7 @@ void TxMeterWidget::setCompression(int dB) {
 
 void TxMeterWidget::setSwr(double ratio) {
     // SWR scale: 1.0 to 3.0, map to 0-1 fill ratio
-    double fillRatio = qMin((qMax(1.0, ratio) - 1.0) / 2.0, 1.0);
+    double fillRatio = qMin((qMax(1.0, ratio) - 1.0) / MaxSwrScale, 1.0);
     m_swrTarget = fillRatio;
     if (fillRatio > m_swrDisplay) {
         m_swrDisplay = fillRatio;
@@ -76,7 +76,7 @@ void TxMeterWidget::setSwr(double ratio) {
 }
 
 void TxMeterWidget::setCurrent(double amps) {
-    double ratio = qMin(qMax(0.0, amps) / 25.0, 1.0);
+    double ratio = qMin(qMax(0.0, amps) / MaxCurrentAmps, 1.0);
     m_currentTarget = ratio;
     if (ratio > m_currentDisplay) {
         m_currentDisplay = ratio;
@@ -97,7 +97,7 @@ void TxMeterWidget::setQrp(bool isQrp) {
 
 void TxMeterWidget::setTxMeters(int alc, int compDb, double fwdPower, double swr) {
     // Power - use appropriate max based on mode
-    double maxPower = m_isQrp ? 10.0 : 110.0; // K4 goes to 110W (or 10W QRP)
+    double maxPower = m_isQrp ? MaxPowerQRP : MaxPowerQRO;
     double powerRatio = qMin(fwdPower / maxPower, 1.0);
     m_powerTarget = powerRatio;
     if (powerRatio > m_powerDisplay)
@@ -108,7 +108,7 @@ void TxMeterWidget::setTxMeters(int alc, int compDb, double fwdPower, double swr
     }
 
     // ALC - K4 ALC meter is 0-7 bars (labeled 1, 3, 5, 7)
-    double alcRatio = qBound(0, alc, 7) / 7.0;
+    double alcRatio = qBound(0, alc, MaxAlcBars) / static_cast<double>(MaxAlcBars);
     m_alcTarget = alcRatio;
     if (alcRatio > m_alcDisplay)
         m_alcDisplay = alcRatio;
@@ -118,7 +118,7 @@ void TxMeterWidget::setTxMeters(int alc, int compDb, double fwdPower, double swr
     }
 
     // Compression
-    double compRatio = qBound(0, compDb, 25) / 25.0;
+    double compRatio = qBound(0, compDb, MaxCompressionDb) / static_cast<double>(MaxCompressionDb);
     m_compTarget = compRatio;
     if (compRatio > m_compDisplay)
         m_compDisplay = compRatio;
@@ -128,7 +128,7 @@ void TxMeterWidget::setTxMeters(int alc, int compDb, double fwdPower, double swr
     }
 
     // SWR
-    double swrRatio = qMin((qMax(1.0, swr) - 1.0) / 2.0, 1.0);
+    double swrRatio = qMin((qMax(1.0, swr) - 1.0) / MaxSwrScale, 1.0);
     m_swrTarget = swrRatio;
     if (swrRatio > m_swrDisplay)
         m_swrDisplay = swrRatio;
@@ -142,8 +142,7 @@ void TxMeterWidget::setTxMeters(int alc, int compDb, double fwdPower, double swr
 
 void TxMeterWidget::setSMeter(double sValue) {
     // S-meter value: 0-9 for S1-S9, 9+ for dB over S9 (S9+10 = 10, S9+20 = 11, etc.)
-    double maxValue = 15.0; // S9+60 (S9 = 9, +60dB/10 = 6 more = 15)
-    double ratio = qMin(sValue / maxValue, 1.0);
+    double ratio = qMin(sValue / MaxSMeter, 1.0);
     m_sMeterTarget = ratio;
     if (ratio > m_sMeterDisplay) {
         m_sMeterDisplay = ratio; // Instant rise

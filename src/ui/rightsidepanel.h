@@ -6,6 +6,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
+class Kpa1500MiniPanel;
+
 /**
  * RightSidePanel - Right-side vertical panel for QK4
  *
@@ -40,6 +42,9 @@ public:
 
     // Access main layout for adding content
     QVBoxLayout *contentLayout() { return m_layout; }
+
+    // KPA1500 mini panel (embedded in stretch area)
+    Kpa1500MiniPanel *kpa1500Mini() { return m_kpa1500Mini; }
 
 signals:
     // Button click signals (main function - left click)
@@ -98,6 +103,7 @@ private:
                                   bool isLighter = false);
 
     QVBoxLayout *m_layout;
+    Kpa1500MiniPanel *m_kpa1500Mini = nullptr;
 
     // Button pointers (existing 5x2 grid)
     QPushButton *m_preBtn;

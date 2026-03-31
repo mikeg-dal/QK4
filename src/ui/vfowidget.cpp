@@ -180,7 +180,9 @@ void VFOWidget::setAGC(const QString &mode) {
     m_agcLabel->setText(mode);
     // AGC is always shown, color indicates active state
     bool active = !mode.contains("-") || mode == "AGC-F" || mode == "AGC-S" || mode == "AGC-M";
-    m_agcLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(active ? "#FFFFFF" : "#999999"));
+    m_agcLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                  .arg(active ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
+                                  .arg(K4Styles::Dimensions::FontSizeLarge));
 }
 
 void VFOWidget::setPreamp(bool on, int level) {
@@ -190,7 +192,9 @@ void VFOWidget::setPreamp(bool on, int level) {
     } else {
         m_preampLabel->setText("PRE");
     }
-    m_preampLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(on ? "#FFFFFF" : "#999999"));
+    m_preampLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                     .arg(on ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
+                                     .arg(K4Styles::Dimensions::FontSizeLarge));
 }
 
 void VFOWidget::setAtt(bool on, int level) {
@@ -200,15 +204,21 @@ void VFOWidget::setAtt(bool on, int level) {
     } else {
         m_attLabel->setText("ATT");
     }
-    m_attLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(on ? "#FFFFFF" : "#999999"));
+    m_attLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                  .arg(on ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
+                                  .arg(K4Styles::Dimensions::FontSizeLarge));
 }
 
 void VFOWidget::setNB(bool on) {
-    m_nbLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(on ? "#FFFFFF" : "#999999"));
+    m_nbLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(on ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeLarge));
 }
 
 void VFOWidget::setNR(bool on) {
-    m_nrLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(on ? "#FFFFFF" : "#999999"));
+    m_nrLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(on ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeLarge));
 }
 
 void VFOWidget::setNotch(bool autoEnabled, bool manualEnabled) {
@@ -224,7 +234,9 @@ void VFOWidget::setNotch(bool autoEnabled, bool manualEnabled) {
     }
 
     m_ntchLabel->setText(text);
-    m_ntchLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(active ? "#FFFFFF" : "#999999"));
+    m_ntchLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                   .arg(active ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
+                                   .arg(K4Styles::Dimensions::FontSizeLarge));
 }
 
 void VFOWidget::setApf(bool enabled, int bandwidth) {
@@ -234,7 +246,9 @@ void VFOWidget::setApf(bool enabled, int bandwidth) {
         text = QString("APF-%1").arg(bwNames[qBound(0, bandwidth, 2)]);
     }
     m_apfLabel->setText(text);
-    m_apfLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(enabled ? "#FFFFFF" : "#999999"));
+    m_apfLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                  .arg(enabled ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
+                                  .arg(K4Styles::Dimensions::FontSizeLarge));
 }
 
 void VFOWidget::updateMiniPan(const QByteArray &data) {

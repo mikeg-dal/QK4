@@ -116,6 +116,26 @@ cmake --build build -j$(nproc)
 ./build/QK4
 ```
 
+## Testing
+
+QK4 includes a unit test suite built with the Qt Test framework. Tests run automatically in CI on every push and PR.
+
+```bash
+# Run all tests
+ctest --test-dir build --output-on-failure
+
+# Build and run only tests (no GUI dependencies needed)
+cmake --build build --target test_radiostate test_radioutils test_protocol test_catserver
+ctest --test-dir build --output-on-failure
+```
+
+| Suite | Tests | Coverage |
+|-------|-------|----------|
+| **RadioState** | 34 | CAT command parsing: frequency, mode, power, filters, notch, lock, split, edge cases |
+| **RadioUtils** | 28 | Shared utilities: tuning steps, band detection, span stepping |
+| **Protocol** | 14 | K4 binary packet framing, routing, roundtrip, overflow recovery |
+| **CatServer** | 26 | TCP CAT server: GET responses, SET forwarding, PTT, multi-command |
+
 ## Usage
 
 1. Launch QK4

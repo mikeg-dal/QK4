@@ -438,10 +438,15 @@ void AudioEngine::onMicDataReady() {
     emit micLevelChanged(rmsLevel);
 
     // Emit complete frames (240 samples = 480 bytes S16LE each)
-    while (m_micBuffer.size() >= FRAME_BYTES_S16LE) {
-        QByteArray frame = m_micBuffer.left(FRAME_BYTES_S16LE);
-        m_micBuffer.remove(0, FRAME_BYTES_S16LE);
+    // Use offset-based reading to avoid O(n) buffer shifts per frame
+    int offset = 0;
+    while (m_micBuffer.size() - offset >= FRAME_BYTES_S16LE) {
+        QByteArray frame = m_micBuffer.mid(offset, FRAME_BYTES_S16LE);
+        offset += FRAME_BYTES_S16LE;
         emit microphoneFrame(frame);
+    }
+    if (offset > 0) {
+        m_micBuffer.remove(0, offset); // Single shift for all consumed frames
     }
 }
 

@@ -246,6 +246,7 @@ void HaliKeyV14Worker::monitorLoop() {
     ov.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
     if (!ov.hEvent) {
         emit errorOccurred("Failed to create event for serial monitoring");
+        closeNativePort();
         return;
     }
 

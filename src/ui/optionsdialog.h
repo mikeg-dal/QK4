@@ -4,120 +4,70 @@
 #include <QDialog>
 #include <QListWidget>
 #include <QStackedWidget>
-#include <QLabel>
-#include <QCheckBox>
-#include <QLineEdit>
-#include <QComboBox>
-#include <QSlider>
-#include <QPushButton>
 #include <QShowEvent>
 #include <QHideEvent>
 #include <QMediaDevices>
 
 class RadioState;
-class AudioEngine;
-class MicMeterWidget;
-class KpodDevice;
+class AudioController;
+class HardwareController;
 class CatServer;
-class HalikeyDevice;
+class KPA1500Client;
+class AboutPage;
+class AudioInputPage;
+class AudioOutputPage;
+class RigControlPage;
+class CwKeyerPage;
+class KpodPage;
+class Kpa1500Page;
 
 class OptionsDialog : public QDialog {
     Q_OBJECT
 
 public:
-    enum Page { PageAbout = 0, PageAudioInput, PageAudioOutput, PageRigControl, PageCwKeyer, PageKpod, PageCount };
+    enum Page {
+        PageAbout = 0,
+        PageAudioInput,
+        PageAudioOutput,
+        PageRigControl,
+        PageCwKeyer,
+        PageKpod,
+        PageKpa1500,
+        PageCount
+    };
 
-    explicit OptionsDialog(RadioState *radioState, AudioEngine *audioEngine, KpodDevice *kpodDevice,
-                           CatServer *catServer, HalikeyDevice *halikeyDevice, QWidget *parent = nullptr);
+    explicit OptionsDialog(RadioState *radioState, AudioController *audioController,
+                           HardwareController *hardwareController, CatServer *catServer, KPA1500Client *kpa1500Client,
+                           QWidget *parent = nullptr);
     ~OptionsDialog();
 
 protected:
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
 
-private slots:
-    void onMicTestToggled(bool checked);
-    void onMicLevelChanged(float level);
-    void onMicDeviceChanged(int index);
-    void onMicGainChanged(int value);
-    void updateKpodStatus();
-    void updateCwKeyerStatus();
-    void onCwKeyerConnectClicked();
-    void onCwKeyerRefreshClicked();
-
 private:
     void setupUi();
     void ensurePageCreated(int index);
     void refreshPage(int index);
-    void refreshAboutPage();
-    QWidget *createAboutPage();
-    QWidget *createKpodPage();
-    QWidget *createAudioInputPage();
-    QWidget *createAudioOutputPage();
-    QWidget *createRigControlPage();
-    QWidget *createCwKeyerPage();
-    void updateCatServerStatus();
-    void populateMicDevices();
-    void populateSpeakerDevices();
-    void populateCwKeyerPorts();
 
     RadioState *m_radioState;
-    AudioEngine *m_audioEngine;
-    KpodDevice *m_kpodDevice;
+    AudioController *m_audioController;
+    HardwareController *m_hardwareController;
     CatServer *m_catServer;
-    HalikeyDevice *m_halikeyDevice;
+    KPA1500Client *m_kpa1500Client;
     QListWidget *m_tabList;
     QStackedWidget *m_pageStack;
     QMediaDevices *m_mediaDevices;
     bool m_pageCreated[PageCount] = {};
 
-    // About page elements (for live refresh on connect)
-    QLabel *m_aboutRadioIdLabel = nullptr;
-    QLabel *m_aboutRadioModelLabel = nullptr;
-    QWidget *m_aboutOptionsWidget = nullptr;
-    QWidget *m_aboutVersionsWidget = nullptr;
-
-    // KPOD page elements (for real-time updates)
-    QCheckBox *m_kpodEnableCheckbox = nullptr;
-    QLabel *m_kpodStatusLabel = nullptr;
-    QLabel *m_kpodProductLabel = nullptr;
-    QLabel *m_kpodManufacturerLabel = nullptr;
-    QLabel *m_kpodVendorIdLabel = nullptr;
-    QLabel *m_kpodProductIdLabel = nullptr;
-    QLabel *m_kpodDeviceTypeLabel = nullptr;
-    QLabel *m_kpodFirmwareLabel = nullptr;
-    QLabel *m_kpodDeviceIdLabel = nullptr;
-    QLabel *m_kpodHelpLabel = nullptr;
-
-    // Audio Input settings
-    QComboBox *m_micDeviceCombo = nullptr;
-    QSlider *m_micGainSlider = nullptr;
-    QLabel *m_micGainValueLabel = nullptr;
-    QPushButton *m_micTestBtn = nullptr;
-    MicMeterWidget *m_micMeter = nullptr;
-    bool m_micTestActive = false;
-
-    // Audio Output settings
-    QComboBox *m_speakerDeviceCombo = nullptr;
-
-    // CAT Server page elements
-    QCheckBox *m_catServerEnableCheckbox = nullptr;
-    QLineEdit *m_catServerPortEdit = nullptr;
-    QLabel *m_catServerStatusLabel = nullptr;
-    QLabel *m_catServerClientsLabel = nullptr;
-
-    void onSpeakerDeviceChanged(int index);
-
-    // CW Keyer page elements
-    QComboBox *m_cwKeyerDeviceTypeCombo = nullptr;
-    QLabel *m_cwKeyerDescLabel = nullptr;
-    QComboBox *m_cwKeyerPortCombo = nullptr;
-    QPushButton *m_cwKeyerRefreshBtn = nullptr;
-    QPushButton *m_cwKeyerConnectBtn = nullptr;
-    QLabel *m_cwKeyerStatusLabel = nullptr;
-    QSlider *m_sidetoneVolumeSlider = nullptr;
-    QLabel *m_sidetoneVolumeValueLabel = nullptr;
-    void updateCwKeyerDescription();
+    // Page widgets
+    AboutPage *m_aboutPage = nullptr;
+    AudioInputPage *m_audioInputPage = nullptr;
+    AudioOutputPage *m_audioOutputPage = nullptr;
+    RigControlPage *m_rigControlPage = nullptr;
+    CwKeyerPage *m_cwKeyerPage = nullptr;
+    KpodPage *m_kpodPage = nullptr;
+    Kpa1500Page *m_kpa1500Page = nullptr;
 };
 
 #endif // OPTIONSDIALOG_H

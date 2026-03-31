@@ -1,7 +1,7 @@
 #include "catserver.h"
 #include "models/radiostate.h"
+#include "protocol.h"
 #include "tcpclient.h"
-#include <QDebug>
 
 CatServer::CatServer(RadioState *state, QObject *parent)
     : QObject(parent), m_server(new QTcpServer(this)), m_radioState(state) {
@@ -29,7 +29,7 @@ bool CatServer::start(quint16 port) {
         return false;
     }
 
-    m_port = port;
+    m_port = m_server->serverPort(); // use actual port (may differ from requested if 0)
     emit started(port);
     return true;
 }
@@ -79,13 +79,22 @@ void CatServer::onClientData() {
     if (!client)
         return;
 
-    m_clientBuffers[client].append(client->readAll());
+    QByteArray &buffer = m_clientBuffers[client];
+    buffer.append(client->readAll());
 
-    // K4 CAT commands are semicolon-terminated
-    while (m_clientBuffers[client].contains(';')) {
-        int idx = m_clientBuffers[client].indexOf(';');
-        QString command = QString::fromUtf8(m_clientBuffers[client].left(idx + 1)).trimmed();
-        m_clientBuffers[client].remove(0, idx + 1);
+    // Protect against unbounded buffer growth from misbehaving clients
+    if (buffer.size() > K4Protocol::MAX_BUFFER_SIZE) {
+        qWarning() << "CAT client buffer overflow from" << client->peerAddress().toString() << "- disconnecting";
+        client->disconnectFromHost();
+        return;
+    }
+
+    // K4 CAT commands are semicolon-terminated — single-pass offset parsing
+    int offset = 0;
+    int idx;
+    while ((idx = buffer.indexOf(';', offset)) != -1) {
+        QString command = QString::fromUtf8(buffer.constData() + offset, idx - offset + 1).trimmed();
+        offset = idx + 1;
 
         if (!command.isEmpty()) {
             QString response = handleCommand(command);
@@ -93,6 +102,10 @@ void CatServer::onClientData() {
                 client->write(response.toUtf8());
             }
         }
+    }
+    // Keep only unprocessed remainder
+    if (offset > 0) {
+        buffer.remove(0, offset);
     }
 }
 

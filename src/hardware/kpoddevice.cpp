@@ -32,11 +32,9 @@ static void kpodLog(const QString &msg) {
 
 KpodDevice::KpodDevice(QObject *parent)
     : QObject(parent), m_hidDevice(nullptr), m_pollTimer(new QTimer(this)), m_lastRockerPosition(RockerCenter) {
-#ifdef Q_OS_LINUX
-    // On Linux (libusb backend), hid_exit() destroys the libusb context globally,
-    // crashing any open device handles. Initialize once here, exit once in destructor.
+    // Initialize hidapi once — exit in destructor. Avoids repeated init/exit
+    // cycles on macOS/Windows (was per-call before; Linux already did this).
     hid_init();
-#endif
     m_deviceInfo = detectDevice();
 
     // Setup poll timer
@@ -50,9 +48,7 @@ KpodDevice::KpodDevice(QObject *parent)
 KpodDevice::~KpodDevice() {
     stopPolling();
     teardownHotplugMonitoring();
-#ifdef Q_OS_LINUX
     hid_exit();
-#endif
 }
 
 bool KpodDevice::isDetected() const {
@@ -103,29 +99,16 @@ bool KpodDevice::openDevice() {
         return true; // Already open
     }
 
-#ifndef Q_OS_LINUX
-    if (hid_init() != 0) {
-        qWarning() << "KPOD: Failed to initialize hidapi";
-        return false;
-    }
-#endif
-
     // Use hid_open_path() on all platforms - hid_open() can fail on Windows (race condition)
     // and Linux (permission errors with libusb backend). Using the path from enumeration is
     // more reliable and works consistently across all hidapi backends.
     if (m_deviceInfo.devicePath.isEmpty()) {
         qWarning() << "KPOD: No device path available";
-#ifndef Q_OS_LINUX
-        hid_exit();
-#endif
         return false;
     }
     m_hidDevice = hid_open_path(m_deviceInfo.devicePath.toUtf8().constData());
     if (!m_hidDevice) {
         qWarning() << "KPOD: Failed to open device";
-#ifndef Q_OS_LINUX
-        hid_exit();
-#endif
         return false;
     }
 
@@ -139,9 +122,6 @@ void KpodDevice::closeDevice() {
     if (m_hidDevice) {
         hid_close(m_hidDevice);
         m_hidDevice = nullptr;
-#ifndef Q_OS_LINUX
-        hid_exit();
-#endif
         emit deviceDisconnected();
     }
 }
@@ -275,14 +255,7 @@ KpodDeviceInfo KpodDevice::detectDevice() {
 
     kpodLog("detectDevice() starting");
 
-#ifndef Q_OS_LINUX
-    if (hid_init() != 0) {
-        kpodLog("hid_init() failed");
-        return info;
-    }
-#endif
-
-    kpodLog("hid_init() succeeded, enumerating devices...");
+    kpodLog("Enumerating devices...");
     struct hid_device_info *devs = hid_enumerate(VENDOR_ID, PRODUCT_ID);
     struct hid_device_info *cur_dev = devs;
 
@@ -466,9 +439,6 @@ KpodDeviceInfo KpodDevice::detectDevice() {
     }
 
     hid_free_enumeration(devs);
-#ifndef Q_OS_LINUX
-    hid_exit();
-#endif
 
     kpodLog(QString("detectDevice() complete - detected=%1, version=%2, id=%3")
                 .arg(info.detected)
@@ -505,18 +475,9 @@ void KpodDevice::teardownHotplugMonitoring() {
 
 void KpodDevice::checkDevicePresence() {
     // Quick check using hid_enumerate - very lightweight, no device I/O
-#ifndef Q_OS_LINUX
-    if (hid_init() != 0) {
-        return;
-    }
-#endif
-
     struct hid_device_info *devs = hid_enumerate(VENDOR_ID, PRODUCT_ID);
     bool nowDetected = (devs != nullptr);
     hid_free_enumeration(devs);
-#ifndef Q_OS_LINUX
-    hid_exit();
-#endif
 
     bool wasDetected = m_deviceInfo.detected;
 
@@ -547,9 +508,6 @@ void KpodDevice::onDeviceRemoved() {
     if (m_hidDevice) {
         hid_close(m_hidDevice);
         m_hidDevice = nullptr;
-#ifndef Q_OS_LINUX
-        hid_exit();
-#endif
     }
 
     // Update device info

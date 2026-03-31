@@ -23,11 +23,9 @@ public:
     explicit PanadapterRhiWidget(QWidget *parent = nullptr);
     ~PanadapterRhiWidget();
 
-    // Update spectrum data from K4 PAN packet
-    void updateSpectrum(const QByteArray &bins, qint64 centerFreq, qint32 sampleRate, float noiseFloor);
-
-    // Update from MiniPAN packet (simpler format)
-    void updateMiniSpectrum(const QByteArray &bins);
+    // Update spectrum data from K4 PAN packet (payload + offset avoids deep copy)
+    void updateSpectrum(const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq, qint32 sampleRate,
+                        float noiseFloor);
 
     // Configuration
     void setDbRange(float minDb, float maxDb);
@@ -180,6 +178,7 @@ private:
     // Spectrum data (cropped to display span for live trace)
     QVector<float> m_currentSpectrum;
     QVector<float> m_rawSpectrum;
+    QVector<float> m_normalizedSpectrum; // Reused per-frame to avoid allocation in render()
     // Full-tier spectrum data (all 1024 bins for waterfall storage)
     QVector<float> m_tierSpectrum;
     QVector<float> m_tierRawSpectrum;

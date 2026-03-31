@@ -47,6 +47,7 @@ private:
     void clearFields();
     void populateFieldsFromSelection();
     void startDiscovery();
+    void addDiscoveredItem(const K4RadioInfo &radio);
     bool isAlreadyConfigured(const K4RadioInfo &radio) const;
 
     QListWidget *m_radioList;

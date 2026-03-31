@@ -6,22 +6,17 @@
 #include <QPushButton>
 #include <QMenuBar>
 #include <QMenu>
-#include <QProgressBar>
 #include <QTimer>
 #include <QThread>
-#include <QStackedWidget>
-#include "network/tcpclient.h"
+#include "controllers/connectioncontroller.h"
 #include "settings/radiosettings.h"
 #include "models/radiostate.h"
 #include "ui/vfowidget.h"
 #include "ui/wheelaccumulator.h"
 
-class PanadapterRhiWidget;
-class AudioEngine;
+class AudioController;
+class SpectrumController;
 class NetHealthWidget;
-class NetworkMetrics;
-class OpusDecoder;
-class OpusEncoder;
 class SideControlPanel;
 class RightSidePanel;
 class BottomMenuBar;
@@ -45,46 +40,29 @@ class MacroDialog;
 class FilterIndicatorWidget;
 class FeatureMenuBar;
 class ModePopupWidget;
-class KpodDevice;
-class HalikeyDevice;
-class IambicKeyer;
-class TxMeterWidget;
+class HardwareController;
 class KPA1500Client;
-class KPA1500Window;
 class CatServer;
 class OptionsDialog;
 class NotificationWidget;
 class VfoRowWidget;
-class QFrame;
-class SidetoneGenerator;
-
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
-    // Panadapter display modes
-    enum class PanadapterMode { MainOnly, Dual, SubOnly, DualAlt };
-
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    // Switch between Main only, Dual (A+B), and Sub only display
-    void setPanadapterMode(PanadapterMode mode);
-
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
-    void showEvent(QShowEvent *event) override;
-    void changeEvent(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void moveEvent(QMoveEvent *event) override;
 
 private slots:
-    void onConnectClicked();
-    void onDisconnectClicked();
-    void onStateChanged(TcpClient::ConnectionState state);
-    void onError(const QString &error);
-    void onAuthenticated();
-    void onAuthenticationFailed();
+    void onConnectionStateChanged(TcpClient::ConnectionState state);
+    void onConnectionError(const QString &error);
+    void onRadioReady();
+    void onAuthFailed();
     void onCatResponse(const QString &response);
     void onFrequencyChanged(quint64 freq);
     void onFrequencyBChanged(quint64 freq);
@@ -92,8 +70,6 @@ private slots:
     void onModeBChanged(RadioState::Mode mode);
     void onSMeterChanged(double value);
     void onSMeterBChanged(double value);
-    void onBandwidthChanged(int bw);
-    void onBandwidthBChanged(int bw);
     void onRfPowerChanged(double watts, bool isQrp);
     void onSupplyVoltageChanged(double volts);
     void onSupplyCurrentChanged(double amps);
@@ -106,14 +82,9 @@ private slots:
     void onTestModeChanged(bool enabled);
     void onAtuModeChanged(int mode);
     void onRitXitChanged(bool ritEnabled, bool xitEnabled, int offset);
-    void updatePanadapterPassbands();
-    void updateTxMarkers();
-    qint64 adjustClickFreqForMode(qint64 freq, bool vfoB);
     void onMessageBankChanged(int bank);
     void onProcessingChanged();
     void onProcessingChangedB();
-    void onSpectrumData(int receiver, const QByteArray &data, qint64 centerFreq, qint32 sampleRate, float noiseFloor);
-    void onMiniSpectrumData(int receiver, const QByteArray &data);
     void showRadioManager();
     void connectToRadio(const RadioEntry &radio);
     void updateDateTime();
@@ -131,12 +102,6 @@ private slots:
     void toggleTxPopup();
     void closeAllPopups();
 
-    // KPOD slots
-    void onKpodEncoderRotated(int ticks);
-    void onKpodRockerChanged(int position);
-    void onKpodPollError(const QString &error);
-    void onKpodEnabledChanged(bool enabled);
-
     // KPA1500 slots
     void onKpa1500Connected();
     void onKpa1500Disconnected();
@@ -147,11 +112,6 @@ private slots:
 
     // Error/notification from K4 (ERxx: messages)
     void onErrorNotification(int errorCode, const QString &message);
-
-    // PTT slots
-    void onPttPressed();
-    void onPttReleased();
-    void onMicrophoneFrame(const QByteArray &s16leData);
 
     // Display FPS (synthetic menu item)
     void onDisplayFpsChanged(int fps);
@@ -172,33 +132,19 @@ private:
     void setupUi();
     void setupTopStatusBar(QWidget *parent);
     void setupVfoSection(QWidget *parent);
-    void setupSpectrumPlaceholder(QWidget *parent);
     void updateConnectionState(TcpClient::ConnectionState state);
     QString formatFrequency(quint64 freq);
     void updateModeLabels();
 
-    // Band and mini pan helpers
-    int getBandFromFrequency(quint64 freq);
-    bool areVfosOnDifferentBands();
-    void checkAndHideMiniPanB();
-
-    TcpClient *m_tcpClient;
-    NetworkMetrics *m_networkMetrics;
+    ConnectionController *m_connectionController;
     RadioState *m_radioState;
     QTimer *m_clockTimer;
 
-    // I/O thread (TcpClient + Protocol + OpusDecoder)
-    QThread *m_ioThread = nullptr;
+    // Audio controller owns AudioEngine, Opus codecs, audio thread, and PTT state
+    AudioController *m_audioController;
 
-    // Audio
-    AudioEngine *m_audioEngine;
-    QThread *m_audioThread = nullptr;
-    OpusDecoder *m_opusDecoder;
-    OpusEncoder *m_opusEncoder;
-
-    // PTT state
-    bool m_pttActive = false;
-    quint8 m_txSequence = 0;
+    // Spectrum controller owns panadapters, span buttons, VFO indicators, and spectrum wiring
+    SpectrumController *m_spectrumController;
 
     // Top status bar
     QLabel *m_titleLabel;
@@ -210,7 +156,6 @@ private:
     QLabel *m_connectionStatusLabel;
     NetHealthWidget *m_netHealthWidget;
     QLabel *m_kpa1500StatusLabel;
-    KPA1500Window *m_kpa1500Window;
 
     // VFO widgets (modular, reusable components)
     VFOWidget *m_vfoA;
@@ -259,32 +204,7 @@ private:
     QPushButton *m_rclBtn;
     QLabel *m_voxLabel;
     QLabel *m_qskLabel;
-    QLabel *m_testLabel;
     QLabel *m_txAntennaLabel;
-
-    // Spectrum/Waterfall displays (QRhiWidget - Metal/DirectX/Vulkan)
-    PanadapterRhiWidget *m_panadapterA; // VFO A (Main RX)
-    PanadapterRhiWidget *m_panadapterB; // VFO B (Sub RX) - for future use
-    QWidget *m_spectrumContainer;
-    QFrame *m_spectrumSeparator; // Vertical divider between A/B panadapters
-
-    // Span control buttons (overlay on panadapter A)
-    QPushButton *m_spanUpBtn;
-    QPushButton *m_spanDownBtn;
-    QPushButton *m_centerBtn;
-
-    // Span control buttons (overlay on panadapter B)
-    QPushButton *m_spanUpBtnB;
-    QPushButton *m_spanDownBtnB;
-    QPushButton *m_centerBtnB;
-
-    // VFO indicator badges (bottom-left corner of waterfall)
-    QLabel *m_vfoIndicatorA;
-    QLabel *m_vfoIndicatorB;
-
-    // Panadapter display mode
-    PanadapterMode m_panadapterMode = PanadapterMode::MainOnly;
-    bool m_dualAltActive = false; // Track A+B Alt mode (QK4-only, locally significant)
 
     // Control panels (L-shaped layout)
     SideControlPanel *m_sideControlPanel;
@@ -318,21 +238,11 @@ private:
     FeatureMenuBar *m_featureMenuBar;
     ModePopupWidget *m_modePopup;
 
-    RadioEntry m_currentRadio;
     int m_currentBandNum = -1;  // Current band number for VFO A (BN command)
     int m_currentBandNumB = -1; // Current band number for VFO B (BN$ command)
 
-    // KPOD device
-    KpodDevice *m_kpodDevice;
-
-    // HaliKey CW paddle device
-    HalikeyDevice *m_halikeyDevice;
-    IambicKeyer *m_iambicKeyer;
-    QThread *m_keyerThread = nullptr;
-
-    // Local sidetone generator for CW keying
-    SidetoneGenerator *m_sidetoneGenerator;
-    QThread *m_sidetoneThread = nullptr;
+    // Hardware controller (owns KPOD, HaliKey, IambicKeyer, SidetoneGenerator and their threads)
+    HardwareController *m_hardwareController;
 
     // KPA1500 amplifier client
     KPA1500Client *m_kpa1500Client;

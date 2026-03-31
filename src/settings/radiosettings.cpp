@@ -132,18 +132,6 @@ void RadioSettings::setKpa1500PollInterval(int intervalMs) {
     }
 }
 
-QPoint RadioSettings::kpa1500WindowPosition() const {
-    int x = m_settings.value("kpa1500/windowX", 0).toInt();
-    int y = m_settings.value("kpa1500/windowY", 0).toInt();
-    return QPoint(x, y);
-}
-
-void RadioSettings::setKpa1500WindowPosition(const QPoint &pos) {
-    m_settings.setValue("kpa1500/windowX", pos.x());
-    m_settings.setValue("kpa1500/windowY", pos.y());
-    m_settings.sync();
-}
-
 int RadioSettings::volume() const {
     return m_settings.value("audio/volume", 45).toInt();
 }
@@ -263,14 +251,6 @@ void RadioSettings::setMacro(const QString &functionId, const QString &label, co
     }
 }
 
-void RadioSettings::clearMacro(const QString &functionId) {
-    if (m_macros.contains(functionId)) {
-        m_macros.remove(functionId);
-        save();
-        emit macrosChanged();
-    }
-}
-
 QString RadioSettings::halikeyPortName() const {
     return m_halikeyPortName;
 }
@@ -380,7 +360,7 @@ void RadioSettings::load() {
         entry.identity = m_settings.value("identity").toString();
         entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus Float)
         entry.streamingLatency = m_settings.value("streamingLatency", 3).toInt(); // Default SL3
-        entry.displayFps = m_settings.value("displayFps", 30).toInt();            // Default 30 FPS
+        entry.displayFps = m_settings.value("displayFps", 15).toInt();            // Default 15 FPS
         m_radios.append(entry);
     }
     m_settings.endArray();

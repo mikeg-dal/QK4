@@ -1,5 +1,6 @@
 #include "rightsidepanel.h"
 #include "k4styles.h"
+#include "kpa1500minipanel.h"
 #include <QEvent>
 #include <QGridLayout>
 #include <QMouseEvent>
@@ -72,6 +73,11 @@ void RightSidePanel::setupUi() {
     m_atobBtn->installEventFilter(this);
     m_spotBtn->installEventFilter(this);
     m_modeBtn->installEventFilter(this);
+
+    // KPA1500 mini panel (hidden until amplifier connects)
+    m_kpa1500Mini = new Kpa1500MiniPanel(this);
+    m_kpa1500Mini->setVisible(false);
+    m_layout->addWidget(m_kpa1500Mini);
 
     // Add stretch to push remaining buttons to bottom (above PTT)
     m_layout->addStretch();

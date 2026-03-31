@@ -193,8 +193,9 @@ void SideControlPanel::setupUi() {
     layout->addSpacing(10);
 
     m_volumeLabel = new QLabel("MAIN", this);
-    m_volumeLabel->setStyleSheet(
-        QString("color: %1; font-size: 10px; font-weight: bold;").arg(K4Styles::Colors::VfoACyan));
+    m_volumeLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                     .arg(K4Styles::Colors::VfoACyan)
+                                     .arg(K4Styles::Dimensions::FontSizeMedium));
     m_volumeLabel->setAlignment(Qt::AlignCenter);
     layout->addWidget(m_volumeLabel);
 
@@ -211,8 +212,9 @@ void SideControlPanel::setupUi() {
     layout->addSpacing(6);
 
     m_subVolumeLabel = new QLabel("SUB", this);
-    m_subVolumeLabel->setStyleSheet(
-        QString("color: %1; font-size: 10px; font-weight: bold;").arg(K4Styles::Colors::VfoBGreen));
+    m_subVolumeLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                        .arg(K4Styles::Colors::VfoBGreen)
+                                        .arg(K4Styles::Dimensions::FontSizeMedium));
     m_subVolumeLabel->setAlignment(Qt::AlignCenter);
     layout->addWidget(m_subVolumeLabel);
 
@@ -230,16 +232,21 @@ void SideControlPanel::setupUi() {
 
     // ===== Status Area (mirrors header data) =====
     m_timeLabel = new QLabel("00:00:00 Z", this);
-    m_timeLabel->setStyleSheet(
-        QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::TextWhite));
+    m_timeLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                   .arg(K4Styles::Colors::TextWhite)
+                                   .arg(K4Styles::Dimensions::FontSizeLarge));
     layout->addWidget(m_timeLabel);
 
     m_powerSwrLabel = new QLabel("0.0W  1.0:1", this);
-    m_powerSwrLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(K4Styles::Colors::TextWhite));
+    m_powerSwrLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                       .arg(K4Styles::Colors::TextWhite)
+                                       .arg(K4Styles::Dimensions::FontSizeLarge));
     layout->addWidget(m_powerSwrLabel);
 
     m_voltageCurrentLabel = new QLabel("--.-V  -.-A", this);
-    m_voltageCurrentLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(K4Styles::Colors::TextWhite));
+    m_voltageCurrentLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                             .arg(K4Styles::Colors::TextWhite)
+                                             .arg(K4Styles::Dimensions::FontSizeLarge));
     layout->addWidget(m_voltageCurrentLabel);
 
     layout->addSpacing(K4Styles::Dimensions::PopupButtonSpacing);
@@ -611,7 +618,7 @@ void SideControlPanel::setCurrent(double amps) {
 
 QPushButton *SideControlPanel::createIconButton(const QString &text) {
     auto *btn = new QPushButton(text, this);
-    btn->setFixedSize(32, 32); // Small square buttons
+    btn->setFixedSize(K4Styles::Dimensions::CompactButtonSize, K4Styles::Dimensions::CompactButtonSize);
     btn->setCursor(Qt::PointingHandCursor);
     btn->setStyleSheet(K4Styles::sidePanelButton());
     return btn;

@@ -90,6 +90,16 @@ private:
     static constexpr double PeakDecayRate = 0.05; // Peak decays slower
     static constexpr int PeakHoldTicks = 10;      // 500ms hold time (10 × 50ms)
 
+    // K4 hardware meter scaling constants
+    static constexpr double MaxPowerQRO = 110.0;     // K4 max power in QRO mode (watts)
+    static constexpr double MaxPowerQRP = 10.0;      // K4 max power in QRP mode (watts)
+    static constexpr double MaxPowerDefault = 100.0; // Default max for setPower() (watts)
+    static constexpr int MaxAlcBars = 7;             // K4 ALC meter range (0-7)
+    static constexpr int MaxCompressionDb = 25;      // Compression display max (dB)
+    static constexpr double MaxCurrentAmps = 25.0;   // K4 PA max drain current (amps)
+    static constexpr double MaxSwrScale = 2.0;       // SWR display range: 1.0 to 3.0 (mapped to 0-1)
+    static constexpr double MaxSMeter = 15.0;        // S-meter max value (S9+60dB)
+
     // Meter types for color selection
     enum class MeterType { Gradient, Red };
 

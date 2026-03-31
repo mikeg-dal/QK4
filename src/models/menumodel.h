@@ -22,7 +22,6 @@ struct MenuItem {
     QStringList options; // For selection types: ["OFF", "ON"]
 
     // Helper methods
-    bool isBinary() const { return type == "BIN"; }
     bool isReadOnly() const { return flag == 2; }
 
     QString displayValue() const {
@@ -41,9 +40,6 @@ public:
     static constexpr int SYNTHETIC_DISPLAY_FPS_ID = -1;
 
     explicit MenuModel(QObject *parent = nullptr);
-
-    // Add/update menu items
-    void addMenuItem(const MenuItem &item);
 
     // Add synthetic "Display FPS" menu item (app-specific, not from K4 MEDF)
     void addSyntheticDisplayFpsItem(int currentValue);
@@ -78,6 +74,9 @@ signals:
     void menuValueChanged(int menuId, int newValue);
 
 private:
+    // Add/update menu items (internal — called from parseMEDF)
+    void addMenuItem(const MenuItem &item);
+
     QMap<int, MenuItem> m_items; // menuId -> MenuItem
 
     // URL decode helper (%2C -> ,)

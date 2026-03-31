@@ -6,10 +6,10 @@
 #include <QVBoxLayout>
 
 namespace {
-// Layout constants
-const int ButtonWidth = 70;
-const int ButtonHeight = 44;
-const int ButtonSpacing = 8;
+// Layout constants (from K4Styles::Dimensions)
+const int ButtonWidth = K4Styles::Dimensions::PopupButtonWidth;
+const int ButtonHeight = K4Styles::Dimensions::PopupButtonHeight;
+const int ButtonSpacing = K4Styles::Dimensions::PopupButtonSpacing;
 } // namespace
 
 // ============================================================================

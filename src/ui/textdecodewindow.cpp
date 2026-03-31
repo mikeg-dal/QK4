@@ -91,8 +91,9 @@ void TextDecodeWindow::setupUi() {
     // Title label - smaller, right-aligned
     QString titleText = (m_receiver == MainRx) ? "MAIN RX" : "SUB RX";
     m_titleLabel = new QLabel(titleText, titleBar);
-    m_titleLabel->setStyleSheet(
-        QString("QLabel { color: %1; font-size: 10px; font-weight: bold; }").arg(K4Styles::Colors::DarkBackground));
+    m_titleLabel->setStyleSheet(QString("QLabel { color: %1; font-size: %2px; font-weight: bold; }")
+                                    .arg(K4Styles::Colors::DarkBackground)
+                                    .arg(K4Styles::Dimensions::FontSizeMedium));
 
     // Close button - dark text to match
     m_closeBtn = new QPushButton("\u2715", titleBar); // ✕

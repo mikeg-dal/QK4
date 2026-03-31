@@ -37,7 +37,7 @@ void VfoSquareWidget::paintEvent(QPaintEvent *) {
     // Draw "A" or "B" text
     p.setPen(QColor(K4Styles::Colors::DarkBackground));
     QFont font;
-    font.setPixelSize(16);
+    font.setPixelSize(K4Styles::Dimensions::FontSizeTitle);
     font.setBold(true);
     p.setFont(font);
     p.drawText(squareRect, Qt::AlignCenter, m_text);
@@ -124,18 +124,23 @@ void VfoRowWidget::setupWidgets() {
     m_txTriangle = new QLabel(QString::fromUtf8("\u25C0"), m_txContainer); // ◀
     m_txTriangle->setFixedSize(K4Styles::Dimensions::ButtonHeightMini, K4Styles::Dimensions::ButtonHeightMini);
     m_txTriangle->setAlignment(Qt::AlignCenter);
-    m_txTriangle->setStyleSheet(QString("color: %1; font-size: 18px;").arg(K4Styles::Colors::AccentAmber));
+    m_txTriangle->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                    .arg(K4Styles::Colors::AccentAmber)
+                                    .arg(K4Styles::Dimensions::FontSizeIndicator));
     txIndicatorRow->addWidget(m_txTriangle);
 
     m_txIndicator = new QLabel("TX", m_txContainer);
-    m_txIndicator->setStyleSheet(
-        QString("color: %1; font-size: 18px; font-weight: bold;").arg(K4Styles::Colors::AccentAmber));
+    m_txIndicator->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                     .arg(K4Styles::Colors::AccentAmber)
+                                     .arg(K4Styles::Dimensions::FontSizeIndicator));
     txIndicatorRow->addWidget(m_txIndicator);
 
     m_txTriangleB = new QLabel("", m_txContainer); // Empty by default
     m_txTriangleB->setFixedSize(K4Styles::Dimensions::ButtonHeightMini, K4Styles::Dimensions::ButtonHeightMini);
     m_txTriangleB->setAlignment(Qt::AlignCenter);
-    m_txTriangleB->setStyleSheet(QString("color: %1; font-size: 18px;").arg(K4Styles::Colors::AccentAmber));
+    m_txTriangleB->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                     .arg(K4Styles::Colors::AccentAmber)
+                                     .arg(K4Styles::Dimensions::FontSizeIndicator));
     txIndicatorRow->addWidget(m_txTriangleB);
 
     txVLayout->addLayout(txIndicatorRow);
@@ -199,7 +204,9 @@ void VfoRowWidget::setupWidgets() {
     // SPLIT indicator — centered under TX, aligned with mode labels
     m_splitLabel = new QLabel("SPLIT OFF", this);
     m_splitLabel->setAlignment(Qt::AlignCenter);
-    m_splitLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::AccentAmber));
+    m_splitLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                    .arg(K4Styles::Colors::AccentAmber)
+                                    .arg(K4Styles::Dimensions::FontSizeButton));
 
     // B SET indicator — replaces SPLIT when active
     m_bSetLabel = new QLabel("B SET", this);
@@ -214,7 +221,9 @@ void VfoRowWidget::setupWidgets() {
     // MSG Bank indicator — below SPLIT/BSET
     m_msgBankLabel = new QLabel("MSG: I", this);
     m_msgBankLabel->setAlignment(Qt::AlignCenter);
-    m_msgBankLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::AccentAmber));
+    m_msgBankLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                      .arg(K4Styles::Colors::AccentAmber)
+                                      .arg(K4Styles::Dimensions::FontSizeButton));
 }
 
 void VfoRowWidget::resizeEvent(QResizeEvent *event) {

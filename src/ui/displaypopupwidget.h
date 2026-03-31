@@ -1,16 +1,12 @@
 #ifndef DISPLAYPOPUPWIDGET_H
 #define DISPLAYPOPUPWIDGET_H
 
+#include "controlgroupwidget.h"
+#include "displaymenubutton.h"
 #include "k4popupbase.h"
-#include "wheelaccumulator.h"
-#include <QLabel>
+#include "togglegroupwidget.h"
 #include <QList>
-#include <QPushButton>
 #include <QStackedWidget>
-
-class DisplayMenuButton;
-class ToggleGroupWidget;
-class ControlGroupWidget;
 
 class DisplayPopupWidget : public K4PopupBase {
     Q_OBJECT
@@ -197,114 +193,6 @@ private:
     // Global setting - applies to both VFO A and B
     int m_waterfallHeight = 50;    // LCD: 0-100% (default 50%)
     int m_waterfallHeightExt = 50; // EXT: 0-100% (default 50%)
-};
-
-// Helper class for dual-line menu buttons
-class DisplayMenuButton : public QWidget {
-    Q_OBJECT
-
-public:
-    explicit DisplayMenuButton(const QString &primaryText, const QString &alternateText, QWidget *parent = nullptr);
-
-    void setSelected(bool selected);
-    bool isSelected() const { return m_selected; }
-
-    QString primaryText() const { return m_primaryText; }
-    QString alternateText() const { return m_alternateText; }
-
-    void setPrimaryText(const QString &text);
-    void setAlternateText(const QString &text);
-
-signals:
-    void clicked();
-    void rightClicked();
-
-protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void enterEvent(QEnterEvent *event) override;
-    void leaveEvent(QEvent *event) override;
-
-private:
-    QString m_primaryText;
-    QString m_alternateText;
-    bool m_selected = false;
-    bool m_hovered = false;
-};
-
-// Helper class for control groups (SPAN, REF) with bordered container and demarcation lines
-class ControlGroupWidget : public QWidget {
-    Q_OBJECT
-
-public:
-    explicit ControlGroupWidget(const QString &label, QWidget *parent = nullptr);
-
-    void setValue(const QString &value);
-    QString value() const { return m_value; }
-
-    void setShowAutoButton(bool show);
-    void setAutoEnabled(bool enabled);
-    bool isAutoEnabled() const { return m_autoEnabled; }
-    void setValueFaded(bool faded); // Faded grey text when in auto mode
-    bool isValueFaded() const { return m_valueFaded; }
-
-signals:
-    void incrementClicked();
-    void decrementClicked();
-    void autoClicked();
-
-protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void wheelEvent(QWheelEvent *event) override;
-
-private:
-    QString m_label;
-    QString m_value;
-    bool m_showAutoButton = false;
-    bool m_autoEnabled = false;
-    bool m_valueFaded = false; // Grey text when auto mode
-    QRect m_autoRect;
-    QRect m_minusRect;
-    QRect m_plusRect;
-    WheelAccumulator m_wheelAccumulator;
-};
-
-// Helper class for bordered toggle groups with rounded corners
-class ToggleGroupWidget : public QWidget {
-    Q_OBJECT
-
-public:
-    explicit ToggleGroupWidget(const QString &leftLabel, const QString &rightLabel, QWidget *parent = nullptr);
-
-    void setLeftSelected(bool selected);
-    void setRightSelected(bool selected);
-    void setRightEnabled(bool enabled);
-
-    bool isLeftSelected() const { return m_leftSelected; }
-    bool isRightSelected() const { return m_rightSelected; }
-    bool isRightEnabled() const { return m_rightEnabled; }
-
-signals:
-    void leftClicked();
-    void rightClicked();
-    void bothClicked(); // When & is clicked, select both
-
-protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-
-private:
-    QString m_leftLabel;
-    QString m_rightLabel;
-    bool m_leftSelected = true;
-    bool m_rightSelected = false;
-    bool m_rightEnabled = true;
-
-    // Hit test rectangles (calculated in paintEvent)
-    QRect m_leftRect;
-    QRect m_rightRect;
-    QRect m_ampRect;
 };
 
 #endif // DISPLAYPOPUPWIDGET_H

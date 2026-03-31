@@ -4,7 +4,6 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QScrollBar>
-#include <QDebug>
 
 // ============== MenuItemWidget ==============
 
@@ -28,7 +27,7 @@ MenuItemWidget::MenuItemWidget(MenuItem *item, QWidget *parent) : QWidget(parent
     if (item->isReadOnly()) {
         m_lockLabel->setText("\xF0\x9F\x94\x92"); // Lock emoji
     }
-    m_lockLabel->setFixedWidth(20);
+    m_lockLabel->setFixedWidth(K4Styles::Dimensions::SmallIconSize);
     layout->addWidget(m_lockLabel);
 
     // Value label
@@ -37,7 +36,7 @@ MenuItemWidget::MenuItemWidget(MenuItem *item, QWidget *parent) : QWidget(parent
                                     .arg(K4Styles::Colors::TextFaded)
                                     .arg(K4Styles::Dimensions::FontSizePopup)); // Initial unselected state
     m_valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_valueLabel->setMinimumWidth(80);
+    m_valueLabel->setMinimumWidth(K4Styles::Dimensions::FormLabelWidth);
     layout->addWidget(m_valueLabel);
 
     setLayout(layout);
@@ -196,7 +195,7 @@ void MenuOverlayWidget::setupUi() {
 
     // Navigation panel (right side) - using grid layout for 2-column arrangement
     QWidget *navPanel = new QWidget(this);
-    navPanel->setFixedWidth(130);
+    navPanel->setFixedWidth(K4Styles::Dimensions::NavPanelWidth);
     navPanel->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::OverlayHeaderBg));
 
     QVBoxLayout *navOuterLayout = new QVBoxLayout(navPanel);
@@ -288,7 +287,7 @@ void MenuOverlayWidget::setupUi() {
 
 void MenuOverlayWidget::createSearchPopup() {
     m_searchPopup = new QWidget(this, Qt::Popup);
-    m_searchPopup->setFixedWidth(130);
+    m_searchPopup->setFixedWidth(K4Styles::Dimensions::NavPanelWidth);
 
     QVBoxLayout *layout = new QVBoxLayout(m_searchPopup);
     layout->setContentsMargins(6, 6, 6, 6);

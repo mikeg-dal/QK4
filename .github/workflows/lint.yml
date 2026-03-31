@@ -1,4 +1,4 @@
-name: Lint
+name: Lint & Test
 
 on:
   push:
@@ -18,4 +18,27 @@ jobs:
 
       - name: Check formatting
         run: |
-          find src -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+          find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6 and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev qt6-base-private-dev \
+            qt6-multimedia-dev qt6-serialport-dev qt6-svg-dev \
+            qt6-shadertools-dev \
+            libopus-dev libhidapi-dev libssl-dev libasound2-dev
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build tests
+        run: cmake --build build --target test_radiostate test_radioutils test_protocol test_catserver
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure

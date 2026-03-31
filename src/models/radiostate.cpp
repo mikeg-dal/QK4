@@ -1,6 +1,7 @@
 #include "radiostate.h"
 #include <QDateTime>
 #include <QDebug>
+#include <QThread>
 #include <algorithm>
 
 RadioState::RadioState(QObject *parent) : QObject(parent) {
@@ -247,6 +248,10 @@ void RadioState::reset() {
 }
 
 void RadioState::parseCATCommand(const QString &command) {
+    // RadioState is not thread-safe — all callers must be on the main (GUI) thread.
+    // If cross-thread parsing is ever needed, use QMetaObject::invokeMethod with Qt::QueuedConnection.
+    Q_ASSERT(QThread::currentThread() == thread());
+
     QString cmd = command.trimmed();
     if (cmd.isEmpty())
         return;
@@ -260,7 +265,6 @@ void RadioState::parseCATCommand(const QString &command) {
     for (const auto &entry : m_commandHandlers) {
         if (cmd.startsWith(entry.prefix)) {
             entry.handler(cmd);
-            emit stateUpdated();
             return;
         }
     }
@@ -352,24 +356,6 @@ QString RadioState::modeStringFullB() const {
         return dataSubModeToString(m_dataSubModeB);
     }
     return modeToString(m_modeB);
-}
-
-QString RadioState::sMeterString() const {
-    if (m_sMeter <= 9.0) {
-        return QString("S%1").arg(static_cast<int>(m_sMeter));
-    } else {
-        int dbOver = static_cast<int>((m_sMeter - 9.0) * 10);
-        return QString("S9+%1").arg(dbOver);
-    }
-}
-
-QString RadioState::sMeterStringB() const {
-    if (m_sMeterB <= 9.0) {
-        return QString("S%1").arg(static_cast<int>(m_sMeterB));
-    } else {
-        int dbOver = static_cast<int>((m_sMeterB - 9.0) * 10);
-        return QString("S9+%1").arg(dbOver);
-    }
 }
 
 // Optimistic setters for scroll wheel updates (radio doesn't echo these commands)
@@ -920,6 +906,42 @@ void RadioState::setSsbTxBw(int bw) {
 }
 
 // =============================================================================
+// A/B Deduplication Helpers
+// =============================================================================
+
+void RadioState::handleIntPair(const QString &cmd, int prefixLen, int &member, int min, int max,
+                               void (RadioState::*signal)(int)) {
+    if (cmd.length() <= prefixLen)
+        return;
+    bool ok;
+    int val = cmd.mid(prefixLen).toInt(&ok);
+    if (ok && val >= min && val <= max && val != member) {
+        member = val;
+        emit(this->*signal)(val);
+    }
+}
+
+void RadioState::handleBoolPair(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)()) {
+    if (cmd.length() <= charPos)
+        return;
+    bool enabled = (cmd.at(charPos) == '1');
+    if (member != enabled) {
+        member = enabled;
+        emit(this->*signal)();
+    }
+}
+
+void RadioState::handleBoolPairVal(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)(bool)) {
+    if (cmd.length() <= charPos)
+        return;
+    bool enabled = (cmd.at(charPos) == '1');
+    if (member != enabled) {
+        member = enabled;
+        emit(this->*signal)(enabled);
+    }
+}
+
+// =============================================================================
 // Command Handler Registry
 // =============================================================================
 
@@ -932,12 +954,23 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"#HDPM", [this](const QString &c) { handleDisplayHDPM(c); }});
     m_commandHandlers.append({"#HDSM", [this](const QString &c) { handleDisplayHDSM(c); }});
     m_commandHandlers.append({"#NBL$", [this](const QString &c) { handleDisplayNBL(c); }});
-    m_commandHandlers.append({"#REF$", [this](const QString &c) { handleDisplayREFSub(c); }});
-    m_commandHandlers.append({"#SPN$", [this](const QString &c) { handleDisplaySPNSub(c); }});
+    // #REF$/#REF — deduplicated via handleIntPair (prefixLen 5 vs 4)
+    m_commandHandlers.append({"#REF$", [this](const QString &c) {
+                                  handleIntPair(c, 5, m_refLevelB, -200, 50, &RadioState::refLevelBChanged);
+                              }});
+    // #SPN$/#SPN — deduplicated via handleIntPair (prefixLen 5 vs 4, min 1)
+    m_commandHandlers.append(
+        {"#SPN$", [this](const QString &c) { handleIntPair(c, 5, m_spanHzB, 1, 999999, &RadioState::spanBChanged); }});
     m_commandHandlers.append({"#NB$", [this](const QString &c) { handleDisplayNB(c); }});
-    m_commandHandlers.append({"#MP$", [this](const QString &c) { handleDisplayMPSub(c); }});
-    m_commandHandlers.append({"#REF", [this](const QString &c) { handleDisplayREF(c); }});
-    m_commandHandlers.append({"#SPN", [this](const QString &c) { handleDisplaySPN(c); }});
+    // #MP$/#MP — deduplicated via handleBoolPairVal (charPos 4 vs 3)
+    m_commandHandlers.append({"#MP$", [this](const QString &c) {
+                                  handleBoolPairVal(c, 4, m_miniPanBEnabled, &RadioState::miniPanBEnabledChanged);
+                              }});
+    m_commandHandlers.append({"#REF", [this](const QString &c) {
+                                  handleIntPair(c, 4, m_refLevel, -200, 50, &RadioState::refLevelChanged);
+                              }});
+    m_commandHandlers.append(
+        {"#SPN", [this](const QString &c) { handleIntPair(c, 4, m_spanHz, 1, 999999, &RadioState::spanChanged); }});
     m_commandHandlers.append({"#SCL", [this](const QString &c) { handleDisplaySCL(c); }});
     m_commandHandlers.append({"#DPM", [this](const QString &c) { handleDisplayDPM(c); }});
     m_commandHandlers.append({"#DSM", [this](const QString &c) { handleDisplayDSM(c); }});
@@ -951,7 +984,9 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"#FRZ", [this](const QString &c) { handleDisplayFRZ(c); }});
     m_commandHandlers.append({"#VFA", [this](const QString &c) { handleDisplayVFA(c); }});
     m_commandHandlers.append({"#VFB", [this](const QString &c) { handleDisplayVFB(c); }});
-    m_commandHandlers.append({"#MP", [this](const QString &c) { handleDisplayMP(c); }});
+    m_commandHandlers.append({"#MP", [this](const QString &c) {
+                                  handleBoolPairVal(c, 3, m_miniPanAEnabled, &RadioState::miniPanAEnabledChanged);
+                              }});
     m_commandHandlers.append({"#AR", [this](const QString &c) { handleDisplayAR(c); }});
 
     // Multi-char commands with $ suffix (must come before their base commands)
@@ -962,25 +997,103 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"DR$", [this](const QString &c) { handleDRSub(c); }});
     m_commandHandlers.append({"DT$", [this](const QString &c) { handleDTSub(c); }});
     m_commandHandlers.append({"MD$", [this](const QString &c) { handleMDSub(c); }});
-    m_commandHandlers.append({"BW$", [this](const QString &c) { handleBWSub(c); }});
-    m_commandHandlers.append({"IS$", [this](const QString &c) { handleISSub(c); }});
-    m_commandHandlers.append({"FP$", [this](const QString &c) { handleFPSub(c); }});
-    m_commandHandlers.append({"RG$", [this](const QString &c) { handleRGSub(c); }});
-    m_commandHandlers.append({"SQ$", [this](const QString &c) { handleSQSub(c); }});
+    // BW$, IS$, FP$ — deduplicated via handleIntPair (prefixLen 3)
+    m_commandHandlers.append({"BW$", [this](const QString &c) {
+                                  if (c.length() <= 3)
+                                      return;
+                                  bool ok;
+                                  int bw = c.mid(3).toInt(&ok);
+                                  if (ok) {
+                                      int newBw = bw * 10;
+                                      if (m_filterBandwidthB != newBw) {
+                                          m_filterBandwidthB = newBw;
+                                          emit filterBandwidthBChanged(m_filterBandwidthB);
+                                      }
+                                  }
+                              }});
+    m_commandHandlers.append({"IS$", [this](const QString &c) {
+                                  handleIntPair(c, 3, m_ifShiftB, -99999, 99999, &RadioState::ifShiftBChanged);
+                              }});
+    m_commandHandlers.append({"FP$", [this](const QString &c) {
+                                  handleIntPair(c, 3, m_filterPositionB, 1, 3, &RadioState::filterPositionBChanged);
+                              }});
+    // RG$ — strips leading dash before parsing
+    m_commandHandlers.append({"RG$", [this](const QString &c) {
+                                  if (c.length() <= 3)
+                                      return;
+                                  QString val = c.mid(3);
+                                  if (val.startsWith('-'))
+                                      val = val.mid(1);
+                                  bool ok;
+                                  int rg = val.toInt(&ok);
+                                  if (ok && m_rfGainB != rg) {
+                                      m_rfGainB = rg;
+                                      emit rfGainBChanged(m_rfGainB);
+                                  }
+                              }});
+    m_commandHandlers.append({"SQ$", [this](const QString &c) {
+                                  handleIntPair(c, 3, m_squelchLevelB, -99999, 99999, &RadioState::squelchBChanged);
+                              }});
     m_commandHandlers.append({"SM$", [this](const QString &c) { handleSMSub(c); }});
     m_commandHandlers.append({"NB$", [this](const QString &c) { handleNBSub(c); }});
     m_commandHandlers.append({"NR$", [this](const QString &c) { handleNRSub(c); }});
     m_commandHandlers.append({"PA$", [this](const QString &c) { handlePASub(c); }});
     m_commandHandlers.append({"RA$", [this](const QString &c) { handleRASub(c); }});
     m_commandHandlers.append({"GT$", [this](const QString &c) { handleGTSub(c); }});
-    m_commandHandlers.append({"NA$", [this](const QString &c) { handleNASub(c); }});
+    // NA$ — deduplicated via handleBoolPair
+    m_commandHandlers.append(
+        {"NA$", [this](const QString &c) { handleBoolPair(c, 3, m_autoNotchEnabledB, &RadioState::notchBChanged); }});
     m_commandHandlers.append({"NM$", [this](const QString &c) { handleNMSub(c); }});
     m_commandHandlers.append({"AP$", [this](const QString &c) { handleAPSub(c); }});
-    m_commandHandlers.append({"LK$", [this](const QString &c) { handleLKSub(c); }});
-    m_commandHandlers.append({"VT$", [this](const QString &c) { handleVTSub(c); }});
-    m_commandHandlers.append({"AR$", [this](const QString &c) { handleARSub(c); }});
-    m_commandHandlers.append({"RO$", [this](const QString &c) { handleROSub(c); }});
-    m_commandHandlers.append({"RT$", [this](const QString &c) { handleRTSub(c); }});
+    // LK$ — deduplicated via handleBoolPairVal
+    m_commandHandlers.append(
+        {"LK$", [this](const QString &c) { handleBoolPairVal(c, 3, m_lockB, &RadioState::lockBChanged); }});
+    // VT$ — deduplicated inline (takes .left(1), qBound)
+    m_commandHandlers.append({"VT$", [this](const QString &c) {
+                                  if (c.length() <= 3)
+                                      return;
+                                  bool ok;
+                                  int step = c.mid(3).left(1).toInt(&ok);
+                                  if (ok) {
+                                      int ns = qBound(0, step, 5);
+                                      if (ns != m_tuningStepB) {
+                                          m_tuningStepB = ns;
+                                          emit tuningStepBChanged(m_tuningStepB);
+                                      }
+                                  }
+                              }});
+    // AR$ — deduplicated inline (3-arg signal)
+    m_commandHandlers.append({"AR$", [this](const QString &c) {
+                                  if (c.length() <= 3)
+                                      return;
+                                  bool ok;
+                                  int ar = c.mid(3).toInt(&ok);
+                                  if (ok && ar >= 0 && ar <= 7 && ar != m_receiveAntennaSub) {
+                                      m_receiveAntennaSub = ar;
+                                      emit antennaChanged(m_selectedAntenna, m_receiveAntenna, m_receiveAntennaSub);
+                                  }
+                              }});
+    // RO$ — inline (custom multi-arg signal)
+    m_commandHandlers.append({"RO$", [this](const QString &c) {
+                                  if (c.length() < 4)
+                                      return;
+                                  bool ok;
+                                  int offset = c.mid(3).toInt(&ok);
+                                  if (ok && offset != m_ritXitOffsetB) {
+                                      m_ritXitOffsetB = offset;
+                                      emit ritXitBChanged(m_ritEnabledB, m_ritXitOffsetB);
+                                  }
+                              }});
+    // RT$ — inline (custom multi-arg signal)
+    m_commandHandlers.append({"RT$", [this](const QString &c) {
+                                  if (c.length() < 4 || (c.at(3) != '0' && c.at(3) != '1'))
+                                      return;
+                                  bool enabled = (c.at(3) == '1');
+                                  if (enabled != m_ritEnabledB) {
+                                      m_ritEnabledB = enabled;
+                                      emit ritXitBChanged(m_ritEnabledB, m_ritXitOffsetB);
+                                  }
+                              }});
 
     // 3-char commands
     m_commandHandlers.append({"ACN", [this](const QString &c) { handleACN(c); }});
@@ -993,15 +1106,50 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"FA", [this](const QString &c) { handleFA(c); }});
     m_commandHandlers.append({"FB", [this](const QString &c) { handleFB(c); }});
     m_commandHandlers.append({"FT", [this](const QString &c) { handleFT(c); }});
-    m_commandHandlers.append({"FP", [this](const QString &c) { handleFP(c); }});
+    // FP — deduplicated via handleIntPair
+    m_commandHandlers.append({"FP", [this](const QString &c) {
+                                  handleIntPair(c, 2, m_filterPosition, 1, 3, &RadioState::filterPositionChanged);
+                              }});
     m_commandHandlers.append({"FX", [this](const QString &c) { handleFX(c); }});
     m_commandHandlers.append({"MD", [this](const QString &c) { handleMD(c); }});
     m_commandHandlers.append({"BL", [this](const QString &c) { handleBL(c); }});
-    m_commandHandlers.append({"BW", [this](const QString &c) { handleBW(c); }});
-    m_commandHandlers.append({"IS", [this](const QString &c) { handleIS(c); }});
+    // BW — deduplicated inline (×10 multiplier)
+    m_commandHandlers.append({"BW", [this](const QString &c) {
+                                  if (c.length() <= 2)
+                                      return;
+                                  bool ok;
+                                  int bw = c.mid(2).toInt(&ok);
+                                  if (ok) {
+                                      int newBw = bw * 10;
+                                      if (m_filterBandwidth != newBw) {
+                                          m_filterBandwidth = newBw;
+                                          emit filterBandwidthChanged(m_filterBandwidth);
+                                      }
+                                  }
+                              }});
+    // IS — deduplicated via handleIntPair
+    m_commandHandlers.append({"IS", [this](const QString &c) {
+                                  handleIntPair(c, 2, m_ifShift, -99999, 99999, &RadioState::ifShiftChanged);
+                              }});
     m_commandHandlers.append({"CW", [this](const QString &c) { handleCW(c); }});
-    m_commandHandlers.append({"RG", [this](const QString &c) { handleRG(c); }});
-    m_commandHandlers.append({"SQ", [this](const QString &c) { handleSQ(c); }});
+    // RG — deduplicated inline (strips leading dash)
+    m_commandHandlers.append({"RG", [this](const QString &c) {
+                                  if (c.length() <= 2)
+                                      return;
+                                  QString val = c.mid(2);
+                                  if (val.startsWith('-'))
+                                      val = val.mid(1);
+                                  bool ok;
+                                  int rg = val.toInt(&ok);
+                                  if (ok && m_rfGain != rg) {
+                                      m_rfGain = rg;
+                                      emit rfGainChanged(m_rfGain);
+                                  }
+                              }});
+    // SQ — deduplicated via handleIntPair
+    m_commandHandlers.append({"SQ", [this](const QString &c) {
+                                  handleIntPair(c, 2, m_squelchLevel, -99999, 99999, &RadioState::squelchChanged);
+                              }});
     m_commandHandlers.append({"MG", [this](const QString &c) { handleMG(c); }});
     m_commandHandlers.append({"ML", [this](const QString &c) { handleML(c); }});
     m_commandHandlers.append({"CP", [this](const QString &c) { handleCP(c); }});
@@ -1015,17 +1163,34 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"RX", [this](const QString &c) { handleRX(c); }});
     m_commandHandlers.append({"NB", [this](const QString &c) { handleNB(c); }});
     m_commandHandlers.append({"NR", [this](const QString &c) { handleNR(c); }});
-    m_commandHandlers.append({"NA", [this](const QString &c) { handleNA(c); }});
+    // NA — deduplicated via handleBoolPair
+    m_commandHandlers.append(
+        {"NA", [this](const QString &c) { handleBoolPair(c, 2, m_autoNotchEnabled, &RadioState::notchChanged); }});
     m_commandHandlers.append({"NM", [this](const QString &c) { handleNM(c); }});
     m_commandHandlers.append({"PA", [this](const QString &c) { handlePA(c); }});
     m_commandHandlers.append({"RA", [this](const QString &c) { handleRA(c); }});
     m_commandHandlers.append({"GT", [this](const QString &c) { handleGT(c); }});
     m_commandHandlers.append({"AP", [this](const QString &c) { handleAP(c); }});
     m_commandHandlers.append({"LN", [this](const QString &c) { handleLN(c); }});
-    m_commandHandlers.append({"LK", [this](const QString &c) { handleLK(c); }});
+    // LK — deduplicated via handleBoolPairVal
+    m_commandHandlers.append(
+        {"LK", [this](const QString &c) { handleBoolPairVal(c, 2, m_lockA, &RadioState::lockAChanged); }});
     m_commandHandlers.append({"LO", [this](const QString &c) { handleLO(c); }});
     m_commandHandlers.append({"LI", [this](const QString &c) { handleLI(c); }});
-    m_commandHandlers.append({"VT", [this](const QString &c) { handleVT(c); }});
+    // VT — deduplicated inline (takes .left(1), qBound)
+    m_commandHandlers.append({"VT", [this](const QString &c) {
+                                  if (c.length() <= 2)
+                                      return;
+                                  bool ok;
+                                  int step = c.mid(2).left(1).toInt(&ok);
+                                  if (ok) {
+                                      int ns = qBound(0, step, 5);
+                                      if (ns != m_tuningStep) {
+                                          m_tuningStep = ns;
+                                          emit tuningStepChanged(m_tuningStep);
+                                      }
+                                  }
+                              }});
     m_commandHandlers.append({"VX", [this](const QString &c) { handleVX(c); }});
     m_commandHandlers.append({"VG", [this](const QString &c) { handleVG(c); }});
     m_commandHandlers.append({"VI", [this](const QString &c) { handleVI(c); }});
@@ -1045,7 +1210,17 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"TE", [this](const QString &c) { handleTE(c); }});
     m_commandHandlers.append({"BS", [this](const QString &c) { handleBS(c); }});
     m_commandHandlers.append({"AN", [this](const QString &c) { handleAN(c); }});
-    m_commandHandlers.append({"AR", [this](const QString &c) { handleAR(c); }});
+    // AR — deduplicated inline (3-arg signal)
+    m_commandHandlers.append({"AR", [this](const QString &c) {
+                                  if (c.length() <= 2)
+                                      return;
+                                  bool ok;
+                                  int ar = c.mid(2).toInt(&ok);
+                                  if (ok && ar >= 0 && ar <= 7 && ar != m_receiveAntenna) {
+                                      m_receiveAntenna = ar;
+                                      emit antennaChanged(m_selectedAntenna, m_receiveAntenna, m_receiveAntennaSub);
+                                  }
+                              }});
     m_commandHandlers.append({"AT", [this](const QString &c) { handleAT(c); }});
     m_commandHandlers.append({"RT", [this](const QString &c) { handleRT(c); }});
     m_commandHandlers.append({"XT", [this](const QString &c) { handleXT(c); }});
@@ -1069,7 +1244,7 @@ void RadioState::handleFA(const QString &cmd) {
         return;
     bool ok;
     quint64 freq = cmd.mid(2).toULongLong(&ok);
-    if (ok) {
+    if (ok && m_vfoA != freq) {
         m_vfoA = freq;
         m_frequency = freq;
         emit frequencyChanged(freq);
@@ -1137,56 +1312,6 @@ void RadioState::handleMDSub(const QString &cmd) {
 // Individual Command Handlers - Bandwidth/Filter
 // =============================================================================
 
-void RadioState::handleBW(const QString &cmd) {
-    if (cmd.length() <= 2)
-        return;
-    bool ok;
-    int bw = cmd.mid(2).toInt(&ok);
-    if (ok) {
-        int newBw = bw * 10;
-        if (m_filterBandwidth != newBw) {
-            m_filterBandwidth = newBw;
-            emit filterBandwidthChanged(m_filterBandwidth);
-        }
-    }
-}
-
-void RadioState::handleBWSub(const QString &cmd) {
-    if (cmd.length() <= 3)
-        return;
-    bool ok;
-    int bw = cmd.mid(3).toInt(&ok);
-    if (ok) {
-        int newBw = bw * 10;
-        if (m_filterBandwidthB != newBw) {
-            m_filterBandwidthB = newBw;
-            emit filterBandwidthBChanged(m_filterBandwidthB);
-        }
-    }
-}
-
-void RadioState::handleIS(const QString &cmd) {
-    if (cmd.length() <= 2)
-        return;
-    bool ok;
-    int is = cmd.mid(2).toInt(&ok);
-    if (ok && is != m_ifShift) {
-        m_ifShift = is;
-        emit ifShiftChanged(m_ifShift);
-    }
-}
-
-void RadioState::handleISSub(const QString &cmd) {
-    if (cmd.length() <= 3)
-        return;
-    bool ok;
-    int is = cmd.mid(3).toInt(&ok);
-    if (ok && is != m_ifShiftB) {
-        m_ifShiftB = is;
-        emit ifShiftBChanged(m_ifShiftB);
-    }
-}
-
 void RadioState::handleCW(const QString &cmd) {
     // CW pitch - but skip CW-R mode strings
     if (cmd.length() < 4 || cmd.startsWith("CW-"))
@@ -1202,83 +1327,9 @@ void RadioState::handleCW(const QString &cmd) {
     }
 }
 
-void RadioState::handleFP(const QString &cmd) {
-    if (cmd.length() <= 2)
-        return;
-    bool ok;
-    int fp = cmd.mid(2).toInt(&ok);
-    if (ok && fp >= 1 && fp <= 3 && fp != m_filterPosition) {
-        m_filterPosition = fp;
-        emit filterPositionChanged(m_filterPosition);
-    }
-}
-
-void RadioState::handleFPSub(const QString &cmd) {
-    if (cmd.length() <= 3)
-        return;
-    bool ok;
-    int fp = cmd.mid(3).toInt(&ok);
-    if (ok && fp >= 1 && fp <= 3 && fp != m_filterPositionB) {
-        m_filterPositionB = fp;
-        emit filterPositionBChanged(m_filterPositionB);
-    }
-}
-
 // =============================================================================
 // Individual Command Handlers - Gain/Level
 // =============================================================================
-
-void RadioState::handleRG(const QString &cmd) {
-    if (cmd.length() <= 2)
-        return;
-    // K4 format: RG-xx; where dash is syntax, value is 0-60 attenuation
-    QString val = cmd.mid(2);
-    if (val.startsWith('-'))
-        val = val.mid(1);
-    bool ok;
-    int rg = val.toInt(&ok);
-    if (ok && m_rfGain != rg) {
-        m_rfGain = rg;
-        emit rfGainChanged(m_rfGain);
-    }
-}
-
-void RadioState::handleRGSub(const QString &cmd) {
-    if (cmd.length() <= 3)
-        return;
-    // K4 format: RG$-xx; where dash is syntax, value is 0-60 attenuation
-    QString val = cmd.mid(3);
-    if (val.startsWith('-'))
-        val = val.mid(1);
-    bool ok;
-    int rg = val.toInt(&ok);
-    if (ok && m_rfGainB != rg) {
-        m_rfGainB = rg;
-        emit rfGainBChanged(m_rfGainB);
-    }
-}
-
-void RadioState::handleSQ(const QString &cmd) {
-    if (cmd.length() <= 2)
-        return;
-    bool ok;
-    int sq = cmd.mid(2).toInt(&ok);
-    if (ok && m_squelchLevel != sq) {
-        m_squelchLevel = sq;
-        emit squelchChanged(m_squelchLevel);
-    }
-}
-
-void RadioState::handleSQSub(const QString &cmd) {
-    if (cmd.length() <= 3)
-        return;
-    bool ok;
-    int sq = cmd.mid(3).toInt(&ok);
-    if (ok && m_squelchLevelB != sq) {
-        m_squelchLevelB = sq;
-        emit squelchBChanged(m_squelchLevelB);
-    }
-}
 
 void RadioState::handleMG(const QString &cmd) {
     if (cmd.length() <= 2)
@@ -1541,7 +1592,7 @@ void RadioState::handlePO(const QString &cmd) {
         return;
     bool ok;
     int po = cmd.mid(2).toInt(&ok);
-    if (ok) {
+    if (ok && m_powerMeter != po) {
         m_powerMeter = po;
         emit powerMeterChanged(m_powerMeter);
     }
@@ -1794,28 +1845,6 @@ void RadioState::handleGTSub(const QString &cmd) {
     }
 }
 
-void RadioState::handleNA(const QString &cmd) {
-    // NA - Auto Notch Main
-    if (cmd.length() < 3)
-        return;
-    bool enabled = (cmd.at(2) == '1');
-    if (m_autoNotchEnabled != enabled) {
-        m_autoNotchEnabled = enabled;
-        emit notchChanged();
-    }
-}
-
-void RadioState::handleNASub(const QString &cmd) {
-    // NA$ - Auto Notch Sub
-    if (cmd.length() < 4)
-        return;
-    bool enabled = (cmd.at(3) == '1');
-    if (m_autoNotchEnabledB != enabled) {
-        m_autoNotchEnabledB = enabled;
-        emit notchBChanged();
-    }
-}
-
 void RadioState::handleNM(const QString &cmd) {
     // NM - Manual Notch Main: NMnnnnm or NMm
     if (cmd.length() < 3)
@@ -1949,74 +1978,6 @@ void RadioState::handleLN(const QString &cmd) {
         if (linked != m_vfoLink) {
             m_vfoLink = linked;
             emit vfoLinkChanged(m_vfoLink);
-        }
-    }
-}
-
-void RadioState::handleLK(const QString &cmd) {
-    // LK - VFO A Lock
-    if (cmd.length() < 3)
-        return;
-    bool ok;
-    int lk = cmd.mid(2).toInt(&ok);
-    if (ok) {
-        bool locked = (lk == 1);
-        if (locked != m_lockA) {
-            m_lockA = locked;
-            emit lockAChanged(m_lockA);
-        }
-    }
-}
-
-void RadioState::handleLKSub(const QString &cmd) {
-    // LK$ - VFO B Lock
-    if (cmd.length() < 4)
-        return;
-    bool ok;
-    int lk = cmd.mid(3).toInt(&ok);
-    if (ok) {
-        bool locked = (lk == 1);
-        if (locked != m_lockB) {
-            m_lockB = locked;
-            emit lockBChanged(m_lockB);
-        }
-    }
-}
-
-void RadioState::handleVT(const QString &cmd) {
-    // VT - Tuning Step Main
-    if (cmd.length() <= 2)
-        return;
-    QString vtStr = cmd.mid(2);
-    if (vtStr.isEmpty())
-        return;
-
-    bool ok;
-    int step = vtStr.left(1).toInt(&ok);
-    if (ok) {
-        int newStep = qBound(0, step, 5);
-        if (newStep != m_tuningStep) {
-            m_tuningStep = newStep;
-            emit tuningStepChanged(m_tuningStep);
-        }
-    }
-}
-
-void RadioState::handleVTSub(const QString &cmd) {
-    // VT$ - Tuning Step Sub
-    if (cmd.length() <= 3)
-        return;
-    QString vtStr = cmd.mid(3);
-    if (vtStr.isEmpty())
-        return;
-
-    bool ok;
-    int step = vtStr.left(1).toInt(&ok);
-    if (ok) {
-        int newStep = qBound(0, step, 5);
-        if (newStep != m_tuningStepB) {
-            m_tuningStepB = newStep;
-            emit tuningStepBChanged(m_tuningStepB);
         }
     }
 }
@@ -2271,8 +2232,11 @@ void RadioState::handleSB(const QString &cmd) {
     // SB - Sub Receiver: SB0=off, SB1=on, SB3=on (diversity)
     if (cmd.length() <= 2)
         return;
-    m_subReceiverEnabled = (cmd.mid(2) != "0");
-    emit subRxEnabledChanged(m_subReceiverEnabled);
+    bool newState = (cmd.mid(2) != "0");
+    if (newState != m_subReceiverEnabled) {
+        m_subReceiverEnabled = newState;
+        emit subRxEnabledChanged(m_subReceiverEnabled);
+    }
 }
 
 void RadioState::handleDV(const QString &cmd) {
@@ -2319,30 +2283,6 @@ void RadioState::handleAN(const QString &cmd) {
     int an = cmd.mid(2).toInt(&ok);
     if (ok && an >= 1 && an <= 6 && an != m_selectedAntenna) {
         m_selectedAntenna = an;
-        emit antennaChanged(m_selectedAntenna, m_receiveAntenna, m_receiveAntennaSub);
-    }
-}
-
-void RadioState::handleAR(const QString &cmd) {
-    if (cmd.startsWith("AR$"))
-        return;
-    if (cmd.length() <= 2)
-        return;
-    bool ok;
-    int ar = cmd.mid(2).toInt(&ok);
-    if (ok && ar >= 0 && ar <= 7 && ar != m_receiveAntenna) {
-        m_receiveAntenna = ar;
-        emit antennaChanged(m_selectedAntenna, m_receiveAntenna, m_receiveAntennaSub);
-    }
-}
-
-void RadioState::handleARSub(const QString &cmd) {
-    if (cmd.length() <= 3)
-        return;
-    bool ok;
-    int ar = cmd.mid(3).toInt(&ok);
-    if (ok && ar >= 0 && ar <= 7 && ar != m_receiveAntennaSub) {
-        m_receiveAntennaSub = ar;
         emit antennaChanged(m_selectedAntenna, m_receiveAntenna, m_receiveAntennaSub);
     }
 }
@@ -2455,29 +2395,6 @@ void RadioState::handleRO(const QString &cmd) {
     if (ok && offset != m_ritXitOffset) {
         m_ritXitOffset = offset;
         emit ritXitChanged(m_ritEnabled, m_xitEnabled, m_ritXitOffset);
-    }
-}
-
-void RadioState::handleROSub(const QString &cmd) {
-    // RO$ — VFO B RIT/XIT offset (e.g., "RO$+0210")
-    if (cmd.length() < 4)
-        return;
-    bool ok;
-    int offset = cmd.mid(3).toInt(&ok); // Skip "RO$"
-    if (ok && offset != m_ritXitOffsetB) {
-        m_ritXitOffsetB = offset;
-        emit ritXitBChanged(m_ritEnabledB, m_ritXitOffsetB);
-    }
-}
-
-void RadioState::handleRTSub(const QString &cmd) {
-    // RT$ — VFO B RIT enable (e.g., "RT$1")
-    if (cmd.length() < 4 || (cmd.at(3) != '0' && cmd.at(3) != '1'))
-        return;
-    bool enabled = (cmd.at(3) == '1');
-    if (enabled != m_ritEnabledB) {
-        m_ritEnabledB = enabled;
-        emit ritXitBChanged(m_ritEnabledB, m_ritXitOffsetB);
     }
 }
 
@@ -2761,28 +2678,6 @@ void RadioState::handleER(const QString &cmd) {
 // Individual Command Handlers - Display (# prefix)
 // =============================================================================
 
-void RadioState::handleDisplayREF(const QString &cmd) {
-    if (cmd.startsWith("#REF$") || cmd.length() <= 4)
-        return;
-    bool ok;
-    int level = cmd.mid(4).toInt(&ok);
-    if (ok && level != m_refLevel) {
-        m_refLevel = level;
-        emit refLevelChanged(m_refLevel);
-    }
-}
-
-void RadioState::handleDisplayREFSub(const QString &cmd) {
-    if (cmd.length() <= 5)
-        return;
-    bool ok;
-    int level = cmd.mid(5).toInt(&ok);
-    if (ok && level != m_refLevelB) {
-        m_refLevelB = level;
-        emit refLevelBChanged(m_refLevelB);
-    }
-}
-
 void RadioState::handleDisplaySCL(const QString &cmd) {
     if (cmd.length() <= 4)
         return;
@@ -2791,48 +2686,6 @@ void RadioState::handleDisplaySCL(const QString &cmd) {
     if (ok && scale >= 10 && scale <= 150 && scale != m_scale) {
         m_scale = scale;
         emit scaleChanged(m_scale);
-    }
-}
-
-void RadioState::handleDisplaySPN(const QString &cmd) {
-    if (cmd.startsWith("#SPN$") || cmd.length() <= 4)
-        return;
-    bool ok;
-    int span = cmd.mid(4).toInt(&ok);
-    if (ok && span > 0 && span != m_spanHz) {
-        m_spanHz = span;
-        emit spanChanged(m_spanHz);
-    }
-}
-
-void RadioState::handleDisplaySPNSub(const QString &cmd) {
-    if (cmd.length() <= 5)
-        return;
-    bool ok;
-    int span = cmd.mid(5).toInt(&ok);
-    if (ok && span > 0 && span != m_spanHzB) {
-        m_spanHzB = span;
-        emit spanBChanged(m_spanHzB);
-    }
-}
-
-void RadioState::handleDisplayMP(const QString &cmd) {
-    if (cmd.startsWith("#MP$") || cmd.length() <= 3)
-        return;
-    bool enabled = (cmd.at(3) == '1');
-    if (enabled != m_miniPanAEnabled) {
-        m_miniPanAEnabled = enabled;
-        emit miniPanAEnabledChanged(m_miniPanAEnabled);
-    }
-}
-
-void RadioState::handleDisplayMPSub(const QString &cmd) {
-    if (cmd.length() <= 4)
-        return;
-    bool enabled = (cmd.at(4) == '1');
-    if (enabled != m_miniPanBEnabled) {
-        m_miniPanBEnabled = enabled;
-        emit miniPanBEnabledChanged(m_miniPanBEnabled);
     }
 }
 

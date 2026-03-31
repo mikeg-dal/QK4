@@ -2,7 +2,6 @@
 #include "panadapter_constants.h"
 #include "rhi_utils.h"
 #include "ui/k4styles.h"
-#include <QFile>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
@@ -282,55 +281,7 @@ void PanadapterRhiWidget::updateFreqScaleOverlay() {
 }
 
 void PanadapterRhiWidget::initColorLUT() {
-    // Create 256-entry RGBA color LUT for WATERFALL (unchanged)
-    // 8-stage color progression: Black -> Dark Blue -> Royal Blue -> Cyan -> Green -> Yellow -> Red
-    m_colorLUT.resize(256 * 4);
-
-    for (int i = 0; i < 256; ++i) {
-        float value = i / 255.0f;
-        int r, g, b;
-
-        if (value < 0.10f) {
-            r = 0;
-            g = 0;
-            b = 0;
-        } else if (value < 0.25f) {
-            float t = (value - 0.10f) / 0.15f;
-            r = 0;
-            g = 0;
-            b = static_cast<int>(t * 51);
-        } else if (value < 0.40f) {
-            float t = (value - 0.25f) / 0.15f;
-            r = 0;
-            g = 0;
-            b = static_cast<int>(51 + t * 102);
-        } else if (value < 0.55f) {
-            float t = (value - 0.40f) / 0.15f;
-            r = 0;
-            g = static_cast<int>(t * 128);
-            b = static_cast<int>(153 + t * 102);
-        } else if (value < 0.70f) {
-            float t = (value - 0.55f) / 0.15f;
-            r = 0;
-            g = static_cast<int>(128 + t * 127);
-            b = static_cast<int>(255 * (1.0f - t));
-        } else if (value < 0.85f) {
-            float t = (value - 0.70f) / 0.15f;
-            r = static_cast<int>(t * 255);
-            g = 255;
-            b = 0;
-        } else {
-            float t = (value - 0.85f) / 0.15f;
-            r = 255;
-            g = static_cast<int>(255 * (1.0f - t));
-            b = 0;
-        }
-
-        m_colorLUT[i * 4 + 0] = static_cast<quint8>(qBound(0, r, 255));
-        m_colorLUT[i * 4 + 1] = static_cast<quint8>(qBound(0, g, 255));
-        m_colorLUT[i * 4 + 2] = static_cast<quint8>(qBound(0, b, 255));
-        m_colorLUT[i * 4 + 3] = 255;
-    }
+    RhiUtils::generateWaterfallColorLUT(m_colorLUT);
 }
 
 void PanadapterRhiWidget::initSpectrumLUT() {
@@ -823,15 +774,17 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         int specSize = m_currentSpectrum.size();
         int offset = (m_textureWidth - specSize) / 2;
 
-        QVector<float> normalizedSpectrum(m_textureWidth, 0.0f); // Initialize to zero
+        // Reuse member vector to avoid per-frame heap allocation
+        m_normalizedSpectrum.resize(m_textureWidth);
+        std::fill(m_normalizedSpectrum.begin(), m_normalizedSpectrum.end(), 0.0f);
         for (int i = 0; i < specSize; ++i) {
             float normalized = normalizeDb(m_currentSpectrum[i]);
             float adjusted = qMax(0.0f, normalized - m_smoothedBaseline);
-            normalizedSpectrum[offset + i] = adjusted * 0.95f;
+            m_normalizedSpectrum[offset + i] = adjusted * 0.95f;
         }
 
-        QRhiTextureSubresourceUploadDescription specDataUpload(normalizedSpectrum.constData(),
-                                                               normalizedSpectrum.size() * sizeof(float));
+        QRhiTextureSubresourceUploadDescription specDataUpload(m_normalizedSpectrum.constData(),
+                                                               m_normalizedSpectrum.size() * sizeof(float));
         specDataUpload.setSourceSize(QSize(m_textureWidth, 1));
         rub->uploadTexture(m_spectrumDataTexture.get(), QRhiTextureUploadEntry(0, 0, specDataUpload));
 
@@ -1133,13 +1086,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                     cb->draw(verts.size() / 2);
                 };
 
-                qint64 secMarkFreq = m_secondaryTunedFreq;
-                qint64 secSpaceFreq = secMarkFreq - m_rttyShift;
-                // Skip mark line when it coincides with the solid secondary dial marker
-                if (secMarkFreq != m_secondaryTunedFreq) {
-                    drawSecRttyLine(secMarkFreq, m_secRttyMarkVbo.get(), m_secRttyMarkUniformBuffer.get(),
-                                    m_secRttyMarkSrb.get());
-                }
+                // Mark line coincides with the solid secondary dial marker — only draw space
+                qint64 secSpaceFreq = m_secondaryTunedFreq - m_rttyShift;
                 drawSecRttyLine(secSpaceFreq, m_secRttySpaceVbo.get(), m_secRttySpaceUniformBuffer.get(),
                                 m_secRttySpaceSrb.get());
             }
@@ -1284,14 +1232,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                 };
 
                 // FSK-D and AFSK-A: dial IS mark, space is mark - shift (both LSB)
-                qint64 markFreq = m_tunedFreq;
-                qint64 spaceFreq = markFreq - m_rttyShift;
-                // Skip mark line when it coincides with the solid dial frequency marker
-                // (always true today since dial IS mark in FSK-D/AFSK-A, but guarded
-                // for forward-compatibility if FSK Mark-Tone routing changes)
-                if (markFreq != m_tunedFreq) {
-                    drawRttyLine(markFreq, m_rttyMarkVbo.get(), m_rttyMarkUniformBuffer.get(), m_rttyMarkSrb.get());
-                }
+                // Mark line coincides with the solid dial frequency marker — only draw space
+                qint64 spaceFreq = m_tunedFreq - m_rttyShift;
                 drawRttyLine(spaceFreq, m_rttySpaceVbo.get(), m_rttySpaceUniformBuffer.get(), m_rttySpaceSrb.get());
             }
 
@@ -1462,15 +1404,18 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     cb->endPass();
 }
 
-void PanadapterRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerFreq, qint32 sampleRate,
-                                         float noiseFloor) {
+void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
+                                         qint32 sampleRate, float noiseFloor) {
     m_centerFreq = centerFreq;
     m_sampleRate = sampleRate;
     m_noiseFloor = noiseFloor;
 
+    // Zero-copy view into payload's bin data
+    QByteArray bins = QByteArray::fromRawData(payload.constData() + binsOffset, binCount);
+
     // K4 tier span = sampleRate * 1000 Hz
     qint32 tierSpanHz = sampleRate * 1000;
-    int totalBins = bins.size();
+    int totalBins = binCount;
 
     const float attackAlpha = m_attackAlpha;
     const float decayAlpha = m_decayAlpha;
@@ -1517,29 +1462,6 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerFr
 
     m_waterfallNeedsUpdate = true;
     updateFreqScaleOverlay(); // Update frequency labels when center freq changes
-    update();
-}
-
-void PanadapterRhiWidget::updateMiniSpectrum(const QByteArray &bins) {
-    m_rawSpectrum.resize(bins.size());
-    for (int i = 0; i < bins.size(); ++i) {
-        m_rawSpectrum[i] = static_cast<quint8>(bins[i]) * 10.0f - 160.0f;
-    }
-
-    // Apply asymmetric EMA smoothing (attack fast, decay slow)
-    const float attackAlpha = m_attackAlpha;
-    const float decayAlpha = m_decayAlpha;
-
-    if (m_currentSpectrum.size() != m_rawSpectrum.size()) {
-        m_currentSpectrum = m_rawSpectrum;
-    } else {
-        for (int i = 0; i < m_rawSpectrum.size(); ++i) {
-            float alpha = (m_rawSpectrum[i] > m_currentSpectrum[i]) ? attackAlpha : decayAlpha;
-            m_currentSpectrum[i] = alpha * m_rawSpectrum[i] + (1.0f - alpha) * m_currentSpectrum[i];
-        }
-    }
-
-    m_waterfallNeedsUpdate = true;
     update();
 }
 

@@ -16,7 +16,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Core Qt components (GuiPrivate handled separately for cross-platform compatibility)
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Multimedia ShaderTools Gui SerialPort Svg)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Multimedia ShaderTools Gui SerialPort Svg Test)
 
 # GuiPrivate is needed for QRhi access but may not have CMake config on all platforms
 if(APPLE)
@@ -71,6 +71,11 @@ endif()
 set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
+    src/utils/radioutils.cpp
+    src/controllers/connectioncontroller.cpp
+    src/controllers/hardwarecontroller.cpp
+    src/controllers/audiocontroller.cpp
+    src/controllers/spectrumcontroller.cpp
     src/network/tcpclient.cpp
     src/network/protocol.cpp
     src/network/networkmetrics.cpp
@@ -98,8 +103,18 @@ set(SOURCES
     src/ui/filterindicatorwidget.cpp
     src/ui/bandpopupwidget.cpp
     src/ui/buttonrowpopup.cpp
+    src/ui/displaymenubutton.cpp
+    src/ui/controlgroupwidget.cpp
+    src/ui/togglegroupwidget.cpp
     src/ui/displaypopupwidget.cpp
     src/ui/optionsdialog.cpp
+    src/ui/aboutpage.cpp
+    src/ui/audioinputpage.cpp
+    src/ui/audiooutputpage.cpp
+    src/ui/rigcontrolpage.cpp
+    src/ui/cwkeyerpage.cpp
+    src/ui/kpodpage.cpp
+    src/ui/kpa1500page.cpp
     src/ui/rightsidepanel.cpp
     src/ui/featuremenubar.cpp
     src/ui/modepopupwidget.cpp
@@ -121,7 +136,7 @@ set(SOURCES
     src/ui/k4styles.cpp
     src/ui/k4popupbase.cpp
     src/ui/kpa1500panel.cpp
-    src/ui/kpa1500window.cpp
+    src/ui/kpa1500minipanel.cpp
     src/ui/sidecontroloverlay.cpp
     src/ui/monoverlay.cpp
     src/ui/baloverlay.cpp
@@ -137,6 +152,11 @@ set(SOURCES
 
 set(HEADERS
     src/mainwindow.h
+    src/utils/radioutils.h
+    src/controllers/connectioncontroller.h
+    src/controllers/hardwarecontroller.h
+    src/controllers/audiocontroller.h
+    src/controllers/spectrumcontroller.h
     src/network/tcpclient.h
     src/network/protocol.h
     src/network/networkmetrics.h
@@ -164,8 +184,18 @@ set(HEADERS
     src/ui/filterindicatorwidget.h
     src/ui/bandpopupwidget.h
     src/ui/buttonrowpopup.h
+    src/ui/displaymenubutton.h
+    src/ui/controlgroupwidget.h
+    src/ui/togglegroupwidget.h
     src/ui/displaypopupwidget.h
     src/ui/optionsdialog.h
+    src/ui/aboutpage.h
+    src/ui/audioinputpage.h
+    src/ui/audiooutputpage.h
+    src/ui/rigcontrolpage.h
+    src/ui/cwkeyerpage.h
+    src/ui/kpodpage.h
+    src/ui/kpa1500page.h
     src/ui/rightsidepanel.h
     src/ui/featuremenubar.h
     src/ui/modepopupwidget.h
@@ -187,7 +217,6 @@ set(HEADERS
     src/ui/k4styles.h
     src/ui/k4popupbase.h
     src/ui/kpa1500panel.h
-    src/ui/kpa1500window.h
     src/ui/sidecontroloverlay.h
     src/ui/monoverlay.h
     src/ui/baloverlay.h
@@ -326,6 +355,13 @@ qt_add_resources(${PROJECT_NAME} "icons"
         resources/icons/globe.svg
         resources/icons/help.svg
 )
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+enable_testing()
+add_subdirectory(tests)
 
 # =============================================================================
 # Deployment / Bundling - Create self-contained distributable app

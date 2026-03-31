@@ -90,9 +90,6 @@ public:
     // Parse incoming raw data, extracts complete K4 packets
     void parse(const QByteArray &data);
 
-    // Build a K4 packet from payload
-    static QByteArray buildPacket(const QByteArray &payload);
-
     // Build a CAT command packet
     static QByteArray buildCATPacket(const QString &command);
 
@@ -108,14 +105,17 @@ signals:
     void audioDataReady(const QByteArray &opusData);
     void audioSequenceReceived(quint8 seq);
     // receiver: 0 = Main (VFO A), 1 = Sub (VFO B)
-    void spectrumDataReady(int receiver, const QByteArray &spectrumData, qint64 centerFreq, qint32 sampleRate,
-                           float noiseFloor);
-    void miniSpectrumDataReady(int receiver, const QByteArray &spectrumData);
+    void spectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
+                           qint32 sampleRate, float noiseFloor);
+    void miniSpectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount);
     void catResponseReceived(const QString &response);
     void packetReceived(quint8 type, const QByteArray &payload);
 
 private:
     void processPacket(const QByteArray &packet);
+
+    // Build a K4 packet from payload (used internally by buildCATPacket/buildAudioPacket)
+    static QByteArray buildPacket(const QByteArray &payload);
 
     QByteArray m_buffer;
 };
