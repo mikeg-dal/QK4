@@ -2,11 +2,16 @@
 #include "k4styles.h"
 #include <QLabel>
 #include <QPainter>
+#include <QScreen>
 #include <QVBoxLayout>
 
 NetHealthWidget::NetHealthWidget(NetworkMetrics *metrics, QWidget *parent) : QWidget(parent), m_metrics(metrics) {
     setFixedSize(K4Styles::Dimensions::SmallIconSize, 16);
     connect(m_metrics, &NetworkMetrics::healthTierChanged, this, &NetHealthWidget::onHealthTierChanged);
+}
+
+NetHealthWidget::~NetHealthWidget() {
+    hideMetricsPopup();
 }
 
 void NetHealthWidget::onHealthTierChanged(NetworkMetrics::HealthTier tier) {
@@ -150,14 +155,21 @@ void NetHealthWidget::showMetricsPopup() {
 
     m_popup->adjustSize();
 
-    // Position above the bar, 4px gap
+    // Position above the bar, 4px gap — clamped to screen bounds
     QPoint globalPos = mapToGlobal(QPoint(0, 0));
-    int popupX = globalPos.x() - (m_popup->width() - width()) / 2; // Center horizontally
-    int popupY = globalPos.y() - m_popup->height() - 4;
+    QRect screen = this->screen()->availableGeometry();
+    int popupW = m_popup->width();
+    int popupH = m_popup->height();
 
-    // If popup would go above screen, show below instead
-    if (popupY < 0)
+    int popupX = globalPos.x() - (popupW - width()) / 2;
+    int popupY = globalPos.y() - popupH - 4;
+
+    // Clamp: if above top edge, show below the widget instead
+    if (popupY < screen.top())
         popupY = globalPos.y() + height() + 4;
+
+    // Clamp: keep within left/right screen edges
+    popupX = qBound(screen.left(), popupX, screen.right() - popupW);
 
     m_popup->move(popupX, popupY);
     m_popup->show();

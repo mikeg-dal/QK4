@@ -234,6 +234,38 @@ private slots:
         QByteArray receivedPayload = spy.at(0).at(0).toByteArray();
         QCOMPARE(static_cast<quint8>(receivedPayload[K4Protocol::AudioPacket::SEQUENCE_OFFSET]), quint8(7));
     }
+
+    void testBuildAudioPacketFrameSize_default() {
+        QByteArray audioData("test", 4);
+        QByteArray packet = Protocol::buildAudioPacket(audioData, 0, 0x03);
+
+        // Extract payload: skip START_MARKER(4) + LENGTH(4) = offset 8
+        // Frame size is at payload bytes 4-5 (LE)
+        int payloadOffset = K4Protocol::START_MARKER.size() + 4; // 4+4=8
+        quint16 frameSize = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(
+            packet.constData() + payloadOffset + K4Protocol::AudioPacket::FRAME_SIZE_OFFSET));
+        QCOMPARE(frameSize, quint16(240)); // Default
+    }
+
+    void testBuildAudioPacketFrameSize_SL3() {
+        QByteArray audioData("test", 4);
+        QByteArray packet = Protocol::buildAudioPacket(audioData, 0, 0x03, 720);
+
+        int payloadOffset = K4Protocol::START_MARKER.size() + 4;
+        quint16 frameSize = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(
+            packet.constData() + payloadOffset + K4Protocol::AudioPacket::FRAME_SIZE_OFFSET));
+        QCOMPARE(frameSize, quint16(720));
+    }
+
+    void testBuildAudioPacketFrameSize_SL6() {
+        QByteArray audioData("test", 4);
+        QByteArray packet = Protocol::buildAudioPacket(audioData, 0, 0x03, 1440);
+
+        int payloadOffset = K4Protocol::START_MARKER.size() + 4;
+        quint16 frameSize = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(
+            packet.constData() + payloadOffset + K4Protocol::AudioPacket::FRAME_SIZE_OFFSET));
+        QCOMPARE(frameSize, quint16(1440));
+    }
 };
 
 QTEST_MAIN(TestProtocol)

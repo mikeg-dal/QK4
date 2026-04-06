@@ -66,60 +66,50 @@ void CatServer::onNewConnection() {
         m_clients.append(client);
         m_clientBuffers[client] = QByteArray();
 
-        connect(client, &QTcpSocket::readyRead, this, &CatServer::onClientData);
-        connect(client, &QTcpSocket::disconnected, this, &CatServer::onClientDisconnected);
+        connect(client, &QTcpSocket::readyRead, this, [this, client]() {
+            QByteArray &buffer = m_clientBuffers[client];
+            buffer.append(client->readAll());
+
+            // Protect against unbounded buffer growth from misbehaving clients
+            if (buffer.size() > K4Protocol::MAX_BUFFER_SIZE) {
+                qWarning() << "CAT client buffer overflow from" << client->peerAddress().toString()
+                           << "- disconnecting";
+                client->disconnectFromHost();
+                return;
+            }
+
+            // K4 CAT commands are semicolon-terminated — single-pass offset parsing
+            int offset = 0;
+            int idx;
+            while ((idx = buffer.indexOf(';', offset)) != -1) {
+                QString command = QString::fromUtf8(buffer.constData() + offset, idx - offset + 1).trimmed();
+                offset = idx + 1;
+
+                if (!command.isEmpty()) {
+                    QString response = handleCommand(command);
+                    if (!response.isEmpty()) {
+                        client->write(response.toUtf8());
+                    }
+                }
+            }
+            // Keep only unprocessed remainder
+            if (offset > 0) {
+                buffer.remove(0, offset);
+            }
+        });
+
+        connect(client, &QTcpSocket::disconnected, this, [this, client]() {
+            QString address = QString("%1:%2").arg(client->peerAddress().toString()).arg(client->peerPort());
+            m_clients.removeOne(client);
+            m_clientBuffers.remove(client);
+            client->deleteLater();
+
+            emit clientDisconnected(address);
+        });
 
         QString address = QString("%1:%2").arg(client->peerAddress().toString()).arg(client->peerPort());
         emit clientConnected(address);
     }
-}
-
-void CatServer::onClientData() {
-    QTcpSocket *client = qobject_cast<QTcpSocket *>(sender());
-    if (!client)
-        return;
-
-    QByteArray &buffer = m_clientBuffers[client];
-    buffer.append(client->readAll());
-
-    // Protect against unbounded buffer growth from misbehaving clients
-    if (buffer.size() > K4Protocol::MAX_BUFFER_SIZE) {
-        qWarning() << "CAT client buffer overflow from" << client->peerAddress().toString() << "- disconnecting";
-        client->disconnectFromHost();
-        return;
-    }
-
-    // K4 CAT commands are semicolon-terminated — single-pass offset parsing
-    int offset = 0;
-    int idx;
-    while ((idx = buffer.indexOf(';', offset)) != -1) {
-        QString command = QString::fromUtf8(buffer.constData() + offset, idx - offset + 1).trimmed();
-        offset = idx + 1;
-
-        if (!command.isEmpty()) {
-            QString response = handleCommand(command);
-            if (!response.isEmpty()) {
-                client->write(response.toUtf8());
-            }
-        }
-    }
-    // Keep only unprocessed remainder
-    if (offset > 0) {
-        buffer.remove(0, offset);
-    }
-}
-
-void CatServer::onClientDisconnected() {
-    QTcpSocket *client = qobject_cast<QTcpSocket *>(sender());
-    if (!client)
-        return;
-
-    QString address = QString("%1:%2").arg(client->peerAddress().toString()).arg(client->peerPort());
-    m_clients.removeOne(client);
-    m_clientBuffers.remove(client);
-    client->deleteLater();
-
-    emit clientDisconnected(address);
 }
 
 QString CatServer::handleCommand(const QString &cmd) {
@@ -326,7 +316,7 @@ QString CatServer::handleCommand(const QString &cmd) {
             // Format: PCnnnM; where nnn=power (3 digits), M=mode (H=high, L=low/QRP)
             int power = static_cast<int>(m_radioState->rfPower());
             QString mode = m_radioState->isQrpMode() ? "L" : "H";
-            return QString("PC%1%2;").arg(power, 3, 10, QChar('0')).arg(mode);
+            return QString("PCX%1%2;").arg(power, 3, 10, QChar('0')).arg(mode);
         }
         // AG - AF gain (audio volume)
         if (prefix == "AG") {

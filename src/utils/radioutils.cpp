@@ -52,4 +52,35 @@ int getNextSpanDown(int currentSpan) {
     return qMax(newSpan, SPAN_MIN);
 }
 
+QString buildEqCommand(const QString &prefix, const QVector<int> &bands) {
+    Q_ASSERT(bands.size() == 8);
+    QString cmd = prefix;
+    for (int i = 0; i < 8; i++) {
+        int value = (i < bands.size()) ? bands[i] : 0;
+        cmd += QString("%1%2").arg(value >= 0 ? '+' : '-').arg(qAbs(value), 2, 10, QChar('0'));
+    }
+    return cmd;
+}
+
+int slTierToFrameSamples(int sl) {
+    // K4 SL tier → Opus frame size (samples/channel at 12kHz)
+    // Verified via pcap: SL0=240, SL1-2=480, SL3-5=720, SL6-7=1440
+    switch (sl) {
+    case 0:
+        return 240; // 20ms
+    case 1:
+    case 2:
+        return 480; // 40ms
+    case 3:
+    case 4:
+    case 5:
+        return 720; // 60ms
+    case 6:
+    case 7:
+        return 1440; // 120ms
+    default:
+        return 720; // Default to SL3 tier
+    }
+}
+
 } // namespace RadioUtils

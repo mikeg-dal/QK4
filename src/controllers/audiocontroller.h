@@ -9,7 +9,6 @@ class OpusDecoder;
 class OpusEncoder;
 class ConnectionController;
 class RadioState;
-class Protocol;
 
 class AudioController : public QObject {
     Q_OBJECT
@@ -42,6 +41,7 @@ signals:
 
 private slots:
     void onMicrophoneFrame(const QByteArray &s16leData);
+    void onStreamingLatencyChanged(int tier);
 
 private:
     ConnectionController *m_connectionController;
@@ -54,6 +54,7 @@ private:
 
     bool m_pttActive = false;
     quint8 m_txSequence = 0;
+    int m_txFrameSamples = 240; // Current TX frame size, matches SL tier
 };
 
 #endif // AUDIOCONTROLLER_H

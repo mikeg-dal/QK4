@@ -19,8 +19,6 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     m_kpodDevice = new KpodDevice(this);
 
     connect(m_kpodDevice, &KpodDevice::encoderRotated, this, &HardwareController::onKpodEncoderRotated);
-    connect(m_kpodDevice, &KpodDevice::rockerPositionChanged, this,
-            [this](KpodDevice::RockerPosition pos) { onKpodRockerChanged(static_cast<int>(pos)); });
     connect(m_kpodDevice, &KpodDevice::pollError, this, &HardwareController::onKpodPollError);
 
     // KPOD button signals → macro execution via MainWindow
@@ -76,23 +74,28 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
 
     // Set initial sidetone frequency from radio state if available
     if (m_radioState->cwPitch() > 0) {
-        m_sidetoneGenerator->setFrequency(m_radioState->cwPitch());
+        QMetaObject::invokeMethod(m_sidetoneGenerator, "setFrequency", Qt::QueuedConnection,
+                                  Q_ARG(int, m_radioState->cwPitch()));
     }
 
     // Update sidetone frequency when CW pitch changes
-    connect(m_radioState, &RadioState::cwPitchChanged, this,
-            [this](int pitchHz) { m_sidetoneGenerator->setFrequency(pitchHz); });
+    connect(m_radioState, &RadioState::cwPitchChanged, this, [this](int pitchHz) {
+        QMetaObject::invokeMethod(m_sidetoneGenerator, "setFrequency", Qt::QueuedConnection, Q_ARG(int, pitchHz));
+    });
 
     // Set initial sidetone volume from RadioSettings (independent of K4's MON level)
-    m_sidetoneGenerator->setVolume(RadioSettings::instance()->sidetoneVolume() / 100.0f);
+    QMetaObject::invokeMethod(m_sidetoneGenerator, "setVolume", Qt::QueuedConnection,
+                              Q_ARG(float, RadioSettings::instance()->sidetoneVolume() / 100.0f));
 
     // Update sidetone volume when changed in Options
-    connect(RadioSettings::instance(), &RadioSettings::sidetoneVolumeChanged, this,
-            [this](int value) { m_sidetoneGenerator->setVolume(value / 100.0f); });
+    connect(RadioSettings::instance(), &RadioSettings::sidetoneVolumeChanged, this, [this](int value) {
+        QMetaObject::invokeMethod(m_sidetoneGenerator, "setVolume", Qt::QueuedConnection, Q_ARG(float, value / 100.0f));
+    });
 
     // Set initial keyer speed from radio state if available
     if (m_radioState->keyerSpeed() > 0) {
-        m_sidetoneGenerator->setKeyerSpeed(m_radioState->keyerSpeed());
+        QMetaObject::invokeMethod(m_sidetoneGenerator, "setKeyerSpeed", Qt::QueuedConnection,
+                                  Q_ARG(int, m_radioState->keyerSpeed()));
     }
 
     // =========================================================================
@@ -156,12 +159,29 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     // =========================================================================
     // HaliKey paddle → keyer (ZERO-LATENCY DirectConnection)
     // =========================================================================
-    // setDitPaddle/setDahPaddle write atomic bools immediately on the calling thread,
-    // so onTimerFired() always sees real-time paddle state with zero queue delay.
-    connect(m_halikeyDevice, &HalikeyDevice::ditStateChanged, m_iambicKeyer, &IambicKeyer::setDitPaddle,
-            Qt::DirectConnection);
+    // HaliKey MIDI sends note 20 (dit) + note 31 (PTT) together on every Tip-to-Sleeve closure.
+    // In CW mode: forward dit to keyer, ignore PTT (TX handled by KZ commands).
+    // In voice mode: forward PTT to MainWindow, suppress dit (no keying in SSB/AM/FM).
+    connect(
+        m_halikeyDevice, &HalikeyDevice::ditStateChanged, this,
+        [this](bool pressed) {
+            auto mode = m_radioState->mode();
+            if (mode == RadioState::CW || mode == RadioState::CW_R) {
+                m_iambicKeyer->setDitPaddle(pressed);
+            }
+            // In voice/data modes, dit is suppressed — PTT signal handles TX
+        },
+        Qt::DirectConnection);
     connect(m_halikeyDevice, &HalikeyDevice::dahStateChanged, m_iambicKeyer, &IambicKeyer::setDahPaddle,
             Qt::DirectConnection);
+
+    // HaliKey PTT → MainWindow (voice/data modes only)
+    connect(m_halikeyDevice, &HalikeyDevice::pttStateChanged, this, [this](bool active) {
+        auto mode = m_radioState->mode();
+        if (mode != RadioState::CW && mode != RadioState::CW_R) {
+            emit pttRequested(active);
+        }
+    });
 
     // Enable keyer when radio connects, disable on disconnect
     connect(m_connectionController, &ConnectionController::radioReady, this, [this]() {
@@ -225,7 +245,7 @@ void HardwareController::onKpodEncoderRotated(int ticks) {
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStep());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(ticks) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq));
+            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
@@ -237,7 +257,7 @@ void HardwareController::onKpodEncoderRotated(int ticks) {
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(ticks) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq));
+            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
@@ -257,25 +277,6 @@ void HardwareController::onKpodEncoderRotated(int ticks) {
         }
         break;
     }
-}
-
-void HardwareController::onKpodRockerChanged(int position) {
-    QString posName;
-    switch (static_cast<KpodDevice::RockerPosition>(position)) {
-    case KpodDevice::RockerLeft:
-        posName = "VFO A";
-        break;
-    case KpodDevice::RockerCenter:
-        posName = "VFO B";
-        break;
-    case KpodDevice::RockerRight:
-        posName = "XIT/RIT";
-        break;
-    default:
-        posName = "Unknown";
-        break;
-    }
-    Q_UNUSED(posName)
 }
 
 void HardwareController::onKpodPollError(const QString &error) {

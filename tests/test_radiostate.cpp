@@ -224,6 +224,46 @@ private slots:
         QCOMPARE(rs.keyerSpeed(), 20);
     }
 
+    // Streaming Latency (SL command)
+    void testStreamingLatency() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::streamingLatencyChanged);
+        rs.parseCATCommand("SL3;");
+        QCOMPARE(rs.streamingLatency(), 3);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 3);
+    }
+
+    void testStreamingLatency_allValues() {
+        RadioState rs;
+        for (int i = 0; i <= 7; i++) {
+            rs.parseCATCommand(QString("SL%1;").arg(i));
+            QCOMPARE(rs.streamingLatency(), i);
+        }
+    }
+
+    void testStreamingLatency_noSignalOnSameValue() {
+        RadioState rs;
+        rs.parseCATCommand("SL3;");
+        QSignalSpy spy(&rs, &RadioState::streamingLatencyChanged);
+        rs.parseCATCommand("SL3;");
+        QCOMPARE(spy.count(), 0);
+    }
+
+    void testStreamingLatency_resetToSentinel() {
+        RadioState rs;
+        rs.parseCATCommand("SL5;");
+        rs.reset();
+        QCOMPARE(rs.streamingLatency(), -1);
+    }
+
+    // SIRC command removed — must not crash when received
+    void testSircCommandIgnored() {
+        RadioState rs;
+        rs.parseCATCommand("SIRC1;");
+        // No handler registered — command is silently ignored, no crash
+    }
+
     // Reset clears all state
     void testReset() {
         RadioState rs;

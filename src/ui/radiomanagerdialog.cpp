@@ -382,7 +382,20 @@ void RadioManagerDialog::onSaveClicked() {
     } else {
         // Add new
         RadioSettings::instance()->addRadio(entry);
-        m_currentIndex = RadioSettings::instance()->radios().size() - 1;
+    }
+
+    // If connected to this radio, notify that SL changed so it can be sent live
+    if (!m_connectedHost.isEmpty() && entry.host == m_connectedHost) {
+        emit streamingLatencyChanged(entry.streamingLatency);
+    }
+
+    // Find the saved entry's new index (list is sorted alphabetically)
+    const auto radios = RadioSettings::instance()->radios();
+    for (int i = 0; i < radios.size(); i++) {
+        if (radios[i].name == entry.name && radios[i].host == entry.host) {
+            m_currentIndex = i;
+            break;
+        }
     }
 
     // Re-select the saved item

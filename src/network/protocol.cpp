@@ -176,13 +176,14 @@ QByteArray Protocol::buildAuthData(const QString &password) {
     return hexString;
 }
 
-QByteArray Protocol::buildAudioPacket(const QByteArray &audioData, quint8 sequence, quint8 encodeMode) {
+QByteArray Protocol::buildAudioPacket(const QByteArray &audioData, quint8 sequence, quint8 encodeMode,
+                                      quint16 frameSamples) {
     // K4 TX Audio Packet Structure:
     // Byte 0:    TYPE = 0x01 (Audio)
     // Byte 1:    VER = 0x01 (Version)
     // Byte 2:    SEQ = sequence number (0-255, wrapping)
     // Byte 3:    MODE = encode mode (0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float)
-    // Bytes 4-5: Frame size (little-endian UInt16) = 240 samples
+    // Bytes 4-5: Frame size (little-endian UInt16) — samples per channel, matches SL tier
     // Byte 6:    Sample rate code = 0x00 (12000 Hz)
     // Byte 7+:   Audio data (format depends on encode mode)
 
@@ -194,10 +195,9 @@ QByteArray Protocol::buildAudioPacket(const QByteArray &audioData, quint8 sequen
     payload.append(static_cast<char>(sequence));          // Sequence
     payload.append(static_cast<char>(encodeMode));        // Encode mode
 
-    // Frame size: 240 samples (little-endian)
-    quint16 frameSize = 240;
-    payload.append(static_cast<char>(frameSize & 0xFF));
-    payload.append(static_cast<char>((frameSize >> 8) & 0xFF));
+    // Frame size (little-endian) — matches SL tier
+    payload.append(static_cast<char>(frameSamples & 0xFF));
+    payload.append(static_cast<char>((frameSamples >> 8) & 0xFF));
 
     payload.append(static_cast<char>(0x00)); // Sample rate code (0 = 12kHz)
 

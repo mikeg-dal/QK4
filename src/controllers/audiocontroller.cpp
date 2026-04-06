@@ -7,6 +7,7 @@
 #include "network/networkmetrics.h"
 #include "network/protocol.h"
 #include "settings/radiosettings.h"
+#include "utils/radioutils.h"
 #include <QLoggingCategory>
 
 Q_LOGGING_CATEGORY(qk4Audio, "qk4.audio")
@@ -59,6 +60,9 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
     // TX audio path: mic frame → encode → send packet
     connect(m_audioEngine, &AudioEngine::microphoneFrame, this, &AudioController::onMicrophoneFrame);
 
+    // SL tier changes → update TX frame size
+    connect(m_radioState, &RadioState::streamingLatencyChanged, this, &AudioController::onStreamingLatencyChanged);
+
     // SUB RX mute/unmute
     connect(m_radioState, &RadioState::subRxEnabledChanged, this, [this](bool enabled) {
         if (m_audioEngine) {
@@ -103,6 +107,11 @@ void AudioController::startAudio(float mainVolume, float subVolume, float micGai
     m_audioEngine->setMainVolume(mainVolume);
     m_audioEngine->setSubVolume(subVolume);
     m_audioEngine->setMicGain(micGain);
+
+    // Set initial TX frame size from radio profile's SL tier
+    int sl = m_connectionController->currentRadio().streamingLatency;
+    m_txFrameSamples = RadioUtils::slTierToFrameSamples(sl);
+    m_audioEngine->setFrameSamples(m_txFrameSamples);
 }
 
 void AudioController::stopAudio() {
@@ -198,7 +207,7 @@ void AudioController::onMicrophoneFrame(const QByteArray &s16leData) {
     case 3: // EM3 - Opus Float
     default:
         // Use Opus encoding (encoder handles mono-to-stereo internally)
-        audioData = m_opusEncoder->encode(s16leData);
+        audioData = m_opusEncoder->encode(s16leData, m_txFrameSamples);
         break;
     }
 
@@ -206,8 +215,13 @@ void AudioController::onMicrophoneFrame(const QByteArray &s16leData) {
         return;
     }
 
-    // Build and send the audio packet with the selected encode mode
-    QByteArray packet =
-        Protocol::buildAudioPacket(audioData, m_txSequence++, m_connectionController->currentRadio().encodeMode);
+    // Build and send the audio packet with the selected encode mode and frame size
+    QByteArray packet = Protocol::buildAudioPacket(audioData, m_txSequence++,
+                                                   m_connectionController->currentRadio().encodeMode, m_txFrameSamples);
     m_connectionController->sendRawPacket(packet);
+}
+
+void AudioController::onStreamingLatencyChanged(int tier) {
+    m_txFrameSamples = RadioUtils::slTierToFrameSamples(tier);
+    m_audioEngine->setFrameSamples(m_txFrameSamples);
 }

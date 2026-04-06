@@ -45,8 +45,6 @@ private:
     static constexpr int RTT_WINDOW = 30;
     std::deque<int> m_rttSamples;
     int m_rttCurrent = -1;
-    int m_rttMin = -1;
-    int m_rttMax = -1;
     double m_rttAvg = 0.0;
     double m_rttJitter = 0.0;
 

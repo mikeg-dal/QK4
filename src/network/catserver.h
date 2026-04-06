@@ -52,8 +52,6 @@ signals:
 
 private slots:
     void onNewConnection();
-    void onClientData();
-    void onClientDisconnected();
 
 private:
     QString handleCommand(const QString &cmd);

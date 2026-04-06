@@ -27,6 +27,7 @@ public:
 signals:
     void connectRequested(const RadioEntry &radio);
     void disconnectRequested();
+    void streamingLatencyChanged(int tier); // Emitted on save while connected
 
 private slots:
     void onConnectClicked();

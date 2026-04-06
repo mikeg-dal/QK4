@@ -443,6 +443,7 @@ void TextDecodeWindow::setDecodeEnabled(bool enabled) {
     if (m_decodeEnabled != enabled) {
         m_decodeEnabled = enabled;
         updateButtonStates();
+        emit enabledChanged(enabled);
     }
 }
 

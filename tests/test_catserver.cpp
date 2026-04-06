@@ -305,6 +305,32 @@ private slots:
         QVERIFY(response.contains("MD2;"));
         client.disconnectFromHost();
     }
+
+    // =========================================================================
+    // PCX extended power response
+    // =========================================================================
+
+    void testPcxHighPower() {
+        RadioState rs;
+        rs.setRfPower(100.0); // High power mode (>10W)
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QString response = sendCommand(server, "PCX;");
+        QCOMPARE(response, QString("PCX100H;"));
+    }
+
+    void testPcxQrpMode() {
+        RadioState rs;
+        rs.setRfPower(5.0); // QRP mode (<=10W)
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QString response = sendCommand(server, "PCX;");
+        QCOMPARE(response, QString("PCX005L;"));
+    }
 };
 
 QTEST_MAIN(TestCatServer)

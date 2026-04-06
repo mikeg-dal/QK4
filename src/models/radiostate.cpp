@@ -44,7 +44,7 @@ void RadioState::reset() {
     // Meters
     m_sMeter = 0.0;
     m_sMeterB = 0.0;
-    m_powerMeter = 0;
+
     m_swrMeter = 1.0;
     m_alcMeter = 0;
     m_compressionDb = 0;
@@ -237,6 +237,9 @@ void RadioState::reset() {
     // ESSB
     m_essbEnabled = false;
     m_ssbTxBw = -1;
+
+    // Streaming Latency
+    m_streamingLatency = -1;
 
     // Text Decode
     m_textDecodeMode = -1;
@@ -630,7 +633,6 @@ void RadioState::setRxEqBand(int index, int dB) {
     dB = qBound(-16, dB, 16);
     if (m_rxEqBands[index] != dB) {
         m_rxEqBands[index] = dB;
-        emit rxEqBandChanged(index, dB);
         emit rxEqChanged();
     }
 }
@@ -655,7 +657,6 @@ void RadioState::setTxEqBand(int index, int dB) {
     dB = qBound(-16, dB, 16);
     if (m_txEqBands[index] != dB) {
         m_txEqBands[index] = dB;
-        emit txEqBandChanged(index, dB);
         emit txEqChanged();
     }
 }
@@ -991,7 +992,7 @@ void RadioState::registerCommandHandlers() {
 
     // Multi-char commands with $ suffix (must come before their base commands)
     m_commandHandlers.append({"SIFP", [this](const QString &c) { handleSIFP(c); }});
-    m_commandHandlers.append({"SIRC", [this](const QString &c) { handleSIRC(c); }});
+
     m_commandHandlers.append({"TD$", [this](const QString &c) { handleTDSub(c); }});
     m_commandHandlers.append({"TB$", [this](const QString &c) { handleTBSub(c); }});
     m_commandHandlers.append({"DR$", [this](const QString &c) { handleDRSub(c); }});
@@ -1200,6 +1201,7 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"MN", [this](const QString &c) { handleMN(c); }});
     m_commandHandlers.append({"ES", [this](const QString &c) { handleES(c); }});
     m_commandHandlers.append({"SD", [this](const QString &c) { handleSD(c); }});
+    m_commandHandlers.append({"SL", [this](const QString &c) { handleSL(c); }});
     m_commandHandlers.append({"SB", [this](const QString &c) { handleSB(c); }});
     m_commandHandlers.append({"DV", [this](const QString &c) { handleDV(c); }});
     m_commandHandlers.append({"DR", [this](const QString &c) { handleDR(c); }});
@@ -1588,14 +1590,9 @@ void RadioState::handleSMSub(const QString &cmd) {
 }
 
 void RadioState::handlePO(const QString &cmd) {
-    if (cmd.length() <= 2)
-        return;
-    bool ok;
-    int po = cmd.mid(2).toInt(&ok);
-    if (ok && m_powerMeter != po) {
-        m_powerMeter = po;
-        emit powerMeterChanged(m_powerMeter);
-    }
+    Q_UNUSED(cmd)
+    // PO (raw power meter) is received but unused — forward power
+    // is already available through the TM handler's txMeterChanged signal.
 }
 
 void RadioState::handleTM(const QString &cmd) {
@@ -2228,6 +2225,20 @@ void RadioState::handleSD(const QString &cmd) {
 // Individual Command Handlers - Control State
 // =============================================================================
 
+void RadioState::handleSL(const QString &cmd) {
+    // SL - Streaming Latency: SL0 through SL7
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int tier = cmd.mid(2).toInt(&ok);
+    if (!ok || tier < 0 || tier > 7)
+        return;
+    if (tier != m_streamingLatency) {
+        m_streamingLatency = tier;
+        emit streamingLatencyChanged(m_streamingLatency);
+    }
+}
+
 void RadioState::handleSB(const QString &cmd) {
     // SB - Sub Receiver: SB0=off, SB1=on, SB3=on (diversity)
     if (cmd.length() <= 2)
@@ -2552,7 +2563,6 @@ void RadioState::handleRE(const QString &cmd) {
         if (ok && val >= -16 && val <= 16 && val != m_rxEqBands[i]) {
             m_rxEqBands[i] = val;
             changed = true;
-            emit rxEqBandChanged(i, val);
         }
     }
     if (changed)
@@ -2569,7 +2579,6 @@ void RadioState::handleTE(const QString &cmd) {
         if (ok && val >= -16 && val <= 16 && val != m_txEqBands[i]) {
             m_txEqBands[i] = val;
             changed = true;
-            emit txEqBandChanged(i, val);
         }
     }
     if (changed)
@@ -2647,10 +2656,6 @@ void RadioState::handleSIFP(const QString &cmd) {
             emit supplyCurrentChanged(m_supplyCurrent);
         }
     }
-}
-
-void RadioState::handleSIRC(const QString &cmd) {
-    Q_UNUSED(cmd)
 }
 
 void RadioState::handleMN(const QString &cmd) {

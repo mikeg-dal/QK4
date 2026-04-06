@@ -93,7 +93,7 @@ public:
     // Meters
     double sMeter() const { return m_sMeter; }
     double sMeterB() const { return m_sMeterB; }
-    int powerMeter() const { return m_powerMeter; }
+
     double swrMeter() const { return m_swrMeter; }
 
     // TX Meter data (TM command)
@@ -200,6 +200,9 @@ public:
         }
     }
     void toggleBSet() { setBSetEnabled(!m_bSetEnabled); }
+
+    // Streaming Latency (SL command)
+    int streamingLatency() const { return m_streamingLatency; }
 
     // Audio Effects (FX command)
     int afxMode() const { return m_afxMode; } // 0=off, 1=delay, 2=pitch-map
@@ -570,7 +573,7 @@ signals:
     void tuningStepBChanged(int step); // VFO B tuning rate (0-5)
     void sMeterChanged(double value);
     void sMeterBChanged(double value);
-    void powerMeterChanged(int watts);
+
     void transmitStateChanged(bool transmitting);
     void rfPowerChanged(double watts, bool isQrp);
     void supplyVoltageChanged(double volts);
@@ -634,6 +637,9 @@ signals:
     void dataRateChanged(int rate);              // DR: 0=slower (RTTY45/PSK31), 1=faster (RTTY75/PSK63)
     void dataRateBChanged(int rate);             // DR$: Sub RX data rate
 
+    // Streaming latency
+    void streamingLatencyChanged(int tier); // SL: 0-7
+
     // Error/notification messages from K4 (ERxx: format)
     void errorNotificationReceived(int errorCode, const QString &message);
 
@@ -649,12 +655,10 @@ signals:
     void balanceChanged(int mode, int offset);     // BL: Balance (mode 0=NOR/1=BAL, offset -50 to +50)
 
     // RX Graphic Equalizer
-    void rxEqChanged();                      // Any EQ band value changed
-    void rxEqBandChanged(int index, int dB); // Specific band changed
+    void rxEqChanged(); // Any EQ band value changed
 
     // TX Graphic Equalizer
-    void txEqChanged();                      // Any EQ band value changed
-    void txEqBandChanged(int index, int dB); // Specific band changed
+    void txEqChanged(); // Any EQ band value changed
 
     // Antenna Configuration Masks
     void mainRxAntCfgChanged(); // ACM command received/changed
@@ -717,7 +721,7 @@ private:
     // Meters
     double m_sMeter = 0.0;
     double m_sMeterB = 0.0;
-    int m_powerMeter = 0;
+
     double m_swrMeter = 1.0;
     int m_alcMeter = 0;
     int m_compressionDb = 0;
@@ -803,6 +807,9 @@ private:
     int m_qskDelayCW = -1;
     int m_qskDelayVoice = -1;
     int m_qskDelayData = -1;
+
+    // Streaming Latency (SL command)
+    int m_streamingLatency = -1; // 0-7, -1 = not yet received
 
     // Audio effects (FX command)
     int m_afxMode = 0; // 0=off, 1=delay, 2=pitch-map
@@ -1116,9 +1123,10 @@ private:
     void handleOM(const QString &cmd);   // Option Modules
     void handleRV(const QString &cmd);   // Firmware Version (RV.)
     void handleSIFP(const QString &cmd); // Power Supply Info
-    void handleSIRC(const QString &cmd); // SIRC status
-    void handleMN(const QString &cmd);   // Message Bank
-    void handleER(const QString &cmd);   // Error notifications
+
+    void handleSL(const QString &cmd); // Streaming Latency
+    void handleMN(const QString &cmd); // Message Bank
+    void handleER(const QString &cmd); // Error notifications
 
     // Display commands (# prefix)
     // #REF/#REF$ — handled inline via handleIntPair

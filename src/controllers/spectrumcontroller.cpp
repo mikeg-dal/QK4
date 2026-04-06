@@ -138,12 +138,12 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
 
     m_vfoIndicatorA = new QLabel("A", m_panadapterA);
     m_vfoIndicatorA->setStyleSheet(vfoIndicatorStyle);
-    m_vfoIndicatorA->setFixedSize(34, 30);
+    m_vfoIndicatorA->setFixedSize(K4Styles::Dimensions::VfoIndicatorWidth, K4Styles::Dimensions::VfoIndicatorHeight);
     m_vfoIndicatorA->setAlignment(Qt::AlignCenter);
 
     m_vfoIndicatorB = new QLabel("B", m_panadapterB);
     m_vfoIndicatorB->setStyleSheet(vfoIndicatorStyle);
-    m_vfoIndicatorB->setFixedSize(34, 30);
+    m_vfoIndicatorB->setFixedSize(K4Styles::Dimensions::VfoIndicatorWidth, K4Styles::Dimensions::VfoIndicatorHeight);
     m_vfoIndicatorB->setAlignment(Qt::AlignCenter);
 
     // Position buttons (will be repositioned in resizeEvent of panadapter)
@@ -331,7 +331,7 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStep());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq));
+            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
@@ -489,7 +489,7 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq));
+            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }

@@ -16,9 +16,9 @@ public:
     explicit SidetoneGenerator(QObject *parent = nullptr);
     ~SidetoneGenerator();
 
-    void setFrequency(int hz);
-    void setVolume(float volume);
-    void setKeyerSpeed(int wpm);
+    Q_INVOKABLE void setFrequency(int hz);
+    Q_INVOKABLE void setVolume(float volume);
+    Q_INVOKABLE void setKeyerSpeed(int wpm);
 
     // Initialize/shutdown audio (called on sidetone thread via invokeMethod)
     Q_INVOKABLE void start();

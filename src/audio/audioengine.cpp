@@ -127,8 +127,8 @@ bool AudioEngine::setupAudioOutput() {
         return false;
     }
 
-    // Apply current volume setting to the newly created sink
-    m_audioSink->setVolume(m_volume.load(std::memory_order_relaxed));
+    // Volume is always 1.0 — actual volume control is in the K4's AG command
+    m_audioSink->setVolume(1.0f);
 
     return true;
 }
@@ -409,9 +409,6 @@ void AudioEngine::onMicDataReady() {
     // Resample from 48kHz to 12kHz
     QByteArray data12k = resample48kTo12k(data48k);
 
-    // Emit raw resampled data for any listeners that want it
-    emit microphoneData(data12k);
-
     // Convert Float32 to S16LE, apply gain, and buffer for frame-based emission
     const float *floatData = reinterpret_cast<const float *>(data12k.constData());
     int floatSamples = data12k.size() / sizeof(float);
@@ -437,24 +434,18 @@ void AudioEngine::onMicDataReady() {
     float rmsLevel = (floatSamples > 0) ? std::sqrt(sumSquares / floatSamples) : 0.0f;
     emit micLevelChanged(rmsLevel);
 
-    // Emit complete frames (240 samples = 480 bytes S16LE each)
+    // Emit complete frames (size matches SL tier: 240/480/720/1440 samples)
     // Use offset-based reading to avoid O(n) buffer shifts per frame
+    int frameBytes = m_frameSamples.load(std::memory_order_relaxed) * static_cast<int>(sizeof(qint16));
     int offset = 0;
-    while (m_micBuffer.size() - offset >= FRAME_BYTES_S16LE) {
-        QByteArray frame = m_micBuffer.mid(offset, FRAME_BYTES_S16LE);
-        offset += FRAME_BYTES_S16LE;
+    while (m_micBuffer.size() - offset >= frameBytes) {
+        QByteArray frame = m_micBuffer.mid(offset, frameBytes);
+        offset += frameBytes;
         emit microphoneFrame(frame);
     }
     if (offset > 0) {
         m_micBuffer.remove(0, offset); // Single shift for all consumed frames
     }
-}
-
-void AudioEngine::setVolume(float volume) {
-    m_volume.store(qBound(0.0f, volume, 1.0f), std::memory_order_relaxed);
-    // Note: QAudioSink::setVolume() must be called on the audio thread.
-    // Since setVolume() is rarely used (system volume), we skip the cross-thread
-    // call here — the stored value will be applied on next start().
 }
 
 void AudioEngine::setMainVolume(float volume) {
@@ -485,6 +476,10 @@ void AudioEngine::setBalanceOffset(int offset) {
 
 void AudioEngine::setMicGain(float gain) {
     m_micGain.store(qBound(0.0f, gain, 1.0f), std::memory_order_relaxed);
+}
+
+void AudioEngine::setFrameSamples(int samples) {
+    m_frameSamples.store(samples, std::memory_order_relaxed);
 }
 
 void AudioEngine::setMicDevice(const QString &deviceId) {

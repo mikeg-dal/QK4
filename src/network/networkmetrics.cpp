@@ -20,18 +20,10 @@ void NetworkMetrics::updateRttStats() {
     if (m_rttSamples.empty())
         return;
 
-    int minVal = m_rttSamples[0];
-    int maxVal = m_rttSamples[0];
     double sum = 0.0;
     for (int s : m_rttSamples) {
         sum += s;
-        if (s < minVal)
-            minVal = s;
-        if (s > maxVal)
-            maxVal = s;
     }
-    m_rttMin = minVal;
-    m_rttMax = maxVal;
     m_rttAvg = sum / m_rttSamples.size();
 
     // Jitter = stddev
@@ -74,8 +66,6 @@ void NetworkMetrics::onConnectionStateChanged(bool connected) {
         // Reset state for new connection
         m_rttSamples.clear();
         m_rttCurrent = -1;
-        m_rttMin = -1;
-        m_rttMax = -1;
         m_rttAvg = 0.0;
         m_rttJitter = 0.0;
         m_lastAudioSeq = -1;

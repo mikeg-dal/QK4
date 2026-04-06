@@ -24,14 +24,15 @@ bool OpusEncoder::initialize(int sampleRate, int channels, int bitrate) {
     return true;
 }
 
-QByteArray OpusEncoder::encode(const QByteArray &pcmData) {
+QByteArray OpusEncoder::encode(const QByteArray &pcmData, int frameSamples) {
     if (!m_encoder) {
         return QByteArray();
     }
 
-    // Validate input size - must be exactly one frame
-    if (pcmData.size() != FRAME_BYTES) {
-        qWarning() << "OpusEncoder: Invalid frame size" << pcmData.size() << "bytes, expected" << FRAME_BYTES;
+    // Validate input size matches requested frame size
+    int expectedBytes = frameSamples * static_cast<int>(sizeof(opus_int16));
+    if (pcmData.size() != expectedBytes) {
+        qWarning() << "OpusEncoder: Invalid frame size" << pcmData.size() << "bytes, expected" << expectedBytes;
         return QByteArray();
     }
 
@@ -39,7 +40,7 @@ QByteArray OpusEncoder::encode(const QByteArray &pcmData) {
 
     const opus_int16 *pcm = reinterpret_cast<const opus_int16 *>(pcmData.constData());
     int bytes =
-        opus_encode(m_encoder, pcm, FRAME_SAMPLES, reinterpret_cast<unsigned char *>(encoded.data()), MAX_PACKET_SIZE);
+        opus_encode(m_encoder, pcm, frameSamples, reinterpret_cast<unsigned char *>(encoded.data()), MAX_PACKET_SIZE);
 
     if (bytes < 0) {
         qWarning() << "OpusEncoder: Encode failed:" << opus_strerror(bytes);

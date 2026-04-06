@@ -12,9 +12,10 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
     m_ditDebounceTimer->setSingleShot(true);
     m_ditDebounceTimer->setInterval(DEBOUNCE_MS);
     connect(m_ditDebounceTimer, &QTimer::timeout, this, [this]() {
-        if (m_rawDitState != m_confirmedDitState) {
-            m_confirmedDitState = m_rawDitState;
-            emit ditStateChanged(m_confirmedDitState);
+        bool raw = m_rawDitState.load(std::memory_order_relaxed);
+        if (raw != m_confirmedDitState.load(std::memory_order_relaxed)) {
+            m_confirmedDitState.store(raw, std::memory_order_relaxed);
+            emit ditStateChanged(raw);
         }
     });
 
@@ -22,9 +23,10 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
     m_dahDebounceTimer->setSingleShot(true);
     m_dahDebounceTimer->setInterval(DEBOUNCE_MS);
     connect(m_dahDebounceTimer, &QTimer::timeout, this, [this]() {
-        if (m_rawDahState != m_confirmedDahState) {
-            m_confirmedDahState = m_rawDahState;
-            emit dahStateChanged(m_confirmedDahState);
+        bool raw = m_rawDahState.load(std::memory_order_relaxed);
+        if (raw != m_confirmedDahState.load(std::memory_order_relaxed)) {
+            m_confirmedDahState.store(raw, std::memory_order_relaxed);
+            emit dahStateChanged(raw);
         }
     });
 
@@ -32,9 +34,10 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
     m_pttDebounceTimer->setSingleShot(true);
     m_pttDebounceTimer->setInterval(DEBOUNCE_MS);
     connect(m_pttDebounceTimer, &QTimer::timeout, this, [this]() {
-        if (m_rawPttState != m_confirmedPttState) {
-            m_confirmedPttState = m_rawPttState;
-            emit pttStateChanged(m_confirmedPttState);
+        bool raw = m_rawPttState.load(std::memory_order_relaxed);
+        if (raw != m_confirmedPttState.load(std::memory_order_relaxed)) {
+            m_confirmedPttState.store(raw, std::memory_order_relaxed);
+            emit pttStateChanged(raw);
         }
     });
 }
@@ -44,10 +47,10 @@ HalikeyDevice::~HalikeyDevice() {
 }
 
 void HalikeyDevice::onRawDit(bool pressed) {
-    m_rawDitState = pressed;
-    if (pressed && !m_confirmedDitState) {
+    m_rawDitState.store(pressed, std::memory_order_relaxed);
+    if (pressed && !m_confirmedDitState.load(std::memory_order_relaxed)) {
         // Key down — emit immediately for zero latency (runs on RtMidi thread)
-        m_confirmedDitState = true;
+        m_confirmedDitState.store(true, std::memory_order_relaxed);
         QMetaObject::invokeMethod(m_ditDebounceTimer, "stop", Qt::QueuedConnection);
         emit ditStateChanged(true);
     } else {
@@ -57,9 +60,9 @@ void HalikeyDevice::onRawDit(bool pressed) {
 }
 
 void HalikeyDevice::onRawDah(bool pressed) {
-    m_rawDahState = pressed;
-    if (pressed && !m_confirmedDahState) {
-        m_confirmedDahState = true;
+    m_rawDahState.store(pressed, std::memory_order_relaxed);
+    if (pressed && !m_confirmedDahState.load(std::memory_order_relaxed)) {
+        m_confirmedDahState.store(true, std::memory_order_relaxed);
         QMetaObject::invokeMethod(m_dahDebounceTimer, "stop", Qt::QueuedConnection);
         emit dahStateChanged(true);
     } else {
@@ -68,9 +71,9 @@ void HalikeyDevice::onRawDah(bool pressed) {
 }
 
 void HalikeyDevice::onRawPtt(bool pressed) {
-    m_rawPttState = pressed;
-    if (pressed && !m_confirmedPttState) {
-        m_confirmedPttState = true;
+    m_rawPttState.store(pressed, std::memory_order_relaxed);
+    if (pressed && !m_confirmedPttState.load(std::memory_order_relaxed)) {
+        m_confirmedPttState.store(true, std::memory_order_relaxed);
         QMetaObject::invokeMethod(m_pttDebounceTimer, "stop", Qt::QueuedConnection);
         emit pttStateChanged(true);
     } else {
@@ -84,12 +87,12 @@ bool HalikeyDevice::openPort(const QString &portName) {
     }
 
     m_portName = portName;
-    m_rawDitState = false;
-    m_rawDahState = false;
-    m_rawPttState = false;
-    m_confirmedDitState = false;
-    m_confirmedDahState = false;
-    m_confirmedPttState = false;
+    m_rawDitState.store(false, std::memory_order_relaxed);
+    m_rawDahState.store(false, std::memory_order_relaxed);
+    m_rawPttState.store(false, std::memory_order_relaxed);
+    m_confirmedDitState.store(false, std::memory_order_relaxed);
+    m_confirmedDahState.store(false, std::memory_order_relaxed);
+    m_confirmedPttState.store(false, std::memory_order_relaxed);
 
     // Create worker based on configured device type
     int deviceType = RadioSettings::instance()->halikeyDeviceType();
@@ -153,12 +156,12 @@ void HalikeyDevice::closePort() {
 
     bool wasConnected = m_connected;
     m_connected = false;
-    m_rawDitState = false;
-    m_rawDahState = false;
-    m_rawPttState = false;
-    m_confirmedDitState = false;
-    m_confirmedDahState = false;
-    m_confirmedPttState = false;
+    m_rawDitState.store(false, std::memory_order_relaxed);
+    m_rawDahState.store(false, std::memory_order_relaxed);
+    m_rawPttState.store(false, std::memory_order_relaxed);
+    m_confirmedDitState.store(false, std::memory_order_relaxed);
+    m_confirmedDahState.store(false, std::memory_order_relaxed);
+    m_confirmedPttState.store(false, std::memory_order_relaxed);
 
     if (wasConnected) {
         emit disconnected();

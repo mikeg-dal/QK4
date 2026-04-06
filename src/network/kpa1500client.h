@@ -46,7 +46,8 @@ public:
     FaultStatus faultStatus() const { return m_faultStatus; }
     QString faultCode() const { return m_faultCode; }
     bool atuPresent() const { return m_atuPresent; }
-    bool atuInline() const { return m_atuInline; }
+    bool atuModeInline() const { return m_atuModeInline; } // ^AM: ATU mode (enabled/disabled)
+    bool atuInline() const { return m_atuInline; }         // ^AI: ATU relay state (in-circuit/bypassed)
     int antenna() const { return m_antenna; }
     QString serialNumber() const { return m_serialNumber; }
     QString firmwareVersion() const { return m_firmwareVersion; }
@@ -66,7 +67,8 @@ signals:
     void paTemperatureChanged(double tempC);
     void operatingStateChanged(OperatingState state);
     void faultStatusChanged(FaultStatus status, const QString &faultCode);
-    void atuInlineChanged(bool inline_);
+    void atuModeChanged(bool inline_);   // ^AM: ATU mode toggled
+    void atuInlineChanged(bool inline_); // ^AI: ATU relay state changed
     void antennaChanged(int antenna);
 
 private slots:
@@ -105,7 +107,8 @@ private:
     FaultStatus m_faultStatus = FaultNone;
     QString m_faultCode;
     bool m_atuPresent = false;
-    bool m_atuInline = false;
+    bool m_atuModeInline = false; // ^AM: ATU mode (I=inline/enabled, B=bypassed/disabled)
+    bool m_atuInline = false;     // ^AI: ATU relay state (1=relays inline, 0=relays bypassed)
     int m_antenna = 1;
     QString m_serialNumber;
     QString m_firmwareVersion;

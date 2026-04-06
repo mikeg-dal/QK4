@@ -2,7 +2,7 @@
 #include "network/networkmetrics.h"
 #include "network/protocol.h"
 #include "models/radiostate.h"
-#include "ui/fnpopupwidget.h"
+#include "models/macroids.h"
 #include <QLoggingCategory>
 
 Q_LOGGING_CATEGORY(qk4Connection, "qk4.connection")

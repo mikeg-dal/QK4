@@ -5,15 +5,16 @@
 #include <QVBoxLayout>
 
 Kpa1500MiniPanel::Kpa1500MiniPanel(QWidget *parent) : QWidget(parent) {
-    // Main layout: top margin reserves space for painted meters + status/ATU lines, buttons below
-    int metersHeight = METER_START_Y + (METER_SPACING * 4) + ATU_LABEL_HEIGHT + 6;
+    // Main layout: top margin reserves space for painted meters + LED indicator grid, buttons below
+    // Side/bottom padding makes the panel background visible around button edges
+    int metersHeight = METER_START_Y + (METER_SPACING * 4) + LED_GRID_HEIGHT;
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, metersHeight, 0, 0);
+    layout->setContentsMargins(PANEL_PAD, metersHeight, PANEL_PAD, PANEL_PAD);
     layout->setSpacing(4);
 
     // 2x2 button grid
     auto *btnGrid = new QGridLayout();
-    btnGrid->setContentsMargins(0, 6, 0, 0);
+    btnGrid->setContentsMargins(0, 12, 0, 0);
     btnGrid->setHorizontalSpacing(4);
     btnGrid->setVerticalSpacing(8);
 
@@ -31,9 +32,9 @@ Kpa1500MiniPanel::Kpa1500MiniPanel(QWidget *parent) : QWidget(parent) {
         return container;
     };
 
-    btnGrid->addWidget(makeBtn("STBY", m_modeBtn), 0, 0);
+    btnGrid->addWidget(makeBtn("MODE", m_modeBtn), 0, 0);
     btnGrid->addWidget(makeBtn("ATU", m_atuBtn), 0, 1);
-    btnGrid->addWidget(makeBtn("ANT1", m_antBtn), 1, 0);
+    btnGrid->addWidget(makeBtn("ANT", m_antBtn), 1, 0);
     btnGrid->addWidget(makeBtn("TUNE", m_tuneBtn), 1, 1);
 
     layout->addLayout(btnGrid);
@@ -41,10 +42,10 @@ Kpa1500MiniPanel::Kpa1500MiniPanel(QWidget *parent) : QWidget(parent) {
     // Button connections
     connect(m_modeBtn, &QPushButton::clicked, this, [this]() { emit modeToggled(!m_operate); });
 
-    connect(m_atuBtn, &QPushButton::clicked, this, [this]() { emit atuModeToggled(!m_atuIn); });
+    connect(m_atuBtn, &QPushButton::clicked, this, [this]() { emit atuModeToggled(!m_atuModeInline); });
 
     connect(m_antBtn, &QPushButton::clicked, this, [this]() {
-        int next = (m_antenna % 3) + 1;
+        int next = (m_antenna == 1) ? 2 : 1;
         emit antennaChanged(next);
     });
 
@@ -92,9 +93,15 @@ void Kpa1500MiniPanel::setMode(bool operate) {
     update();
 }
 
-void Kpa1500MiniPanel::setAtuMode(bool in) {
-    m_atuIn = in;
+void Kpa1500MiniPanel::setAtuMode(bool modeInline) {
+    m_atuModeInline = modeInline;
     updateButtonLabels();
+    update();
+}
+
+void Kpa1500MiniPanel::setAtuInline(bool relayInline) {
+    m_atuRelayInline = relayInline;
+    update();
 }
 
 void Kpa1500MiniPanel::setAntenna(int ant) {
@@ -126,9 +133,9 @@ void Kpa1500MiniPanel::setConnected(bool connected) {
 }
 
 void Kpa1500MiniPanel::updateButtonLabels() {
-    m_modeBtn->setText(m_operate ? "OPER" : "STBY");
-    m_atuBtn->setText(m_atuIn ? "ATU IN" : "ATU");
-    m_antBtn->setText(QString("ANT%1").arg(m_antenna));
+    m_modeBtn->setText("MODE");
+    m_atuBtn->setText("ATU");
+    m_antBtn->setText("ANT");
 }
 
 void Kpa1500MiniPanel::onDecayTimer() {
@@ -181,18 +188,34 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
     p.setRenderHint(QPainter::Antialiasing, false);
 
     int w = width();
+    int h = height();
+
+    // --- Background panel shading (only when connected) ---
+    if (m_connected) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(255, 255, 255, 18)); // Subtle light tint over dark theme
+        p.drawRoundedRect(0, 0, w, h, 6, 6);
+
+        // Thin border
+        p.setPen(QColor(255, 255, 255, 35));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(0, 0, w - 1, h - 1, 6, 6);
+    }
 
     // --- Header: centered title ---
     QFont headerFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeMedium, QFont::Bold);
     p.setFont(headerFont);
 
+    int cx = PANEL_PAD;         // Consistent left inset for all content
+    int cw = w - PANEL_PAD * 2; // Content width
+
     p.setPen(QColor(K4Styles::Colors::AccentAmber));
-    p.drawText(MARGIN, TOP_PAD, w - MARGIN * 2, HEADER_HEIGHT, Qt::AlignCenter, "KPA1500");
+    p.drawText(cx, TOP_PAD, cw, HEADER_HEIGHT, Qt::AlignCenter, "KPA1500");
 
     // Separator
     int sepY = TOP_PAD + HEADER_HEIGHT + 1;
     p.setPen(QColor(K4Styles::Colors::InactiveGray));
-    p.drawLine(MARGIN, sepY, w - MARGIN, sepY);
+    p.drawLine(cx, sepY, cx + cw, sepY);
 
     // --- Meters ---
     struct MeterDef {
@@ -214,10 +237,10 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
     };
 
     QFont labelFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeSmall);
-    QFont valueFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeNormal, QFont::Bold);
+    QFont valueFont = K4Styles::Fonts::paintFont(9, QFont::Bold);
 
-    int barX = MARGIN + LABEL_WIDTH;
-    int barW = w - barX - VALUE_WIDTH - MARGIN;
+    int barX = cx + LABEL_WIDTH;
+    int barW = cw - LABEL_WIDTH - VALUE_WIDTH;
 
     for (int i = 0; i < 4; ++i) {
         int y = METER_START_Y + i * METER_SPACING;
@@ -226,7 +249,7 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
         // Label
         p.setFont(labelFont);
         p.setPen(QColor(K4Styles::Colors::TextGray));
-        p.drawText(MARGIN, y, LABEL_WIDTH, BAR_HEIGHT, Qt::AlignLeft | Qt::AlignVCenter, m.label);
+        p.drawText(cx, y, LABEL_WIDTH, BAR_HEIGHT, Qt::AlignLeft | Qt::AlignVCenter, m.label);
 
         // Track background
         p.fillRect(barX, y, barW, BAR_HEIGHT, QColor(K4Styles::Colors::DarkBackground));
@@ -252,7 +275,7 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
             p.drawLine(peakX, y + 1, peakX, y + BAR_HEIGHT - 2);
         }
 
-        // Value text
+        // Value text (right-aligned within content area)
         p.setFont(valueFont);
         p.setPen(QColor(K4Styles::Colors::TextWhite));
         QString valStr;
@@ -265,28 +288,74 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
         else
             valStr = QString::fromUtf8("%1\u00B0").arg(qRound(m_displayTemp));
 
-        int valX = barX + barW + 2;
-        p.drawText(valX, y, VALUE_WIDTH, BAR_HEIGHT, Qt::AlignRight | Qt::AlignVCenter, valStr);
+        int valX = barX + barW + 1;
+        p.drawText(valX, y, VALUE_WIDTH - 1, BAR_HEIGHT, Qt::AlignRight | Qt::AlignVCenter, valStr);
     }
 
-    // --- Status: OPER + ATU on one line, side by side ---
+    // --- LED Indicator Cards (3 mini-cards, each with a paired indicator) ---
     if (m_connected) {
-        int statusY = METER_START_Y + (METER_SPACING * 4) + 2;
-        QFont statusFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeSmall, QFont::Bold);
-        p.setFont(statusFont);
-        int halfW = (w - MARGIN * 2) / 2;
+        int gridY = METER_START_Y + (METER_SPACING * 4) + LED_GRID_TOP_PAD;
+        QFont ledFont = K4Styles::Fonts::paintFont(8);
+        p.setFont(ledFont);
 
-        // OPER/FAULT on left half
+        QColor dimColor(K4Styles::Colors::InactiveGray);
+        QColor green(K4Styles::Colors::StatusGreen);
+        QColor amber(K4Styles::Colors::AccentAmber);
+        QColor red(K4Styles::Colors::TxRed);
+
+        int cardGap = 2;
+        int totalGaps = cardGap * 2; // 3 cards = 2 gaps
+        int cardW = (cw - totalGaps) / 3;
+        int cardH = LED_ROW_HEIGHT * 2 + 4; // 2 rows + vertical padding
+        int cardPad = 3;                    // Internal padding
+
+        // Helper: draw a mini-card background
+        auto drawCard = [&](int cardIdx) -> int {
+            int x = cx + cardIdx * (cardW + cardGap);
+            p.setPen(QColor(255, 255, 255, 20));
+            p.setBrush(QColor(0, 0, 0, 40));
+            p.drawRoundedRect(x, gridY, cardW, cardH, 3, 3);
+            return x;
+        };
+
+        // Helper: draw an LED dot + label inside a card
+        auto drawLed = [&](int cardX, int row, const char *label, QColor color, bool lit) {
+            int x = cardX + cardPad;
+            int y = gridY + 2 + row * LED_ROW_HEIGHT;
+            int dotY = y + LED_ROW_HEIGHT / 2;
+
+            p.setPen(Qt::NoPen);
+            p.setBrush(lit ? color : dimColor);
+            p.drawEllipse(QPoint(x + LED_RADIUS, dotY), LED_RADIUS, LED_RADIUS);
+
+            p.setPen(lit ? color : dimColor);
+            p.setBrush(Qt::NoBrush);
+            int textX = x + LED_RADIUS * 2 + LED_TEXT_GAP;
+            int textW = cardW - cardPad * 2 - LED_RADIUS * 2 - LED_TEXT_GAP;
+            p.drawText(textX, y, textW, LED_ROW_HEIGHT, Qt::AlignLeft | Qt::AlignVCenter, label);
+        };
+
+        // Card 1: OPER / STBY
+        int c1 = drawCard(0);
         if (m_fault) {
-            p.setPen(QColor(K4Styles::Colors::TxRed));
-            p.drawText(MARGIN, statusY, halfW, ATU_LABEL_HEIGHT, Qt::AlignCenter, "FAULT");
+            drawLed(c1, 0, "FAULT", red, true);
+            drawLed(c1, 1, "STBY", dimColor, false);
         } else {
-            p.setPen(QColor(m_operate ? K4Styles::Colors::StatusGreen : K4Styles::Colors::InactiveGray));
-            p.drawText(MARGIN, statusY, halfW, ATU_LABEL_HEIGHT, Qt::AlignCenter, "OPER");
+            drawLed(c1, 0, "OPER", green, m_operate);
+            drawLed(c1, 1, "STBY", amber, !m_operate);
         }
 
-        // ATU on right half
-        p.setPen(QColor(m_atuIn ? K4Styles::Colors::StatusGreen : K4Styles::Colors::InactiveGray));
-        p.drawText(MARGIN + halfW, statusY, halfW, ATU_LABEL_HEIGHT, Qt::AlignCenter, "ATU");
+        // Card 2: ANT1 / ANT2
+        int c2 = drawCard(1);
+        drawLed(c2, 0, "ANT1", green, m_antenna == 1);
+        drawLed(c2, 1, "ANT2", green, m_antenna == 2);
+
+        // Card 3: IN / BYP — ATU relay state
+        // Both green when ATU mode inline but relays bypassed (watching/armed)
+        int c3 = drawCard(2);
+        bool inLit = m_atuModeInline;    // IN lit whenever mode is inline
+        bool bypLit = !m_atuRelayInline; // BYP lit when relays are bypassed
+        drawLed(c3, 0, "IN", green, inLit);
+        drawLed(c3, 1, "BYP", green, bypLit);
     }
 }

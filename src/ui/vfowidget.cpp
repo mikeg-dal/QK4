@@ -15,8 +15,14 @@ void VFOWidget::setupUi() {
     setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
 
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(K4Styles::Dimensions::PopupButtonSpacing, 4,
-                                   K4Styles::Dimensions::PopupButtonSpacing, 4);
+    // Outer edge margin (toward waterfall border) is tight; inner edge (toward center) has spacing
+    int outerMargin = 2; // Align with spectrum container border
+    int innerMargin = K4Styles::Dimensions::PopupButtonSpacing;
+    if (m_type == VFO_A) {
+        mainLayout->setContentsMargins(outerMargin, 4, innerMargin, 4);
+    } else {
+        mainLayout->setContentsMargins(innerMargin, 4, outerMargin, 4);
+    }
     mainLayout->setSpacing(2);
 
     // Row 1: Frequency display with inline editing

@@ -284,14 +284,15 @@ constexpr int MenuBarHeight = 52;  // Bottom menu bar container height
 // =============================================================================
 // Common UI Widths
 // =============================================================================
-constexpr int SmallIconSize = 20;     // Lock icons, health indicator, small controls
-constexpr int CompactButtonSize = 32; // Side panel icons, EQ +/- buttons
-constexpr int FormLabelWidth = 80;    // Form field labels, numeric value displays
-constexpr int VfoSquareSize = 45;     // VFO A/B indicator squares and mode labels
-constexpr int NavButtonWidth = 54;    // Navigation buttons in overlays
-constexpr int SidePanelWidth = 105;   // Left and right side panels
-constexpr int NavPanelWidth = 130;    // Menu overlay navigation/search panel
-constexpr int MemoryButtonWidth = 42; // M1-M4, REC, STORE, RCL buttons
+constexpr int SmallIconSize = 20;        // Lock icons, health indicator, small controls
+constexpr int CompactButtonSize = 32;    // Side panel icons, EQ +/- buttons
+constexpr int FormLabelWidth = 80;       // Form field labels, numeric value displays
+constexpr int VfoSquareSize = 45;        // VFO A/B indicator squares and mode labels
+constexpr int NavButtonWidth = 54;       // Navigation buttons in overlays
+constexpr int LeftSidePanelWidth = 105;  // Left side panel (volume, controls)
+constexpr int RightSidePanelWidth = 130; // Right side panel (function buttons, KPA1500)
+constexpr int NavPanelWidth = 130;       // Menu overlay navigation/search panel
+constexpr int MemoryButtonWidth = 42;    // M1-M4, REC, STORE, RCL buttons
 
 // =============================================================================
 // Font Sizes (in pixels) - use with QFont::setPixelSize() or paintFont()
@@ -319,10 +320,18 @@ constexpr int PopupValueSize = 12;  // Value displays (e.g., "6 dB", "184 Hz")
 // =============================================================================
 constexpr int SliderGrooveHeight = 6;     // Horizontal slider groove height
 constexpr int SliderHandleWidth = 16;     // Slider handle width
+constexpr int SliderHandleHeight = 16;    // Explicit handle height (robust on fractional DPI)
 constexpr int SliderHandleMargin = -5;    // Vertical margin for handle positioning
 constexpr int SliderBorderRadius = 3;     // Groove border radius
 constexpr int SliderHandleRadius = 8;     // Handle border radius (half of width)
+constexpr int SliderMinHeight = 20;       // Minimum widget height to prevent handle clipping
 constexpr int SliderValueLabelWidth = 40; // Width for percentage value labels
+
+// =============================================================================
+// VFO Indicator Dimensions
+// =============================================================================
+constexpr int VfoIndicatorWidth = 34;  // VFO A/B label width on panadapter
+constexpr int VfoIndicatorHeight = 30; // VFO A/B label height on panadapter
 
 // =============================================================================
 // Dialog Dimensions

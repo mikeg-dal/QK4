@@ -135,7 +135,6 @@ set(SOURCES
     src/ui/notificationwidget.cpp
     src/ui/k4styles.cpp
     src/ui/k4popupbase.cpp
-    src/ui/kpa1500panel.cpp
     src/ui/kpa1500minipanel.cpp
     src/ui/sidecontroloverlay.cpp
     src/ui/monoverlay.cpp
@@ -172,6 +171,7 @@ set(HEADERS
     src/settings/radiosettings.h
     src/models/radiostate.h
     src/models/menumodel.h
+    src/models/macroids.h
     src/ui/radiomanagerdialog.h
     src/ui/dualcontrolbutton.h
     src/ui/sidecontrolpanel.h
@@ -216,7 +216,7 @@ set(HEADERS
     src/ui/notificationwidget.h
     src/ui/k4styles.h
     src/ui/k4popupbase.h
-    src/ui/kpa1500panel.h
+    src/ui/kpa1500minipanel.h
     src/ui/sidecontroloverlay.h
     src/ui/monoverlay.h
     src/ui/baloverlay.h

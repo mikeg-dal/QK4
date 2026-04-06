@@ -7,12 +7,12 @@
 #include <QString>
 #include <QThread>
 #include <QTimer>
+#include <atomic>
 
 class HaliKeyWorkerBase;
 
 struct HaliKeyPortInfo {
     QString portName;
-    bool isMidiDetected = false;
 };
 
 class HalikeyDevice : public QObject {
@@ -54,15 +54,15 @@ private:
     QString m_portName;
     bool m_connected = false;
 
-    // Raw state from worker (updated on every event, including bounce)
-    bool m_rawDitState = false;
-    bool m_rawDahState = false;
-    bool m_rawPttState = false;
+    // Raw state from worker (updated on RtMidi OS callback thread, read from main thread)
+    std::atomic<bool> m_rawDitState{false};
+    std::atomic<bool> m_rawDahState{false};
+    std::atomic<bool> m_rawPttState{false};
 
     // Confirmed state (after debounce, what we've emitted)
-    bool m_confirmedDitState = false;
-    bool m_confirmedDahState = false;
-    bool m_confirmedPttState = false;
+    std::atomic<bool> m_confirmedDitState{false};
+    std::atomic<bool> m_confirmedDahState{false};
+    std::atomic<bool> m_confirmedPttState{false};
 
     // Debounce timers — emit ON immediately, delay OFF by 3ms to absorb bounce
     QTimer *m_ditDebounceTimer = nullptr;

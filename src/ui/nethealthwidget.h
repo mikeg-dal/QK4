@@ -8,6 +8,7 @@ class NetHealthWidget : public QWidget {
     Q_OBJECT
 public:
     explicit NetHealthWidget(NetworkMetrics *metrics, QWidget *parent = nullptr);
+    ~NetHealthWidget() override;
 
 public slots:
     void onHealthTierChanged(NetworkMetrics::HealthTier tier);

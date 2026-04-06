@@ -143,6 +143,7 @@ private:
     explicit RadioSettings(QObject *parent = nullptr);
     void load();
     void save();
+    void sortRadios();
 
     QVector<RadioEntry> m_radios;
     int m_lastSelectedIndex;

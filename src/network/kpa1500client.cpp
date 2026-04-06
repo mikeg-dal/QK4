@@ -7,7 +7,7 @@ Q_LOGGING_CATEGORY(netKpa, "net.kpa")
 // ^AI = ATU Inline state, ^AN = Antenna selection
 // Note: ^FS is Fan Speed (not fault status), removed from polling
 const QString KPA1500Client::POLL_COMMANDS =
-    "^BN;^WS;^TM;^VI;^FC;^OS;^FL;^AI;^AN;^IP;^SN;^PC;^VM1;^VM2;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
+    "^BN;^WS;^TM;^VI;^FC;^OS;^FL;^AI;^AM;^AN;^IP;^SN;^PC;^VM1;^VM2;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
 
 KPA1500Client::KPA1500Client(QObject *parent)
     : QObject(parent), m_socket(new QTcpSocket(this)), m_pollTimer(new QTimer(this)), m_port(1500),
@@ -282,13 +282,23 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
             emit antennaChanged(antenna);
         }
     }
-    // ^AI - ATU Inline (returns ^AI1; for inline, ^AI0; for bypassed)
+    // ^AI - ATU Inline relay state (^AI1; = relays inline, ^AI0; = relays bypassed)
     else if (cmd.startsWith("AI")) {
         if (cmd.length() >= 3) {
             bool inline_ = (cmd[2] == '1');
             if (m_atuInline != inline_) {
                 m_atuInline = inline_;
                 emit atuInlineChanged(inline_);
+            }
+        }
+    }
+    // ^AM - ATU Mode (^AMI; = inline/enabled, ^AMB; = bypassed/disabled)
+    else if (cmd.startsWith("AM")) {
+        if (cmd.length() >= 3) {
+            bool modeInline = (cmd[2] == 'I');
+            if (m_atuModeInline != modeInline) {
+                m_atuModeInline = modeInline;
+                emit atuModeChanged(modeInline);
             }
         }
     }

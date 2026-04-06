@@ -36,6 +36,7 @@ QVector<RadioEntry> RadioSettings::radios() const {
 
 void RadioSettings::addRadio(const RadioEntry &radio) {
     m_radios.append(radio);
+    sortRadios();
     save();
     emit radiosChanged();
 }
@@ -54,6 +55,7 @@ void RadioSettings::removeRadio(int index) {
 void RadioSettings::updateRadio(int index, const RadioEntry &radio) {
     if (index >= 0 && index < m_radios.size()) {
         m_radios[index] = radio;
+        sortRadios();
         save();
         emit radiosChanged();
     }
@@ -364,6 +366,7 @@ void RadioSettings::load() {
         m_radios.append(entry);
     }
     m_settings.endArray();
+    sortRadios();
 
     m_lastSelectedIndex = m_settings.value("lastSelectedIndex", -1).toInt();
     m_kpodEnabled = m_settings.value("kpodEnabled", false).toBool();
@@ -434,6 +437,14 @@ void RadioSettings::load() {
             }
         }
     }
+}
+
+void RadioSettings::sortRadios() {
+    std::sort(m_radios.begin(), m_radios.end(), [](const RadioEntry &a, const RadioEntry &b) {
+        QString nameA = a.name.isEmpty() ? a.host : a.name;
+        QString nameB = b.name.isEmpty() ? b.host : b.name;
+        return nameA.compare(nameB, Qt::CaseInsensitive) < 0;
+    });
 }
 
 void RadioSettings::save() {
