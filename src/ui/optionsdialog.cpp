@@ -6,6 +6,7 @@
 #include "cwkeyerpage.h"
 #include "kpodpage.h"
 #include "kpa1500page.h"
+#include "dxclusterpage.h"
 #include "k4styles.h"
 #include "controllers/audiocontroller.h"
 #include "controllers/hardwarecontroller.h"
@@ -16,9 +17,10 @@
 
 OptionsDialog::OptionsDialog(RadioState *radioState, AudioController *audioController,
                              HardwareController *hardwareController, CatServer *catServer, KPA1500Client *kpa1500Client,
-                             QWidget *parent)
+                             DxClusterController *dxClusterController, QWidget *parent)
     : QDialog(parent), m_radioState(radioState), m_audioController(audioController),
-      m_hardwareController(hardwareController), m_catServer(catServer), m_kpa1500Client(kpa1500Client) {
+      m_hardwareController(hardwareController), m_catServer(catServer), m_kpa1500Client(kpa1500Client),
+      m_dxClusterController(dxClusterController) {
     setWindowModality(Qt::ApplicationModal);
     setupUi();
 }
@@ -58,6 +60,7 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("CW Keyer");
     m_tabList->addItem("K-Pod");
     m_tabList->addItem("KPA1500");
+    m_tabList->addItem("DX Cluster");
     m_tabList->setCurrentRow(0);
 
     // Right side: stacked pages -- lazy creation (only About page created eagerly)
@@ -132,6 +135,10 @@ void OptionsDialog::ensurePageCreated(int index) {
         m_kpa1500Page = new Kpa1500Page(m_kpa1500Client, this);
         page = m_kpa1500Page;
         break;
+    case PageDxCluster:
+        m_dxClusterPage = new DxClusterPage(m_dxClusterController, this);
+        page = m_dxClusterPage;
+        break;
     default:
         return;
     }
@@ -173,6 +180,10 @@ void OptionsDialog::refreshPage(int index) {
     case PageKpa1500:
         if (m_kpa1500Page)
             m_kpa1500Page->refresh();
+        break;
+    case PageDxCluster:
+        if (m_dxClusterPage)
+            m_dxClusterPage->refresh();
         break;
     default:
         break;

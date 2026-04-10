@@ -28,6 +28,11 @@ public:
                         float noiseFloor);
 
     // Configuration
+    qint64 centerFreq() const { return m_centerFreq; }
+    int ifShift() const { return m_ifShift; }
+    QString mode() const { return m_mode; }
+    float spectrumRatio() const { return m_spectrumRatio; }
+
     void setDbRange(float minDb, float maxDb);
     void setSpectrumRatio(float ratio);
     void setTunedFrequency(qint64 freq);

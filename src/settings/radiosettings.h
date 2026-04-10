@@ -30,6 +30,13 @@ struct EqPreset {
     QString displayName() const { return isEmpty() ? "---" : name; }
 };
 
+struct DxClusterEntry {
+    QString host;
+    quint16 port = 7000;
+    QString callsign;
+    bool autoConnect = false;
+};
+
 struct RadioEntry {
     QString name;
     QString host;
@@ -110,6 +117,16 @@ public:
     int sidetoneVolume() const;
     void setSidetoneVolume(int value); // 0-100, default 30
 
+    // DX Cluster settings
+    QVector<DxClusterEntry> dxClusters() const;
+    void addDxCluster(const DxClusterEntry &entry);
+    void removeDxCluster(int index);
+    void updateDxCluster(int index, const DxClusterEntry &entry);
+    int dxClusterSpotAge() const;
+    void setDxClusterSpotAge(int seconds);
+    QString dxClusterCallsign() const;
+    void setDxClusterCallsign(const QString &callsign);
+
     // RX EQ Presets (4 slots)
     EqPreset rxEqPreset(int index) const;                  // Get preset 0-3
     void setRxEqPreset(int index, const EqPreset &preset); // Set preset 0-3
@@ -138,6 +155,7 @@ signals:
     void sidetoneVolumeChanged(int value);
     void rxEqPresetsChanged();
     void txEqPresetsChanged();
+    void dxClusterSettingsChanged();
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);
@@ -173,6 +191,11 @@ private:
 
     // TX EQ Presets (4 slots)
     EqPreset m_txEqPresets[4];
+
+    // DX Cluster settings
+    QVector<DxClusterEntry> m_dxClusters;
+    int m_dxClusterSpotAge = 600; // Default 10 minutes
+    QString m_dxClusterCallsign;
 
     QSettings m_settings;
 };

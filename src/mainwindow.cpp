@@ -29,6 +29,7 @@
 #include "ui/keyingweightpopup.h"
 #include "ui/textdecodewindow.h"
 #include "models/menumodel.h"
+#include "controllers/dxclustercontroller.h"
 #include "controllers/spectrumcontroller.h"
 #include "dsp/panadapter_rhi.h"
 #include "dsp/minipan_rhi.h"
@@ -69,6 +70,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Spectrum controller owns panadapters, span buttons, and all spectrum wiring
     m_spectrumController = new SpectrumController(m_connectionController, m_radioState, this);
+
+    // DX Cluster controller owns the cluster TCP client and spot cache
+    m_dxClusterController = new DxClusterController(m_radioState, this);
+    m_spectrumController->setDxClusterController(m_dxClusterController);
 
     // IMPORTANT: setupUi() MUST be called BEFORE setupMenuBar()!
     // Qt 6.10.1 bug on macOS Tahoe: calling menuBar() before creating QRhiWidget
@@ -1852,7 +1857,7 @@ void MainWindow::setupMenuBar() {
     connect(optionsAction, &QAction::triggered, this, [this]() {
         if (!m_optionsDialog) {
             m_optionsDialog = new OptionsDialog(m_radioState, m_audioController, m_hardwareController, m_catServer,
-                                                m_kpa1500Client, this);
+                                                m_kpa1500Client, m_dxClusterController, this);
         }
         m_optionsDialog->show();
         m_optionsDialog->raise();
@@ -3470,6 +3475,17 @@ void MainWindow::onRadioReady() {
     if (RadioSettings::instance()->kpa1500Enabled() && !RadioSettings::instance()->kpa1500Host().isEmpty()) {
         m_kpa1500Client->connectToHost(RadioSettings::instance()->kpa1500Host(),
                                        RadioSettings::instance()->kpa1500Port());
+    }
+
+    // Auto-connect all DX cluster entries marked for auto-connect
+    QString dxCall = RadioSettings::instance()->dxClusterCallsign();
+    if (!dxCall.isEmpty()) {
+        auto dxClusters = RadioSettings::instance()->dxClusters();
+        for (int i = 0; i < dxClusters.size(); ++i) {
+            if (dxClusters[i].autoConnect && !dxClusters[i].host.isEmpty()) {
+                m_dxClusterController->connectCluster(i, dxClusters[i].host, dxClusters[i].port, dxCall);
+            }
+        }
     }
 }
 

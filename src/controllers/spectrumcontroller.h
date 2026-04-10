@@ -6,7 +6,10 @@
 
 class PanadapterRhiWidget;
 class ConnectionController;
+class DxClusterController;
 class RadioState;
+class DxSpotOverlay;
+class MouseVfoIndicator;
 class VFOWidget;
 class QFrame;
 class QPushButton;
@@ -29,6 +32,7 @@ public:
     void setPanadapterMode(PanadapterMode mode);
 
     void setMouseQsyMode(int mode);
+    void setDxClusterController(DxClusterController *controller);
 
 public slots:
     void onSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
@@ -60,8 +64,16 @@ private:
     QPushButton *m_centerBtnB = nullptr;
     QLabel *m_vfoIndicatorA = nullptr;
     QLabel *m_vfoIndicatorB = nullptr;
+    MouseVfoIndicator *m_mouseVfoIndicatorA = nullptr;
+    MouseVfoIndicator *m_mouseVfoIndicatorB = nullptr;
+    bool m_scrollVfoB = false;
     int m_mouseQsyMode = 0;
     bool m_dualAltActive = false; // Track A+B Alt mode (QK4-only, locally significant)
+
+    DxClusterController *m_dxClusterController = nullptr;
+    DxSpotOverlay *m_spotOverlayA = nullptr;
+    DxSpotOverlay *m_spotOverlayB = nullptr;
+    void updateSpotOverlays();
 };
 
 #endif // SPECTRUMCONTROLLER_H

@@ -41,6 +41,7 @@ class FilterIndicatorWidget;
 class FeatureMenuBar;
 class ModePopupWidget;
 class HardwareController;
+class DxClusterController;
 class KPA1500Client;
 class CatServer;
 class OptionsDialog;
@@ -246,6 +247,9 @@ private:
 
     // KPA1500 amplifier client
     KPA1500Client *m_kpa1500Client;
+
+    // DX Cluster controller
+    DxClusterController *m_dxClusterController;
 
     // CAT server for external app integration (WSJT-X, MacLoggerDX, etc.)
     CatServer *m_catServer;

@@ -3,11 +3,24 @@
 
 Q_LOGGING_CATEGORY(netKpa, "net.kpa")
 
+// KPA1500 band number to label (same numbering as K4 BN command)
+static QString bandNumberToLabel(const QString &bn) {
+    static const QMap<int, QString> map = {
+        {0, "160m"}, {1, "80m"}, {2, "60m"}, {3, "40m"}, {4, "30m"}, {5, "20m"},
+        {6, "17m"},  {7, "15m"}, {8, "12m"}, {9, "10m"}, {10, "6m"},
+    };
+    bool ok;
+    int num = bn.toInt(&ok);
+    if (ok && map.contains(num))
+        return map.value(num);
+    return bn; // fallback to raw value
+}
+
 // Poll commands - based on KPA1500 Programming Reference
 // ^AI = ATU Inline state, ^AN = Antenna selection
 // Note: ^FS is Fan Speed (not fault status), removed from polling
 const QString KPA1500Client::POLL_COMMANDS =
-    "^BN;^WS;^TM;^VI;^FC;^OS;^FL;^AI;^AM;^AN;^IP;^SN;^PC;^VM1;^VM2;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
+    "^BN;^WS;^TM;^RVM;^FC;^OS;^FL;^AI;^AM;^AN;^IP;^SN;^PC;^VM1;^VM2;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
 
 KPA1500Client::KPA1500Client(QObject *parent)
     : QObject(parent), m_socket(new QTcpSocket(this)), m_pollTimer(new QTimer(this)), m_port(1500),
@@ -156,9 +169,9 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
     }
 
     // Parse based on command prefix
-    // ^BN - Band Name
+    // ^BN - Band Number (convert to label e.g. "20m")
     if (cmd.startsWith("BN")) {
-        QString band = cmd.mid(2);
+        QString band = bandNumberToLabel(cmd.mid(2));
         if (m_bandName != band) {
             m_bandName = band;
             emit bandChanged(band);
@@ -168,9 +181,9 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
     else if (cmd.startsWith("SN")) {
         m_serialNumber = cmd.mid(2);
     }
-    // ^VI - Firmware Version Info
-    else if (cmd.startsWith("VI")) {
-        m_firmwareVersion = cmd.mid(2);
+    // ^RVM - Firmware Revision (format: ^RVMnn.nn;)
+    else if (cmd.startsWith("RVM")) {
+        m_firmwareVersion = cmd.mid(3);
     }
     // ^OS - Operate/Standby Mode (0=Standby, 1=Operate)
     else if (cmd.startsWith("OS")) {

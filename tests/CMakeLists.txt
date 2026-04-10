@@ -34,3 +34,11 @@ add_executable(test_catserver test_catserver.cpp
 target_include_directories(test_catserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_catserver Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME CatServerTests COMMAND test_catserver)
+
+# DX Cluster spot parsing tests
+add_executable(test_dxcluster test_dxcluster.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/dxclusterclient.cpp
+)
+target_include_directories(test_dxcluster PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_dxcluster Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME DxClusterTests COMMAND test_dxcluster)

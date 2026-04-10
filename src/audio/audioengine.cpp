@@ -413,26 +413,14 @@ void AudioEngine::onMicDataReady() {
     const float *floatData = reinterpret_cast<const float *>(data12k.constData());
     int floatSamples = data12k.size() / sizeof(float);
 
-    // Calculate RMS level AFTER gain for meter display (shows what will be transmitted)
-    float sumSquares = 0.0f;
     const float gain = m_micGain.load(std::memory_order_relaxed);
 
-    // Convert and append to buffer with gain applied
+    // Convert Float32 to S16LE with gain applied (cubic curve already baked into m_micGain)
     for (int i = 0; i < floatSamples; i++) {
-        // Apply mic gain and clamp (MIC_GAIN_SCALE makes 50% slider = unity gain)
-        float sample = qBound(-1.0f, floatData[i] * gain * MIC_GAIN_SCALE, 1.0f);
+        float sample = qBound(-1.0f, floatData[i] * gain, 1.0f);
         qint16 s16Sample = static_cast<qint16>(sample * 32767.0f);
-
-        // Accumulate for RMS calculation (after gain)
-        sumSquares += sample * sample;
-
-        // Append as little-endian bytes
         m_micBuffer.append(reinterpret_cast<const char *>(&s16Sample), sizeof(qint16));
     }
-
-    // Emit RMS level for meter display
-    float rmsLevel = (floatSamples > 0) ? std::sqrt(sumSquares / floatSamples) : 0.0f;
-    emit micLevelChanged(rmsLevel);
 
     // Emit complete frames (size matches SL tier: 240/480/720/1440 samples)
     // Use offset-based reading to avoid O(n) buffer shifts per frame
@@ -475,7 +463,10 @@ void AudioEngine::setBalanceOffset(int offset) {
 }
 
 void AudioEngine::setMicGain(float gain) {
-    m_micGain.store(qBound(0.0f, gain, 1.0f), std::memory_order_relaxed);
+    // Cubic curve: slider 0-1 maps to gain 0-1 with fine control at low levels
+    // e.g., 40% slider → 0.064x gain, 70% → 0.343x, 100% → 1.0x (unity)
+    float cubic = gain * gain * gain;
+    m_micGain.store(qBound(0.0f, cubic, 1.0f), std::memory_order_relaxed);
 }
 
 void AudioEngine::setFrameSamples(int samples) {

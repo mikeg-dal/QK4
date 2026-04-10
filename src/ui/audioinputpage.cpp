@@ -1,12 +1,10 @@
 #include "audioinputpage.h"
 #include "k4styles.h"
-#include "micmeterwidget.h"
 #include "../audio/audioengine.h"
 #include "../settings/radiosettings.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFrame>
-#include <QHideEvent>
 #include <QMetaObject>
 
 AudioInputPage::AudioInputPage(AudioEngine *audioEngine, QWidget *parent)
@@ -69,81 +67,12 @@ AudioInputPage::AudioInputPage(AudioEngine *audioEngine, QWidget *parent)
 
     layout->addLayout(gainLayout);
 
-    auto *gainHelpLabel = new QLabel("Adjust the microphone input level. 50% is unity gain.", this);
+    auto *gainHelpLabel = new QLabel(
+        "Adjust the microphone input level. Uses an exponential curve for fine control at low levels.", this);
     gainHelpLabel->setStyleSheet(K4Styles::Dialog::helpText());
     layout->addWidget(gainHelpLabel);
 
-    layout->addSpacing(K4Styles::Dimensions::PaddingLarge);
-
-    // === Microphone Test Section ===
-    auto *line2 = new QFrame(this);
-    line2->setFrameShape(QFrame::HLine);
-    line2->setStyleSheet(K4Styles::Dialog::separator());
-    line2->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line2);
-
-    auto *testSectionLabel = new QLabel("Microphone Test", this);
-    testSectionLabel->setStyleSheet(K4Styles::Dialog::sectionHeader());
-    layout->addWidget(testSectionLabel);
-
-    auto *testHelpLabel =
-        new QLabel("Click the Test button to activate the microphone and check the input level.", this);
-    testHelpLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                     .arg(K4Styles::Colors::TextGray)
-                                     .arg(K4Styles::Dimensions::FontSizeButton));
-    testHelpLabel->setWordWrap(true);
-    layout->addWidget(testHelpLabel);
-
-    layout->addSpacing(5); // Small gap before meter
-
-    // Mic Level Meter
-    auto *meterLayout = new QHBoxLayout();
-    auto *meterLabel = new QLabel("Level:", this);
-    meterLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    meterLabel->setFixedWidth(50);
-    meterLayout->addWidget(meterLabel);
-
-    m_micMeter = new MicMeterWidget(this);
-    meterLayout->addWidget(m_micMeter, 1);
-
-    layout->addLayout(meterLayout);
-
-    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
-
-    // Test Button
-    m_micTestBtn = new QPushButton("Test Microphone", this);
-    m_micTestBtn->setCheckable(true);
-    m_micTestBtn->setStyleSheet(K4Styles::Dialog::actionButton() +
-                                QString("QPushButton:checked { background-color: %1; color: %2; border-color: %1; }")
-                                    .arg(K4Styles::Colors::AccentAmber, K4Styles::Colors::DarkBackground));
-    connect(m_micTestBtn, &QPushButton::toggled, this, &AudioInputPage::onMicTestToggled);
-    layout->addWidget(m_micTestBtn);
-
-    // Connect to AudioEngine for mic level updates (queued -- AudioEngine lives on audio thread)
-    if (m_audioEngine) {
-        connect(m_audioEngine, &AudioEngine::micLevelChanged, this, &AudioInputPage::onMicLevelChanged,
-                Qt::QueuedConnection);
-    }
-
     layout->addStretch();
-}
-
-AudioInputPage::~AudioInputPage() {
-    if (m_micTestActive && m_audioEngine) {
-        QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, false));
-    }
-}
-
-void AudioInputPage::hideEvent(QHideEvent *event) {
-    if (m_micTestActive && m_audioEngine) {
-        QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, false));
-        m_micTestActive = false;
-        if (m_micTestBtn)
-            m_micTestBtn->setChecked(false);
-        if (m_micMeter)
-            m_micMeter->setLevel(0.0f);
-    }
-    QWidget::hideEvent(event);
 }
 
 void AudioInputPage::refresh() {
@@ -194,30 +123,5 @@ void AudioInputPage::onMicGainChanged(int value) {
 
     if (m_audioEngine) {
         m_audioEngine->setMicGain(value / 100.0f);
-    }
-}
-
-void AudioInputPage::onMicTestToggled(bool checked) {
-    m_micTestActive = checked;
-
-    if (m_micTestBtn) {
-        m_micTestBtn->setText(checked ? "Stop Test" : "Test Microphone");
-    }
-
-    if (m_audioEngine) {
-        QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, checked));
-    }
-
-    // Reset meter when stopping
-    if (!checked && m_micMeter) {
-        m_micMeter->setLevel(0.0f);
-    }
-}
-
-void AudioInputPage::onMicLevelChanged(float level) {
-    if (m_micTestActive && m_micMeter) {
-        // Scale level for better visualization (RMS tends to be low)
-        float scaledLevel = qBound(0.0f, level * 5.0f, 1.0f);
-        m_micMeter->setLevel(scaledLevel);
     }
 }

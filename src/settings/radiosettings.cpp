@@ -348,6 +348,58 @@ void RadioSettings::clearTxEqPreset(int index) {
     }
 }
 
+QVector<DxClusterEntry> RadioSettings::dxClusters() const {
+    return m_dxClusters;
+}
+
+void RadioSettings::addDxCluster(const DxClusterEntry &entry) {
+    m_dxClusters.append(entry);
+    save();
+    emit dxClusterSettingsChanged();
+}
+
+void RadioSettings::removeDxCluster(int index) {
+    if (index >= 0 && index < m_dxClusters.size()) {
+        m_dxClusters.removeAt(index);
+        save();
+        emit dxClusterSettingsChanged();
+    }
+}
+
+void RadioSettings::updateDxCluster(int index, const DxClusterEntry &entry) {
+    if (index >= 0 && index < m_dxClusters.size()) {
+        m_dxClusters[index] = entry;
+        save();
+        emit dxClusterSettingsChanged();
+    }
+}
+
+int RadioSettings::dxClusterSpotAge() const {
+    return m_dxClusterSpotAge;
+}
+
+void RadioSettings::setDxClusterSpotAge(int seconds) {
+    seconds = qBound(300, seconds, 1800); // 5-30 minutes
+    if (m_dxClusterSpotAge != seconds) {
+        m_dxClusterSpotAge = seconds;
+        save();
+        emit dxClusterSettingsChanged();
+    }
+}
+
+QString RadioSettings::dxClusterCallsign() const {
+    return m_dxClusterCallsign;
+}
+
+void RadioSettings::setDxClusterCallsign(const QString &callsign) {
+    QString upper = callsign.trimmed().toUpper();
+    if (m_dxClusterCallsign != upper) {
+        m_dxClusterCallsign = upper;
+        save();
+        emit dxClusterSettingsChanged();
+    }
+}
+
 void RadioSettings::load() {
     int count = m_settings.beginReadArray("radios");
     m_radios.clear();
@@ -380,6 +432,30 @@ void RadioSettings::load() {
     // CAT Server settings (migrate from old rigctld keys if present)
     m_catServerEnabled = m_settings.value("catServer/enabled", m_settings.value("rigctld/enabled", false)).toBool();
     m_catServerPort = m_settings.value("catServer/port", m_settings.value("rigctld/port", 9299)).toUInt();
+
+    // DX Cluster settings
+    int dxCount = m_settings.beginReadArray("dxClusters");
+    m_dxClusters.clear();
+    for (int i = 0; i < dxCount; ++i) {
+        m_settings.setArrayIndex(i);
+        DxClusterEntry entry;
+        entry.host = m_settings.value("host").toString();
+        entry.port = m_settings.value("port", 7000).toUInt();
+        entry.callsign = m_settings.value("callsign").toString();
+        entry.autoConnect = m_settings.value("autoConnect", false).toBool();
+        m_dxClusters.append(entry);
+    }
+    m_settings.endArray();
+    m_dxClusterSpotAge = m_settings.value("dxCluster/spotAge", 600).toInt();
+    m_dxClusterCallsign = m_settings.value("dxCluster/callsign", "").toString();
+
+    // Seed default cluster entry on first run
+    if (m_dxClusters.isEmpty()) {
+        DxClusterEntry rbn;
+        rbn.host = "telnet.reversebeacon.net";
+        rbn.port = 7300;
+        m_dxClusters.append(rbn);
+    }
 
     // HaliKey settings
     m_halikeyPortName = m_settings.value("halikey/portName", "").toString();
@@ -492,6 +568,19 @@ void RadioSettings::save() {
         m_settings.setValue("command", it->command);
     }
     m_settings.endArray();
+
+    // DX Cluster settings
+    m_settings.beginWriteArray("dxClusters");
+    for (int j = 0; j < m_dxClusters.size(); ++j) {
+        m_settings.setArrayIndex(j);
+        m_settings.setValue("host", m_dxClusters[j].host);
+        m_settings.setValue("port", m_dxClusters[j].port);
+        m_settings.setValue("callsign", m_dxClusters[j].callsign);
+        m_settings.setValue("autoConnect", m_dxClusters[j].autoConnect);
+    }
+    m_settings.endArray();
+    m_settings.setValue("dxCluster/spotAge", m_dxClusterSpotAge);
+    m_settings.setValue("dxCluster/callsign", m_dxClusterCallsign);
 
     // RX EQ Presets (4 slots)
     for (int j = 0; j < 4; ++j) {

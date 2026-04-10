@@ -4,8 +4,11 @@
 #include "models/radiostate.h"
 #include "ui/k4styles.h"
 #include "ui/vfowidget.h"
+#include "dxclustercontroller.h"
 #include "utils/radioutils.h"
 
+#include "ui/dxspotoverlay.h"
+#include "ui/mousevfoindicator.h"
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -146,6 +149,10 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     m_vfoIndicatorB->setFixedSize(K4Styles::Dimensions::VfoIndicatorWidth, K4Styles::Dimensions::VfoIndicatorHeight);
     m_vfoIndicatorB->setAlignment(Qt::AlignCenter);
 
+    // Mouse VFO focus indicators - shows which VFO the scroll wheel controls
+    m_mouseVfoIndicatorA = new MouseVfoIndicator(m_panadapterA);
+    m_mouseVfoIndicatorB = new MouseVfoIndicator(m_panadapterB);
+
     // Position buttons (will be repositioned in resizeEvent of panadapter)
     // Triangle layout: C centered above, - and + below (bottom-right)
     m_spanDownBtn->move(m_panadapterA->width() - 70, m_panadapterA->height() - 45);
@@ -159,6 +166,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     // VFO indicators at bottom-left corner, flush with edges
     m_vfoIndicatorA->move(0, m_panadapterA->height() - 30);
     m_vfoIndicatorB->move(0, m_panadapterB->height() - 30);
+    m_mouseVfoIndicatorA->move(K4Styles::Dimensions::VfoIndicatorWidth, m_panadapterA->height() - 44);
+    m_mouseVfoIndicatorB->move(K4Styles::Dimensions::VfoIndicatorWidth, m_panadapterB->height() - 44);
 
     // Span adjustment for Main: K4 span steps
     connect(m_spanDownBtn, &QPushButton::clicked, this, [this]() {
@@ -202,6 +211,12 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
 
     connect(m_centerBtnB, &QPushButton::clicked, this, [this]() { m_connectionController->sendCAT("FC$;"); });
 
+    // DX Spot overlays (transparent child widgets for callsign labels)
+    m_spotOverlayA = new DxSpotOverlay(m_panadapterA);
+    m_spotOverlayA->show();
+    m_spotOverlayB = new DxSpotOverlay(m_panadapterB);
+    m_spotOverlayB->show();
+
     // Install event filter to reposition span buttons when panadapters resize
     m_panadapterA->installEventFilter(this);
     m_panadapterB->installEventFilter(this);
@@ -227,6 +242,15 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         m_panadapterB->setWaterfallHeight(percent);
         m_vfoA->setMiniPanWaterfallHeight(percent);
         m_vfoB->setMiniPanWaterfallHeight(percent);
+        // Reposition DX spot overlays after spectrum/waterfall ratio changes
+        if (m_spotOverlayA) {
+            int specH = static_cast<int>(m_panadapterA->height() * m_panadapterA->spectrumRatio());
+            m_spotOverlayA->setGeometry(0, 0, m_panadapterA->width(), specH);
+        }
+        if (m_spotOverlayB) {
+            int specH = static_cast<int>(m_panadapterB->height() * m_panadapterB->spectrumRatio());
+            m_spotOverlayB->setGeometry(0, 0, m_panadapterB->width(), specH);
+        }
     });
     connect(m_radioState, &RadioState::averagingChanged, this, [this](int level) {
         m_panadapterA->setAveraging(level);
@@ -300,10 +324,18 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         // PSK-D/FSK-D: passband centered at dial+IS, so subtract IS to place passband on click
         freq = adjustClickFreqForMode(freq, false);
-        QString cmd = QString("FA%1;").arg(freq, 11, 10, QChar('0'));
+        int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStep());
+        qint64 snapped = (freq / stepHz) * stepHz;
+        if (snapped <= 0)
+            return;
+        QString cmd = QString("FA%1;").arg(snapped, 11, 10, QChar('0'));
         m_connectionController->sendCAT(cmd);
         // Request frequency back to update UI (K4 doesn't echo SET commands)
         m_connectionController->sendCAT("FA;");
+        // Set scroll wheel to control VFO A
+        m_scrollVfoB = false;
+        m_mouseVfoIndicatorA->setActiveVfo(false);
+        m_mouseVfoIndicatorB->setActiveVfo(false);
     });
 
     // Mouse control: drag to tune (continuous frequency change while dragging)
@@ -327,11 +359,14 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     connect(m_panadapterA, &PanadapterRhiWidget::frequencyScrolled, this, [this](int steps) {
         if (!m_connectionController->isConnected())
             return;
-        quint64 currentFreq = m_radioState->vfoA();
-        int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStep());
+        // Scroll follows the mouse VFO focus indicator (last clicked VFO)
+        bool tuneB = m_scrollVfoB;
+        quint64 currentFreq = tuneB ? m_radioState->vfoB() : m_radioState->vfoA();
+        int stepHz = RadioUtils::tuningStepToHz(tuneB ? m_radioState->tuningStepB() : m_radioState->tuningStep());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
+            QString vfo = tuneB ? "FB" : "FA";
+            QString cmd = QString("%1%2;").arg(vfo).arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
@@ -370,9 +405,17 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         if (!m_connectionController->isConnected() || freq <= 0)
             return;
         freq = adjustClickFreqForMode(freq, true); // right-click on Pan A → VFO B
-        QString cmd = QString("FB%1;").arg(freq, 11, 10, QChar('0'));
+        int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
+        qint64 snapped = (freq / stepHz) * stepHz;
+        if (snapped <= 0)
+            return;
+        QString cmd = QString("FB%1;").arg(snapped, 11, 10, QChar('0'));
         m_connectionController->sendCAT(cmd);
         m_connectionController->sendCAT("FB;");
+        // Set scroll wheel to control VFO B
+        m_scrollVfoB = true;
+        m_mouseVfoIndicatorA->setActiveVfo(true);
+        m_mouseVfoIndicatorB->setActiveVfo(true);
     });
 
     connect(m_panadapterA, &PanadapterRhiWidget::frequencyRightDragged, this, [this](qint64 freq) {
@@ -457,9 +500,17 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         bool tuneA = (m_mouseQsyMode == 1);
         freq = adjustClickFreqForMode(freq, !tuneA);
         QString vfo = tuneA ? "FA" : "FB";
-        QString cmd = QString("%1%2;").arg(vfo).arg(freq, 11, 10, QChar('0'));
+        int stepHz = RadioUtils::tuningStepToHz(tuneA ? m_radioState->tuningStep() : m_radioState->tuningStepB());
+        qint64 snapped = (freq / stepHz) * stepHz;
+        if (snapped <= 0)
+            return;
+        QString cmd = QString("%1%2;").arg(vfo).arg(snapped, 11, 10, QChar('0'));
         m_connectionController->sendCAT(cmd);
         m_connectionController->sendCAT(vfo + ";");
+        // Set scroll wheel to control the VFO that was clicked
+        m_scrollVfoB = !tuneA;
+        m_mouseVfoIndicatorA->setActiveVfo(!tuneA);
+        m_mouseVfoIndicatorB->setActiveVfo(!tuneA);
     });
 
     // Mouse control for VFO B: drag to tune (continuous frequency change while dragging)
@@ -485,11 +536,14 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     connect(m_panadapterB, &PanadapterRhiWidget::frequencyScrolled, this, [this](int steps) {
         if (!m_connectionController->isConnected())
             return;
-        quint64 currentFreq = m_radioState->vfoB();
-        int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
+        // Scroll follows the mouse VFO focus indicator (last clicked VFO)
+        bool tuneB = m_scrollVfoB;
+        quint64 currentFreq = tuneB ? m_radioState->vfoB() : m_radioState->vfoA();
+        int stepHz = RadioUtils::tuningStepToHz(tuneB ? m_radioState->tuningStepB() : m_radioState->tuningStep());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
+            QString vfo = tuneB ? "FB" : "FA";
+            QString cmd = QString("%1%2;").arg(vfo).arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
@@ -529,9 +583,17 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         // L=A R=B mode: right-click always tunes VFO B
         freq = adjustClickFreqForMode(freq, true);
-        QString cmd = QString("FB%1;").arg(freq, 11, 10, QChar('0'));
+        int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
+        qint64 snapped = (freq / stepHz) * stepHz;
+        if (snapped <= 0)
+            return;
+        QString cmd = QString("FB%1;").arg(snapped, 11, 10, QChar('0'));
         m_connectionController->sendCAT(cmd);
         m_connectionController->sendCAT("FB;");
+        // Set scroll wheel to control VFO B
+        m_scrollVfoB = true;
+        m_mouseVfoIndicatorA->setActiveVfo(true);
+        m_mouseVfoIndicatorB->setActiveVfo(true);
     });
 
     connect(m_panadapterB, &PanadapterRhiWidget::frequencyRightDragged, this, [this](qint64 freq) {
@@ -566,6 +628,14 @@ bool SpectrumController::eventFilter(QObject *watched, QEvent *event) {
 
         // VFO indicator at bottom-left corner
         m_vfoIndicatorA->move(0, h - 30);
+        m_mouseVfoIndicatorA->move(K4Styles::Dimensions::VfoIndicatorWidth + 5, h - 50);
+
+        // DX spot overlay covers the spectrum area (above waterfall)
+        if (m_spotOverlayA) {
+            int specHeight = static_cast<int>(h * m_panadapterA->spectrumRatio());
+            m_spotOverlayA->setGeometry(0, 0, w, specHeight);
+            m_spotOverlayA->raise();
+        }
     }
 
     // Reposition span control buttons and VFO indicator when panadapter B resizes
@@ -582,6 +652,14 @@ bool SpectrumController::eventFilter(QObject *watched, QEvent *event) {
 
         // VFO indicator at bottom-left corner
         m_vfoIndicatorB->move(0, h - 30);
+        m_mouseVfoIndicatorB->move(K4Styles::Dimensions::VfoIndicatorWidth + 5, h - 50);
+
+        // DX spot overlay covers the spectrum area (above waterfall)
+        if (m_spotOverlayB) {
+            int specHeight = static_cast<int>(h * m_panadapterB->spectrumRatio());
+            m_spotOverlayB->setGeometry(0, 0, w, specHeight);
+            m_spotOverlayB->raise();
+        }
     }
 
     return QObject::eventFilter(watched, event);
@@ -747,4 +825,67 @@ void SpectrumController::setPanadapterMode(PanadapterMode mode) {
 
 void SpectrumController::setMouseQsyMode(int mode) {
     m_mouseQsyMode = mode;
+}
+
+void SpectrumController::setDxClusterController(DxClusterController *controller) {
+    m_dxClusterController = controller;
+    if (!controller)
+        return;
+
+    // Update overlays when spots change
+    connect(controller, &DxClusterController::spotsUpdated, this, &SpectrumController::updateSpotOverlays);
+
+    // Update overlays when frequency/span changes (panadapter center shifts)
+    connect(m_radioState, &RadioState::frequencyChanged, this, &SpectrumController::updateSpotOverlays);
+    connect(m_radioState, &RadioState::frequencyBChanged, this, &SpectrumController::updateSpotOverlays);
+    connect(m_radioState, &RadioState::spanChanged, this, &SpectrumController::updateSpotOverlays);
+    connect(m_radioState, &RadioState::spanBChanged, this, &SpectrumController::updateSpotOverlays);
+
+    // Click-to-tune from spot overlay
+    if (m_spotOverlayA) {
+        connect(m_spotOverlayA, &DxSpotOverlay::spotClicked, this, [this](qint64 freq) {
+            qint64 adjusted = adjustClickFreqForMode(freq, false);
+            m_connectionController->sendCAT(QString("FA%1;").arg(adjusted, 11, 10, QChar('0')));
+        });
+    }
+    if (m_spotOverlayB) {
+        connect(m_spotOverlayB, &DxSpotOverlay::spotClicked, this, [this](qint64 freq) {
+            qint64 adjusted = adjustClickFreqForMode(freq, true);
+            m_connectionController->sendCAT(QString("FB%1;").arg(adjusted, 11, 10, QChar('0')));
+        });
+    }
+}
+
+void SpectrumController::updateSpotOverlays() {
+    if (!m_dxClusterController)
+        return;
+
+    // Update panadapter A overlay
+    if (m_spotOverlayA && m_panadapterA) {
+        qint64 center = m_panadapterA->centerFreq();
+        int span = m_panadapterA->span();
+        if (center > 0 && span > 0) {
+            qint64 startFreq = center - span / 2;
+            qint64 endFreq = center + span / 2;
+            auto spots = m_dxClusterController->spotsForFrequencyRange(startFreq, endFreq);
+            m_spotOverlayA->setFrequencyRange(center, span);
+            m_spotOverlayA->setSpots(spots);
+            if (!spots.isEmpty())
+                qDebug() << "[DxSpot] Overlay A:" << spots.size() << "spots in range" << startFreq << "-" << endFreq
+                         << "overlay size:" << m_spotOverlayA->size();
+        }
+    }
+
+    // Update panadapter B overlay
+    if (m_spotOverlayB && m_panadapterB && m_panadapterB->isVisible()) {
+        qint64 center = m_panadapterB->centerFreq();
+        int span = m_panadapterB->span();
+        if (center > 0 && span > 0) {
+            qint64 startFreq = center - span / 2;
+            qint64 endFreq = center + span / 2;
+            auto spots = m_dxClusterController->spotsForFrequencyRange(startFreq, endFreq);
+            m_spotOverlayB->setFrequencyRange(center, span);
+            m_spotOverlayB->setSpots(spots);
+        }
+    }
 }
