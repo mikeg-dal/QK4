@@ -38,7 +38,7 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build tests
-        run: cmake --build build --target test_radiostate test_radioutils test_protocol test_catserver
+        run: cmake --build build --target test_radiostate test_radioutils test_protocol test_catserver test_dxcluster
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
