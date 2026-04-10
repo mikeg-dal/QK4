@@ -61,6 +61,7 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
             m_addMode = false;
             loadSelectedEntry();
             updateFormState();
+            updateStatus();
             switchConsole(row);
         }
     };
@@ -279,11 +280,9 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
     if (m_controller) {
         // Per-cluster state changes — update list indicators and status
         connect(m_controller, &DxClusterController::clusterStateChanged, this,
-                [this](int index, DxClusterClient::ConnectionState) {
+                [this](int, DxClusterClient::ConnectionState) {
                     updateListIndicators();
-                    // Update status label if the changed cluster is the selected one
-                    if (index == m_clusterList->currentRow())
-                        updateStatus();
+                    updateStatus();
                 });
         connect(m_controller, &DxClusterController::clusterError, this, [this](int index, const QString &error) {
             if (index == m_clusterList->currentRow()) {
