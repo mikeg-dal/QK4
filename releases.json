@@ -1,26 +1,26 @@
 {
-  "tag": "v0.5.0-beta.10",
-  "version": "0.5.0-beta.10",
-  "date": "2026-04-10",
+  "tag": "v0.5.0-beta.11",
+  "version": "0.5.0-beta.11",
+  "date": "2026-04-17",
   "prerelease": true,
   "assets": {
     "macos": {
-      "name": "QK4-0.5.0-beta.10-macos.dmg",
-      "url": "./downloads/v0.5.0-beta.10/QK4-0.5.0-beta.10-macos.dmg",
-      "size": "42M",
-      "sha256": "7ebdfbc8d9e61cc126c42214e114c5a021bb712aca70921c04e510926ba4fabe"
+      "name": "QK4-0.5.0-beta.11-macos.dmg",
+      "url": "./downloads/v0.5.0-beta.11/QK4-0.5.0-beta.11-macos.dmg",
+      "size": "43M",
+      "sha256": "0b2547e930ae972e98299bb7fa77216cbd2ad52a393cbb271d441d64d8114093"
     },
     "windows": {
-      "name": "QK4-0.5.0-beta.10-windows.zip",
-      "url": "./downloads/v0.5.0-beta.10/QK4-0.5.0-beta.10-windows.zip",
+      "name": "QK4-0.5.0-beta.11-windows.zip",
+      "url": "./downloads/v0.5.0-beta.11/QK4-0.5.0-beta.11-windows.zip",
       "size": "65M",
-      "sha256": "4cdae4ebad13e1a6e22e131031ddeb3cfd9e634d056b9425a0d7af53112927a6"
+      "sha256": "61bf1fd42d6cc918f4ddf1bca1a0a178826f862c93cc2215c6217538b7472a15"
     },
     "raspberry-pi": {
-      "name": "QK4-0.5.0-beta.10-raspberry-pi-arm64.tar.gz",
-      "url": "./downloads/v0.5.0-beta.10/QK4-0.5.0-beta.10-raspberry-pi-arm64.tar.gz",
+      "name": "QK4-0.5.0-beta.11-raspberry-pi-arm64.tar.gz",
+      "url": "./downloads/v0.5.0-beta.11/QK4-0.5.0-beta.11-raspberry-pi-arm64.tar.gz",
       "size": "22M",
-      "sha256": "8c262cb5521a2e6ce422707b9405253e723dd1909a030f809355573a6f1ec136"
+      "sha256": "be187d60c2d65ee9f2455aa22ffde0eeab5d26d72d8c7f9f65fcbdc1d601ce8c"
     }
   }
 }
