@@ -2,7 +2,6 @@
 #define FEATUREMENUBAR_H
 
 #include <QWidget>
-#include <QLabel>
 #include <QPushButton>
 #include "wheelaccumulator.h"
 
@@ -41,10 +40,10 @@ private:
     void setupUi();
     void updateForFeature();
 
-    QLabel *m_titleLabel;
+    QPushButton *m_titleLabel;
     QPushButton *m_toggleBtn;
     QPushButton *m_extraBtn;
-    QLabel *m_valueLabel;
+    QPushButton *m_valueLabel;
     QPushButton *m_decrementBtn;
     QPushButton *m_incrementBtn;
 

@@ -2,7 +2,6 @@
 #define SSBBWPOPUP_H
 
 #include <QWidget>
-#include <QLabel>
 #include <QPushButton>
 #include "wheelaccumulator.h"
 
@@ -34,8 +33,8 @@ private:
     void updateValueDisplay();
     void adjustValue(int delta);
 
-    QLabel *m_titleLabel;
-    QLabel *m_valueLabel;
+    QPushButton *m_titleLabel;
+    QPushButton *m_valueLabel;
     QPushButton *m_decrementBtn;
     QPushButton *m_incrementBtn;
     QPushButton *m_closeBtn;

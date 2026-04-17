@@ -28,32 +28,15 @@ void VoxPopupWidget::setupUi() {
 
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 6,
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 6);
+        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8,
+        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8);
     layout->setSpacing(6);
 
     // Title label - will be updated based on mode
-    m_titleLabel = new QLabel("VOX GAIN, VOICE", this);
+    m_titleLabel = new QPushButton("VOX GAIN, VOICE", this);
     m_titleLabel->setFixedSize(TitleWidthVoxGain, K4Styles::Dimensions::ButtonHeightMedium);
-    m_titleLabel->setAlignment(Qt::AlignCenter);
-    m_titleLabel->setStyleSheet(QString("QLabel {"
-                                        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                                        "    stop:0 %1, stop:0.4 %2, stop:0.6 %3, stop:1 %4);"
-                                        "  color: %5;"
-                                        "  border: %6px solid %7;"
-                                        "  border-radius: %8px;"
-                                        "  font-size: %9px;"
-                                        "  font-weight: 600;"
-                                        "}")
-                                    .arg(K4Styles::Colors::GradientTop)
-                                    .arg(K4Styles::Colors::GradientMid1)
-                                    .arg(K4Styles::Colors::GradientMid2)
-                                    .arg(K4Styles::Colors::GradientBottom)
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::BorderWidth)
-                                    .arg(K4Styles::Colors::BorderNormal)
-                                    .arg(K4Styles::Dimensions::BorderRadius)
-                                    .arg(K4Styles::Dimensions::PopupTitleSize));
+    m_titleLabel->setFocusPolicy(Qt::NoFocus);
+    m_titleLabel->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // VOX toggle button
     m_voxBtn = new QPushButton("VOX\nOFF", this);
@@ -62,12 +45,21 @@ void VoxPopupWidget::setupUi() {
     m_voxBtn->setStyleSheet(K4Styles::popupButtonNormal());
 
     // Value display label
-    m_valueLabel = new QLabel(QString::number(m_value), this);
+    m_valueLabel = new QPushButton(QString::number(m_value), this);
     m_valueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
-    m_valueLabel->setAlignment(Qt::AlignCenter);
-    m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: 600;")
+    m_valueLabel->setFocusPolicy(Qt::NoFocus);
+    m_valueLabel->setStyleSheet(QString("QPushButton {"
+                                        "  color: %1;"
+                                        "  font-size: %2px;"
+                                        "  font-weight: 600;"
+                                        "  background: transparent;"
+                                        "  border: %3px solid transparent;"
+                                        "  border-radius: %4px;"
+                                        "}")
                                     .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::PopupValueSize));
+                                    .arg(K4Styles::Dimensions::PopupValueSize)
+                                    .arg(K4Styles::Dimensions::BorderWidth)
+                                    .arg(K4Styles::Dimensions::BorderRadius));
 
     // Decrement button
     m_decrementBtn = new QPushButton("-", this);
@@ -85,15 +77,15 @@ void VoxPopupWidget::setupUi() {
     m_closeBtn = new QPushButton("\u21A9", this); // U+21A9 leftwards arrow with hook
     m_closeBtn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_closeBtn->setCursor(Qt::PointingHandCursor);
-    m_closeBtn->setStyleSheet(K4Styles::menuBarButton());
+    m_closeBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // Add to layout
-    layout->addWidget(m_titleLabel);
-    layout->addWidget(m_voxBtn);
-    layout->addWidget(m_valueLabel);
-    layout->addWidget(m_decrementBtn);
-    layout->addWidget(m_incrementBtn);
-    layout->addWidget(m_closeBtn);
+    layout->addWidget(m_titleLabel, 0, Qt::AlignVCenter);
+    layout->addWidget(m_voxBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_valueLabel, 0, Qt::AlignVCenter);
+    layout->addWidget(m_decrementBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_incrementBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_closeBtn, 0, Qt::AlignVCenter);
 
     // Connect signals
     connect(m_voxBtn, &QPushButton::clicked, this, [this]() {
@@ -246,7 +238,9 @@ void VoxPopupWidget::paintEvent(QPaintEvent *event) {
     // Calculate tight bounding box
     int left = m_titleLabel->geometry().left() - 8;
     int right = m_closeBtn->geometry().right() + 8;
-    QRect contentRect(left, K4Styles::Dimensions::ShadowMargin + 1, right - left, ContentHeight - 3);
+    int top = m_titleLabel->geometry().top() - 4;
+    int bottom = m_titleLabel->geometry().bottom() + 4;
+    QRect contentRect(left, top, right - left, bottom - top + 1);
 
     // Draw drop shadow
     K4Styles::drawDropShadow(painter, contentRect, 8);

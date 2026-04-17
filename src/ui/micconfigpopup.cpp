@@ -26,32 +26,15 @@ void MicConfigPopupWidget::setupUi() {
 
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 6,
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 6);
+        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8,
+        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8);
     layout->setSpacing(6);
 
     // Title label - will be updated based on mic type
-    m_titleLabel = new QLabel("MIC CONFIG, FRONT", this);
+    m_titleLabel = new QPushButton("MIC CONFIG, FRONT", this);
     m_titleLabel->setFixedSize(TitleWidthFront, K4Styles::Dimensions::ButtonHeightMedium);
-    m_titleLabel->setAlignment(Qt::AlignCenter);
-    m_titleLabel->setStyleSheet(QString("QLabel {"
-                                        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                                        "    stop:0 %1, stop:0.4 %2, stop:0.6 %3, stop:1 %4);"
-                                        "  color: %5;"
-                                        "  border: %6px solid %7;"
-                                        "  border-radius: %8px;"
-                                        "  font-size: %9px;"
-                                        "  font-weight: 600;"
-                                        "}")
-                                    .arg(K4Styles::Colors::GradientTop)
-                                    .arg(K4Styles::Colors::GradientMid1)
-                                    .arg(K4Styles::Colors::GradientMid2)
-                                    .arg(K4Styles::Colors::GradientBottom)
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::BorderWidth)
-                                    .arg(K4Styles::Colors::BorderNormal)
-                                    .arg(K4Styles::Dimensions::BorderRadius)
-                                    .arg(K4Styles::Dimensions::PopupTitleSize));
+    m_titleLabel->setFocusPolicy(Qt::NoFocus);
+    m_titleLabel->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // BIAS button - toggles ON/OFF
     m_biasBtn = new QPushButton("BIAS\nON", this);
@@ -75,14 +58,14 @@ void MicConfigPopupWidget::setupUi() {
     m_closeBtn = new QPushButton("\u21A9", this); // ↩
     m_closeBtn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_closeBtn->setCursor(Qt::PointingHandCursor);
-    m_closeBtn->setStyleSheet(K4Styles::menuBarButton());
+    m_closeBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // Add to layout
-    layout->addWidget(m_titleLabel);
-    layout->addWidget(m_biasBtn);
-    layout->addWidget(m_preampBtn);
-    layout->addWidget(m_buttonsBtn);
-    layout->addWidget(m_closeBtn);
+    layout->addWidget(m_titleLabel, 0, Qt::AlignVCenter);
+    layout->addWidget(m_biasBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_preampBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_buttonsBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_closeBtn, 0, Qt::AlignVCenter);
 
     // Connect signals
     connect(m_biasBtn, &QPushButton::clicked, this, [this]() {
@@ -258,7 +241,9 @@ void MicConfigPopupWidget::paintEvent(QPaintEvent *event) {
     // Calculate tight bounding box
     int left = m_titleLabel->geometry().left() - 8;
     int right = m_closeBtn->geometry().right() + 8;
-    QRect contentRect(left, K4Styles::Dimensions::ShadowMargin + 1, right - left, ContentHeight - 3);
+    int top = m_titleLabel->geometry().top() - 4;
+    int bottom = m_titleLabel->geometry().bottom() + 4;
+    QRect contentRect(left, top, right - left, bottom - top + 1);
 
     // Draw drop shadow
     K4Styles::drawDropShadow(painter, contentRect, 8);

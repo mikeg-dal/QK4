@@ -2,7 +2,6 @@
 #define MICCONFIGPOPUP_H
 
 #include <QWidget>
-#include <QLabel>
 #include <QPushButton>
 
 class MicConfigPopupWidget : public QWidget {
@@ -41,7 +40,7 @@ private:
     void updateLayout();
     void updateButtonLabels();
 
-    QLabel *m_titleLabel;
+    QPushButton *m_titleLabel;
     QPushButton *m_biasBtn;
     QPushButton *m_preampBtn;
     QPushButton *m_buttonsBtn; // Only visible for Front mic

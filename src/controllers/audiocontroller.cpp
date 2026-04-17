@@ -120,6 +120,15 @@ void AudioController::stopAudio() {
     }
 }
 
+void AudioController::shutdown() {
+    // Synchronous audio teardown — required from MainWindow::closeEvent so
+    // QAudioSink/QAudioSource are destroyed while the event loop is still
+    // alive, not during libc atexit (which races PipeWire's RT worker on Linux).
+    if (m_audioEngine && m_audioThread && m_audioThread->isRunning()) {
+        QMetaObject::invokeMethod(m_audioEngine, "stop", Qt::BlockingQueuedConnection);
+    }
+}
+
 void AudioController::setPttActive(bool active) {
     if (!active || m_connectionController->isConnected()) {
         m_pttActive = active;

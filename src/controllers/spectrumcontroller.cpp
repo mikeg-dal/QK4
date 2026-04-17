@@ -322,6 +322,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         // Guard: only send if connected and frequency is valid
         if (!m_connectionController->isConnected() || freq <= 0)
             return;
+        if (m_radioState->lockA())
+            return;
         // PSK-D/FSK-D: passband centered at dial+IS, so subtract IS to place passband on click
         freq = adjustClickFreqForMode(freq, false);
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStep());
@@ -344,6 +346,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         // Guard: only send if connected and frequency is valid
         if (!m_connectionController->isConnected() || freq <= 0)
             return;
+        if (m_radioState->lockA())
+            return;
         freq = adjustClickFreqForMode(freq, false);
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStep());
         qint64 snapped = (freq / stepHz) * stepHz;
@@ -361,6 +365,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         // Scroll follows the mouse VFO focus indicator (last clicked VFO)
         bool tuneB = m_scrollVfoB;
+        if (tuneB ? m_radioState->lockB() : m_radioState->lockA())
+            return;
         quint64 currentFreq = tuneB ? m_radioState->vfoB() : m_radioState->vfoA();
         int stepHz = RadioUtils::tuningStepToHz(tuneB ? m_radioState->tuningStepB() : m_radioState->tuningStep());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
@@ -404,6 +410,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         if (!m_connectionController->isConnected() || freq <= 0)
             return;
+        if (m_radioState->lockB())
+            return;
         freq = adjustClickFreqForMode(freq, true); // right-click on Pan A → VFO B
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
         qint64 snapped = (freq / stepHz) * stepHz;
@@ -422,6 +430,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         if (m_mouseQsyMode == 0) // Left Only — right-drag disabled
             return;
         if (!m_connectionController->isConnected() || freq <= 0)
+            return;
+        if (m_radioState->lockB())
             return;
         freq = adjustClickFreqForMode(freq, true); // right-drag on Pan A → VFO B
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
@@ -498,6 +508,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         // L=A R=B mode: left-click on Pan B tunes VFO A
         bool tuneA = (m_mouseQsyMode == 1);
+        if (tuneA ? m_radioState->lockA() : m_radioState->lockB())
+            return;
         freq = adjustClickFreqForMode(freq, !tuneA);
         QString vfo = tuneA ? "FA" : "FB";
         int stepHz = RadioUtils::tuningStepToHz(tuneA ? m_radioState->tuningStep() : m_radioState->tuningStepB());
@@ -521,6 +533,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         // L=A R=B mode: left-drag on Pan B tunes VFO A
         bool tuneA = (m_mouseQsyMode == 1);
+        if (tuneA ? m_radioState->lockA() : m_radioState->lockB())
+            return;
         freq = adjustClickFreqForMode(freq, !tuneA);
         QString vfo = tuneA ? "FA" : "FB";
         int stepHz = RadioUtils::tuningStepToHz(tuneA ? m_radioState->tuningStep() : m_radioState->tuningStepB());
@@ -538,6 +552,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         // Scroll follows the mouse VFO focus indicator (last clicked VFO)
         bool tuneB = m_scrollVfoB;
+        if (tuneB ? m_radioState->lockB() : m_radioState->lockA())
+            return;
         quint64 currentFreq = tuneB ? m_radioState->vfoB() : m_radioState->vfoA();
         int stepHz = RadioUtils::tuningStepToHz(tuneB ? m_radioState->tuningStepB() : m_radioState->tuningStep());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
@@ -581,6 +597,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         if (!m_connectionController->isConnected() || freq <= 0)
             return;
+        if (m_radioState->lockB())
+            return;
         // L=A R=B mode: right-click always tunes VFO B
         freq = adjustClickFreqForMode(freq, true);
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
@@ -600,6 +618,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         if (m_mouseQsyMode == 0) // Left Only — right-drag disabled
             return;
         if (!m_connectionController->isConnected() || freq <= 0)
+            return;
+        if (m_radioState->lockB())
             return;
         // L=A R=B mode: right-drag always tunes VFO B
         freq = adjustClickFreqForMode(freq, true);
@@ -724,17 +744,23 @@ void SpectrumController::updateTxMarkers() {
     qint64 txVfoDial = split ? static_cast<qint64>(m_radioState->vfoB()) : static_cast<qint64>(m_radioState->vfoA());
     qint64 txFreq = txVfoDial + xitOffset;
 
+    // Only show marker when the offset is actually non-zero (TX ≠ RX).
+    // When RIT/XIT is on but offset is 0.00, TX = RX — no marker needed. Matches K4 behaviour.
+    bool ritAShifted = ritA && (m_radioState->ritXitOffset() != 0);
+    bool ritBShifted = ritB && (m_radioState->ritXitOffsetB() != 0);
+    bool xitShifted = xit && (xitOffset != 0);
+
     // Panadapter A (VFO A spectrum):
     //   SPLIT on: always show — TX from VFO B, different VFO than this spectrum
     //   No split + BSET: real K4 shows no TX marker (user focused on VFO B)
     //   No split: when RIT A or XIT shifts TX != RX
-    bool showTxOnA = split ? true : (bset ? false : (ritA || xit));
+    bool showTxOnA = split ? true : (bset ? false : (ritAShifted || xitShifted));
     // Panadapter B (VFO B spectrum):
     //   SPLIT + XIT: show TX marker (XIT shifts TX away from VFO B dial)
     //   SPLIT + RIT B: show (RIT shifts RX away from TX)
     //   No split + BSET: real K4 shows no TX marker (user focused on VFO B)
     //   No split: show when RIT A or XIT — TX from VFO A, different VFO than this spectrum
-    bool showTxOnB = split ? (ritB || xit) : (bset ? false : (ritA || xit));
+    bool showTxOnB = split ? (ritBShifted || xitShifted) : (bset ? false : (ritAShifted || xitShifted));
 
     m_panadapterA->setTxMarker(txFreq, showTxOnA);
     m_panadapterB->setTxMarker(txFreq, showTxOnB);

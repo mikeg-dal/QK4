@@ -2,7 +2,6 @@
 #define LINEOUTPOPUP_H
 
 #include <QWidget>
-#include <QLabel>
 #include <QPushButton>
 #include "wheelaccumulator.h"
 
@@ -42,11 +41,11 @@ private:
     bool m_rightEqualsLeft = false;
     bool m_leftSelected = true; // Which channel wheel adjusts
 
-    QLabel *m_titleLabel;
+    QPushButton *m_titleLabel;
     QPushButton *m_leftBtn;
-    QLabel *m_leftValueLabel;
+    QPushButton *m_leftValueLabel;
     QPushButton *m_rightBtn;
-    QLabel *m_rightValueLabel;
+    QPushButton *m_rightValueLabel;
     QPushButton *m_rightEqualsLeftBtn;
     QPushButton *m_closeBtn;
 

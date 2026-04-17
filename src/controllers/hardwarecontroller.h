@@ -24,6 +24,8 @@ public:
     IambicKeyer *keyer() const { return m_iambicKeyer; }
     SidetoneGenerator *sidetone() const { return m_sidetoneGenerator; }
 
+    void shutdownSidetone();
+
 signals:
     // KPOD button press → MainWindow dispatches macro
     void macroRequested(const QString &functionId);

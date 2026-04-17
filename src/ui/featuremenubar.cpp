@@ -27,56 +27,49 @@ void FeatureMenuBar::setupUi() {
     auto *layout = new QHBoxLayout(this);
     // Margins include shadow space on all sides
     layout->setContentsMargins(
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 6,
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 6);
+        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8,
+        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8);
     layout->setSpacing(8);
 
-    // Title label (framed box with centered text)
-    m_titleLabel = new QLabel("ATTENUATOR", this);
-    m_titleLabel->setFixedSize(140, 36);
-    m_titleLabel->setAlignment(Qt::AlignCenter);
-    m_titleLabel->setStyleSheet(QString("QLabel {"
-                                        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                                        "    stop:0 %1, stop:0.4 %2, stop:0.6 %3, stop:1 %4);"
-                                        "  color: %5;"
-                                        "  border: %6px solid %7;"
-                                        "  border-radius: %8px;"
-                                        "  font-size: %9px;"
-                                        "  font-weight: 600;"
-                                        "}")
-                                    .arg(K4Styles::Colors::GradientTop)
-                                    .arg(K4Styles::Colors::GradientMid1)
-                                    .arg(K4Styles::Colors::GradientMid2)
-                                    .arg(K4Styles::Colors::GradientBottom)
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::BorderWidth)
-                                    .arg(K4Styles::Colors::BorderNormal)
-                                    .arg(K4Styles::Dimensions::BorderRadius)
-                                    .arg(K4Styles::Dimensions::PopupTitleSize));
+    // Title — non-interactive QPushButton so text rendering matches all other buttons
+    m_titleLabel = new QPushButton("ATTENUATOR", this);
+    m_titleLabel->setFixedSize(140, K4Styles::Dimensions::ButtonHeightMedium);
+    m_titleLabel->setFocusPolicy(Qt::NoFocus);
+    m_titleLabel->setStyleSheet(K4Styles::menuBarButtonSmall());
 
-    // OFF/ON toggle button
+    // OFF/ON toggle button — use menuBarButtonSmall (no vertical padding, 12px font)
+    // instead of menuBarButton (6px padding, 11px font) so text baseline matches labels
     m_toggleBtn = new QPushButton("OFF", this);
     m_toggleBtn->setMinimumWidth(60);
     m_toggleBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
     m_toggleBtn->setCursor(Qt::PointingHandCursor);
-    m_toggleBtn->setStyleSheet(K4Styles::menuBarButton());
+    m_toggleBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // Extra button (only shown for NB LEVEL - "FILTER NONE/NARROW/WIDE")
-    // Uses ButtonHeightLarge (44px) to fit two lines of text
     m_extraBtn = new QPushButton("FILTER\nNONE", this);
     m_extraBtn->setMinimumWidth(90);
-    m_extraBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightLarge);
+    m_extraBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
     m_extraBtn->setCursor(Qt::PointingHandCursor);
-    m_extraBtn->setStyleSheet(K4Styles::menuBarButton());
+    m_extraBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
     m_extraBtn->hide(); // Hidden by default
 
-    // Value label (center, bold)
-    m_valueLabel = new QLabel("0", this);
-    m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: 600;")
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::PopupValueSize));
-    m_valueLabel->setAlignment(Qt::AlignCenter);
+    // Value display — non-interactive QPushButton so text rendering matches buttons
+    m_valueLabel = new QPushButton("0", this);
+    m_valueLabel->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
     m_valueLabel->setMinimumWidth(80);
+    m_valueLabel->setFocusPolicy(Qt::NoFocus);
+    m_valueLabel->setStyleSheet(QString("QPushButton {"
+                                        "  color: %1;"
+                                        "  font-size: %2px;"
+                                        "  font-weight: 600;"
+                                        "  background: transparent;"
+                                        "  border: %3px solid transparent;"
+                                        "  border-radius: %4px;"
+                                        "}")
+                                    .arg(K4Styles::Colors::TextWhite)
+                                    .arg(K4Styles::Dimensions::PopupValueSize)
+                                    .arg(K4Styles::Dimensions::BorderWidth)
+                                    .arg(K4Styles::Dimensions::BorderRadius));
 
     // Decrement button
     m_decrementBtn = new QPushButton("-", this);
@@ -91,12 +84,12 @@ void FeatureMenuBar::setupUi() {
     m_incrementBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // Layout - compact, no stretches (popup is centered by showAboveWidget)
-    layout->addWidget(m_titleLabel);
-    layout->addWidget(m_toggleBtn);
-    layout->addWidget(m_extraBtn);
-    layout->addWidget(m_valueLabel);
-    layout->addWidget(m_decrementBtn);
-    layout->addWidget(m_incrementBtn);
+    layout->addWidget(m_titleLabel, 0, Qt::AlignVCenter);
+    layout->addWidget(m_toggleBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_extraBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_valueLabel, 0, Qt::AlignVCenter);
+    layout->addWidget(m_decrementBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_incrementBtn, 0, Qt::AlignVCenter);
 
     // Connect signals
     connect(m_toggleBtn, &QPushButton::clicked, this, &FeatureMenuBar::toggleRequested);
@@ -241,10 +234,12 @@ void FeatureMenuBar::paintEvent(QPaintEvent *event) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    // Calculate tight bounding box from first to last visible widget
-    int left = m_titleLabel->geometry().left() - 8; // 8px padding
+    // Calculate tight bounding box from actual widget geometry
+    int left = m_titleLabel->geometry().left() - 8;
     int right = m_incrementBtn->geometry().right() + 8;
-    QRect contentRect(left, K4Styles::Dimensions::ShadowMargin + 1, right - left, ContentHeight - 3);
+    int top = m_titleLabel->geometry().top() - 4;
+    int bottom = m_titleLabel->geometry().bottom() + 4;
+    QRect contentRect(left, top, right - left, bottom - top + 1);
 
     // Draw drop shadow
     K4Styles::drawDropShadow(painter, contentRect, 8);

@@ -55,6 +55,8 @@
 #include <QRegularExpression>
 #include <QMouseEvent>
 #include <QMoveEvent>
+#include <QCloseEvent>
+#include <QShortcut>
 
 Q_LOGGING_CATEGORY(qk4Main, "qk4.main")
 
@@ -81,6 +83,17 @@ MainWindow::MainWindow(QWidget *parent)
     // "QRhiWidget: No QRhi" errors and blank panadapter display.
     setupUi();
     setupMenuBar();
+
+    // ESC — halt all transmission regardless of which child widget has focus.
+    // QShortcut fires at window scope; keyPressEvent only fires when the window frame itself has focus.
+    // Clears both the K4 TX state (RX;) and QK4's internal PTT/audio state so the UI unlocks too.
+    auto *escShortcut = new QShortcut(Qt::Key_Escape, this);
+    connect(escShortcut, &QShortcut::activated, this, [this]() {
+        if (m_connectionController->isConnected())
+            m_connectionController->sendCAT("RX;");
+        m_audioController->setPttActive(false);
+        m_bottomMenuBar->setPttActive(false);
+    });
 
     // Menu items are populated from MEDF responses in onCatResponse()
     // when the radio sends RDY; after connection
@@ -1811,6 +1824,22 @@ MainWindow::MainWindow(QWidget *parent)
 
     // resize directly instead of deferring - testing if deferred resize affects QRhi
     // QTimer::singleShot(0, this, [this]() { resize(1340, 800); });
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    // Deterministic audio teardown BEFORE the event loop exits. On Linux with
+    // the PipeWire Qt Multimedia backend, destroying an active QAudioSink from
+    // libc atexit races the PipeWire RT worker thread and segfaults in
+    // pw_stream_dequeue_buffer. Stopping the sinks here — while the audio and
+    // sidetone thread event loops are still servicing BlockingQueuedConnection
+    // — guarantees no live QAudioSink/QAudioSource remains at process exit.
+    if (m_audioController) {
+        m_audioController->shutdown();
+    }
+    if (m_hardwareController) {
+        m_hardwareController->shutdownSidetone();
+    }
+    QMainWindow::closeEvent(event);
 }
 
 MainWindow::~MainWindow() {
@@ -4678,6 +4707,17 @@ void MainWindow::executeMacro(const QString &functionId) {
         qCDebug(qk4Main) << "Executing macro" << functionId << ":" << macro.command;
         if (m_connectionController->isConnected()) {
             m_connectionController->sendCAT(macro.command);
+
+            // RT1;/RT0;/SW54; are silent SET commands — K4 does not echo RT state back.
+            // Query current state so the UI stays in sync after execution.
+            const QString &cmd = macro.command;
+            if (cmd.contains("RT1") || cmd.contains("RT0") || cmd.contains("RT/") || cmd.contains("SW54")) {
+                m_connectionController->sendCAT("RT;");
+                m_connectionController->sendCAT("RT$;");
+            }
+            if (cmd.contains("XT1") || cmd.contains("XT0") || cmd.contains("XT/") || cmd.contains("SW74")) {
+                m_connectionController->sendCAT("XT;");
+            }
         }
     } else {
         qCDebug(qk4Main) << "No macro configured for" << functionId;

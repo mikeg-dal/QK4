@@ -199,6 +199,15 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     });
 }
 
+void HardwareController::shutdownSidetone() {
+    // Synchronous sidetone sink teardown — required from MainWindow::closeEvent
+    // so QAudioSink is destroyed while the event loop is still alive, not
+    // during libc atexit (which races PipeWire's RT worker on Linux).
+    if (m_sidetoneGenerator && m_sidetoneThread && m_sidetoneThread->isRunning()) {
+        QMetaObject::invokeMethod(m_sidetoneGenerator, "stop", Qt::BlockingQueuedConnection);
+    }
+}
+
 HardwareController::~HardwareController() {
     disconnect(this);
     // Shutdown order: HaliKey → Keyer → Sidetone → KPOD
@@ -241,6 +250,8 @@ void HardwareController::onKpodEncoderRotated(int ticks) {
     switch (m_kpodDevice->rockerPosition()) {
     case KpodDevice::RockerLeft: // VFO A
     {
+        if (m_radioState->lockA())
+            break;
         quint64 currentFreq = m_radioState->vfoA();
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStep());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(ticks) * stepHz;
@@ -253,6 +264,8 @@ void HardwareController::onKpodEncoderRotated(int ticks) {
 
     case KpodDevice::RockerCenter: // VFO B
     {
+        if (m_radioState->lockB())
+            break;
         quint64 currentFreq = m_radioState->vfoB();
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(ticks) * stepHz;

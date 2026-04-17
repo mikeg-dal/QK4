@@ -25,32 +25,15 @@ void LineOutPopupWidget::setupUi() {
 
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 6,
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 6);
+        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8,
+        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8);
     layout->setSpacing(6);
 
     // Title label - "LINE OUT"
-    m_titleLabel = new QLabel("LINE OUT", this);
+    m_titleLabel = new QPushButton("LINE OUT", this);
     m_titleLabel->setFixedSize(K4Styles::Dimensions::InputFieldWidthMedium, K4Styles::Dimensions::ButtonHeightMedium);
-    m_titleLabel->setAlignment(Qt::AlignCenter);
-    m_titleLabel->setStyleSheet(QString("QLabel {"
-                                        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                                        "    stop:0 %1, stop:0.4 %2, stop:0.6 %3, stop:1 %4);"
-                                        "  color: %5;"
-                                        "  border: %6px solid %7;"
-                                        "  border-radius: %8px;"
-                                        "  font-size: %9px;"
-                                        "  font-weight: 600;"
-                                        "}")
-                                    .arg(K4Styles::Colors::GradientTop)
-                                    .arg(K4Styles::Colors::GradientMid1)
-                                    .arg(K4Styles::Colors::GradientMid2)
-                                    .arg(K4Styles::Colors::GradientBottom)
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::BorderWidth)
-                                    .arg(K4Styles::Colors::BorderNormal)
-                                    .arg(K4Styles::Dimensions::BorderRadius)
-                                    .arg(K4Styles::Dimensions::PopupTitleSize));
+    m_titleLabel->setFocusPolicy(Qt::NoFocus);
+    m_titleLabel->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // LEFT button - selectable
     m_leftBtn = new QPushButton("LEFT", this);
@@ -60,12 +43,21 @@ void LineOutPopupWidget::setupUi() {
     m_leftBtn->setCursor(Qt::PointingHandCursor);
 
     // Left value label
-    m_leftValueLabel = new QLabel(QString::number(m_leftLevel), this);
+    m_leftValueLabel = new QPushButton(QString::number(m_leftLevel), this);
     m_leftValueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
-    m_leftValueLabel->setAlignment(Qt::AlignCenter);
-    m_leftValueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: 600;")
+    m_leftValueLabel->setFocusPolicy(Qt::NoFocus);
+    m_leftValueLabel->setStyleSheet(QString("QPushButton {"
+                                            "  color: %1;"
+                                            "  font-size: %2px;"
+                                            "  font-weight: 600;"
+                                            "  background: transparent;"
+                                            "  border: %3px solid transparent;"
+                                            "  border-radius: %4px;"
+                                            "}")
                                         .arg(K4Styles::Colors::TextWhite)
-                                        .arg(K4Styles::Dimensions::PopupValueSize));
+                                        .arg(K4Styles::Dimensions::PopupValueSize)
+                                        .arg(K4Styles::Dimensions::BorderWidth)
+                                        .arg(K4Styles::Dimensions::BorderRadius));
 
     // RIGHT button - selectable
     m_rightBtn = new QPushButton("RIGHT", this);
@@ -75,12 +67,21 @@ void LineOutPopupWidget::setupUi() {
     m_rightBtn->setCursor(Qt::PointingHandCursor);
 
     // Right value label
-    m_rightValueLabel = new QLabel(QString::number(m_rightLevel), this);
+    m_rightValueLabel = new QPushButton(QString::number(m_rightLevel), this);
     m_rightValueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
-    m_rightValueLabel->setAlignment(Qt::AlignCenter);
-    m_rightValueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: 600;")
+    m_rightValueLabel->setFocusPolicy(Qt::NoFocus);
+    m_rightValueLabel->setStyleSheet(QString("QPushButton {"
+                                             "  color: %1;"
+                                             "  font-size: %2px;"
+                                             "  font-weight: 600;"
+                                             "  background: transparent;"
+                                             "  border: %3px solid transparent;"
+                                             "  border-radius: %4px;"
+                                             "}")
                                          .arg(K4Styles::Colors::TextWhite)
-                                         .arg(K4Styles::Dimensions::PopupValueSize));
+                                         .arg(K4Styles::Dimensions::PopupValueSize)
+                                         .arg(K4Styles::Dimensions::BorderWidth)
+                                         .arg(K4Styles::Dimensions::BorderRadius));
 
     // RIGHT=LEFT toggle button
     m_rightEqualsLeftBtn = new QPushButton("RIGHT\n=LEFT", this);
@@ -94,7 +95,7 @@ void LineOutPopupWidget::setupUi() {
     m_closeBtn = new QPushButton("\u21A9", this); // ↩
     m_closeBtn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_closeBtn->setCursor(Qt::PointingHandCursor);
-    m_closeBtn->setStyleSheet(K4Styles::menuBarButton());
+    m_closeBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // Add to layout
     layout->addWidget(m_titleLabel);
@@ -167,9 +168,18 @@ void LineOutPopupWidget::updateButtonStyles() {
 
     // Right value label - dimmed when RIGHT=LEFT mode
     m_rightValueLabel->setStyleSheet(
-        QString("color: %1; font-size: %2px; font-weight: 600;")
+        QString("QPushButton {"
+                "  color: %1;"
+                "  font-size: %2px;"
+                "  font-weight: 600;"
+                "  background: transparent;"
+                "  border: %3px solid transparent;"
+                "  border-radius: %4px;"
+                "}")
             .arg(m_rightEqualsLeft ? K4Styles::Colors::TextGray : K4Styles::Colors::TextWhite)
-            .arg(K4Styles::Dimensions::PopupValueSize));
+            .arg(K4Styles::Dimensions::PopupValueSize)
+            .arg(K4Styles::Dimensions::BorderWidth)
+            .arg(K4Styles::Dimensions::BorderRadius));
 }
 
 void LineOutPopupWidget::updateValueLabels() {
@@ -295,7 +305,9 @@ void LineOutPopupWidget::paintEvent(QPaintEvent *event) {
     // Calculate tight bounding box
     int left = m_titleLabel->geometry().left() - 8;
     int right = m_closeBtn->geometry().right() + 8;
-    QRect contentRect(left, K4Styles::Dimensions::ShadowMargin + 1, right - left, ContentHeight - 3);
+    int top = m_titleLabel->geometry().top() - 4;
+    int bottom = m_titleLabel->geometry().bottom() + 4;
+    QRect contentRect(left, top, right - left, bottom - top + 1);
 
     // Draw drop shadow
     K4Styles::drawDropShadow(painter, contentRect, 8);

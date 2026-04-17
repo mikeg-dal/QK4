@@ -2,7 +2,6 @@
 #define VOXPOPUP_H
 
 #include <QWidget>
-#include <QLabel>
 #include <QPushButton>
 #include "wheelaccumulator.h"
 
@@ -42,9 +41,9 @@ private:
     void updateValueDisplay();
     void adjustValue(int delta);
 
-    QLabel *m_titleLabel;
+    QPushButton *m_titleLabel;
     QPushButton *m_voxBtn;
-    QLabel *m_valueLabel;
+    QPushButton *m_valueLabel;
     QPushButton *m_decrementBtn;
     QPushButton *m_incrementBtn;
     QPushButton *m_closeBtn;

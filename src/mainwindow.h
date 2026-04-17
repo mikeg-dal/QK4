@@ -58,6 +58,7 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void moveEvent(QMoveEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
 
 private slots:
     void onConnectionStateChanged(TcpClient::ConnectionState state);

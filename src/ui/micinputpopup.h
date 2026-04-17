@@ -2,7 +2,6 @@
 #define MICINPUTPOPUP_H
 
 #include <QWidget>
-#include <QLabel>
 #include <QPushButton>
 
 class MicInputPopupWidget : public QWidget {
@@ -27,7 +26,7 @@ private:
     void setupUi();
     void updateButtonStyles();
 
-    QLabel *m_titleLabel;
+    QPushButton *m_titleLabel;
     QPushButton *m_frontBtn;     // 0 = Front mic
     QPushButton *m_rearBtn;      // 1 = Rear mic
     QPushButton *m_lineInBtn;    // 2 = LINE IN

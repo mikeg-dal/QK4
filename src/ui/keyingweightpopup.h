@@ -2,7 +2,6 @@
 #define KEYINGWEIGHTPOPUP_H
 
 #include "wheelaccumulator.h"
-#include <QLabel>
 #include <QPushButton>
 #include <QWidget>
 
@@ -30,8 +29,8 @@ private:
     void updateValueDisplay();
     void adjustValue(int delta);
 
-    QLabel *m_titleLabel;
-    QLabel *m_valueLabel;
+    QPushButton *m_titleLabel;
+    QPushButton *m_valueLabel;
     QPushButton *m_decrementBtn;
     QPushButton *m_incrementBtn;
     QPushButton *m_closeBtn;

@@ -20,6 +20,7 @@ public:
     // Audio lifecycle
     void startAudio(float mainVolume, float subVolume, float micGain);
     void stopAudio();
+    void shutdown();
 
     // PTT control
     void setPttActive(bool active);
