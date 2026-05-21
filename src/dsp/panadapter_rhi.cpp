@@ -216,6 +216,7 @@ private:
 
 PanadapterRhiWidget::PanadapterRhiWidget(QWidget *parent) : QRhiWidget(parent) {
     setMinimumHeight(200);
+    setRenderOnDemand(true);
     setMouseTracking(true);
     m_wheelAccumulator.setFilterMomentum(false);
 

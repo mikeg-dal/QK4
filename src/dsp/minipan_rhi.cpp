@@ -12,6 +12,7 @@ Q_LOGGING_CATEGORY(dspMiniPan, "dsp.minipan")
 
 MiniPanRhiWidget::MiniPanRhiWidget(QWidget *parent) : QRhiWidget(parent) {
     setFixedHeight(150);
+    setRenderOnDemand(true);
     setMinimumWidth(180);
     setMaximumWidth(200);
 
