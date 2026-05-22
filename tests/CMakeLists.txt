@@ -135,6 +135,14 @@ target_include_directories(test_catserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_catserver Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME CatServerTests COMMAND test_catserver)
 
+# AudioEngine resampler tests (friend class accesses private resampler methods)
+add_executable(test_audioengine test_audioengine.cpp
+    ${CMAKE_SOURCE_DIR}/src/audio/audioengine.cpp
+)
+target_include_directories(test_audioengine PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_audioengine Qt6::Core Qt6::Multimedia Qt6::Test)
+add_test(NAME AudioEngineTests COMMAND test_audioengine)
+
 # DX Cluster spot parsing tests
 add_executable(test_dxcluster test_dxcluster.cpp
     ${CMAKE_SOURCE_DIR}/src/network/dxclusterclient.cpp

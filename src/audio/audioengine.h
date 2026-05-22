@@ -109,6 +109,9 @@ signals:
     // event loop can no longer stall voice TX packet emission.
     void txPacketReady(const QByteArray &packet);
     void bufferStatus(int queueBytes, int maxBytes, bool prebuffering);
+    // Emitted when mic setup fails so the caller can surface a user-visible warning instead
+    // of silently dropping the PTT press (e.g. Bluetooth device in HFP mode at 8/16kHz).
+    void micSetupFailed(const QString &reason);
 
 private slots:
     void onMicDataReady();
@@ -118,10 +121,13 @@ private:
     bool setupAudioOutput();
     bool setupAudioInput();
 
-    // Resample 48kHz Float32 samples to 12kHz (4:1 decimation with averaging).
-    // Reads from input48k, writes into the pre-allocated m_resampleBuf12k
-    // member and returns a const reference to it. Avoids per-poll allocation.
-    const QByteArray &resample48kTo12k(const QByteArray &input48k);
+    // Resamplers: all take mono Float32 input, produce mono Float32 at 12kHz.
+    // 48kHz path writes into pre-allocated m_resampleBuf12k — no heap allocation on the
+    // hot 10 ms poll tick. 16kHz and 8kHz paths added for AirPods / Bluetooth HFP mic
+    // support on macOS (see setupAudioInput() for the full HFP/A2DP explanation).
+    const QByteArray &resample48kTo12k(const QByteArray &input48k); // 4:1 decimation with averaging
+    QByteArray resample16kTo12k(const QByteArray &input16k);        // 4:3 linear interpolation
+    QByteArray resample8kTo12k(const QByteArray &input8k);          // 2:3 linear interpolation
 
     // Encode + packetize one captured S16LE mono frame and emit txPacketReady.
     // Runs on the audio thread, called from onMicDataReady when PTT is active.
@@ -133,8 +139,11 @@ private:
     // Audio output format: 12kHz stereo Float32 (K4 RX audio, L=Main R=Sub)
     QAudioFormat m_outputFormat;
 
-    // Audio input format: 48kHz mono Float32 (native macOS rate, resampled to 12kHz)
+    // Requested input format (48kHz mono Float32). Bluetooth devices in HFP mode may not
+    // support this; setupAudioInput() falls back to the device's preferredFormat() for
+    // 8kHz/16kHz cases and records the accepted rate in m_actualInputSampleRate.
     QAudioFormat m_inputFormat;
+    int m_actualInputSampleRate = 48000; // Set by setupAudioInput(); drives resampler dispatch
 
     // Audio output (speaker)
     QAudioSink *m_audioSink;
@@ -225,6 +234,8 @@ private:
     // ~120 ms of audio per packet). Waiting for a second packet would double the startup latency
     // without improving tolerance — the runway is already inside the single packet. See
     // `memory/k4-streaming-latency.md` for the verified SL0–7 frame-bundling map.
+    friend class TestAudioEngine; // Allows unit tests to call private resampler methods directly
+
     static constexpr int PREBUFFER_PACKETS = 1;
     static constexpr int MAX_QUEUE_BYTES = 1000 * BYTES_PER_MS; // 96,000 bytes (1s cap)
     static constexpr int FEED_INTERVAL_MS = 10;

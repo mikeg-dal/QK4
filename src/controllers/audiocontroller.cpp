@@ -10,8 +10,6 @@
 #include "settings/radiosettings.h"
 #include "utils/radioutils.h"
 
-Q_LOGGING_CATEGORY(qk4Audio, "qk4.audio")
-
 AudioController::AudioController(ConnectionController *connController, RadioState *radioState, QObject *parent)
     : QObject(parent), m_connectionController(connController), m_radioState(radioState),
       m_audioEngine(new AudioEngine(nullptr)), m_opusDecoder(new OpusDecoder(nullptr)) {
@@ -60,6 +58,13 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
     // auto-marshals from the audio thread to its own IO thread. AutoConnection
     // resolves to QueuedConnection across the audio→IO boundary (one hop).
     connect(m_audioEngine, &AudioEngine::txPacketReady, m_connectionController->tcpClient(), &TcpClient::sendRaw);
+
+    // Surface mic setup failures as a log warning so users know to check Settings > Audio
+    // (silent failure was the previous behaviour — common with Bluetooth HFP devices)
+    connect(m_audioEngine, &AudioEngine::micSetupFailed, this, [](const QString &reason) {
+        qCWarning(qk4Audio) << "Microphone setup failed:" << reason
+                            << "— Check Settings > Audio and select a compatible input device.";
+    });
 
     // SL tier changes → update TX frame size
     connect(m_radioState, &RadioState::streamingLatencyChanged, this, &AudioController::onStreamingLatencyChanged);
