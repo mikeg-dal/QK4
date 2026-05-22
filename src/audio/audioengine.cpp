@@ -8,6 +8,10 @@
 #include <QDebug>
 #include <cmath>
 
+// Shared logging category for the audio subsystem — declared in audiologging.h,
+// defined here because AudioEngine is the primary producer of audio log messages.
+Q_LOGGING_CATEGORY(qk4Audio, "qk4.audio")
+
 AudioEngine::AudioEngine(QObject *parent)
     : QObject(parent), m_audioSink(nullptr), m_audioSinkDevice(nullptr), m_audioSource(nullptr),
       m_audioSourceDevice(nullptr), m_opusEncoder(new OpusEncoder(nullptr)), m_micPollTimer(nullptr) {
@@ -182,16 +186,47 @@ bool AudioEngine::setupAudioInput() {
     }
 
     if (inputDevice.isNull()) {
-        qCWarning(qk4Audio) << "AudioEngine: No audio input device available";
+        const QString reason = QStringLiteral("No audio input device available");
+        qCWarning(qk4Audio) << "AudioEngine:" << reason;
+        emit micSetupFailed(reason);
         return false;
     }
 
+    // macOS AirPods (and Bluetooth headsets generally) mic support — why this fallback exists:
+    //
+    // When a Bluetooth headset is used as an audio output device it operates in A2DP mode,
+    // which is high-quality stereo but provides NO microphone input to the OS at all. The
+    // moment any app opens the device as an input, macOS switches the headset to HFP/HSP
+    // (Hands-Free / Headset Profile). In HFP mode the headset exposes a microphone, but the
+    // sample rate drops to 8kHz (NBS – narrowband) or 16kHz (WBS – wideband, used by AirPods).
+    //
+    // The previous code called isFormatSupported(48kHz) and returned false silently when it
+    // failed, so every PTT press was a no-op with AirPods. The fix: if 48kHz is unsupported,
+    // ask the device for its preferredFormat(), accept it if the rate is 8kHz or 16kHz, and
+    // let the matching resampler (resample16kTo12k / resample8kTo12k) convert to the 12kHz
+    // mono stream that the Opus encoder expects. Voice quality at 8–16kHz is already limited
+    // by the Bluetooth codec, so the additional resampling step has no audible impact.
+    QAudioFormat formatToUse = m_inputFormat;
     if (!inputDevice.isFormatSupported(m_inputFormat)) {
-        qCWarning(qk4Audio) << "AudioEngine: 48kHz input format not supported by device";
-        return false;
+        QAudioFormat preferred = inputDevice.preferredFormat();
+        preferred.setChannelCount(1);
+        preferred.setSampleFormat(QAudioFormat::Float);
+        int rate = preferred.sampleRate();
+        if ((rate == 8000 || rate == 16000) && inputDevice.isFormatSupported(preferred)) {
+            qCWarning(qk4Audio) << "AudioEngine: 48kHz not supported by mic device, falling back to" << rate << "Hz";
+            formatToUse = preferred;
+        } else {
+            const QString reason = QString("Mic device does not support 48kHz and preferred rate "
+                                           "%1Hz has no supported resampler path")
+                                       .arg(rate);
+            qCWarning(qk4Audio) << "AudioEngine:" << reason;
+            emit micSetupFailed(reason);
+            return false;
+        }
     }
+    m_actualInputSampleRate = formatToUse.sampleRate();
 
-    m_audioSource = new QAudioSource(inputDevice, m_inputFormat, this);
+    m_audioSource = new QAudioSource(inputDevice, formatToUse, this);
     m_audioSource->setBufferSize(INPUT_BUFFER_SIZE);
 
     // Don't start mic by default - user must enable
@@ -439,6 +474,56 @@ const QByteArray &AudioEngine::resample48kTo12k(const QByteArray &input48k) {
     return m_resampleBuf12k;
 }
 
+QByteArray AudioEngine::resample16kTo12k(const QByteArray &input16k) {
+    // Added for AirPods / Bluetooth WBS (Wideband Speech) mic support on macOS.
+    // AirPods in HFP mode expose a 16kHz microphone; this converts it to the 12kHz
+    // mono stream expected by the Opus encoder.
+    // 16kHz → 12kHz: 4:3 ratio. Output sample k sits at input position k * (4/3).
+    // Linear interpolation between adjacent input samples avoids aliasing on voice.
+    const float *in = reinterpret_cast<const float *>(input16k.constData());
+    int inCount = input16k.size() / static_cast<int>(sizeof(float));
+    int outCount = (inCount * 3) / 4;
+
+    QByteArray out;
+    out.reserve(outCount * static_cast<int>(sizeof(float)));
+
+    for (int k = 0; k < outCount; k++) {
+        float pos = k * (4.0f / 3.0f);
+        int idx = static_cast<int>(pos);
+        float frac = pos - idx;
+        float s0 = in[idx];
+        float s1 = (idx + 1 < inCount) ? in[idx + 1] : s0;
+        float sample = s0 + frac * (s1 - s0);
+        out.append(reinterpret_cast<const char *>(&sample), sizeof(float));
+    }
+    return out;
+}
+
+QByteArray AudioEngine::resample8kTo12k(const QByteArray &input8k) {
+    // Added for Bluetooth NBS (Narrowband Speech) mic support on macOS.
+    // Older Bluetooth headsets in HFP mode expose an 8kHz microphone; this upsamples
+    // it to the 12kHz mono stream expected by the Opus encoder.
+    // 8kHz → 12kHz: 2:3 ratio (upsampling). Output sample k sits at input position k * (2/3).
+    // Linear interpolation fills the inserted samples.
+    const float *in = reinterpret_cast<const float *>(input8k.constData());
+    int inCount = input8k.size() / static_cast<int>(sizeof(float));
+    int outCount = (inCount * 3) / 2;
+
+    QByteArray out;
+    out.reserve(outCount * static_cast<int>(sizeof(float)));
+
+    for (int k = 0; k < outCount; k++) {
+        float pos = k * (2.0f / 3.0f);
+        int idx = static_cast<int>(pos);
+        float frac = pos - idx;
+        float s0 = in[idx];
+        float s1 = (idx + 1 < inCount) ? in[idx + 1] : s0;
+        float sample = s0 + frac * (s1 - s0);
+        out.append(reinterpret_cast<const char *>(&sample), sizeof(float));
+    }
+    return out;
+}
+
 void AudioEngine::onMicDataReady() {
     if (!m_audioSourceDevice || !m_micEnabled.load(std::memory_order_relaxed))
         return;
@@ -449,8 +534,27 @@ void AudioEngine::onMicDataReady() {
         return;
     }
 
-    // Resample from 48kHz to 12kHz (writes into pre-allocated member buffer)
-    const QByteArray &data12k = resample48kTo12k(data48k);
+    // Dispatch to the resampler matching the accepted input rate.
+    // 48kHz is the normal path for wired/USB mics — writes into the pre-allocated
+    // m_resampleBuf12k member (no heap allocation on the hot 10 ms poll tick).
+    // 16kHz and 8kHz cover AirPods / Bluetooth HFP mics on macOS; they allocate a
+    // small temporary buffer (infrequent, Bluetooth-only path).
+    QByteArray btBuf12k;
+    const QByteArray *p12k;
+    switch (m_actualInputSampleRate) {
+    case 16000:
+        btBuf12k = resample16kTo12k(data48k);
+        p12k = &btBuf12k;
+        break;
+    case 8000:
+        btBuf12k = resample8kTo12k(data48k);
+        p12k = &btBuf12k;
+        break;
+    default:
+        p12k = &resample48kTo12k(data48k);
+        break;
+    }
+    const QByteArray &data12k = *p12k;
 
     // Convert Float32 to S16LE, apply gain, and buffer for frame-based emission
     const float *floatData = reinterpret_cast<const float *>(data12k.constData());
