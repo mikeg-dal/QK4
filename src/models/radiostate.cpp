@@ -217,6 +217,10 @@ void RadioState::setBalance(int mode, int offset) {
     AudioEffectsHandlers::setBalance(m_audioEffectsState, *this, mode, offset);
 }
 
+void RadioState::setAudioMix(int left, int right) {
+    AudioEffectsHandlers::setAudioMix(m_audioEffectsState, *this, left, right);
+}
+
 void RadioState::setMonitorLevel(int mode, int level) {
     AudioEffectsHandlers::setMonitorLevel(m_audioEffectsState, *this, mode, level);
 }

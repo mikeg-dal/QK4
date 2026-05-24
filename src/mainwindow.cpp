@@ -1156,6 +1156,9 @@ void MainWindow::onRadioReady() {
     // Start audio engine via AudioController
     m_audioController->startAudio(m_sideControlPanel->volume() / 100.0f, m_sideControlPanel->subVolume() / 100.0f,
                                   RadioSettings::instance()->micGain() / 100.0f);
+    if (RadioSettings::instance()->monoMixEnabled()) {
+        m_audioController->setMonoMixEnabled(true);
+    }
 
     // Most state is already included in the RDY; response from TcpClient.
     // Only query commands NOT included in RDY dump:

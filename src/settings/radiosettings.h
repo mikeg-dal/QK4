@@ -95,6 +95,8 @@ public:
     // Audio output (speaker) settings
     QString speakerDevice() const;
     void setSpeakerDevice(const QString &deviceId);
+    bool monoMixEnabled() const;
+    void setMonoMixEnabled(bool enabled);
 
     // CAT Server settings (local TCP server for external apps)
     bool catServerEnabled() const;
@@ -157,6 +159,7 @@ signals:
     void micGainChanged(int value);
     void micDeviceChanged(const QString &deviceId);
     void speakerDeviceChanged(const QString &deviceId);
+    void monoMixEnabledChanged(bool enabled);
     void catServerEnabledChanged(bool enabled);
     void catServerPortChanged(quint16 port);
     void macrosChanged();

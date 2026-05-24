@@ -706,22 +706,31 @@ const QString &lineEdit() {
 }
 
 const QString &checkBox() {
-    static const QString s = QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
-                                     "QCheckBox::indicator { width: %4px; height: %4px; }")
-                                 .arg(Colors::TextWhite)
-                                 .arg(Dimensions::FontSizePopup)
-                                 .arg(Dimensions::BorderRadiusLarge)
-                                 .arg(Dimensions::CheckboxSize);
+    static const QString s =
+        QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                "QCheckBox::indicator { width: %4px; height: %4px; border: 2px solid %5; "
+                "                       background-color: %6; border-radius: 3px; }"
+                "QCheckBox::indicator:hover { border-color: %7; }"
+                "QCheckBox::indicator:checked { background-color: %7; border-color: %7; }")
+            .arg(Colors::TextWhite)
+            .arg(Dimensions::FontSizePopup)
+            .arg(Dimensions::BorderRadiusLarge)
+            .arg(Dimensions::CheckboxSize)
+            .arg(Colors::BorderNormal, Colors::DarkBackground, Colors::AccentAmber);
     return s;
 }
 
 const QString &checkBoxDisabled() {
-    static const QString s = QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
-                                     "QCheckBox::indicator { width: %4px; height: %4px; }")
-                                 .arg(Colors::TextGray)
-                                 .arg(Dimensions::FontSizePopup)
-                                 .arg(Dimensions::BorderRadiusLarge)
-                                 .arg(Dimensions::CheckboxSize);
+    static const QString s =
+        QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                "QCheckBox::indicator { width: %4px; height: %4px; border: 2px solid %5; "
+                "                       background-color: %6; border-radius: 3px; }"
+                "QCheckBox::indicator:checked { background-color: %5; border-color: %5; }")
+            .arg(Colors::TextGray)
+            .arg(Dimensions::FontSizePopup)
+            .arg(Dimensions::BorderRadiusLarge)
+            .arg(Dimensions::CheckboxSize)
+            .arg(Colors::InactiveGray, Colors::DarkBackground);
     return s;
 }
 

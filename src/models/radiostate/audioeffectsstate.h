@@ -108,6 +108,7 @@ void handleBL(AudioEffectsState &state, RadioState &owner, const QString &cmd);
 void handleMX(AudioEffectsState &state, RadioState &owner, const QString &cmd);
 
 // Optimistic setters (radio does not echo most of these).
+void setAudioMix(AudioEffectsState &state, RadioState &owner, int left, int right);
 void setBalance(AudioEffectsState &state, RadioState &owner, int mode, int offset);
 void setMonitorLevel(AudioEffectsState &state, RadioState &owner, int mode, int level);
 void setRxEqBand(AudioEffectsState &state, RadioState &owner, int index, int dB);

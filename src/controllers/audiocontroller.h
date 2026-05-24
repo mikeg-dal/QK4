@@ -2,6 +2,7 @@
 #define AUDIOCONTROLLER_H
 
 #include <QObject>
+#include <QString>
 #include <QThread>
 
 class AudioEngine;
@@ -41,12 +42,31 @@ public:
     bool isPttActive() const;
 
     // Volume/mix controls (atomic — safe from any thread)
+    static QString audioMixCommand(int left, int right) {
+        auto component = [](int value) -> QString {
+            switch (value) {
+            case 0:
+                return QStringLiteral("A");
+            case 1:
+                return QStringLiteral("B");
+            case 2:
+                return QStringLiteral("AB");
+            case 3:
+                return QStringLiteral("-A");
+            }
+            return QStringLiteral("A");
+        };
+
+        return QStringLiteral("MX%1.%2;").arg(component(left), component(right));
+    }
+    static QString monoMixCommand(bool enabled) { return enabled ? QStringLiteral("MXAB.AB;") : audioMixCommand(0, 1); }
     void setMainVolume(float vol);
     void setSubVolume(float vol);
     void setBalanceMode(int mode);
     void setBalanceOffset(int offset);
     void setAudioMix(int left, int right);
     void setSubMuted(bool muted);
+    void setMonoMixEnabled(bool enabled);
 
     // Device selection + mic gain — used by Options dialog tabs. Each dispatches via
     // QMetaObject::invokeMethod to the audio thread internally. Task-level API only —
@@ -65,6 +85,8 @@ private:
     AudioEngine *m_audioEngine;
     QThread *m_audioThread = nullptr;
     OpusDecoder *m_opusDecoder;
+    int m_restoreMixLeft = -1;
+    int m_restoreMixRight = -1;
 };
 
 #endif // AUDIOCONTROLLER_H
