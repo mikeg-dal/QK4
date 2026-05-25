@@ -371,6 +371,12 @@ void PopupManager::wireDisplayPopup() {
     // DisplayPopup-generated raw CAT commands → connection controller.
     connect(m_displayPopup, &DisplayPopupWidget::catCommandRequested, this,
             [this](const QString &cmd) { m_connection->sendCAT(cmd); });
+    connect(m_displayPopup, &DisplayPopupWidget::cursorModeChanged, this, [this](bool vfoB, int mode) {
+        if (vfoB)
+            m_radioState->setVfoBCursor(mode);
+        else
+            m_radioState->setVfoACursor(mode);
+    });
 
     // Averaging control +/- → local only (our smoothing differs from K4's).
     connect(m_displayPopup, &DisplayPopupWidget::averagingIncrementRequested, this, [this]() {

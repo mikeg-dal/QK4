@@ -1551,6 +1551,22 @@ private slots:
         QCOMPARE(rs.vfoBCursor(), 3);
     }
 
+    void testVfoACursorOptimisticSetter() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::vfoACursorChanged);
+        rs.setVfoACursor(1);
+        QCOMPARE(rs.vfoACursor(), 1);
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void testVfoBCursorOptimisticSetter() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::vfoBCursorChanged);
+        rs.setVfoBCursor(0);
+        QCOMPARE(rs.vfoBCursor(), 0);
+        QCOMPARE(spy.count(), 1);
+    }
+
     void testVfoACursorOutOfRange() {
         RadioState rs;
         rs.parseCATCommand("#VFA2;");

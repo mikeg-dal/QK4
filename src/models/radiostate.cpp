@@ -287,6 +287,14 @@ void RadioState::setAveraging(int value) {
     SpectrumDisplayHandlers::setAveraging(m_spectrumDisplayState, *this, value);
 }
 
+void RadioState::setVfoACursor(int mode) {
+    SpectrumDisplayHandlers::setVfoACursor(m_spectrumDisplayState, *this, mode);
+}
+
+void RadioState::setVfoBCursor(int mode) {
+    SpectrumDisplayHandlers::setVfoBCursor(m_spectrumDisplayState, *this, mode);
+}
+
 void RadioState::setRefLevel(int level) {
     SpectrumDisplayHandlers::setRefLevel(m_spectrumDisplayState, *this, level);
 }

@@ -88,6 +88,7 @@ signals:
     // Pan mode changed (for MainWindow to update panadapter display)
     // K4 doesn't echo #DPM commands, so we notify directly
     void dualPanModeChanged(int mode);
+    void cursorModeChanged(bool vfoB, int mode);
 
 protected:
     QSize contentSize() const override;
@@ -112,6 +113,7 @@ private:
     void updateMenuButtonLabels();
     void onMenuItemClicked(MenuItem item);
     void onMenuItemRightClicked(MenuItem item);
+    void toggleCursorMode(bool vfoB);
 
     // Helper to get command prefix based on LCD/EXT selection
     QString getCommandPrefix() const;

@@ -489,8 +489,7 @@ void DisplayPopupWidget::onMenuItemClicked(MenuItem item) {
         break;
     }
     case CursAB:
-        // Cycle VFO A cursor mode
-        emit catCommandRequested("#VFA/;");
+        toggleCursorMode(false);
         break;
     default:
         break;
@@ -535,11 +534,23 @@ void DisplayPopupWidget::onMenuItemRightClicked(MenuItem item) {
         break;
     }
     case CursAB:
-        // Cycle VFO B cursor mode
-        emit catCommandRequested("#VFB/;");
+        toggleCursorMode(true);
         break;
     default:
         break;
+    }
+}
+
+void DisplayPopupWidget::toggleCursorMode(bool vfoB) {
+    const int currentMode = vfoB ? m_vfbMode : m_vfaMode;
+    const int newMode = (currentMode == 1 || currentMode == 2) ? 0 : 1;
+    emit catCommandRequested(QString("#VF%1%2;").arg(vfoB ? "B" : "A").arg(newMode));
+    emit cursorModeChanged(vfoB, newMode);
+
+    if (vfoB) {
+        setVfoBCursor(newMode);
+    } else {
+        setVfoACursor(newMode);
     }
 }
 

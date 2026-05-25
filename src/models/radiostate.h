@@ -356,6 +356,8 @@ public:
     bool freeze() const { return m_spectrumDisplayState.freeze > 0; }
     int vfoACursor() const { return m_spectrumDisplayState.vfoACursor; }
     int vfoBCursor() const { return m_spectrumDisplayState.vfoBCursor; }
+    void setVfoACursor(int mode);
+    void setVfoBCursor(int mode);
     bool autoRefLevel() const { return m_spectrumDisplayState.autoRefLevel > 0; }
     int ddcNbMode() const { return m_spectrumDisplayState.ddcNbMode; }
     int ddcNbLevel() const { return m_spectrumDisplayState.ddcNbLevel; }

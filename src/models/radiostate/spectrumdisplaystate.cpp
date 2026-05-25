@@ -389,4 +389,20 @@ void setAveraging(SpectrumDisplayState &state, RadioState &owner, int value) {
     }
 }
 
+void setVfoACursor(SpectrumDisplayState &state, RadioState &owner, int mode) {
+    mode = qBound(0, mode, 3);
+    if (state.vfoACursor != mode) {
+        state.vfoACursor = mode;
+        emit owner.vfoACursorChanged(mode);
+    }
+}
+
+void setVfoBCursor(SpectrumDisplayState &state, RadioState &owner, int mode) {
+    mode = qBound(0, mode, 3);
+    if (state.vfoBCursor != mode) {
+        state.vfoBCursor = mode;
+        emit owner.vfoBCursorChanged(mode);
+    }
+}
+
 } // namespace SpectrumDisplayHandlers

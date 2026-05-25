@@ -106,6 +106,20 @@ target_include_directories(test_radioutils PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_radioutils Qt6::Core Qt6::Test)
 add_test(NAME RadioUtilsTests COMMAND test_radioutils)
 
+# Display popup widget behavior tests
+add_executable(test_displaypopupwidget test_displaypopupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/displaypopupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/k4popupbase.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/controlgroupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/displaymenubutton.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/togglegroupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
+)
+target_include_directories(test_displaypopupwidget PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_displaypopupwidget Qt6::Core Qt6::Widgets Qt6::Test)
+add_test(NAME DisplayPopupWidgetTests COMMAND test_displaypopupwidget)
+
 # Protocol packet parsing tests
 add_executable(test_protocol test_protocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/protocol.cpp

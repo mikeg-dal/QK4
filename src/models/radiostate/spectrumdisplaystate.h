@@ -92,6 +92,8 @@ void setMiniPanBEnabled(SpectrumDisplayState &state, RadioState &owner, bool ena
 void setWaterfallHeight(SpectrumDisplayState &state, RadioState &owner, int percent);
 void setWaterfallHeightExt(SpectrumDisplayState &state, RadioState &owner, int percent);
 void setAveraging(SpectrumDisplayState &state, RadioState &owner, int value);
+void setVfoACursor(SpectrumDisplayState &state, RadioState &owner, int mode);
+void setVfoBCursor(SpectrumDisplayState &state, RadioState &owner, int mode);
 
 } // namespace SpectrumDisplayHandlers
 
