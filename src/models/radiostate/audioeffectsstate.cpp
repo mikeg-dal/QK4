@@ -425,6 +425,16 @@ void handleMX(AudioEffectsState &state, RadioState &owner, const QString &cmd) {
 // Optimistic setters
 // ---------------------------------------------------------------------------
 
+void setAudioMix(AudioEffectsState &state, RadioState &owner, int left, int right) {
+    left = qBound(0, left, 3);
+    right = qBound(0, right, 3);
+    if (state.audioMixLeft != left || state.audioMixRight != right) {
+        state.audioMixLeft = left;
+        state.audioMixRight = right;
+        emit owner.audioMixChanged(left, right);
+    }
+}
+
 void setBalance(AudioEffectsState &state, RadioState &owner, int mode, int offset) {
     mode = qBound(0, mode, 1);
     offset = qBound(-50, offset, 50);

@@ -2,6 +2,7 @@
 #define AUDIOOUTPUTPAGE_H
 
 #include <QWidget>
+#include <QCheckBox>
 #include <QComboBox>
 
 class AudioController;
@@ -20,12 +21,14 @@ public:
 
 private slots:
     void onSpeakerDeviceChanged(int index);
+    void onMonoMixChanged(bool enabled);
 
 private:
     void populateSpeakerDevices();
 
     AudioController *m_audioController;
     QComboBox *m_speakerDeviceCombo = nullptr;
+    QCheckBox *m_monoMixCheckBox = nullptr;
 };
 
 #endif // AUDIOOUTPUTPAGE_H

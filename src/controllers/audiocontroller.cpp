@@ -79,6 +79,10 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
         }
     });
     connect(m_radioState, &RadioState::audioMixChanged, this, [this](int left, int right) {
+        if (!(left == AudioEngine::MixAB && right == AudioEngine::MixAB)) {
+            m_restoreMixLeft = left;
+            m_restoreMixRight = right;
+        }
         if (m_audioEngine) {
             m_audioEngine->setAudioMix(left, right);
         }
@@ -178,6 +182,31 @@ void AudioController::setAudioMix(int left, int right) {
 void AudioController::setSubMuted(bool muted) {
     if (m_audioEngine)
         m_audioEngine->setSubMuted(muted);
+}
+
+void AudioController::setMonoMixEnabled(bool enabled) {
+    if (m_connectionController && m_connectionController->isConnected()) {
+        int left = AudioEngine::MixAB;
+        int right = AudioEngine::MixAB;
+
+        if (enabled) {
+            if (m_radioState && !(m_radioState->audioMixLeft() == AudioEngine::MixAB &&
+                                  m_radioState->audioMixRight() == AudioEngine::MixAB)) {
+                m_restoreMixLeft = m_radioState->audioMixLeft();
+                m_restoreMixRight = m_radioState->audioMixRight();
+            }
+        } else if (m_restoreMixLeft >= 0 && m_restoreMixRight >= 0) {
+            left = m_restoreMixLeft;
+            right = m_restoreMixRight;
+        } else {
+            left = AudioEngine::MixA;
+            right = AudioEngine::MixB;
+        }
+
+        m_connectionController->sendCAT(audioMixCommand(left, right));
+        if (m_radioState)
+            m_radioState->setAudioMix(left, right);
+    }
 }
 
 void AudioController::setMicDevice(const QString &deviceId) {

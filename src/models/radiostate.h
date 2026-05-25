@@ -278,6 +278,7 @@ public:
     // Audio mix routing (MX command) - how main/sub maps to L/R when SUB is on
     int audioMixLeft() const { return m_audioEffectsState.audioMixLeft; }   // MixSource left
     int audioMixRight() const { return m_audioEffectsState.audioMixRight; } // MixSource right
+    void setAudioMix(int left, int right);
 
     // Audio balance (BL command) - MAIN/SUB balance
     int balanceMode() const { return m_audioEffectsState.balanceMode; }     // 0=NOR, 1=BAL

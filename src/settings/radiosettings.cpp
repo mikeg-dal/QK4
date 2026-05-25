@@ -207,6 +207,19 @@ void RadioSettings::setSpeakerDevice(const QString &deviceId) {
     }
 }
 
+bool RadioSettings::monoMixEnabled() const {
+    return m_settings.value("audio/monoMixEnabled", false).toBool();
+}
+
+void RadioSettings::setMonoMixEnabled(bool enabled) {
+    bool oldValue = m_settings.value("audio/monoMixEnabled", false).toBool();
+    if (oldValue != enabled) {
+        m_settings.setValue("audio/monoMixEnabled", enabled);
+        m_settings.sync();
+        emit monoMixEnabledChanged(enabled);
+    }
+}
+
 bool RadioSettings::catServerEnabled() const {
     return m_catServerEnabled;
 }

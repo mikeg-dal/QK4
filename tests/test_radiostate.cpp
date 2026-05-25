@@ -2097,6 +2097,19 @@ private slots:
         QCOMPARE(spy.count(), 0);
     }
 
+    void testAudioMixOptimisticSetter() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::audioMixChanged);
+
+        rs.setAudioMix(2, 2);
+
+        QCOMPARE(rs.audioMixLeft(), 2);
+        QCOMPARE(rs.audioMixRight(), 2);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 2);
+        QCOMPARE(spy.at(0).at(1).toInt(), 2);
+    }
+
     // =========================================================================
     // Phase 0.1 Backfill — VoxEssb subsystem
     // Handlers: VX (VOX on/off per mode C/V/D), VG (VOX gain per V/D),

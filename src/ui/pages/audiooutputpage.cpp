@@ -40,15 +40,26 @@ AudioOutputPage::AudioOutputPage(AudioController *audioController, QWidget *pare
             &AudioOutputPage::onSpeakerDeviceChanged);
     layout->addWidget(m_speakerDeviceCombo);
 
-    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
+    auto *deviceHelpLabel = new QLabel("Select the audio output device for radio receive audio. "
+                                       "Volume is controlled by the MAIN and SUB sliders on the side panel.",
+                                       this);
+    deviceHelpLabel->setStyleSheet(K4Styles::Dialog::helpText());
+    deviceHelpLabel->setWordWrap(true);
+    layout->addWidget(deviceHelpLabel);
 
-    // Help text
-    auto *helpLabel = new QLabel("Select the audio output device for radio receive audio. "
-                                 "Volume is controlled by the MAIN and SUB sliders on the side panel.",
+    layout->addSpacing(K4Styles::Dimensions::PaddingLarge);
+
+    m_monoMixCheckBox = new QCheckBox("Force mono mix when Sub RX is on", this);
+    m_monoMixCheckBox->setStyleSheet(K4Styles::Dialog::checkBox());
+    m_monoMixCheckBox->setChecked(RadioSettings::instance()->monoMixEnabled());
+    connect(m_monoMixCheckBox, &QCheckBox::toggled, this, &AudioOutputPage::onMonoMixChanged);
+    layout->addWidget(m_monoMixCheckBox);
+
+    auto *monoMixHelpLabel = new QLabel("Plays Main RX and Sub RX together instead of separating Main RX to the left and Sub RX to the right.",
                                  this);
-    helpLabel->setStyleSheet(K4Styles::Dialog::helpText());
-    helpLabel->setWordWrap(true);
-    layout->addWidget(helpLabel);
+    monoMixHelpLabel->setStyleSheet(K4Styles::Dialog::helpText());
+    monoMixHelpLabel->setWordWrap(true);
+    layout->addWidget(monoMixHelpLabel);
 
     layout->addStretch();
 }
@@ -89,5 +100,13 @@ void AudioOutputPage::onSpeakerDeviceChanged(int index) {
 
     if (m_audioController) {
         m_audioController->setOutputDevice(deviceId);
+    }
+}
+
+void AudioOutputPage::onMonoMixChanged(bool enabled) {
+    RadioSettings::instance()->setMonoMixEnabled(enabled);
+
+    if (m_audioController) {
+        m_audioController->setMonoMixEnabled(enabled);
     }
 }

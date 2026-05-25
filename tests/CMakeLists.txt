@@ -135,6 +135,20 @@ target_include_directories(test_catserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_catserver Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME CatServerTests COMMAND test_catserver)
 
+# RadioSettings persistence tests
+add_executable(test_radiosettings test_radiosettings.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
+)
+target_include_directories(test_radiosettings PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_radiosettings Qt6::Core Qt6::Test)
+add_test(NAME RadioSettingsTests COMMAND test_radiosettings)
+
+# AudioController pure command-selection tests
+add_executable(test_audiocontroller test_audiocontroller.cpp)
+target_include_directories(test_audiocontroller PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_audiocontroller Qt6::Core Qt6::Test)
+add_test(NAME AudioControllerTests COMMAND test_audiocontroller)
+
 # DX Cluster spot parsing tests
 add_executable(test_dxcluster test_dxcluster.cpp
     ${CMAKE_SOURCE_DIR}/src/network/dxclusterclient.cpp
