@@ -228,6 +228,36 @@ target_include_directories(test_kpodplususbworker PRIVATE
 target_link_libraries(test_kpodplususbworker Qt6::Core Qt6::Test ${LIBUSB_LIBRARIES})
 add_test(NAME KpodPlusUsbWorkerTests COMMAND test_kpodplususbworker)
 
+# RC-28 HID worker — pure-logic report decoder tests. hidapi is linked because
+# the worker TU includes <hidapi/hidapi.h>; on Linux the udev hotplug worker and
+# libudev are pulled in the same way the main app links them.
+add_executable(test_rc28hidworker test_rc28hidworker.cpp
+    ${CMAKE_SOURCE_DIR}/src/hardware/rc28hidworker.cpp
+    ${CMAKE_SOURCE_DIR}/src/hardware/rc28device.cpp
+)
+if(UNIX AND NOT APPLE)
+    target_sources(test_rc28hidworker PRIVATE ${CMAKE_SOURCE_DIR}/src/hardware/kpodudevworker.cpp)
+endif()
+target_include_directories(test_rc28hidworker PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${HIDAPI_INCLUDE_DIRS}
+)
+target_link_libraries(test_rc28hidworker Qt6::Core Qt6::Test ${HIDAPI_LIBRARIES})
+if(UNIX AND NOT APPLE)
+    target_include_directories(test_rc28hidworker PRIVATE ${LIBUDEV_INCLUDE_DIRS})
+    target_link_libraries(test_rc28hidworker ${LIBUDEV_LIBRARIES})
+endif()
+add_test(NAME Rc28HidWorkerTests COMMAND test_rc28hidworker)
+
+# FlexControl serial worker — pure-logic token decoder tests.
+add_executable(test_flexcontrolserialworker test_flexcontrolserialworker.cpp
+    ${CMAKE_SOURCE_DIR}/src/hardware/flexcontrolserialworker.cpp
+    ${CMAKE_SOURCE_DIR}/src/hardware/flexcontroldevice.cpp
+)
+target_include_directories(test_flexcontrolserialworker PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_flexcontrolserialworker Qt6::Core Qt6::Test Qt6::SerialPort)
+add_test(NAME FlexControlSerialWorkerTests COMMAND test_flexcontrolserialworker)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

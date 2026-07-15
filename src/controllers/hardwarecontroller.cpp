@@ -5,6 +5,8 @@
 #include "hardware/iambickeyer.h"
 #include "hardware/kpoddevice.h"
 #include "hardware/kpodplusdevice.h"
+#include "hardware/rc28device.h"
+#include "hardware/flexcontroldevice.h"
 #include "models/radiostate.h"
 #include "settings/radiosettings.h"
 #include "utils/radioutils.h"
@@ -123,6 +125,98 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     });
 
     // =========================================================================
+    // Icom RC-28 USB tuning knob (HID). No rocker switch: F1 tap cycles the
+    // software tuning target (VFO A → VFO B → RIT/XIT) and drives the indicator
+    // LEDs; F1 hold, F2 and TX (tap/hold) are macro buttons. Reuses the K-POD
+    // tuning dispatch via onKpodEncoderRotatedWithRocker.
+    // =========================================================================
+    m_rc28Device = new Rc28Device(this);
+
+    connect(m_rc28Device, &Rc28Device::encoderRotated, this, [this](int ticks) {
+        if (!m_connectionController->isConnected())
+            return;
+        onKpodEncoderRotatedWithRocker(ticks, m_rc28Rocker);
+    });
+    connect(m_rc28Device, &Rc28Device::pollError, this, &HardwareController::onKpodPollError);
+    connect(m_rc28Device, &Rc28Device::buttonTapped, this, [this](int button) {
+        if (button == Rc28Device::ButtonF1) {
+            cycleTuningTarget(m_rc28Rocker, QStringLiteral("RC-28"), m_rc28Device);
+            return;
+        }
+        QString name = (button == Rc28Device::ButtonF2) ? QStringLiteral("F2") : QStringLiteral("TX");
+        emit macroRequested(QStringLiteral("RC-28.") + name + QStringLiteral("T"));
+    });
+    connect(m_rc28Device, &Rc28Device::buttonHeld, this, [this](int button) {
+        QString name = (button == Rc28Device::ButtonF1)   ? QStringLiteral("F1")
+                       : (button == Rc28Device::ButtonF2) ? QStringLiteral("F2")
+                                                          : QStringLiteral("TX");
+        emit macroRequested(QStringLiteral("RC-28.") + name + QStringLiteral("H"));
+    });
+
+    // Auto-start polling when enabled + detected. setLeds after startPolling is
+    // safe: both are queued to the worker thread in order, so the handle is open
+    // by the time the LED write runs.
+    auto startRc28 = [this]() {
+        if (RadioSettings::instance()->rc28Enabled() && m_rc28Device->isDetected() && !m_rc28Device->isPolling()) {
+            m_rc28Device->startPolling();
+            m_rc28Device->setLeds(m_rc28Rocker == 2, m_rc28Rocker == 0, m_rc28Rocker == 1);
+        }
+    };
+    connect(m_rc28Device, &Rc28Device::deviceConnected, this, startRc28);
+    connect(m_rc28Device, &Rc28Device::deviceInfoReady, this, startRc28);
+    connect(RadioSettings::instance(), &RadioSettings::rc28EnabledChanged, this, [this](bool enabled) {
+        if (enabled) {
+            if (m_rc28Device->isDetected() && !m_rc28Device->isPolling()) {
+                m_rc28Device->startPolling();
+                m_rc28Device->setLeds(m_rc28Rocker == 2, m_rc28Rocker == 0, m_rc28Rocker == 1);
+            }
+        } else {
+            m_rc28Device->stopPolling();
+        }
+    });
+
+    // =========================================================================
+    // FlexRadio FlexControl USB tuning knob (serial CDC). No rocker: AUX1
+    // short-tap cycles the software tuning target; every other button action is
+    // a macro. Same K-POD tuning dispatch.
+    // =========================================================================
+    m_flexControlDevice = new FlexControlDevice(this);
+
+    connect(m_flexControlDevice, &FlexControlDevice::encoderRotated, this, [this](int ticks) {
+        if (!m_connectionController->isConnected())
+            return;
+        onKpodEncoderRotatedWithRocker(ticks, m_flexRocker);
+    });
+    connect(m_flexControlDevice, &FlexControlDevice::pollError, this, &HardwareController::onKpodPollError);
+    connect(m_flexControlDevice, &FlexControlDevice::buttonPressed, this, [this](int button, int pressType) {
+        if (button == 1 && pressType == FlexControlDevice::PressShort) {
+            cycleTuningTarget(m_flexRocker, QStringLiteral("FlexControl"), nullptr);
+            return;
+        }
+        QString type = (pressType == FlexControlDevice::PressShort)    ? QStringLiteral("S")
+                       : (pressType == FlexControlDevice::PressDouble) ? QStringLiteral("C")
+                                                                       : QStringLiteral("L");
+        emit macroRequested(QStringLiteral("FlexControl.") + QString::number(button) + type);
+    });
+
+    auto startFlex = [this]() {
+        if (RadioSettings::instance()->flexControlEnabled() && m_flexControlDevice->isDetected() &&
+            !m_flexControlDevice->isPolling()) {
+            m_flexControlDevice->startPolling();
+        }
+    };
+    connect(m_flexControlDevice, &FlexControlDevice::deviceConnected, this, startFlex);
+    connect(m_flexControlDevice, &FlexControlDevice::deviceInfoReady, this, startFlex);
+    connect(RadioSettings::instance(), &RadioSettings::flexControlEnabledChanged, this, [this](bool enabled) {
+        if (enabled) {
+            if (m_flexControlDevice->isDetected() && !m_flexControlDevice->isPolling())
+                m_flexControlDevice->startPolling();
+        } else {
+            m_flexControlDevice->stopPolling();
+        }
+    });
+
+    // =========================================================================
     // HaliKey CW paddle device — device type injected here so HalikeyDevice
     // itself doesn't reach into RadioSettings (Phase 3 layering cleanup).
     // =========================================================================
@@ -230,6 +324,34 @@ HardwareController::~HardwareController() {
     if (m_kpodDevice) {
         m_kpodDevice->stopPolling();
     }
+
+    if (m_rc28Device) {
+        m_rc28Device->stopPolling();
+    }
+
+    if (m_flexControlDevice) {
+        m_flexControlDevice->stopPolling();
+    }
+}
+
+QString HardwareController::tuningTargetLabel(int rocker) {
+    switch (rocker) {
+    case 0:
+        return QStringLiteral("VFO B");
+    case 1:
+        return QStringLiteral("RIT/XIT");
+    case 2:
+    default:
+        return QStringLiteral("VFO A");
+    }
+}
+
+void HardwareController::cycleTuningTarget(int &rocker, const QString &deviceName, Rc28Device *rc28) {
+    // Cycle VFO A (2) → VFO B (0) → RIT/XIT (1) → VFO A (2).
+    rocker = (rocker == 2) ? 0 : (rocker == 0) ? 1 : 2;
+    if (rc28)
+        rc28->setLeds(rocker == 2, rocker == 0, rocker == 1);
+    emit hardwareNotice(QStringLiteral("%1: %2").arg(deviceName, tuningTargetLabel(rocker)));
 }
 
 // =============================================================================
