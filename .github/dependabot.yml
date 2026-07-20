@@ -4,6 +4,11 @@
 # Convention: actions are pinned to full commit SHAs with NO trailing
 # version comment. Update PRs bump the SHA but would leave a comment
 # stale and misleading; the new version is visible in the PR title.
+#
+# All action bumps are grouped into a single PR so multi-step actions
+# (e.g. codeql-action/init + codeql-action/analyze) always upgrade
+# together — a split leaves the steps on mismatched versions and CodeQL
+# fails with a configuration error.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -11,3 +16,6 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
