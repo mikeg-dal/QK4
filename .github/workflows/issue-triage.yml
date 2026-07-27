@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       # Skip the (quota-consuming) agent when a single author or the repo
       # as a whole is opening issues faster than plausible good faith.
@@ -69,7 +69,7 @@ jobs:
 
       - name: Run triage agent
         if: steps.gate.outputs.skip != 'true'
-        uses: anthropics/claude-code-action@af0559ee4f514d1ef21826982bed13f7edc3c35e
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
