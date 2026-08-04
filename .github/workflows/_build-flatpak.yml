@@ -1,0 +1,52 @@
+name: _build-flatpak
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version string stamped into the binary and the bundle filename'
+        required: true
+        type: string
+      retention-days:
+        description: 'Artifact retention in days'
+        required: false
+        type: number
+        default: 14
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.10
+      options: --privileged
+    outputs:
+      artifact-name: ${{ steps.names.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Resolve artifact name
+        id: names
+        run: echo "artifact=QK4-linux-${{ inputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb
+        with:
+          manifest-path: flatpak/io.github.mikeg_dal.QK4.json
+          bundle: QK4-${{ inputs.version }}-linux-x86_64.flatpak
+          upload-artifact: false
+          cache-key: flatpak-builder-${{ hashFiles('flatpak/io.github.mikeg_dal.QK4.json') }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.names.outputs.artifact }}
+          path: QK4-${{ inputs.version }}-linux-x86_64.flatpak
+          retention-days: ${{ inputs.retention-days }}

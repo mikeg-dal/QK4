@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=QK4
+Comment=Remote control software for Elecraft K4 radio
+Exec=qk4
+Type=Application
+Categories=AudioVideo;Audio;HamRadio;
+Icon=io.github.mikeg_dal.QK4
+Terminal=false

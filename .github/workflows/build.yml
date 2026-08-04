@@ -6,7 +6,7 @@ run-name: >-
       || format('Build {0} (on demand)', github.ref_name) }}
 
 # Packaging entry point for untagged builds. Produces the same signed, notarized,
-# release-equivalent artifacts a tag would ship — on one run page, for all three
+# release-equivalent artifacts a tag would ship — on one run page, for all four
 # platforms — without creating a GitHub Release or touching gh-pages.
 #
 # Automatic on push to main; on demand for any branch via workflow_dispatch.
@@ -75,9 +75,16 @@ jobs:
       version: ${{ needs.version.outputs.version }}
     secrets: inherit
 
+  flatpak:
+    needs: version
+    uses: ./.github/workflows/_build-flatpak.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+    secrets: inherit
+
   summary:
     name: Artifact summary
-    needs: [version, macos, windows, raspberry-pi]
+    needs: [version, macos, windows, raspberry-pi, flatpak]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -91,6 +98,7 @@ jobs:
             echo "| macOS | \`${{ needs.macos.outputs.artifact-name }}\` |"
             echo "| Windows | \`${{ needs.windows.outputs.artifact-name }}\` |"
             echo "| Raspberry Pi | \`${{ needs.raspberry-pi.outputs.artifact-name }}\` |"
+            echo "| Linux (Flatpak) | \`${{ needs.flatpak.outputs.artifact-name }}\` |"
             echo
             echo "Signed and notarized; equivalent to what a tag would ship."
             echo "No GitHub Release created, no gh-pages change."

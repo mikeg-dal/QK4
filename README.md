@@ -13,6 +13,7 @@ A cross-platform desktop application for remote control of Elecraft K4 radios ov
 | macOS | 14 (Sonoma) | Apple Silicon (M1/M2/M3/M4) |
 | Windows | 11 | x64 |
 | Linux | Debian Trixie / Ubuntu 24.04+ | ARM64 (Raspberry Pi 4/5) |
+| Linux (Flatpak) | Any (via Flatpak) | x86_64 |
 
 ## Features
 
@@ -42,6 +43,30 @@ Pre-built releases are available on the [Releases](https://github.com/mikeg-dal/
 - Raspberry Pi 4 or 5 with a desktop environment (X11 or Wayland)
 - Debian Trixie or Ubuntu 24.04+
 - **First run requires `sudo`** — the launcher (`run.sh`) installs a udev rule to grant non-root access to the Elecraft KPOD and KPOD+ USB devices. Without this rule, the Linux kernel restricts access to `/dev/hidraw*` and USB device nodes. After the first run, `sudo` is no longer needed. If you don't have a KPOD or KPOD+, `sudo` is not required.
+
+
+### Flatpak
+```bash
+# Install Flatpak (if not already installed)
+sudo apt install flatpak
+
+# Add the Flathub repository
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+# Install the QK4 Flatpak
+flatpak install QK4-{version}-flatpak-x86_64.flatpak
+
+# Install the udev rules
+sudo curl -o /etc/udev/rules.d/99-kpod.rules https://raw.githubusercontent.com/mikeg-dal/QK4/main/resources/99-kpod.rules
+sudo chmod 644 /etc/udev/rules.d/99-kpod.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+# Run QK4
+flatpak run io.github.mikeg_dal.QK4
+```
+
+After installation, you can also launch QK4 from your application menu as `QK4`.
 
 ## Building from Source
 
@@ -116,6 +141,35 @@ cmake --build build -j$(nproc)
 # Run
 ./build/QK4
 ```
+
+### Flatpak
+```bash
+# Install Flatpak (if not already installed)
+sudo apt install flatpak
+
+# Add the Flathub repository
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+# Install flatpak-builder and the KDE runtime
+sudo apt install flatpak-builder
+flatpak install org.kde.Platform//6.10
+flatpak install org.kde.Sdk//6.10
+
+# Clone and build
+git clone https://github.com/mikeg-dal/QK4.git
+cd QK4
+flatpak-builder --user --install build-dir flatpak/io.github.mikeg_dal.QK4.json
+
+# Install the udev rules
+sudo curl -o /etc/udev/rules.d/99-kpod.rules https://raw.githubusercontent.com/mikeg-dal/QK4/main/resources/99-kpod.rules
+sudo chmod 644 /etc/udev/rules.d/99-kpod.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+# Run QK4
+flatpak run io.github.mikeg_dal.QK4
+```
+**Note:** You do not need to install any of the required dependencies mentioned in [Requirements](#requirements) to build the Flatpak, as all build dependencies are included in the Flatpak build manifest and will be installed automatically.
 
 ## Testing
 

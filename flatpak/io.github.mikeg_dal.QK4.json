@@ -1,0 +1,77 @@
+{
+  "id": "io.github.mikeg_dal.QK4",
+  "runtime": "org.kde.Platform",
+  "runtime-version": "6.10",
+  "sdk": "org.kde.Sdk",
+  "command": "qk4",
+  "modules": [
+    {
+      "name": "opus",
+      "buildsystem": "meson",
+      "sources": [
+        {
+          "url": "https://downloads.xiph.org/releases/opus/opus-1.6.1.tar.gz",
+          "sha256": "6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1",
+          "type": "archive"
+        }
+      ]
+    },
+    {
+      "name": "hidapi",
+      "buildsystem": "cmake-ninja",
+      "sources": [
+        {
+          "url": "https://github.com/libusb/hidapi/archive/refs/tags/hidapi-0.15.0.tar.gz",
+          "sha256": "5d84dec684c27b97b921d2f3b73218cb773cf4ea915caee317ac8fc73cef8136",
+          "type": "archive"
+        }
+      ]
+    },
+    {
+      "name": "qk4",
+      "buildsystem": "simple",
+      "build-options": {
+        "env": {
+          "PKG_CONFIG_PATH": "/app/lib64/pkgconfig:/app/share/pkgconfig",
+          "CMAKE_PREFIX_PATH": "/app",
+          "CMAKE_LIBRARY_PATH": "/app/lib64",
+          "CMAKE_INCLUDE_PATH": "/app/include",
+          "LD_LIBRARY_PATH": "/app/lib64",
+          "LIBRARY_PATH": "/app/lib64",
+          "QK4_VERSION_FULL": "main"
+        }
+      },
+      "sources": [
+        {
+          "url": "https://github.com/mikeg-dal/QK4.git",
+          "type": "git",
+          "branch": "main"
+        },
+        {
+          "type": "file",
+          "path": "io.github.mikeg_dal.QK4.desktop"
+        },
+        {
+          "type": "file",
+          "path": "../resources/qk4.png"
+        }
+      ],
+      "build-commands": [
+        "cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_RPATH=/app/lib64 -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON -DQK4_VERSION_FULL=${QK4_VERSION_FULL}",
+        "cmake --build build -j$(nproc)",
+        "install -Dm755 build/QK4 /app/bin/qk4",
+        "install -Dm644 io.github.mikeg_dal.QK4.desktop /app/share/applications/io.github.mikeg_dal.QK4.desktop",
+        "install -Dm644 qk4.png /app/share/icons/hicolor/128x128/apps/io.github.mikeg_dal.QK4.png"
+      ]
+    }
+  ],
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--socket=pulseaudio",
+    "--device=all",
+    "--env=PIPEWIRE_QUANTUM=64/48000"
+  ]
+}
