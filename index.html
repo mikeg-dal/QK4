@@ -73,6 +73,16 @@
           <span class="btn">Download</span>
           <p class="hash" id="hash-raspberry-pi"></p>
         </a>
+
+        <!-- Hidden until releases.json carries a "linux" asset. -->
+        <a id="card-linux" class="card" href="#" hidden>
+          <div class="card-icon">&#9881;</div>
+          <h2>Linux</h2>
+          <p class="filename" id="fn-linux"></p>
+          <p class="filesize" id="sz-linux"></p>
+          <span class="btn">Download</span>
+          <p class="hash" id="hash-linux"></p>
+        </a>
       </div>
     </div>
 
@@ -106,7 +116,7 @@
               <td class="req-platform">Windows</td>
               <td>
                 Windows 11, x64<br>
-                <span class="req-detail">VC++ Redistributable 2019+</span>
+                <span class="req-detail">No prerequisites &mdash; runtime libraries are bundled.</span>
               </td>
             </tr>
             <tr>
@@ -114,6 +124,13 @@
               <td>
                 Pi 4 or 5, ARM64<br>
                 <span class="req-detail">Debian Trixie</span>
+              </td>
+            </tr>
+            <tr data-platform="linux" hidden>
+              <td class="req-platform">Linux</td>
+              <td>
+                x86_64, any distribution<br>
+                <span class="req-detail">Requires Flatpak and the KDE 6.10 runtime.</span>
               </td>
             </tr>
           </tbody>
@@ -135,7 +152,7 @@
               <td class="req-platform">Windows</td>
               <td>
                 Extract the ZIP and run <code>QK4.exe</code>.<br>
-                <span class="req-detail">Install <a href="https://aka.ms/vs/17/release/vc_redist.x64.exe">VC++ Redistributable</a> if prompted.</span>
+                <span class="req-detail">Nothing to install &mdash; the Visual C++ runtime ships inside the package.</span>
               </td>
             </tr>
             <tr>
@@ -143,6 +160,15 @@
               <td>
                 Extract the tarball and run <code>./QK4/run.sh</code>.<br>
                 <span class="req-detail">First run requires <code>sudo</code> to install a udev rule for KPOD USB access. After that, sudo is not needed.</span>
+              </td>
+            </tr>
+            <tr data-platform="linux" hidden>
+              <td class="req-platform">Linux</td>
+              <td>
+                Install with <code>flatpak install --bundle &lt;file&gt;.flatpak</code>, then run
+                <code>flatpak run io.github.mikeg_dal.QK4</code>.<br>
+                <span class="req-detail">Add Flathub and the KDE runtime first if you do not have them:
+                <code>flatpak install flathub org.kde.Platform//6.10</code></span>
               </td>
             </tr>
           </tbody>
@@ -189,17 +215,31 @@
         document.getElementById('release-notes-link').href =
           'https://github.com/mikeg-dal/QK4/releases/tag/' + rel.tag;
 
-        // Platform cards
+        // Platform cards.
+        // Skip any asset this page has no card for. Without this guard an
+        // unrecognised key threw, the whole try block aborted into catch, and
+        // every platform's download disappeared behind the error state.
         for (const [platform, asset] of Object.entries(rel.assets)) {
           const card = document.getElementById('card-' + platform);
+          if (!card) continue;
+
           card.href = asset.url;
-          document.getElementById('fn-' + platform).textContent = asset.name;
-          document.getElementById('sz-' + platform).textContent = asset.size;
+          const fnEl = document.getElementById('fn-' + platform);
+          if (fnEl) fnEl.textContent = asset.name;
+          const szEl = document.getElementById('sz-' + platform);
+          if (szEl) szEl.textContent = asset.size;
           const hashEl = document.getElementById('hash-' + platform);
-          if (asset.sha256) {
+          if (hashEl && asset.sha256) {
             hashEl.textContent = 'SHA256: ' + asset.sha256;
             hashEl.title = asset.sha256;
           }
+
+          // Reveal the card and any rows tagged for this platform. Cards that
+          // ship visible are unaffected; this only unhides ones held back until
+          // their asset actually exists.
+          card.hidden = false;
+          document.querySelectorAll('[data-platform="' + platform + '"]')
+            .forEach(function (el) { el.hidden = false; });
         }
 
         loading.hidden = true;
