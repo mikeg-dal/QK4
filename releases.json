@@ -6,19 +6,19 @@
   "assets": {
     "macos": {
       "name": "QK4-0.7.0-beta.4-macos.dmg",
-      "url": "./downloads/v0.7.0-beta.4/QK4-0.7.0-beta.4-macos.dmg",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.4/QK4-0.7.0-beta.4-macos.dmg",
       "size": "44M",
       "sha256": "cc6bf29e7c94043c4fdde3f5e0e8ac465e9831937438390367c8c4d9a6ef4f0d"
     },
     "windows": {
       "name": "QK4-0.7.0-beta.4-windows.zip",
-      "url": "./downloads/v0.7.0-beta.4/QK4-0.7.0-beta.4-windows.zip",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.4/QK4-0.7.0-beta.4-windows.zip",
       "size": "43M",
       "sha256": "bfbbae2266698acc032c5faffe90bd49fdbebad2074e32cac4da7d70b1902b51"
     },
     "raspberry-pi": {
       "name": "QK4-0.7.0-beta.4-raspberry-pi-arm64.tar.gz",
-      "url": "./downloads/v0.7.0-beta.4/QK4-0.7.0-beta.4-raspberry-pi-arm64.tar.gz",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.4/QK4-0.7.0-beta.4-raspberry-pi-arm64.tar.gz",
       "size": "22M",
       "sha256": "8ce9bc9a2ac5c789c08b494307401692e9af04afefb2af5a3501b6f60d6d6dea"
     }
