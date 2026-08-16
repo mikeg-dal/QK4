@@ -1829,13 +1829,17 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
                                   : 0.0f;
     const float pxPerBin = visibleBins > 0.0f ? static_cast<float>(outputSize.width()) / visibleBins : 0.0f;
 
-    qCDebug(qk4PanDiag).nospace() << "GEOMETRY    output " << outputSize.width() << "x" << outputSize.height()
-                                  << " px  dpr " << devicePixelRatioF() << "  spectrumRatio " << m_spectrumRatio
-                                  << "  waterfall " << waterfallHeightPx << " px  rows " << m_visibleRows << "/"
-                                  << m_waterfallHistory << " visible/stored  history " << (m_visibleRows / 15.0f)
-                                  << " s @15fps"
-                                  << "  pxPerRow " << pxPerRow << " (" << verdict << ")  visibleBins " << visibleBins
-                                  << "  pxPerBin " << pxPerBin;
+    // WHY a formatted string and not a chain of <<: a long operator<< chain sitting near the
+    // column limit is wrapped differently by different clang-format 18 builds, so CI's apt binary
+    // rejected what the Homebrew one accepted. One asprintf has no wrapping decision to disagree
+    // about, and reads better besides.
+    qCDebug(qk4PanDiag, "%s",
+            qPrintable(QString::asprintf("GEOMETRY    output %dx%d px  dpr %g  spectrumRatio %g  "
+                                         "waterfall %.1f px  rows %d/%d visible/stored  "
+                                         "pxPerRow %.4f (%s)  visibleBins %.0f  pxPerBin %.2f",
+                                         outputSize.width(), outputSize.height(), devicePixelRatioF(), m_spectrumRatio,
+                                         waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
+                                         visibleBins, pxPerBin)));
 }
 
 float PanadapterRhiWidget::normalizeDb(float db) {
