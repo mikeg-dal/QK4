@@ -1,26 +1,32 @@
 {
-  "tag": "v0.7.0-beta.4",
-  "version": "0.7.0-beta.4",
-  "date": "2026-08-03",
+  "tag": "v0.7.0-beta.5",
+  "version": "0.7.0-beta.5",
+  "date": "2026-08-16",
   "prerelease": true,
   "assets": {
     "macos": {
-      "name": "QK4-0.7.0-beta.4-macos.dmg",
-      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.4/QK4-0.7.0-beta.4-macos.dmg",
+      "name": "QK4-0.7.0-beta.5-macos.dmg",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.5/QK4-0.7.0-beta.5-macos.dmg",
       "size": "44M",
-      "sha256": "cc6bf29e7c94043c4fdde3f5e0e8ac465e9831937438390367c8c4d9a6ef4f0d"
+      "sha256": "278b86a0044f079d62c3db1698114d6ab98d50cf75491c0db159abc6c4c5001e"
     },
     "windows": {
-      "name": "QK4-0.7.0-beta.4-windows.zip",
-      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.4/QK4-0.7.0-beta.4-windows.zip",
+      "name": "QK4-0.7.0-beta.5-windows.zip",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.5/QK4-0.7.0-beta.5-windows.zip",
       "size": "43M",
-      "sha256": "bfbbae2266698acc032c5faffe90bd49fdbebad2074e32cac4da7d70b1902b51"
+      "sha256": "dbacf5512783f20c61b9a0b06a023f8ecbd750ab56ff9776a796b0030c11f31c"
     },
     "raspberry-pi": {
-      "name": "QK4-0.7.0-beta.4-raspberry-pi-arm64.tar.gz",
-      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.4/QK4-0.7.0-beta.4-raspberry-pi-arm64.tar.gz",
+      "name": "QK4-0.7.0-beta.5-raspberry-pi-arm64.tar.gz",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.5/QK4-0.7.0-beta.5-raspberry-pi-arm64.tar.gz",
       "size": "22M",
-      "sha256": "8ce9bc9a2ac5c789c08b494307401692e9af04afefb2af5a3501b6f60d6d6dea"
+      "sha256": "4c945c619fdbb5154cd51c19600f6a7f2102f1ce053d5b51b816cd3ae3df46c0"
+    },
+    "linux": {
+      "name": "QK4-0.7.0-beta.5-linux-x86_64.flatpak",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.5/QK4-0.7.0-beta.5-linux-x86_64.flatpak",
+      "size": "1.6M",
+      "sha256": "15527b1cae83dde58e109a7510e638f11733bbc1b992870750892e238ee77133"
     }
   }
 }
