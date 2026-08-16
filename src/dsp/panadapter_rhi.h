@@ -206,12 +206,24 @@ private:
     qint32 m_lastTierSampleRate = 0; // Detect tier transitions to reset EMA
     int m_waterfallTierBinCount = 0; // Bin count written to current waterfall row
     float m_waterfallTierSpanHz = 0; // Tier span for current waterfall data
-    // Waterfall data - sized for 4K/HiDPI displays
-    // Memory: 4096 × 480 × 1 byte = ~1.9 MB (trivial for modern GPUs)
-    static constexpr int BASE_WATERFALL_HISTORY = 480;
-    static constexpr int BASE_TEXTURE_WIDTH = 4096;
+    // Waterfall storage. Rows stored and rows shown are deliberately different numbers: the visible
+    // count tracks the waterfall's height in device pixels so a row is always one pixel tall, which
+    // is what keeps it sharp at any window size. A fixed count stretched to fit, and every row was
+    // bilinear-blended across as many screen pixels as the window was tall — measured at 3.05 px
+    // per row full screen, against the ~1.25 the old constant was hand-tuned for.
+    //
+    // Storage is allocated once at the maximum and never resized, so growing the window costs two
+    // uniforms rather than a texture rebuild, and reveals history captured while it was small
+    // instead of stretching what is already on screen.
+    //
+    // Memory: 8192 × 2048 × 1 byte = ~16.8 MB. Only the centred 1024 texels of each row are ever
+    // sampled, so BASE_TEXTURE_WIDTH above 1024 buys nothing but alignment headroom.
+    static constexpr int MAX_WATERFALL_HISTORY = 2048;
+    static constexpr int MIN_VISIBLE_ROWS = 64;
+    static constexpr int BASE_TEXTURE_WIDTH = 8192;
     int m_textureWidth = BASE_TEXTURE_WIDTH;
-    int m_waterfallHistory = BASE_WATERFALL_HISTORY;
+    int m_waterfallHistory = MAX_WATERFALL_HISTORY; // rows stored (ring size)
+    int m_visibleRows = MAX_WATERFALL_HISTORY;      // rows drawn; follows waterfall pixel height
     int m_waterfallWriteRow = 0;
     QVector<quint8> m_waterfallData;
     bool m_waterfallNeedsUpdate = false;

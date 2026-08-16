@@ -6,13 +6,15 @@ layout(location = 0) out vec4 outColor;
 layout(binding = 1) uniform sampler2D waterfallTex;
 layout(binding = 2) uniform sampler2D colorLutTex;
 
+// Must stay byte-identical to the block in waterfall.vert — they share one std140 binding.
 layout(std140, binding = 0) uniform buf {
-    float scrollOffset;   // Row scroll offset (used by vertex shader)
-    float binCount;       // Full tier bin count (e.g., 1024)
-    float textureWidth;   // Texture width for bin centering (e.g., 4096)
-    float tierSpanHz;     // Full tier bandwidth in Hz
-    float spanHz;         // Display span in Hz
-    float padding[3];
+    float scrollOffset;     // Oldest visible row, as a fraction of stored rows (vertex stage)
+    float binCount;         // Full tier bin count (e.g., 1024)
+    float textureWidth;     // Texture width for bin centering (e.g., 8192)
+    float tierSpanHz;       // Full tier bandwidth in Hz
+    float spanHz;           // Display span in Hz
+    float visibleFraction;  // Rows drawn / rows stored (vertex stage)
+    float padding[2];
 };
 
 void main() {

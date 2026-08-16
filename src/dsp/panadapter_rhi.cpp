@@ -573,7 +573,7 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
 
     // Use fixed texture sizes - GPU bilinear filtering handles scaling to display size
     m_textureWidth = BASE_TEXTURE_WIDTH;
-    m_waterfallHistory = BASE_WATERFALL_HISTORY;
+    m_waterfallHistory = MAX_WATERFALL_HISTORY;
 
     // Allocate waterfall data buffer
     m_waterfallData.resize(m_textureWidth * m_waterfallHistory);
@@ -624,16 +624,17 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
                                       QRhiSampler::ClampToEdge, QRhiSampler::Repeat));
     m_sampler->create();
 
-    // Waterfall quad (static)
-    float tMax = static_cast<float>(m_waterfallHistory - 1) / m_waterfallHistory;
+    // Waterfall quad (static). Texcoord t spans the full 0..1 and the vertex shader scales it by
+    // visibleFraction, so changing how many rows are on screen costs a uniform rather than a
+    // rebuilt vertex buffer on the render path.
     float waterfallQuad[] = {
         // position (x, y), texcoord (s, t)
         -1.0f, -1.0f, 0.0f, 0.0f, // bottom-left
         1.0f,  -1.0f, 1.0f, 0.0f, // bottom-right
-        1.0f,  1.0f,  1.0f, tMax, // top-right
+        1.0f,  1.0f,  1.0f, 1.0f, // top-right
         -1.0f, -1.0f, 0.0f, 0.0f, // bottom-left
-        1.0f,  1.0f,  1.0f, tMax, // top-right
-        -1.0f, 1.0f,  0.0f, tMax  // top-left
+        1.0f,  1.0f,  1.0f, 1.0f, // top-right
+        -1.0f, 1.0f,  0.0f, 1.0f  // top-left
     };
     m_waterfallVbo.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(waterfallQuad)));
     m_waterfallVbo->create();
@@ -942,8 +943,6 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     }
 
     const QSize outputSize = renderTarget()->pixelSize();
-    if (qk4PanDiag().isDebugEnabled())
-        logRenderGeometry(outputSize);
     const float w = outputSize.width();
     const float h = outputSize.height();
     const float spectrumHeight = h * m_spectrumRatio;
@@ -979,8 +978,25 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         m_waterfallNeedsUpdate = false;
     }
 
-    // Update waterfall uniform buffer with bin parameters
-    float scrollOffset = static_cast<float>(m_waterfallWriteRow) / m_waterfallHistory;
+    // One stored row per device pixel of waterfall height, so a row is never stretched across
+    // several pixels and blended with its neighbours. Clamped to what is actually stored: past
+    // that the old stretching returns, which the qk4.pan.diag geometry line reports as pxPerRow
+    // climbing above 1.
+    m_visibleRows = qBound(MIN_VISIBLE_ROWS, qRound(waterfallHeight), m_waterfallHistory);
+
+    // Logged here rather than earlier in the frame: the geometry line reports pxPerRow, which is
+    // only meaningful once the visible row count for this frame has been chosen.
+    if (qk4PanDiag().isDebugEnabled())
+        logRenderGeometry(outputSize);
+
+    // Show the newest m_visibleRows rows, ending one short of the row being written. The -1 is the
+    // same guard the quad's old tMax encoded: the in-flight row must not be sampled.
+    int oldestVisible = m_waterfallWriteRow - m_visibleRows;
+    while (oldestVisible < 0)
+        oldestVisible += m_waterfallHistory;
+    float scrollOffset = static_cast<float>(oldestVisible) / m_waterfallHistory;
+    float visibleFraction = static_cast<float>(m_visibleRows - 1) / m_waterfallHistory;
+
     // Use full tier bin count for waterfall (matches what updateWaterfallData writes)
     float binCount = m_waterfallTierBinCount > 0   ? static_cast<float>(m_waterfallTierBinCount)
                      : m_currentSpectrum.isEmpty() ? static_cast<float>(m_textureWidth)
@@ -993,8 +1009,10 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         float textureWidth;
         float tierSpanHz;
         float spanHz;
-        float padding[3];
-    } waterfallUniforms = {scrollOffset, binCount, static_cast<float>(m_textureWidth), tierSpanHz, spanHz, {0, 0, 0}};
+        float visibleFraction;
+        float padding[2];
+    } waterfallUniforms = {scrollOffset,    binCount, static_cast<float>(m_textureWidth), tierSpanHz, spanHz,
+                           visibleFraction, {0, 0}};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
     // Calculate smoothed baseline for spectrum normalization
@@ -1797,13 +1815,13 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     m_geometryLoggedWithBins = haveBins;
 
     const float waterfallHeightPx = static_cast<float>(outputSize.height()) * (1.0f - m_spectrumRatio);
-    const float pxPerRow = m_waterfallHistory > 0 ? waterfallHeightPx / m_waterfallHistory : 0.0f;
+    const float pxPerRow = m_visibleRows > 0 ? waterfallHeightPx / m_visibleRows : 0.0f;
 
-    // Anchors from f53861d, measured by eye on this display: ~1.25 px/row was chosen because its
-    // bilinear gradients fall below one pixel; ~2.34 px/row was the value that looked blurry.
-    const char *verdict = pxPerRow <= 1.3f  ? "at tuned point"
-                          : pxPerRow < 2.0f ? "above tuned point, blur likely emerging"
-                                            : "in known-blurry territory";
+    // Rows follow pixel height now, so anything but ~1.0 means a clamp bit: the window is either
+    // taller than the stored rows or shorter than MIN_VISIBLE_ROWS.
+    const char *verdict = pxPerRow <= 1.05f ? "1:1"
+                          : pxPerRow < 2.0f ? "above 1:1, clamped by stored rows"
+                                            : "well above 1:1, blur returning";
 
     const float visibleBins = m_waterfallTierSpanHz > 0.0f
                                   ? static_cast<float>(m_waterfallTierBinCount) *
@@ -1813,7 +1831,9 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
 
     qCDebug(qk4PanDiag).nospace() << "GEOMETRY    output " << outputSize.width() << "x" << outputSize.height()
                                   << " px  dpr " << devicePixelRatioF() << "  spectrumRatio " << m_spectrumRatio
-                                  << "  waterfall " << waterfallHeightPx << " px  rows " << m_waterfallHistory
+                                  << "  waterfall " << waterfallHeightPx << " px  rows " << m_visibleRows << "/"
+                                  << m_waterfallHistory << " visible/stored  history " << (m_visibleRows / 15.0f)
+                                  << " s @15fps"
                                   << "  pxPerRow " << pxPerRow << " (" << verdict << ")  visibleBins " << visibleBins
                                   << "  pxPerBin " << pxPerBin;
 }
