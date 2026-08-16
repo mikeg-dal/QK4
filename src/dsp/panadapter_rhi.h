@@ -142,11 +142,9 @@ private:
     std::unique_ptr<QRhiBuffer> m_notchVbo;
     std::unique_ptr<QRhiBuffer> m_notchUniformBuffer;
     std::unique_ptr<QRhiTexture> m_waterfallTexture;
-    std::unique_ptr<QRhiTexture> m_rowTierTexture; // 1 x history: tier bandwidth each row was captured at
     std::unique_ptr<QRhiTexture> m_colorLutTexture;
     std::unique_ptr<QRhiTexture> m_spectrumDataTexture; // 1D texture for spectrum values
     std::unique_ptr<QRhiSampler> m_sampler;
-    std::unique_ptr<QRhiSampler> m_nearestSampler; // row-tier lookups must not interpolate between rows
     std::unique_ptr<QRhiGraphicsPipeline> m_waterfallPipeline;
     std::unique_ptr<QRhiGraphicsPipeline> m_overlayLinePipeline;
     std::unique_ptr<QRhiGraphicsPipeline> m_overlayTrianglePipeline;
@@ -218,9 +216,9 @@ private:
     QVector<quint8> m_waterfallData;
     bool m_waterfallNeedsUpdate = false;
     bool m_waterfallNeedsFullClear = false;
-    // Tier span each stored row was captured at. The shader currently windows every row with a
-    // single tierSpanHz uniform, so rows captured at a different tier are rendered at the wrong
-    // frequency scale; this records what each row actually holds so the diagnostic can measure it.
+    // Tier span each stored row was captured at. Diagnostic only: the waterfall is cleared on a
+    // tier change, so every stored row shares the current tier and the renderer needs no per-row
+    // value. Kept because it reports how much history a crossing is about to discard.
     QVector<float> m_rowTierSpanHz;
     // Last render-target size reported by the geometry diagnostic, so it logs on change not per frame.
     QSize m_lastLoggedOutputSize;
