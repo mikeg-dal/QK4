@@ -10,8 +10,18 @@
 #include <QtMath>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 Q_LOGGING_CATEGORY(qk4Dsp, "qk4.dsp")
+
+// Waterfall diagnostics: tier-boundary crossings and render geometry. Enable with
+//     QT_LOGGING_RULES="qk4.pan.diag.debug=true"
+//
+// WHY the explicit QtWarningMsg: Q_LOGGING_CATEGORY defaults severityLevel to QtDebugMsg, so a
+// bare declaration would print this for every user on every span change. The other categories in
+// this project omit the level and describe themselves as off by default, which is not what Qt
+// does.
+Q_LOGGING_CATEGORY(qk4PanDiag, "qk4.pan.diag", QtWarningMsg)
 
 // Transparent overlay widget for dBm/S-unit scale labels
 class DbmScaleOverlay : public QWidget {
@@ -568,6 +578,8 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
     // Allocate waterfall data buffer
     m_waterfallData.resize(m_textureWidth * m_waterfallHistory);
     m_waterfallData.fill(0);
+    m_rowTierSpanHz.resize(m_waterfallHistory);
+    m_rowTierSpanHz.fill(0.0f);
 
     // Load shaders from compiled .qsb resources
     m_spectrumFillVert = RhiUtils::loadShader(":/shaders/src/dsp/shaders/spectrum_fill.vert.qsb");
@@ -930,6 +942,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     }
 
     const QSize outputSize = renderTarget()->pixelSize();
+    if (qk4PanDiag().isDebugEnabled())
+        logRenderGeometry(outputSize);
     const float w = outputSize.width();
     const float h = outputSize.height();
     const float spectrumHeight = h * m_spectrumRatio;
@@ -1640,6 +1654,8 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
 
     // Reset tier EMA on tier transition to avoid cross-tier blending
     if (sampleRate != m_lastTierSampleRate) {
+        if (qk4PanDiag().isDebugEnabled())
+            logTierCrossing(m_lastTierSampleRate, sampleRate, tierSpanHz);
         m_tierSpectrum = m_tierRawSpectrum;
         m_lastTierSampleRate = sampleRate;
     } else if (m_tierSpectrum.size() != m_tierRawSpectrum.size()) {
@@ -1702,12 +1718,89 @@ void PanadapterRhiWidget::updateWaterfallData() {
     // Clear row (zeros outside bin region = no signal)
     std::memset(&m_waterfallData[row * m_textureWidth], 0, m_textureWidth);
 
+    // Record which tier this row holds. The renderer applies one tierSpanHz to every row, so this
+    // is what makes it measurable how many on-screen rows are being windowed at the wrong scale.
+    if (row >= 0 && row < m_rowTierSpanHz.size())
+        m_rowTierSpanHz[row] = m_waterfallTierSpanHz;
+
     // Copy raw bins (no interpolation - GPU handles it)
     for (int i = 0; i < specSize; ++i) {
         float normalized = normalizeDb(source[i]);
         m_waterfallData[row * m_textureWidth + offset + i] =
             static_cast<quint8>(qBound(0, static_cast<int>(normalized * 255), 255));
     }
+}
+
+void PanadapterRhiWidget::logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz) {
+    // The first packet after construction or reset moves the tier from 0, which is initialization
+    // rather than a crossing: there is no history to rescale and no meaningful ratio. Logging it
+    // would put two misleading "rescaleFactor 0x" lines in front of every real measurement.
+    if (oldSampleRate <= 0)
+        return;
+
+    const float oldTierSpanHz = static_cast<float>(oldSampleRate) * 1000.0f;
+
+    // How many rows already on screen were captured at a tier other than the one about to become
+    // current. Those rows keep their old bins but get windowed with the new tier span, so this is
+    // the count of rows the next frame will draw at the wrong frequency scale.
+    int staleRows = 0;
+    for (float rowSpan : std::as_const(m_rowTierSpanHz)) {
+        if (rowSpan > 0.0f && !qFuzzyCompare(rowSpan, static_cast<float>(newTierSpanHz)))
+            ++staleRows;
+    }
+
+    const float spanRatioBefore =
+        oldTierSpanHz > 0.0f ? qMin(1.0f, static_cast<float>(m_spanHz) / oldTierSpanHz) : 0.0f;
+    const float spanRatioAfter = newTierSpanHz > 0 ? qMin(1.0f, static_cast<float>(m_spanHz) / newTierSpanHz) : 0.0f;
+    const float rescaleFactor = oldTierSpanHz > 0.0f ? static_cast<float>(newTierSpanHz) / oldTierSpanHz : 0.0f;
+
+    qCDebug(qk4PanDiag).nospace() << "TIER CROSS  sampleRate " << oldSampleRate << "->" << newSampleRate
+                                  << " kHz  tierSpan " << static_cast<qint32>(oldTierSpanHz) << "->" << newTierSpanHz
+                                  << " Hz  rescaleFactor " << rescaleFactor << "x  span " << m_spanHz
+                                  << " Hz  spanRatio " << spanRatioBefore << "->" << spanRatioAfter << "  writeRow "
+                                  << m_waterfallWriteRow << "  staleRows " << staleRows << "/" << m_waterfallHistory
+                                  << "  (EMA reset this frame: trace may flash independently)";
+}
+
+void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
+    if (outputSize.isEmpty())
+        return;
+
+    // The first size is settled before any PAN packet arrives, so a size-change-only trigger would
+    // report the horizontal figures as zero and never revisit them. Allow exactly one repeat once
+    // bin data exists, so pxPerBin is answered without logging every frame.
+    // The split ratio is draggable (0.1..0.9), and it scales the waterfall's share of the height,
+    // so it moves pxPerRow further than resizing the window does. Treat a ratio change as a
+    // geometry change or the most direct control over the artifact would go unrecorded.
+    const bool haveBins = m_waterfallTierSpanHz > 0.0f && m_waterfallTierBinCount > 0;
+    const bool sameGeometry =
+        outputSize == m_lastLoggedOutputSize && qFuzzyCompare(m_spectrumRatio, m_lastLoggedSpectrumRatio);
+    if (sameGeometry && (m_geometryLoggedWithBins || !haveBins))
+        return;
+    m_lastLoggedOutputSize = outputSize;
+    m_lastLoggedSpectrumRatio = m_spectrumRatio;
+    m_geometryLoggedWithBins = haveBins;
+
+    const float waterfallHeightPx = static_cast<float>(outputSize.height()) * (1.0f - m_spectrumRatio);
+    const float pxPerRow = m_waterfallHistory > 0 ? waterfallHeightPx / m_waterfallHistory : 0.0f;
+
+    // Anchors from f53861d, measured by eye on this display: ~1.25 px/row was chosen because its
+    // bilinear gradients fall below one pixel; ~2.34 px/row was the value that looked blurry.
+    const char *verdict = pxPerRow <= 1.3f  ? "at tuned point"
+                          : pxPerRow < 2.0f ? "above tuned point, blur likely emerging"
+                                            : "in known-blurry territory";
+
+    const float visibleBins = m_waterfallTierSpanHz > 0.0f
+                                  ? static_cast<float>(m_waterfallTierBinCount) *
+                                        qMin(1.0f, static_cast<float>(m_spanHz) / m_waterfallTierSpanHz)
+                                  : 0.0f;
+    const float pxPerBin = visibleBins > 0.0f ? static_cast<float>(outputSize.width()) / visibleBins : 0.0f;
+
+    qCDebug(qk4PanDiag).nospace() << "GEOMETRY    output " << outputSize.width() << "x" << outputSize.height()
+                                  << " px  dpr " << devicePixelRatioF() << "  spectrumRatio " << m_spectrumRatio
+                                  << "  waterfall " << waterfallHeightPx << " px  rows " << m_waterfallHistory
+                                  << "  pxPerRow " << pxPerRow << " (" << verdict << ")  visibleBins " << visibleBins
+                                  << "  pxPerBin " << pxPerBin;
 }
 
 float PanadapterRhiWidget::normalizeDb(float db) {

@@ -5,6 +5,7 @@
 #include <rhi/qrhi.h>
 #include <QColor>
 #include <QElapsedTimer>
+#include <QSize>
 #include <QTimer>
 #include <QVector>
 #include <memory>
@@ -119,6 +120,10 @@ private:
     void decompressBins(const QByteArray &bins, QVector<float> &out);
     void updateWaterfallData();
 
+    // Diagnostics — no rendering effect. Gated on the qk4.pan.diag category being debug-enabled.
+    void logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz);
+    void logRenderGeometry(const QSize &outputSize);
+
     // Coordinate helpers
     float normalizeDb(float db);
     float freqToNormalized(qint64 freq);
@@ -211,6 +216,14 @@ private:
     QVector<quint8> m_waterfallData;
     bool m_waterfallNeedsUpdate = false;
     bool m_waterfallNeedsFullClear = false;
+    // Tier span each stored row was captured at. The shader currently windows every row with a
+    // single tierSpanHz uniform, so rows captured at a different tier are rendered at the wrong
+    // frequency scale; this records what each row actually holds so the diagnostic can measure it.
+    QVector<float> m_rowTierSpanHz;
+    // Last render-target size reported by the geometry diagnostic, so it logs on change not per frame.
+    QSize m_lastLoggedOutputSize;
+    float m_lastLoggedSpectrumRatio = -1.0f;
+    bool m_geometryLoggedWithBins = false;
 
     // Color LUT (256 RGBA entries) - for waterfall
     QVector<quint8> m_colorLUT;
