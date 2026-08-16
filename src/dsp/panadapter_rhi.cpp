@@ -594,6 +594,13 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
                                                QRhiTexture::UsedAsTransferSource));
     m_waterfallTexture->create();
 
+    // Per-row tier span, one texel per waterfall row, sampled with the same V as the waterfall.
+    // WHY a texture and not a uniform: the tier a row was captured at is per-row data, and the
+    // fragment shader needs it for whichever row it is drawing. A single uniform can only describe
+    // the newest row, which is what made crossing a tier rescale the entire history at once.
+    m_rowTierTexture.reset(m_rhi->newTexture(QRhiTexture::R32F, QSize(1, m_waterfallHistory)));
+    m_rowTierTexture->create();
+
     // Create color LUT texture (256x1 RGBA)
     m_colorLutTexture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(256, 1)));
     m_colorLutTexture->create();
@@ -623,6 +630,13 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_sampler.reset(m_rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
                                       QRhiSampler::ClampToEdge, QRhiSampler::Repeat));
     m_sampler->create();
+
+    // WHY a second, nearest-filtered sampler: the row-tier texture holds a bandwidth per row, and
+    // interpolating between two rows either side of a tier change would synthesise a bandwidth
+    // that never existed and smear the boundary. V still repeats, to match the circular buffer.
+    m_nearestSampler.reset(m_rhi->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
+                                             QRhiSampler::ClampToEdge, QRhiSampler::Repeat));
+    m_nearestSampler->create();
 
     // Waterfall quad (static)
     float tMax = static_cast<float>(m_waterfallHistory - 1) / m_waterfallHistory;
@@ -797,7 +811,9 @@ void PanadapterRhiWidget::createPipelines() {
              QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
                                                        m_waterfallTexture.get(), m_sampler.get()),
              QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage,
-                                                       m_colorLutTexture.get(), m_sampler.get())});
+                                                       m_colorLutTexture.get(), m_sampler.get()),
+             QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage,
+                                                       m_rowTierTexture.get(), m_nearestSampler.get())});
         m_waterfallSrb->create();
 
         m_waterfallPipeline.reset(m_rhi->newGraphicsPipeline());
@@ -964,6 +980,10 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     if (m_waterfallNeedsFullClear) {
         QRhiTextureSubresourceUploadDescription fullUpload(m_waterfallData.constData(), m_waterfallData.size());
         rub->uploadTexture(m_waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, fullUpload));
+        QRhiTextureSubresourceUploadDescription tierClear(m_rowTierSpanHz.constData(),
+                                                          m_rowTierSpanHz.size() * sizeof(float));
+        tierClear.setSourceSize(QSize(1, m_waterfallHistory));
+        rub->uploadTexture(m_rowTierTexture.get(), QRhiTextureUploadEntry(0, 0, tierClear));
         m_waterfallNeedsFullClear = false;
     }
 
@@ -975,6 +995,15 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         rowUpload.setDestinationTopLeft(QPoint(0, m_waterfallWriteRow));
         rowUpload.setSourceSize(QSize(m_textureWidth, 1));
         rub->uploadTexture(m_waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, rowUpload));
+
+        // Ship this row's tier alongside its bins, so the two can never disagree about what the
+        // row contains.
+        QRhiTextureSubresourceUploadDescription tierUpload(m_rowTierSpanHz.constData() + m_waterfallWriteRow,
+                                                           sizeof(float));
+        tierUpload.setDestinationTopLeft(QPoint(0, m_waterfallWriteRow));
+        tierUpload.setSourceSize(QSize(1, 1));
+        rub->uploadTexture(m_rowTierTexture.get(), QRhiTextureUploadEntry(0, 0, tierUpload));
+
         m_waterfallWriteRow = (m_waterfallWriteRow + 1) % m_waterfallHistory;
         m_waterfallNeedsUpdate = false;
     }
@@ -1929,6 +1958,7 @@ void PanadapterRhiWidget::clear() {
     m_rawSpectrum.clear();
     m_waterfallWriteRow = 0;
     m_waterfallData.fill(0);
+    m_rowTierSpanHz.fill(0.0f);
     m_waterfallNeedsFullClear = true;
 
     // Reset all radio state to header defaults.
