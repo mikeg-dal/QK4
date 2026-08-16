@@ -216,11 +216,13 @@ private:
     // uniforms rather than a texture rebuild, and reveals history captured while it was small
     // instead of stretching what is already on screen.
     //
-    // Memory: 8192 × 2048 × 1 byte = ~16.8 MB. Only the centred 1024 texels of each row are ever
-    // sampled, so BASE_TEXTURE_WIDTH above 1024 buys nothing but alignment headroom.
+    // Memory: 4096 × 2048 × 1 byte = ~8.4 MB. Only the centred 1024 texels of each row are ever
+    // sampled — the radio always sends 1024 bins, they are written 1:1 into the middle, and the
+    // shader samples at exact texel centres — so width past that is alignment headroom, not
+    // resolution. 8192 was measured and produced bit-identical output for twice the memory.
     static constexpr int MAX_WATERFALL_HISTORY = 2048;
     static constexpr int MIN_VISIBLE_ROWS = 64;
-    static constexpr int BASE_TEXTURE_WIDTH = 8192;
+    static constexpr int BASE_TEXTURE_WIDTH = 4096;
     int m_textureWidth = BASE_TEXTURE_WIDTH;
     int m_waterfallHistory = MAX_WATERFALL_HISTORY; // rows stored (ring size)
     int m_visibleRows = MAX_WATERFALL_HISTORY;      // rows drawn; follows waterfall pixel height

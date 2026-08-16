@@ -8,7 +8,7 @@ layout(location = 0) out vec2 fragTexCoord;
 layout(std140, binding = 0) uniform buf {
     float scrollOffset;     // Oldest visible row, as a fraction of stored rows
     float binCount;         // Full tier bin count (e.g., 1024)
-    float textureWidth;     // Texture width (e.g., 8192)
+    float textureWidth;     // Texture width (e.g., 4096)
     float tierSpanHz;       // Full tier bandwidth in Hz
     float spanHz;           // Display span in Hz
     float visibleFraction;  // Rows drawn / rows stored
