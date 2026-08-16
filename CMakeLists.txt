@@ -46,16 +46,15 @@ endif()
 
 # Platform-specific dependency handling
 if(APPLE)
-    # macOS with Homebrew
-    set(OPUS_PREFIX "/opt/homebrew/opt/opus")
+    # macOS with Homebrew - resolve prefix dynamically to support both
+    # Intel (/usr/local) and Apple Silicon (/opt/homebrew)
+    execute_process(COMMAND brew --prefix opus OUTPUT_VARIABLE OPUS_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND brew --prefix hidapi OUTPUT_VARIABLE HIDAPI_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND brew --prefix libusb OUTPUT_VARIABLE LIBUSB_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE)
     set(OPUS_INCLUDE_DIRS "${OPUS_PREFIX}/include")
     set(OPUS_LIBRARIES "${OPUS_PREFIX}/lib/libopus.dylib")
-
-    set(HIDAPI_PREFIX "/opt/homebrew/opt/hidapi")
     set(HIDAPI_INCLUDE_DIRS "${HIDAPI_PREFIX}/include")
     set(HIDAPI_LIBRARIES "${HIDAPI_PREFIX}/lib/libhidapi.dylib")
-
-    set(LIBUSB_PREFIX "/opt/homebrew/opt/libusb")
     set(LIBUSB_INCLUDE_DIRS "${LIBUSB_PREFIX}/include")
     set(LIBUSB_LIBRARIES "${LIBUSB_PREFIX}/lib/libusb-1.0.dylib")
 elseif(WIN32)
@@ -496,6 +495,13 @@ if(APPLE)
     # Find macdeployqt
     find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${Qt6_DIR}/../../../bin")
 
+    # Resolve Qt lib directory for macdeployqt - use get_filename_component to
+    # produce a clean absolute path (no unresolved ../.. components) that
+    # macdeployqt can consume. Works on both Intel (/usr/local) and
+    # Apple Silicon (/opt/homebrew).
+    get_filename_component(QT_LIB_DIR "${Qt6_DIR}/../../../lib" ABSOLUTE)
+    message(STATUS "Qt lib dir for macdeployqt: ${QT_LIB_DIR}")
+
     # OpenSSL locations (check both Apple Silicon and Intel paths)
     set(OPENSSL_SEARCH_PATHS
         "/opt/homebrew/opt/openssl@3/lib"   # Apple Silicon
@@ -528,6 +534,7 @@ if(APPLE)
     # Custom target to create distributable app bundle
     add_custom_target(deploy
         COMMAND ${MACDEPLOYQT_EXECUTABLE} "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app" -always-overwrite
+            -libpath="${QT_LIB_DIR}"
         # Copy OpenSSL libraries
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -588,4 +595,3 @@ elseif(WIN32)
         DEPENDS ${PROJECT_NAME}
     )
 endif()
-
