@@ -402,21 +402,18 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
     } spectrumUniforms = {w, spectrumHeight, {0, 0}};
     rub->updateDynamicBuffer(m_spectrumUniformBuffer.get(), 0, sizeof(spectrumUniforms), &spectrumUniforms);
 
-    // Update waterfall uniform buffer (matches waterfall.frag shader layout)
+    // Layout comes from RhiUtils so it cannot drift from the shaders or from the main panadapter.
+    // Mini pan: tierSpan == span (no cropping, 1:1 mapping), and visibleFraction is 1.0 because it
+    // shows its whole buffer — the quad's own texcoords already stop one row short of the row being
+    // written.
     float scrollOffset = static_cast<float>(m_waterfallWriteRow) / WATERFALL_HISTORY;
-    struct {
-        float scrollOffset;
-        float binCount;
-        float textureWidth;
-        float tierSpanHz; // Mini pan: tierSpan == span (no cropping, 1:1 mapping)
-        float spanHz;
-        float padding[3];
-    } waterfallUniforms = {scrollOffset,
-                           static_cast<float>(TEXTURE_WIDTH),
-                           static_cast<float>(TEXTURE_WIDTH),
-                           static_cast<float>(TEXTURE_WIDTH),
-                           static_cast<float>(TEXTURE_WIDTH),
-                           {0, 0, 0}};
+    RhiUtils::WaterfallUniforms waterfallUniforms = {scrollOffset,
+                                                     static_cast<float>(TEXTURE_WIDTH),
+                                                     static_cast<float>(TEXTURE_WIDTH),
+                                                     static_cast<float>(TEXTURE_WIDTH),
+                                                     static_cast<float>(TEXTURE_WIDTH),
+                                                     1.0f,
+                                                     {0, 0}};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
     // Build spectrum vertices with peak-hold downsampling

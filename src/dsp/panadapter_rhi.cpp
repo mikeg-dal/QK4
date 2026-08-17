@@ -1005,16 +1005,9 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                                                    : static_cast<float>(m_currentSpectrum.size());
     float tierSpanHz = m_waterfallTierSpanHz > 0 ? m_waterfallTierSpanHz : static_cast<float>(m_spanHz);
     float spanHz = static_cast<float>(m_spanHz);
-    struct {
-        float scrollOffset;
-        float binCount;
-        float textureWidth;
-        float tierSpanHz;
-        float spanHz;
-        float visibleFraction;
-        float padding[2];
-    } waterfallUniforms = {scrollOffset,    binCount, static_cast<float>(m_textureWidth), tierSpanHz, spanHz,
-                           visibleFraction, {0, 0}};
+    // Layout comes from RhiUtils so it cannot drift from the shaders or from the mini-pan.
+    RhiUtils::WaterfallUniforms waterfallUniforms = {
+        scrollOffset, binCount, static_cast<float>(m_textureWidth), tierSpanHz, spanHz, visibleFraction, {0, 0}};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
     if (!m_currentSpectrum.isEmpty()) {

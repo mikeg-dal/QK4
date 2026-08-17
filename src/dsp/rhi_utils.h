@@ -78,6 +78,28 @@ inline QShader loadShader(const QString &path) {
 // dBm = raw_byte - K4_DBM_OFFSET
 constexpr float K4_DBM_OFFSET = 146.0f;
 
+// Uniform block for waterfall.vert / waterfall.frag.
+//
+// WHY this lives here rather than in each widget: PanadapterRhiWidget and MiniPanRhiWidget draw
+// with the same two shaders, and each used to declare its own copy of this struct. Adding a field
+// to the shaders then required remembering to add it to both — and when it was missed, the mini-pan
+// kept sending the shorter block, so the shader read a later field out of the caller's padding.
+// visibleFraction arriving as 0 makes every screen row sample the same texture row, which renders
+// as vertical streaks rather than a scrolling waterfall. That has now happened twice (9b7bfeb, and
+// again when visibleFraction was introduced), so there is one definition and both widgets use it.
+//
+// Must match the std140 block in BOTH shader files.
+struct WaterfallUniforms {
+    float scrollOffset;    // oldest visible row, as a fraction of stored rows
+    float binCount;        // bins written per row
+    float textureWidth;    // texture width, for centring the bins
+    float tierSpanHz;      // bandwidth those bins cover
+    float spanHz;          // bandwidth on display
+    float visibleFraction; // rows drawn / rows stored; 1.0 to show the whole buffer
+    float padding[2];
+};
+static_assert(sizeof(WaterfallUniforms) == 32, "must match the std140 block in waterfall.{vert,frag}");
+
 } // namespace RhiUtils
 
 #endif // RHI_UTILS_H
