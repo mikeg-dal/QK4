@@ -1731,19 +1731,35 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
         QVector<float> sorted = m_rawSpectrum;
         std::sort(sorted.begin(), sorted.end());
         const float medianDbm = sorted[sorted.size() / 2];
-        const float minDbm = sorted.first();
+        // 5th percentile, not the outright minimum: the lowest single bin is the deepest downward
+        // excursion of the noise and moves several dB frame to frame, which made this line fire
+        // over a thousand times in one session. A low percentile tracks the same floor without the
+        // jitter.
+        const float minDbm = sorted[sorted.size() / 20];
         // Track the minimum, not the median: measured against a live band the min lands within a
         // few dB of the radio's reported floor, while the median runs ~20 dB higher because most
         // bins hold signal rather than noise. The min is therefore the calibration signal and the
         // median is context — keying the log on the min keeps it quiet unless the offset is wrong,
         // instead of chattering as band activity moves the median.
+        // Smoothed before comparing: calibration error is a standing offset, so only a sustained
+        // move is worth a line. Per-frame variation is band noise, not the constant drifting.
         const float delta = minDbm - m_noiseFloor;
-        if (std::abs(delta - m_lastLoggedCalibDelta) >= 2.0f) {
-            m_lastLoggedCalibDelta = delta;
-            qCDebug(qk4PanDiag, "%s",
-                    qPrintable(QString::asprintf("CALIB       radio floor %.1f dBm  raw min %.1f  raw median %.1f  "
-                                                 "min-vs-radio %+.1f dB  (K4_DBM_OFFSET %.0f)",
-                                                 m_noiseFloor, minDbm, medianDbm, delta, RhiUtils::K4_DBM_OFFSET)));
+        m_calibDelta = (m_calibSamples == 0) ? delta : 0.02f * delta + 0.98f * m_calibDelta;
+        ++m_calibSamples;
+
+        // One line once the average has settled, then only on a sustained change. Reporting the
+        // settled value even when it is small is the point: a silent check cannot be told apart
+        // from a broken one, and "offset +0.6 dB" is the evidence that the constant is right.
+        const bool settled = m_calibSamples == 120;
+        const bool drifted = m_calibLogged && std::abs(m_calibDelta - m_lastLoggedCalibDelta) >= 2.0f;
+        if (settled || drifted) {
+            m_calibLogged = true;
+            m_lastLoggedCalibDelta = m_calibDelta;
+            qCDebug(
+                qk4PanDiag, "%s",
+                qPrintable(QString::asprintf("CALIB       radio floor %.1f dBm  raw min %.1f  raw median %.1f  "
+                                             "smoothed offset %+.1f dB  (K4_DBM_OFFSET %.0f)",
+                                             m_noiseFloor, minDbm, medianDbm, m_calibDelta, RhiUtils::K4_DBM_OFFSET)));
         }
     }
 

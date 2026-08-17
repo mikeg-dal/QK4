@@ -241,6 +241,9 @@ private:
     // Last logged gap between the radio's reported noise floor and our own minimum bin, so the
     // calibration check reports on change rather than every frame.
     float m_lastLoggedCalibDelta = 0.0f;
+    float m_calibDelta = 0.0f;
+    int m_calibSamples = 0;
+    bool m_calibLogged = false;
 
     // Color LUT (256 RGBA entries) - for waterfall
     QVector<quint8> m_colorLUT;
