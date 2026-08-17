@@ -114,6 +114,14 @@ target_include_directories(test_radioutils PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_radioutils Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME RadioUtilsTests COMMAND test_radioutils)
 
+# Panadapter amplitude-axis arithmetic: dBm <-> S-units, label placement and decimation.
+add_executable(test_spectrumscale test_spectrumscale.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/spectrumscale.cpp
+)
+target_include_directories(test_spectrumscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_spectrumscale Qt6::Core Qt6::Test)
+add_test(NAME SpectrumScaleTests COMMAND test_spectrumscale)
+
 # BandPlan data/lookup tests (QColor needs Qt6::Gui)
 add_executable(test_bandplan test_bandplan.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/bandplan.cpp

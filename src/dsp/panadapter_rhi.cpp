@@ -1,4 +1,5 @@
 #include "panadapter_rhi.h"
+#include "dsp/spectrumscale.h"
 #include "panadapter_constants.h"
 #include "rhi_utils.h"
 #include "ui/styling/k4styles.h"
@@ -8,6 +9,7 @@
 #include <QPainterPath>
 #include <QResizeEvent>
 #include <QtMath>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <utility>
@@ -89,66 +91,38 @@ protected:
         painter.setFont(scaleFont);
         painter.setPen(Qt::white);
 
-        const int labelCount = 9; // Keep 9 divisions for grid alignment
-        const float dbRange = m_maxDb - m_minDb;
         const int leftMargin = 4;
         const int h = height();
 
         QFontMetrics fm(scaleFont);
-        int textHeight = fm.height();
+        const int textHeight = fm.height();
 
-        for (int i = 0; i < labelCount; ++i) {
-            // Skip top and bottom labels for breathing room
-            if (i == 0 || i == labelCount - 1)
-                continue;
+        // WHY labels are placed by value rather than by dividing the widget: S-units sit at fixed
+        // dBm (S9 = -73, 6 dB apart), which does not divide the display range. Sampling even
+        // divisions and naming whichever S-unit was nearest skipped some and, once clamped at the
+        // ends, printed S1 at two different heights. SpectrumScale emits only values that genuinely
+        // fall inside the window, already spaced far enough apart to read.
+        const auto labels = SpectrumScale::labelsFor(m_minDb, m_maxDb, m_useSUnits, h, textHeight);
 
-            float dbValue = m_maxDb - (static_cast<float>(i) / 8.0f) * dbRange;
-            int yPos = h * i / 8;
+        for (const auto &label : labels) {
+            const float frac = SpectrumScale::normalizedForDb(label.dbm, m_minDb, m_maxDb);
+            const int yPos = static_cast<int>(std::lround((1.0f - frac) * h));
 
             // Skip labels that would fall under the band-plan strip.
             if (yPos < m_topReserved)
                 continue;
+            // Keep the text fully on the widget at both ends.
+            if (yPos < textHeight / 2 || yPos > h - textHeight / 3)
+                continue;
 
-            QString label;
-            if (m_useSUnits) {
-                label = dbmToSUnits(dbValue);
-            } else {
-                label = QString("%1 dBm").arg(static_cast<int>(dbValue));
-            }
-
-            // Vertically center on grid line
-            int textY = yPos + textHeight / 3;
-
-            painter.drawText(leftMargin, textY, label);
+            // A tick, because labels no longer coincide with the grid: the grid is a fixed-size
+            // cell pattern and these sit at physical dBm values, so the two only align by accident.
+            painter.drawLine(0, yPos, 3, yPos);
+            painter.drawText(leftMargin, yPos + textHeight / 3, label.text);
         }
     }
 
 private:
-    // Convert dBm to S-unit string
-    // S9 = -73 dBm, each S-unit below is 6 dB
-    QString dbmToSUnits(float dbm) const {
-        const float s9Dbm = -73.0f;
-        const float dbPerSUnit = 6.0f;
-
-        if (dbm >= s9Dbm) {
-            // Above S9: show as S9+XX
-            int dbOver = static_cast<int>(std::round(dbm - s9Dbm));
-            if (dbOver == 0) {
-                return "S9";
-            }
-            return QString("S9+%1").arg(dbOver);
-        } else {
-            // Below S9: calculate S-unit (S1-S9)
-            float sUnits = 9.0f + (dbm - s9Dbm) / dbPerSUnit;
-            int sValue = static_cast<int>(std::round(sUnits));
-            if (sValue < 1)
-                sValue = 1;
-            if (sValue > 9)
-                sValue = 9;
-            return QString("S%1").arg(sValue);
-        }
-    }
-
     float m_minDb = -138.0f;
     float m_maxDb = -58.0f;
     bool m_useSUnits = false;
@@ -1043,20 +1017,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                            visibleFraction, {0, 0}};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
-    // Calculate smoothed baseline for spectrum normalization
     if (!m_currentSpectrum.isEmpty()) {
-        float frameMinNormalized = 1.0f;
-        for (int i = 0; i < m_currentSpectrum.size(); ++i) {
-            float normalized = normalizeDb(m_currentSpectrum[i]);
-            if (normalized < frameMinNormalized)
-                frameMinNormalized = normalized;
-        }
-        const float baselineAlpha = 0.05f;
-        if (m_smoothedBaseline < 0.001f)
-            m_smoothedBaseline = frameMinNormalized;
-        else
-            m_smoothedBaseline = baselineAlpha * frameMinNormalized + (1.0f - baselineAlpha) * m_smoothedBaseline;
-
         // Upload raw spectrum bins to 1D texture - GPU shader does bilinear interpolation
         int specSize = m_currentSpectrum.size();
         int offset = (m_textureWidth - specSize) / 2;
@@ -1064,11 +1025,14 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         // Reuse member vector to avoid per-frame heap allocation
         m_normalizedSpectrum.resize(m_textureWidth);
         std::fill(m_normalizedSpectrum.begin(), m_normalizedSpectrum.end(), 0.0f);
-        for (int i = 0; i < specSize; ++i) {
-            float normalized = normalizeDb(m_currentSpectrum[i]);
-            float adjusted = qMax(0.0f, normalized - m_smoothedBaseline);
-            m_normalizedSpectrum[offset + i] = adjusted * 0.95f;
-        }
+        // WHY nothing is subtracted here: this used to remove a smoothed per-frame minimum, an
+        // automatic noise-floor tracker, before scaling by 0.95. It moved the trace by ~20% of the
+        // chart height depending on band noise, so a signal's height depended on conditions rather
+        // than on its strength, and no dBm or S-unit label could be correct. REF and SCALE define
+        // the window; the radio owns them, including in auto-reference mode where it adjusts REF
+        // itself and reports it. Height is now a pure function of dBm.
+        for (int i = 0; i < specSize; ++i)
+            m_normalizedSpectrum[offset + i] = SpectrumScale::normalizedForDb(m_currentSpectrum[i], m_minDb, m_maxDb);
 
         QRhiTextureSubresourceUploadDescription specDataUpload(m_normalizedSpectrum.constData(),
                                                                m_normalizedSpectrum.size() * sizeof(float));
@@ -1761,6 +1725,35 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
         }
     }
 
+    // The radio reports the noise floor it measured, in the same dBm the bins are meant to be in
+    // once RhiUtils::K4_DBM_OFFSET is applied. Comparing the two is a free check that the offset is
+    // right — a systematic gap means every dBm and S-unit on the scale is off by that much. Logged
+    // only when the disagreement changes, so it stays quiet while the calibration holds.
+    if (qk4PanDiag().isDebugEnabled() && !m_rawSpectrum.isEmpty()) {
+        // Raw bins, not the smoothed curve: the EMA's fast-attack/slow-decay asymmetry biases the
+        // result upward and would be read as a calibration error. The median is the meaningful
+        // comparison — with signals sparse across the span, most bins are noise, whereas the single
+        // lowest bin is the deepest downward excursion of that noise and sits well below any floor
+        // statistic the radio would report.
+        QVector<float> sorted = m_rawSpectrum;
+        std::sort(sorted.begin(), sorted.end());
+        const float medianDbm = sorted[sorted.size() / 2];
+        const float minDbm = sorted.first();
+        // Track the minimum, not the median: measured against a live band the min lands within a
+        // few dB of the radio's reported floor, while the median runs ~20 dB higher because most
+        // bins hold signal rather than noise. The min is therefore the calibration signal and the
+        // median is context — keying the log on the min keeps it quiet unless the offset is wrong,
+        // instead of chattering as band activity moves the median.
+        const float delta = minDbm - m_noiseFloor;
+        if (std::abs(delta - m_lastLoggedCalibDelta) >= 2.0f) {
+            m_lastLoggedCalibDelta = delta;
+            qCDebug(qk4PanDiag, "%s",
+                    qPrintable(QString::asprintf("CALIB       radio floor %.1f dBm  raw min %.1f  raw median %.1f  "
+                                                 "min-vs-radio %+.1f dB  (K4_DBM_OFFSET %.0f)",
+                                                 m_noiseFloor, minDbm, medianDbm, delta, RhiUtils::K4_DBM_OFFSET)));
+        }
+    }
+
     m_waterfallNeedsUpdate = true;
     updateFreqScaleOverlay(); // Update frequency labels when center freq changes
     update();
@@ -1880,11 +1873,15 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
 }
 
 float PanadapterRhiWidget::normalizeDb(float db) {
-    // WHY: Only the lower bound is clamped. Bins stronger than m_maxDb intentionally return
-    // values > 1.0 so the spectrum-fill shader (peakY = 1.0 - value) lets the trace climb to
-    // the chart's top edge instead of flat-topping at (1.0 - baseline) * 0.95. The waterfall
-    // byte-cast path re-clamps via qBound(0, ..., 255), so it stays safe.
-    return qMax(0.0f, (db - m_minDb) / (m_maxDb - m_minDb));
+    // One implementation for the spectrum trace, the waterfall and the scale labels. They disagreed
+    // before — the labels described a plain dBm axis while the trace had a drifting noise-floor
+    // offset applied — so the axis could not be read. Routing all three through the same function
+    // is what keeps them honest.
+    //
+    // Only the lower bound is clamped: bins stronger than m_maxDb return > 1.0 so the spectrum-fill
+    // shader (peakY = 1.0 - value) lets the trace climb to the chart's top edge instead of
+    // flat-topping. The waterfall byte-cast path re-clamps via qBound(0, ..., 255), so it stays safe.
+    return SpectrumScale::normalizedForDb(db, m_minDb, m_maxDb);
 }
 
 float PanadapterRhiWidget::freqToNormalized(qint64 freq) {

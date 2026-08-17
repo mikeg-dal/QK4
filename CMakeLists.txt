@@ -126,6 +126,7 @@ set(SOURCES
     src/audio/sidetonegenerator.cpp
     src/dsp/panadapter_rhi.cpp
     src/dsp/minipan_rhi.cpp
+    src/dsp/spectrumscale.cpp
     src/settings/radiosettings.cpp
     src/models/radiostate.cpp
     src/models/radiostate/antennastate.cpp

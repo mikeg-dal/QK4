@@ -7,8 +7,33 @@ GPU-accelerated spectrum + waterfall rendering via Qt RHI (Metal / DX / Vulkan /
 - `panadapter_rhi.{cpp,h}` — Main panadapter (spectrum + waterfall). Click-tune, passband overlays, DX spot overlays, TX markers. ~1870 LOC (naturally large — RHI pipeline + buffer management).
 - `minipan_rhi.{cpp,h}` — Per-VFO mini-pan widget. ~1065 LOC.
 - `panadapter_constants.h` — Shared rendering parameters: RTTY shift, grid cell size, line widths, dash pattern. Texture and history dimensions are **not** here; they live in `panadapter_rhi.h` (`BASE_TEXTURE_WIDTH`, `MAX_WATERFALL_HISTORY`).
+- `spectrumscale.{cpp,h}` — `SpectrumScale::` namespace. The amplitude axis: dBm → chart fraction, S-unit dBm values, and which values earn a label at a given size. Pure arithmetic, no widget dependency, covered by `test_spectrumscale`.
 - `rhi_utils.h` — Shared RHI helpers (color LUT size, texture builders).
 - `shaders/` — 4 shader pairs (vert/frag): spectrum, spectrum_fill, waterfall, overlay. Compiled at build time via `qt6_add_shaders()` in `CMakeLists.txt`.
+
+## Amplitude axis
+
+The radio owns it: `#REF` is the bottom of the window in dBm, `#SCL` its height in dB, so the
+visible range is `[REF, REF + SCALE]` and a bin's height is `(dBm - REF) / SCALE`. Bin dBm is
+`raw_byte - RhiUtils::K4_DBM_OFFSET`.
+
+Nothing is subtracted from that. The renderer used to remove a smoothed per-frame minimum — an
+automatic noise-floor tracker — which moved the trace by roughly 20% of the chart height depending
+on band conditions, so signal height tracked the noise rather than the signal, and no dBm or S-unit
+label could be correct. Auto-reference is the radio's job: in `AR=Auto` the K4 adjusts REF itself
+and reports it, which arrives as `#REF` like any other change.
+
+**Do not reintroduce a display-side baseline.** The trace, the waterfall and the scale labels all
+route through `SpectrumScale::normalizedForDb` specifically so they cannot disagree about where a
+given dBm belongs.
+
+S-units follow the amateur convention — S9 = -73 dBm, 6 dB per unit, round decades above S9 — and
+are drawn at their true dBm positions rather than at even divisions of the widget. Labels outside
+the window are omitted, never clamped; clamping is what once printed S1 at two different heights.
+
+With `qk4.pan.diag` enabled a `CALIB` line compares the radio's reported noise floor against our own
+minimum bin. A persistent gap means `K4_DBM_OFFSET` is wrong and every value on the scale is off by
+that amount.
 
 ## Sampling
 

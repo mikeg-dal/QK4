@@ -238,6 +238,9 @@ private:
     QSize m_lastLoggedOutputSize;
     float m_lastLoggedSpectrumRatio = -1.0f;
     bool m_geometryLoggedWithBins = false;
+    // Last logged gap between the radio's reported noise floor and our own minimum bin, so the
+    // calibration check reports on change rather than every frame.
+    float m_lastLoggedCalibDelta = 0.0f;
 
     // Color LUT (256 RGBA entries) - for waterfall
     QVector<quint8> m_colorLUT;
@@ -261,7 +264,6 @@ private:
     float m_minDb = -138.0f;
     float m_maxDb = -58.0f;
     float m_spectrumRatio = 0.30f;
-    float m_smoothedBaseline = 0.0f;
     bool m_gridEnabled = true;
     int m_refLevel = -110;
     int m_scale = 75; // 10-150, default 75 (neutral)
