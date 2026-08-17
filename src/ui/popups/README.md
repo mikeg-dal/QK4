@@ -4,7 +4,7 @@ Popup widgets. All inherit from `K4PopupBase` (in `ui/styling/`).
 
 ## Files
 
-14 popups, grouped by trigger:
+Grouped by trigger:
 
 - **Band / mode / display / Fn / button row** (5): `bandpopupwidget`, `modepopupwidget`, `displaypopupwidget`, `fnpopupwidget`, `buttonrowpopup` — main app popups, triggered from `BottomMenuBar`.
 - **Audio effects** (1): `rxeqpopupwidget` — RX EQ.
@@ -12,6 +12,7 @@ Popup widgets. All inherit from `K4PopupBase` (in `ui/styling/`).
 - **Audio I/O** (4): `lineinpopup`, `lineoutpopup`, `micinputpopup`, `micconfigpopup`.
 - **Modulation** (2): `voxpopup`, `ssbbwpopup`.
 - **Keying** (1): `keyingweightpopup`.
+- **Confirmation / info** (2): `confirmpopup` — reusable yes/no confirm in the K4 popup language, first used by the remote power-off flow; `softwarelistpopup` — display-only view of the K4's parsed firmware versions.
 
 ## Pattern
 

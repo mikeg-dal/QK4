@@ -4,8 +4,8 @@ Tab pages for `OptionsDialog`. Each is a `QWidget` that plugs into the dialog's 
 
 ## Files
 
-8 pages:
 - `aboutpage` — version, license, credits.
+- `stationpage` — call sign, grid square, operator name, QTH, and the IARU region that drives the panadapter band-plan overlay (plus its show/hide toggle). Persists via settings.
 - `rigcontrolpage` — CAT server config + radio timing.
 - `audioinputpage` / `audiooutputpage` — device selection + test.
 - `cwkeyerpage` — HaliKey + iambic keyer config.

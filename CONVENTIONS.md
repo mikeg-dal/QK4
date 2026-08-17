@@ -39,8 +39,14 @@ Code style, naming conventions, and development rules for QK4.
 | Member Variables | m_camelCase | `m_frequencyALabel`, `m_tcpClient` |
 | Signals | camelCase | `frequencyChanged`, `clicked` |
 | Slots | on + Source + Event | `onFrequencyChanged`, `onConnectClicked` |
-| Constants | SCREAMING_SNAKE | `WATERFALL_HISTORY`, `TOTAL_BANDWIDTH_HZ` |
+| Constants (header / class) | SCREAMING_SNAKE | `WATERFALL_HISTORY`, `BASE_TEXTURE_WIDTH` |
+| Constants (file-local in `.cpp`) | `kCamelCase` | `kArpMaxRetries`, `kOverlayMaxSegments` |
 | Namespaces | PascalCase | `K4Styles`, `K4Styles::Colors` |
+
+The two constant styles are split by **location**, not by taste: a constant visible through a header
+is SCREAMING_SNAKE, one confined to a single `.cpp` is `kCamelCase`. The codebase follows this about
+95% of the time; it was documented in 2026-08 after an audit found the rule in the code but not in
+this file.
 
 ## Member Variable Prefixes
 
@@ -259,7 +265,7 @@ ASAN in the sanitizer CI job catches use-after-free on violation if the destruct
 
 ### 12. [review] New UI Concerns Belong in Controllers, Not MainWindow
 
-After the 2026-04 MainWindow decomposition, `MainWindow.cpp`'s scope is **window chrome, top-level layout, and controller coordination — nothing else**. New features that need a widget, a signal wiring, a CAT dispatch helper, or mode-dependent UI behavior go in a controller under `src/controllers/` (see `PATTERNS.md` → Controller Pattern). If the widget only consumes a single RadioState property, use Direct Observation instead of adding a controller.
+After the 2026-04 MainWindow decomposition, `src/mainwindow.cpp`'s scope is **window chrome, top-level layout, and controller coordination — nothing else**. New features that need a widget, a signal wiring, a CAT dispatch helper, or mode-dependent UI behavior go in a controller under `src/controllers/` (see `PATTERNS.md` → Controller Pattern). If the widget only consumes a single RadioState property, use Direct Observation instead of adding a controller.
 
 Regressing to "throw it on MainWindow" is the single biggest risk for re-drifting into a god object. The banned anti-patterns in `PATTERNS.md` are non-negotiable:
 

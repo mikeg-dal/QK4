@@ -6,6 +6,7 @@ Shared styling infrastructure. Used by every other `ui/` subdirectory.
 
 - `k4styles.{cpp,h}` — Color palette, dimension constants, font helpers, stylesheet functions, `Dialog::` cached-QString helpers. **Single source of truth for every visual constant.**
 - `k4popupbase.{cpp,h}` — Base class for every popup (see `ui/popups/`). Handles window flags, shadow rendering, Escape/click-outside dismissal, screen-boundary detection.
+- `k4glyphs.{h}` — procedurally drawn UI glyphs for the status bar and `PowerStatusButton`. Each factory returns a closure that renders the glyph in a supplied color, so glyphs follow the palette instead of shipping as fixed-color assets.
 
 ## Rule
 

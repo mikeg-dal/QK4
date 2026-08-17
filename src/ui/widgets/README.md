@@ -22,10 +22,16 @@ Top-level app widgets that aren't popups, pages, overlays, dialogs, or styling i
 - `controlgroupwidget` / `togglegroupwidget` — radio-button-like grouping for option sets.
 - `displaymenubutton` — DISPLAY popup trigger button.
 
-### Utility / misc (3)
+### Status bar
 - `nethealthwidget` — TCP health LED for the top status bar.
+- `nethealthpopup` — frameless hover popup plotting the last 10 s of network metrics as three independently auto-scaled sparklines (RTT / JIT / BUF).
+- `icontextlabel` — icon-plus-value composite used across the top status bar.
+- `powerstatusbutton` — power icon that doubles as connection/power-state indicator and the click target for K4 remote power-off.
+
+### Utility / misc
 - `notificationwidget` — Toast notifications (K4 errors, etc.).
-- `wheelaccumulator` — Shared QWheelEvent delta accumulator for fractional wheel steps.
+
+`WheelAccumulator` is **not** here — it lives in `src/utils/`, since it has no Qt UI dependency.
 
 ## Pattern
 

@@ -26,6 +26,5 @@ Microphone → QAudioSource → AudioEngine → OpusEncoder → ConnectionContro
 
 ## See also
 
-- `memory/audio-architecture-plan.md` — jitter buffer design, buffering tradeoffs.
-- `memory/audio-thread-plan.md` — thread migration details.
-- `memory/k4-streaming-latency.md` — SL tier → frame size map.
+- `docs/k4-protocol-quirks.md` → "`SL` (streaming latency) is not echoed" — the SL tier → frame
+  bundling map, and why the tier cannot be read back from the radio.

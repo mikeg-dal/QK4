@@ -17,6 +17,8 @@
 | `rxtxmeterstate.{h,cpp}` | S-meter, TX meter, TX/RX transition, supply V/A, radio identity, SB/DV/TS/BS | SM, SM$, PO, TM, TX, RX, ID, OM, RV., ER, MN, SIFP, SB, DV, TS, BS |
 | `levelsstate.{h,cpp}` | RF power, QRP/QRO, mic gain, compression, RF gain A/B, squelch A/B | PC, MG, CP, RG, RG$, SQ, SQ$ |
 | `qskcontrolstate.{h,cpp}` | QSK enable + per-mode TX→RX delay | SD |
+| `powerstate.{h,cpp}` | K4 remote power on/off — `PS1` = on, `PS0` = off | PS |
+| `xvtrbandstate.{h,cpp}` | Per-XVTR-band transverter configuration (12 bands) | XV\* |
 
 ## File layout per subsystem
 

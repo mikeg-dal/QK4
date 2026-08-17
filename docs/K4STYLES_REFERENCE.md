@@ -285,6 +285,21 @@ User-configurable in Options → DX Cluster (the slider runs `FontSizeSpotMin..F
 | `VfoIndicatorWidth` | `34` | VFO A/B label width on panadapter (px) |
 | `VfoIndicatorHeight` | `30` | VFO A/B label height on panadapter (px) |
 
+### Network Metrics Chart (`NetHealthPopup` sparklines)
+
+| Constant | Value | Usage |
+|----------|-------|-------|
+| `ChartPopupContentWidth` | `242` | Card content width, excluding shadow margin (px) |
+| `ChartRowHeight` | `46` | Height of one metric sparkline row (px) |
+| `ChartValueColumnWidth` | `100` | Left column: legend label + current value + scale gutter (px) |
+| `ChartLineWidth` | `2` | Sparkline trace stroke width (px) |
+| `ChartPlotMargin` | `4` | Inset between a row's plot area and its edges (px) |
+| `ChartLegendDotSize` | `6` | Diameter of the series legend dot (px) |
+| `ChartPopupGap` | `4` | Gap between the popup card and its anchor widget (px) |
+
+Series colors are aliases, not new values: `ChartSeriesRtt` = `VfoACyan`,
+`ChartSeriesJitter` = `AccentAmber`, `ChartSeriesBuffer` = `MeterIdLight`.
+
 ### Dialog Dimensions
 
 | Constant | Value | Usage |

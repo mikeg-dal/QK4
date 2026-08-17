@@ -41,6 +41,7 @@ Spectrum data routing includes AR (auto-reference), #SCL (scale), #SPN (span), #
 
 ## See also
 
-- `memory/k4-pan-tier-map.md` — verified tier boundaries, sample rates, bin counts.
-- `memory/k4-span-stepping.md` — K4 span dial stepping quirk (5→7 kHz skip).
+- `docs/k4-protocol-quirks.md` → "PAN spectrum tiers" — tier boundaries, sample rates, bin counts,
+  and why the waterfall is cleared when the radio changes tier.
+- `docs/k4-protocol-quirks.md` → "Span dial skips 6 kHz going up".
 - `controllers/spectrumcontroller.cpp` — all wiring + click-tune logic.

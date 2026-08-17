@@ -56,7 +56,7 @@ TX@...    [ KZ ; ]                                            ← characterSpace
 ```
 
 Wire output (extract just the `TX@` lines): `KZP0420; KZ-; KZ.; KZ-; KZ ;` —
-which is one of the worked examples in `memory/kz-protocol.md`.
+whose command forms are tabulated in `docs/k4-protocol-quirks.md` → "KZ keying protocol".
 
 ## What an "extra dit" looks like
 

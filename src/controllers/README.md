@@ -1,28 +1,38 @@
 # controllers/
 
-26 controllers. Each owns a cohesive slice of the UI or domain: widgets + signal wiring + CAT dispatch + slice-specific state.
+Each controller owns a cohesive slice of the UI or domain: widgets + signal wiring + CAT dispatch +
+slice-specific state.
 
 **MainWindow coordinates controllers; it does not reach into them.**
 
 ## Find a controller
 
-See `docs/controllers.md` — symptom → controller file map. Fastest way to triage a bug.
+See `docs/controllers.md` — symptom → controller file map, and the **canonical inventory**. This
+file describes the shape of the layer; that one lists every controller. Deliberately not duplicated
+here: two hand-maintained lists drift apart, and this one already had.
 
 ## Groups
 
-### Core I/O owners (5)
-`ConnectionController`, `AudioController`, `HardwareController`, `SpectrumController`, `DxClusterController` — each owns a dedicated thread and a device/network boundary.
+### Core I/O owners
+`ConnectionController`, `AudioController`, `HardwareController`, `SpectrumController`,
+`DxClusterController` — each owns a dedicated thread and a device/network boundary.
+`CwController` orchestrates keying across the HardwareController-owned devices.
 
-### Popup family (5)
-`PopupManager`, `ModePopupController`, `FeatureMenuController`, `AntennaConfigController`, `MenuController` — lifecycle + coordination for popup widgets.
+### Popup family
+`PopupManager`, `ModePopupController`, `FeatureMenuController`, `AntennaConfigController`,
+`MenuController` — lifecycle + coordination for popup widgets.
 
-### Signal dispatch (3)
-`ButtonRowDispatcher`, `MacroController`, `BandNavigationController` — routing layer for click/macro/band events.
+### Signal dispatch
+`ButtonRowDispatcher`, `MacroController`, `BandNavigationController`, `MemoryButtonsController` —
+routing layer for click/macro/band/memory events.
 
-### Display / indicator controllers (12)
-`StatusBarController`, `ModeLabelController`, `VfoFrequencyController`, `AntennaDisplayController`, `ProcessingDisplayController`, `FilterIndicatorController`, `SideControlDisplayController`, `VfoRowIndicatorController`, `SubDivIndicatorController`, `TxStateController`, `RitXitController`, `KPA1500UiController` — observe RadioState and render.
+### Display / indicator controllers
+`StatusBarController`, `ModeLabelController`, `VfoFrequencyController`, `AntennaDisplayController`,
+`ProcessingDisplayController`, `SideControlDisplayController`, `SideControlScrollController`,
+`VfoRowIndicatorController`, `SubDivIndicatorController`, `TxStateController`, `RitXitController`,
+`RightSideController`, `KPA1500UiController` — observe RadioState and render.
 
-### Text decode (1)
+### Text decode
 `TextDecodeController` — FT8/PSK decoder window lifecycle.
 
 ## Adding a new controller
