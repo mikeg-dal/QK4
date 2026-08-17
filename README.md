@@ -230,7 +230,7 @@ src/
 ## License
 
 QK4 — Remote control application for Elecraft K4 radios
-Copyright (C) 2025-2026 Mike Garcia
+Copyright (C) 2025-2026 Mike Garcia — KF5O
 
 This program is free software: you can redistribute it and/or modify it under the terms of the
 [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3

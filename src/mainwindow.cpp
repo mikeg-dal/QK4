@@ -441,7 +441,8 @@ void MainWindow::setupMenuBar() {
                            QString("<h2>QK4</h2>"
                                    "<p>Version %1</p>"
                                    "<p>Remote control application for Elecraft K4 radios.</p>"
-                                   "<p>Copyright &copy; 2024-2025 KF5O</p>"
+                                   "<p>Copyright &copy; 2025-2026 Mike Garcia &mdash; KF5O</p>"
+                                   "<p>Licensed under the GNU General Public License v3.0</p>"
                                    "<p><a href='https://github.com/mikeg-dal/QK4'>github.com/mikeg-dal/QK4</a></p>")
                                .arg(QCoreApplication::applicationVersion()));
     });
