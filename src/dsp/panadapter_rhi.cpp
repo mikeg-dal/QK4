@@ -23,6 +23,34 @@ Q_LOGGING_CATEGORY(qk4Dsp, "qk4.dsp")
 // does.
 Q_LOGGING_CATEGORY(qk4PanDiag, "qk4.pan.diag", QtWarningMsg)
 
+namespace {
+
+// Stretch a spectrum curve to a different bin count, keeping its shape across the frequency axis.
+// Used when the bin count changes under an EMA that must not be interrupted.
+QVector<float> resampleLinear(const QVector<float> &src, int dstSize) {
+    if (src.isEmpty() || dstSize <= 0)
+        return QVector<float>(qMax(0, dstSize), 0.0f);
+    if (src.size() == dstSize)
+        return src;
+
+    QVector<float> out(dstSize);
+    if (src.size() == 1) {
+        out.fill(src[0]);
+        return out;
+    }
+    const float step = static_cast<float>(src.size() - 1) / static_cast<float>(qMax(1, dstSize - 1));
+    for (int i = 0; i < dstSize; ++i) {
+        const float pos = i * step;
+        const int lo = qBound(0, static_cast<int>(pos), src.size() - 1);
+        const int hi = qMin(lo + 1, src.size() - 1);
+        const float frac = pos - lo;
+        out[i] = src[lo] * (1.0f - frac) + src[hi] * frac;
+    }
+    return out;
+}
+
+} // namespace
+
 // Transparent overlay widget for dBm/S-unit scale labels
 class DbmScaleOverlay : public QWidget {
 public:
@@ -1715,9 +1743,18 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
 
     decompressBins(binsToUse, m_rawSpectrum);
 
-    if (m_currentSpectrum.size() != m_rawSpectrum.size()) {
+    // WHY resample instead of reassigning: the cropped bin count is spanHz * totalBins / tierSpanHz,
+    // so it changes on every span change and every tier crossing. Dropping the smoothed curve there
+    // put one raw, unsmoothed frame on screen, which reads as a visible flash against an EMA running
+    // at attack 0.52 / decay 0.34. The frequency axis is unchanged across that boundary — old and
+    // new both cover spanHz about the same centre, only the resolution differs — so the smoothed
+    // curve carries over correctly once stretched to the new bin count, and smoothing continues
+    // uninterrupted.
+    if (m_currentSpectrum.isEmpty()) {
         m_currentSpectrum = m_rawSpectrum;
     } else {
+        if (m_currentSpectrum.size() != m_rawSpectrum.size())
+            m_currentSpectrum = resampleLinear(m_currentSpectrum, m_rawSpectrum.size());
         for (int i = 0; i < m_rawSpectrum.size(); ++i) {
             float alpha = (m_rawSpectrum[i] > m_currentSpectrum[i]) ? attackAlpha : decayAlpha;
             m_currentSpectrum[i] = alpha * m_rawSpectrum[i] + (1.0f - alpha) * m_currentSpectrum[i];
