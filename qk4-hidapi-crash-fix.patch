@@ -1,0 +1,582 @@
+diff --git a/src/controllers/hardwarecontroller.cpp b/src/controllers/hardwarecontroller.cpp
+index 8f1ff83..9cd8b9e 100644
+--- a/src/controllers/hardwarecontroller.cpp
++++ b/src/controllers/hardwarecontroller.cpp
+@@ -125,10 +125,8 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
+     });
+ 
+     // =========================================================================
+-    // Icom RC-28 USB tuning knob (HID). No rocker switch: F1 tap cycles the
+-    // software tuning target (VFO A → VFO B → RIT/XIT) and drives the indicator
+-    // LEDs; F1 hold, F2 and TX (tap/hold) are macro buttons. Reuses the K-POD
+-    // tuning dispatch via onKpodEncoderRotatedWithRocker.
++    // Icom RC-28 USB tuning knob (HID). F1 selects Main/VFO A, F2 selects
++    // Sub/VFO B, and TRANSMIT toggles PTT. The three LEDs mirror those states.
+     // =========================================================================
+     m_rc28Device = new Rc28Device(this);
+ 
+@@ -138,19 +136,22 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
+         onKpodEncoderRotatedWithRocker(ticks, m_rc28Rocker);
+     });
+     connect(m_rc28Device, &Rc28Device::pollError, this, &HardwareController::onKpodPollError);
+-    connect(m_rc28Device, &Rc28Device::buttonTapped, this, [this](int button) {
++    connect(m_rc28Device, &Rc28Device::buttonPressed, this, [this](int button) {
+         if (button == Rc28Device::ButtonF1) {
+-            cycleTuningTarget(m_rc28Rocker, QStringLiteral("RC-28"), m_rc28Device);
+-            return;
++            selectRc28TuningTarget(2);
++        } else if (button == Rc28Device::ButtonF2) {
++            selectRc28TuningTarget(0);
++        } else if (button == Rc28Device::ButtonTx) {
++            setRc28Ptt(true);
+         }
+-        QString name = (button == Rc28Device::ButtonF2) ? QStringLiteral("F2") : QStringLiteral("TX");
+-        emit macroRequested(QStringLiteral("RC-28.") + name + QStringLiteral("T"));
+     });
+-    connect(m_rc28Device, &Rc28Device::buttonHeld, this, [this](int button) {
+-        QString name = (button == Rc28Device::ButtonF1)   ? QStringLiteral("F1")
+-                       : (button == Rc28Device::ButtonF2) ? QStringLiteral("F2")
+-                                                          : QStringLiteral("TX");
+-        emit macroRequested(QStringLiteral("RC-28.") + name + QStringLiteral("H"));
++    connect(m_rc28Device, &Rc28Device::buttonReleased, this, [this](int button) {
++        if (button == Rc28Device::ButtonTx)
++            setRc28Ptt(false);
++    });
++    connect(m_radioState, &RadioState::transmitStateChanged, this, [this](bool transmitting) {
++        m_rc28PttActive = transmitting;
++        updateRc28Leds();
+     });
+ 
+     // Auto-start polling when enabled + detected. setLeds after startPolling is
+@@ -159,7 +160,7 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
+     auto startRc28 = [this]() {
+         if (RadioSettings::instance()->rc28Enabled() && m_rc28Device->isDetected() && !m_rc28Device->isPolling()) {
+             m_rc28Device->startPolling();
+-            m_rc28Device->setLeds(m_rc28Rocker == 2, m_rc28Rocker == 0, m_rc28Rocker == 1);
++            updateRc28Leds();
+         }
+     };
+     connect(m_rc28Device, &Rc28Device::deviceConnected, this, startRc28);
+@@ -168,7 +169,7 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
+         if (enabled) {
+             if (m_rc28Device->isDetected() && !m_rc28Device->isPolling()) {
+                 m_rc28Device->startPolling();
+-                m_rc28Device->setLeds(m_rc28Rocker == 2, m_rc28Rocker == 0, m_rc28Rocker == 1);
++                updateRc28Leds();
+             }
+         } else {
+             m_rc28Device->stopPolling();
+@@ -354,6 +355,26 @@ void HardwareController::cycleTuningTarget(int &rocker, const QString &deviceNam
+     emit hardwareNotice(QStringLiteral("%1: %2").arg(deviceName, tuningTargetLabel(rocker)));
+ }
+ 
++void HardwareController::selectRc28TuningTarget(int rocker) {
++    m_rc28Rocker = rocker;
++    updateRc28Leds();
++    const QString target = (rocker == 2) ? QStringLiteral("Main (VFO A)") : QStringLiteral("Sub (VFO B)");
++    emit hardwareNotice(QStringLiteral("RC-28: %1").arg(target));
++}
++
++void HardwareController::updateRc28Leds() {
++    if (m_rc28Device && m_rc28Device->isDetected())
++        m_rc28Device->setLeds(m_rc28Rocker == 2, m_rc28Rocker == 0, m_rc28PttActive);
++}
++
++void HardwareController::setRc28Ptt(bool active) {
++    if (active && !m_connectionController->isConnected())
++        return;
++    m_rc28PttActive = active;
++    updateRc28Leds();
++    emit pttRequested(active);
++}
++
+ // =============================================================================
+ // KPOD Event Handlers
+ // =============================================================================
+diff --git a/src/controllers/hardwarecontroller.h b/src/controllers/hardwarecontroller.h
+index b860e27..2074b3b 100644
+--- a/src/controllers/hardwarecontroller.h
++++ b/src/controllers/hardwarecontroller.h
+@@ -67,6 +67,10 @@ signals:
+     // rocker switch, so there is no physical indication otherwise.
+     void hardwareNotice(const QString &message);
+ 
++    // RC-28 TRANSMIT button requests momentary TX while held. MainWindow
++    // owns the audio PTT gate, so it completes the request.
++    void pttRequested(bool active);
++
+     // Hardware error (port open failure, MIDI subsystem error, etc.) → MainWindow
+     // shows it on the notification overlay. Currently fed by HalikeyDevice's
+     // connectionError signal; future device errors can route here too. Prefix the
+@@ -87,6 +91,9 @@ private:
+     // Emits hardwareNotice; if `rc28` is non-null its indicator LEDs are set.
+     void cycleTuningTarget(int &rocker, const QString &deviceName, Rc28Device *rc28);
+     static QString tuningTargetLabel(int rocker);
++    void selectRc28TuningTarget(int rocker);
++    void updateRc28Leds();
++    void setRc28Ptt(bool active);
+ 
+ private:
+     RadioState *m_radioState;
+@@ -98,11 +105,11 @@ private:
+     // KPOD+ USB keyer device (libusb, vendor-specific class)
+     KpodPlusDevice *m_kpodPlusDevice;
+ 
+-    // Icom RC-28 USB tuning knob (HID). No rocker — m_rc28Rocker tracks the
+-    // software tuning target (2=VFO A, 0=VFO B, 1=RIT/XIT, matching the K-POD
+-    // rocker encoding consumed by onKpodEncoderRotatedWithRocker).
++    // Icom RC-28 USB tuning knob (HID). F1/F2 select Main/Sub; the stored values
++    // match the K-POD rocker encoding consumed by the shared tuning dispatcher.
+     Rc28Device *m_rc28Device = nullptr;
+     int m_rc28Rocker = 2;
++    bool m_rc28PttActive = false;
+ 
+     // FlexRadio FlexControl USB tuning knob (serial). Same software-target model.
+     FlexControlDevice *m_flexControlDevice = nullptr;
+diff --git a/src/hardware/kpodhidworker.cpp b/src/hardware/kpodhidworker.cpp
+index b3643e2..d78ec6c 100644
+--- a/src/hardware/kpodhidworker.cpp
++++ b/src/hardware/kpodhidworker.cpp
+@@ -1,4 +1,5 @@
+ #include "kpodhidworker.h"
++#include "hidapiguard.h"
+ #include <QLoggingCategory>
+ #include <QString>
+ #include <QThread>
+@@ -94,20 +95,18 @@ KpodHidWorker::ResponseEvents KpodHidWorker::decodeResponse(const unsigned char
+ KpodHidWorker::KpodHidWorker(QObject *parent) : QObject(parent) {}
+ 
+ KpodHidWorker::~KpodHidWorker() {
++    HidApiGuard::Lock lock;
+     if (m_hidDevice || m_hidInitialized) {
+         releaseHandle();
+         if (m_hidInitialized) {
+-            hid_exit();
++            HidApiGuard::release();
+             m_hidInitialized = false;
+         }
+     }
+ }
+ 
+ void KpodHidWorker::start() {
+-    // hid_init is reference-counted internally. Calling it from the worker thread is safe
+-    // and matches KpodPlusUsbWorker's libusb_init-on-worker pattern — keeps hidapi off
+-    // main entirely.
+-    if (hid_init() != 0) {
++    if (!HidApiGuard::acquire()) {
+         qCWarning(hwKpod) << "hid_init failed";
+         return;
+     }
+@@ -152,6 +151,7 @@ void KpodHidWorker::start() {
+ }
+ 
+ void KpodHidWorker::shutdown() {
++    HidApiGuard::Lock lock;
+     if (m_pollTimer)
+         m_pollTimer->stop();
+ #ifndef Q_OS_LINUX
+@@ -167,7 +167,7 @@ void KpodHidWorker::shutdown() {
+ #endif
+     releaseHandle();
+     if (m_hidInitialized) {
+-        hid_exit();
++        HidApiGuard::release();
+         m_hidInitialized = false;
+     }
+ }
+@@ -177,6 +177,7 @@ void KpodHidWorker::shutdown() {
+ // =============================================================================
+ 
+ bool KpodHidWorker::openHandle() {
++    HidApiGuard::Lock lock;
+     if (m_hidDevice)
+         return true;
+     if (m_info.devicePath.isEmpty()) {
+@@ -193,6 +194,7 @@ bool KpodHidWorker::openHandle() {
+ }
+ 
+ void KpodHidWorker::releaseHandle() {
++    HidApiGuard::Lock lock;
+     if (m_hidDevice) {
+         hid_close(m_hidDevice);
+         m_hidDevice = nullptr;
+@@ -226,6 +228,7 @@ void KpodHidWorker::closeDevice() {
+ // =============================================================================
+ 
+ void KpodHidWorker::onPollTimer() {
++    HidApiGuard::Lock lock;
+     if (!m_hidDevice)
+         return;
+ 
+@@ -281,6 +284,7 @@ void KpodHidWorker::onPollTimer() {
+ // =============================================================================
+ 
+ void KpodHidWorker::onPresenceTimer() {
++    HidApiGuard::Lock lock;
+     // hid_enumerate reads cached USB descriptors on macOS/Windows — cheap. We use this
+     // instead of IOHIDManager callbacks because hidapi already owns the IOKit run loop
+     // and two managers conflict.
+@@ -316,6 +320,7 @@ void KpodHidWorker::onDeviceRemovedFromHotplug() {
+ // =============================================================================
+ 
+ KpodDeviceInfo KpodHidWorker::detectDeviceInfo() {
++    HidApiGuard::Lock lock;
+     KpodDeviceInfo info;
+     kpodLog("detectDeviceInfo() starting");
+ 
+diff --git a/src/hardware/rc28device.cpp b/src/hardware/rc28device.cpp
+index 2181df2..2babb73 100644
+--- a/src/hardware/rc28device.cpp
++++ b/src/hardware/rc28device.cpp
+@@ -26,6 +26,8 @@ Rc28Device::Rc28Device(QObject *parent) : QObject(parent) {
+     connect(m_hidWorker, &Rc28HidWorker::encoderRotated, this, &Rc28Device::encoderRotated);
+     connect(m_hidWorker, &Rc28HidWorker::buttonTapped, this, &Rc28Device::buttonTapped);
+     connect(m_hidWorker, &Rc28HidWorker::buttonHeld, this, &Rc28Device::buttonHeld);
++    connect(m_hidWorker, &Rc28HidWorker::buttonPressed, this, &Rc28Device::buttonPressed);
++    connect(m_hidWorker, &Rc28HidWorker::buttonReleased, this, &Rc28Device::buttonReleased);
+     connect(m_hidWorker, &Rc28HidWorker::pollError, this, &Rc28Device::pollError);
+ 
+     m_hidThread->start();
+diff --git a/src/hardware/rc28device.h b/src/hardware/rc28device.h
+index 867e0de..536c20c 100644
+--- a/src/hardware/rc28device.h
++++ b/src/hardware/rc28device.h
+@@ -24,9 +24,8 @@ struct Rc28DeviceInfo {
+ //
+ // The RC-28 is a Raw-HID device (VID 0x0C26, PID 0x001E) with a tuning
+ // encoder and three buttons (F1, F2, TX) each backed by an LED. Unlike the
+-// K-POD it has no rocker switch — the "which VFO does the knob tune" state is
+-// synthesised in HardwareController and reflected back onto the three LEDs via
+-// setLeds(). Button numbers: 1 = F1, 2 = F2, 3 = TX.
++// F1/F2 select Main/Sub tuning in HardwareController; their LEDs indicate that
++// selection, while the TX LED follows the radio's transmit state.
+ class Rc28Device : public QObject {
+     Q_OBJECT
+ 
+@@ -58,6 +57,8 @@ signals:
+     void encoderRotated(int ticks);
+     void buttonTapped(int buttonNumber);
+     void buttonHeld(int buttonNumber);
++    void buttonPressed(int buttonNumber);
++    void buttonReleased(int buttonNumber);
+     void pollError(const QString &error);
+ 
+ private:
+diff --git a/src/hardware/rc28hidworker.cpp b/src/hardware/rc28hidworker.cpp
+index ce32227..0893421 100644
+--- a/src/hardware/rc28hidworker.cpp
++++ b/src/hardware/rc28hidworker.cpp
+@@ -1,4 +1,5 @@
+ #include "rc28hidworker.h"
++#include "hidapiguard.h"
+ #include <QLoggingCategory>
+ #include <QString>
+ #include <QThread>
+@@ -55,10 +56,10 @@ Rc28HidWorker::ReportEvents Rc28HidWorker::decodeReport(const unsigned char *buf
+             speed = 4;
+         if (dir == 0x01) {
+             ev.emitEncoder = true;
+-            ev.encoderTicks = -speed; // CCW / down
++            ev.encoderTicks = speed; // Physical RC-28 direction is opposite K-POD
+         } else if (dir == 0x02) {
+             ev.emitEncoder = true;
+-            ev.encoderTicks = speed; // CW / up
++            ev.encoderTicks = -speed;
+         }
+         // dir == 0x00 → no movement
+         return ev;
+@@ -88,17 +89,18 @@ Rc28HidWorker::ReportEvents Rc28HidWorker::decodeReport(const unsigned char *buf
+ Rc28HidWorker::Rc28HidWorker(QObject *parent) : QObject(parent) {}
+ 
+ Rc28HidWorker::~Rc28HidWorker() {
++    HidApiGuard::Lock lock;
+     if (m_hidDevice || m_hidInitialized) {
+         releaseHandle();
+         if (m_hidInitialized) {
+-            hid_exit();
++            HidApiGuard::release();
+             m_hidInitialized = false;
+         }
+     }
+ }
+ 
+ void Rc28HidWorker::start() {
+-    if (hid_init() != 0) {
++    if (!HidApiGuard::acquire()) {
+         qCWarning(hwRc28) << "hid_init failed";
+         return;
+     }
+@@ -136,6 +138,7 @@ void Rc28HidWorker::start() {
+ }
+ 
+ void Rc28HidWorker::shutdown() {
++    HidApiGuard::Lock lock;
+     if (m_pollTimer)
+         m_pollTimer->stop();
+ #ifndef Q_OS_LINUX
+@@ -151,7 +154,7 @@ void Rc28HidWorker::shutdown() {
+ #endif
+     releaseHandle();
+     if (m_hidInitialized) {
+-        hid_exit();
++        HidApiGuard::release();
+         m_hidInitialized = false;
+     }
+ }
+@@ -161,6 +164,7 @@ void Rc28HidWorker::shutdown() {
+ // =============================================================================
+ 
+ bool Rc28HidWorker::openHandle() {
++    HidApiGuard::Lock lock;
+     if (m_hidDevice)
+         return true;
+     if (m_info.devicePath.isEmpty()) {
+@@ -185,6 +189,7 @@ bool Rc28HidWorker::openHandle() {
+ }
+ 
+ void Rc28HidWorker::releaseHandle() {
++    HidApiGuard::Lock lock;
+     if (m_hidDevice) {
+         hid_close(m_hidDevice);
+         m_hidDevice = nullptr;
+@@ -215,20 +220,21 @@ void Rc28HidWorker::closeDevice() {
+ }
+ 
+ void Rc28HidWorker::setLeds(bool f1, bool f2, bool tx) {
++    HidApiGuard::Lock lock;
+     if (!m_hidDevice)
+         return;
+-    // Host LED command: report type 0x01, byte1 = bitfield. Bit assignment from
+-    // the emulator: bit0 = TX, bit1 = F1, bit2 = F2 (a set bit lights the LED).
++    // Host LED command: report type 0x01, byte1 = active-low bitfield.
++    // bit0=TX, bit1=F1, bit2=F2, bit3=LINK. Keep LINK lit while connected.
+     unsigned char cmd[RC28_REPORT_LEN];
+     memset(cmd, 0, sizeof(cmd));
+     cmd[0] = 0x01;
+-    unsigned char bits = 0;
++    unsigned char bits = 0x07; // function LEDs off, LINK on
+     if (tx)
+-        bits |= 0x01;
++        bits &= ~0x01;
+     if (f1)
+-        bits |= 0x02;
++        bits &= ~0x02;
+     if (f2)
+-        bits |= 0x04;
++        bits &= ~0x04;
+     cmd[1] = bits;
+     hid_write(m_hidDevice, cmd, sizeof(cmd));
+ }
+@@ -238,6 +244,7 @@ void Rc28HidWorker::setLeds(bool f1, bool f2, bool tx) {
+ // =============================================================================
+ 
+ void Rc28HidWorker::onPollTimer() {
++    HidApiGuard::Lock lock;
+     if (!m_hidDevice)
+         return;
+ 
+@@ -281,23 +288,30 @@ void Rc28HidWorker::onPollTimer() {
+ }
+ 
+ void Rc28HidWorker::updateButtonState(int buttonDown) {
+-    if (buttonDown != 0 && m_pressedButton == 0) {
+-        // New press.
++    if (buttonDown != m_pressedButton) {
++        // Release the previous control first. Real hardware can transition
++        // directly between button masks without an intervening idle report.
++        if (m_pressedButton != 0) {
++            const int released = m_pressedButton;
++            emit buttonReleased(released);
++            if (!m_holdEmitted)
++                emit buttonTapped(released);
++        }
++
+         m_pressedButton = buttonDown;
+         m_holdEmitted = false;
+-        m_pressTimer.restart();
+-    } else if (buttonDown != 0 && m_pressedButton != 0) {
++        if (buttonDown != 0) {
++            m_pressTimer.restart();
++            emit buttonPressed(buttonDown);
++        } else {
++            m_pressTimer.invalidate();
++        }
++    } else if (buttonDown != 0) {
+         // Still held — hold emission handled by the timer check in onPollTimer.
+         if (!m_holdEmitted && m_pressTimer.isValid() && m_pressTimer.elapsed() >= HOLD_THRESHOLD_MS) {
+             emit buttonHeld(m_pressedButton);
+             m_holdEmitted = true;
+         }
+-    } else if (buttonDown == 0 && m_pressedButton != 0) {
+-        // Release. Emit a tap only if we never crossed the hold threshold.
+-        if (!m_holdEmitted)
+-            emit buttonTapped(m_pressedButton);
+-        m_pressedButton = 0;
+-        m_holdEmitted = false;
+     }
+ }
+ 
+@@ -306,6 +320,7 @@ void Rc28HidWorker::updateButtonState(int buttonDown) {
+ // =============================================================================
+ 
+ void Rc28HidWorker::onPresenceTimer() {
++    HidApiGuard::Lock lock;
+     hid_device_info *devs = hid_enumerate(VENDOR_ID, PRODUCT_ID);
+     const bool now = (devs != nullptr);
+     hid_free_enumeration(devs);
+@@ -338,6 +353,7 @@ void Rc28HidWorker::onDeviceRemovedFromHotplug() {
+ // =============================================================================
+ 
+ Rc28DeviceInfo Rc28HidWorker::detectDeviceInfo() {
++    HidApiGuard::Lock lock;
+     Rc28DeviceInfo info;
+ 
+     hid_device_info *devs = hid_enumerate(VENDOR_ID, PRODUCT_ID);
+diff --git a/src/hardware/rc28hidworker.h b/src/hardware/rc28hidworker.h
+index 7d4f31e..fd4edd1 100644
+--- a/src/hardware/rc28hidworker.h
++++ b/src/hardware/rc28hidworker.h
+@@ -43,7 +43,7 @@ public:
+ 
+     // Raw byte5 button codes.
+     static const unsigned char BTN_NONE = 0x07; // encoder frame / all released
+-    static const unsigned char BTN_F1 = 0x7D;
++    static const unsigned char BTN_F1 = 0x05;
+     static const unsigned char BTN_F2 = 0x03;
+     static const unsigned char BTN_TX = 0x06;
+ 
+@@ -76,6 +76,8 @@ signals:
+     void encoderRotated(int ticks);
+     void buttonTapped(int buttonNumber);
+     void buttonHeld(int buttonNumber);
++    void buttonPressed(int buttonNumber);
++    void buttonReleased(int buttonNumber);
+     void pollError(QString message);
+ 
+ private slots:
+diff --git a/src/mainwindow.cpp b/src/mainwindow.cpp
+index b95c126..1682a00 100644
+--- a/src/mainwindow.cpp
++++ b/src/mainwindow.cpp
+@@ -349,6 +349,15 @@ void MainWindow::setupHardwareController() {
+         }
+     });
+ 
++    // RC-28 TRANSMIT is momentary PTT. Audio packets key the K4; the
++    // radio's transmit-state echo drives the physical red LED.
++    connect(m_hardwareController, &HardwareController::pttRequested, this, [this](bool active) {
++        if (m_connectionController->isConnected()) {
++            m_audioController->setPttActive(active);
++            m_bottomMenuBar->setPttActive(active);
++        }
++    });
++
+     // Hardware-side errors (HaliKey port-open failures today) → notification overlay
+     connect(m_hardwareController, &HardwareController::hardwareError, this, &MainWindow::onHardwareError);
+ 
+diff --git a/tests/test_rc28hidworker.cpp b/tests/test_rc28hidworker.cpp
+index 0244854..6de53fe 100644
+--- a/tests/test_rc28hidworker.cpp
++++ b/tests/test_rc28hidworker.cpp
+@@ -35,7 +35,7 @@ void TestRc28HidWorker::encoder_clockwise() {
+     makeFrame(buf, 1, 0x02, Rc28HidWorker::BTN_NONE);
+     auto ev = Rc28HidWorker::decodeReport(buf, 64);
+     QVERIFY(ev.emitEncoder);
+-    QCOMPARE(ev.encoderTicks, 1);
++    QCOMPARE(ev.encoderTicks, -1);
+     QCOMPARE(ev.buttonDown, 0);
+ }
+ 
+@@ -44,21 +44,21 @@ void TestRc28HidWorker::encoder_counterClockwise() {
+     makeFrame(buf, 2, 0x01, Rc28HidWorker::BTN_NONE);
+     auto ev = Rc28HidWorker::decodeReport(buf, 64);
+     QVERIFY(ev.emitEncoder);
+-    QCOMPARE(ev.encoderTicks, -2);
++    QCOMPARE(ev.encoderTicks, 2);
+ }
+ 
+ void TestRc28HidWorker::encoder_speedScales() {
+     unsigned char buf[64];
+     makeFrame(buf, 4, 0x02, Rc28HidWorker::BTN_NONE);
+     auto ev = Rc28HidWorker::decodeReport(buf, 64);
+-    QCOMPARE(ev.encoderTicks, 4);
++    QCOMPARE(ev.encoderTicks, -4);
+ }
+ 
+ void TestRc28HidWorker::encoder_speedClamped() {
+     unsigned char buf[64];
+     makeFrame(buf, 9, 0x02, Rc28HidWorker::BTN_NONE); // out-of-range speed
+     auto ev = Rc28HidWorker::decodeReport(buf, 64);
+-    QCOMPARE(ev.encoderTicks, 4); // clamped to max accel
++    QCOMPARE(ev.encoderTicks, -4); // clamped to max accel
+ }
+ 
+ void TestRc28HidWorker::encoder_stoppedNoEvent() {
+diff --git a/src/hardware/hidapiguard.h b/src/hardware/hidapiguard.h
+new file mode 100644
+index 0000000..5bde265
+--- /dev/null
++++ b/src/hardware/hidapiguard.h
+@@ -0,0 +1,61 @@
++#ifndef HIDAPIGUARD_H
++#define HIDAPIGUARD_H
++
++#include <hidapi/hidapi.h>
++
++#include <mutex>
++
++// hidapi's platform backends own process-global state. In particular, the macOS
++// backend may initialize from hid_enumerate(), so even workers using unrelated
++// devices must not enter hidapi concurrently. The recursive mutex lets worker
++// helpers call one another while retaining one process-wide serialization point.
++class HidApiGuard {
++public:
++    class Lock {
++    public:
++        Lock() : m_lock(HidApiGuard::mutex()) {}
++
++    private:
++        std::lock_guard<std::recursive_mutex> m_lock;
++    };
++
++    static bool acquire() {
++        Lock lock;
++        if (!initialized()) {
++            if (hid_init() != 0)
++                return false;
++            initialized() = true;
++        }
++        ++refCount();
++        return true;
++    }
++
++    static void release() {
++        Lock lock;
++        if (refCount() == 0)
++            return;
++        // On macOS the IOHIDManager is bound to the run loop/thread that first
++        // initialized hidapi. The last worker to stop may be a different one;
++        // calling hid_exit there traps in IOHIDManagerUnscheduleFromRunLoop.
++        // Keep this process-wide singleton alive until normal process cleanup.
++        --refCount();
++    }
++
++private:
++    static std::recursive_mutex &mutex() {
++        static std::recursive_mutex instance;
++        return instance;
++    }
++
++    static unsigned &refCount() {
++        static unsigned count = 0;
++        return count;
++    }
++
++    static bool &initialized() {
++        static bool value = false;
++        return value;
++    }
++};
++
++#endif // HIDAPIGUARD_H
+

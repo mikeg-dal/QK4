@@ -166,6 +166,7 @@ set(SOURCES
     src/ui/pages/rigcontrolpage.cpp
     src/ui/pages/cwkeyerpage.cpp
     src/ui/pages/kpodpage.cpp
+    src/ui/pages/tuningknobpage.cpp
     src/ui/pages/kpa1500page.cpp
     src/ui/pages/dxclusterpage.cpp
     src/ui/overlays/dxspotoverlay.cpp
@@ -204,6 +205,10 @@ set(SOURCES
     src/hardware/kpodhidworker.cpp
     src/hardware/kpodplusdevice.cpp
     src/hardware/kpodplususbworker.cpp
+    src/hardware/rc28device.cpp
+    src/hardware/rc28hidworker.cpp
+    src/hardware/flexcontroldevice.cpp
+    src/hardware/flexcontrolserialworker.cpp
     src/hardware/halikeydevice.cpp
     src/hardware/halikeyworkerbase.cpp
     src/hardware/halikeyv14worker.cpp
@@ -301,6 +306,7 @@ set(HEADERS
     src/ui/pages/rigcontrolpage.h
     src/ui/pages/cwkeyerpage.h
     src/ui/pages/kpodpage.h
+    src/ui/pages/tuningknobpage.h
     src/ui/pages/kpa1500page.h
     src/ui/pages/dxclusterpage.h
     src/ui/overlays/dxspotoverlay.h
@@ -336,6 +342,10 @@ set(HEADERS
     src/hardware/kpodhidworker.h
     src/hardware/kpodplusdevice.h
     src/hardware/kpodplususbworker.h
+    src/hardware/rc28device.h
+    src/hardware/rc28hidworker.h
+    src/hardware/flexcontroldevice.h
+    src/hardware/flexcontrolserialworker.h
     src/hardware/halikeydevice.h
     src/hardware/halikeyworkerbase.h
     src/hardware/halikeyv14worker.h
