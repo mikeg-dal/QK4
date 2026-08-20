@@ -443,6 +443,21 @@ void MacroDialog::populateItems() {
         {MacroIds::Kpod7H, "K-pod.7H"},
         {MacroIds::Kpod8T, "K-pod.8T"},
         {MacroIds::Kpod8H, "K-pod.8H"},
+        // Icom RC-28 buttons (F1-tap is the VFO/RIT selector, not a macro)
+        {MacroIds::Rc28F1H, "RC-28.F1 Hold"},
+        {MacroIds::Rc28F2T, "RC-28.F2 Tap"},
+        {MacroIds::Rc28F2H, "RC-28.F2 Hold"},
+        {MacroIds::Rc28TxT, "RC-28.TX Tap"},
+        {MacroIds::Rc28TxH, "RC-28.TX Hold"},
+        // FlexControl AUX buttons (AUX1 short-press is the VFO/RIT selector)
+        {MacroIds::FlexControl1C, "FlexControl.1 Double"},
+        {MacroIds::FlexControl1L, "FlexControl.1 Long"},
+        {MacroIds::FlexControl2S, "FlexControl.2 Short"},
+        {MacroIds::FlexControl2C, "FlexControl.2 Double"},
+        {MacroIds::FlexControl2L, "FlexControl.2 Long"},
+        {MacroIds::FlexControl3S, "FlexControl.3 Short"},
+        {MacroIds::FlexControl3C, "FlexControl.3 Double"},
+        {MacroIds::FlexControl3L, "FlexControl.3 Long"},
         // Keyboard Function Keys
         {MacroIds::KbdF1, "Keyboard-F1"},
         {MacroIds::KbdF2, "Keyboard-F2"},

@@ -351,6 +351,13 @@ void MainWindow::setupHardwareController() {
 
     // Hardware-side errors (HaliKey port-open failures today) → notification overlay
     connect(m_hardwareController, &HardwareController::hardwareError, this, &MainWindow::onHardwareError);
+
+    // Transient hardware notices (RC-28 / FlexControl knob tuning-target change)
+    // → notification overlay, brief.
+    connect(m_hardwareController, &HardwareController::hardwareNotice, this, [this](const QString &message) {
+        if (m_notificationWidget)
+            m_notificationWidget->showMessage(message, 1500);
+    });
 }
 
 void MainWindow::setupCatServer() {

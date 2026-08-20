@@ -6,6 +6,7 @@
 #include "ui/pages/rigcontrolpage.h"
 #include "ui/pages/cwkeyerpage.h"
 #include "ui/pages/kpodpage.h"
+#include "ui/pages/tuningknobpage.h"
 #include "ui/pages/kpa1500page.h"
 #include "ui/pages/dxclusterpage.h"
 #include "ui/styling/k4constants.h"
@@ -58,6 +59,7 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("Rig Control");
     m_tabList->addItem("HaliKey");
     m_tabList->addItem("K-Pod");
+    m_tabList->addItem("Tuning Knobs");
     m_tabList->addItem("KPA1500");
     m_tabList->addItem("DX Cluster");
     m_tabList->setCurrentRow(0);
@@ -134,6 +136,11 @@ void OptionsDialog::ensurePageCreated(int index) {
         m_kpodPage = new KpodPage(m_hardwareController->kpodDevice(), m_hardwareController->kpodPlusDevice(), this);
         page = m_kpodPage;
         break;
+    case PageTuningKnob:
+        m_tuningKnobPage =
+            new TuningKnobPage(m_hardwareController->rc28Device(), m_hardwareController->flexControlDevice(), this);
+        page = m_tuningKnobPage;
+        break;
     case PageKpa1500:
         m_kpa1500Page = new Kpa1500Page(m_kpa1500Client, this);
         page = m_kpa1500Page;
@@ -179,6 +186,10 @@ void OptionsDialog::refreshPage(int index) {
     case PageKpod:
         if (m_kpodPage)
             m_kpodPage->refresh();
+        break;
+    case PageTuningKnob:
+        if (m_tuningKnobPage)
+            m_tuningKnobPage->refresh();
         break;
     case PageKpa1500:
         if (m_kpa1500Page)
