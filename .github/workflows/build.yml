@@ -75,10 +75,6 @@ jobs:
       version: ${{ needs.version.outputs.version }}
     secrets: inherit
 
-  # WHY not in release.yml yet: Linux x86_64 is new here and unproven in this
-  # pipeline. It builds on every push and dispatch so it gets exercised, but a
-  # flatpak failure must not be able to block a macOS/Windows/Pi release. It
-  # graduates into release.yml once it has shipped a few builds cleanly.
   flatpak:
     needs: version
     uses: ./.github/workflows/_build-flatpak.yml

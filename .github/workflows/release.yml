@@ -8,7 +8,7 @@ run-name: >-
       && format('Release {0}', github.ref_name)
       || format('Rehearsal (publishes nothing) — {0}', github.ref_name) }}
 
-# Tagged release: builds all three platforms via the shared _build-*.yml reusable
+# Tagged release: builds all four platforms via the shared _build-*.yml reusable
 # workflows, publishes a GitHub Release, and updates the gh-pages download page.
 #
 # workflow_dispatch runs the SAME build and packaging path as a rehearsal, then
@@ -79,8 +79,16 @@ jobs:
       retention-days: 30
     secrets: inherit
 
+  flatpak:
+    needs: version
+    uses: ./.github/workflows/_build-flatpak.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      retention-days: 30
+    secrets: inherit
+
   release:
-    needs: [version, macos, windows, raspberry-pi]
+    needs: [version, macos, windows, raspberry-pi, flatpak]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -88,6 +96,13 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          # WHY a full clone and not a partial one: git-cliff needs the whole
+          # history to build release notes, and it is built on libgit2, which has
+          # no support for promisor repositories. Adding `filter: blob:none` here
+          # looks safe — git-cliff only reports commit messages — but it walks
+          # object headers and cannot lazily fetch what a partial clone omitted,
+          # so it dies with "object not found - cannot read header". Verified in
+          # run 31953337858.
           fetch-depth: 0
 
       - name: Install git-cliff
@@ -114,6 +129,11 @@ jobs:
         with:
           name: ${{ needs.raspberry-pi.outputs.artifact-name }}
 
+      - name: Download Flatpak artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.flatpak.outputs.artifact-name }}
+
       - name: Package Windows release asset
         # WHY here and not in the builder: actions/upload-artifact wraps every upload
         # in its own zip, so the builder ships a plain directory to keep the Actions
@@ -130,6 +150,7 @@ jobs:
             "QK4-${{ needs.version.outputs.version }}-macos.dmg" \
             "QK4-${{ needs.version.outputs.version }}-windows.zip" \
             "QK4-${{ needs.version.outputs.version }}-raspberry-pi-arm64.tar.gz" \
+            "QK4-${{ needs.version.outputs.version }}-linux-x86_64.flatpak" \
             > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
@@ -139,7 +160,7 @@ jobs:
           {
             echo "### Release rehearsal \`${{ needs.version.outputs.version }}\`"
             echo
-            echo "All three platforms built, notes generated, checksums computed."
+            echo "All four platforms built, notes generated, checksums computed."
             echo "**No GitHub Release created. gh-pages untouched.**"
             echo
             echo '```'
@@ -162,6 +183,7 @@ jobs:
             QK4-${{ needs.version.outputs.version }}-macos.dmg
             QK4-${{ needs.version.outputs.version }}-windows.zip
             QK4-${{ needs.version.outputs.version }}-raspberry-pi-arm64.tar.gz
+            QK4-${{ needs.version.outputs.version }}-linux-x86_64.flatpak
           retention-days: 7
 
       - name: Create Release
@@ -172,16 +194,21 @@ jobs:
             QK4-${{ needs.version.outputs.version }}-macos.dmg
             QK4-${{ needs.version.outputs.version }}-windows.zip
             QK4-${{ needs.version.outputs.version }}-raspberry-pi-arm64.tar.gz
+            QK4-${{ needs.version.outputs.version }}-linux-x86_64.flatpak
             SHA256SUMS.txt
           body_path: release_notes.md
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
 
   publish:
+    # Updates the download page. gh-pages carries the site and releases.json only —
+    # the binaries themselves are Release assets, addressed by URL, never committed
+    # to this branch.
+    #
     # WHY no job-level is_release gate: everything here except the final push is
     # rehearsable, and releases.json generation is the step most likely to break
     # the download page. Only "Commit and push" is gated, so a dispatch exercises
     # the whole path and publishes nothing.
-    needs: [version, macos, windows, raspberry-pi, release]
+    needs: [version, macos, windows, raspberry-pi, flatpak, release]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -197,7 +224,7 @@ jobs:
           name: release-assets-${{ needs.version.outputs.version }}
           path: artifacts
 
-      - name: Stage downloads and generate releases.json
+      - name: Generate releases.json
         env:
           VERSION: ${{ needs.version.outputs.version }}
           IS_RELEASE: ${{ needs.version.outputs.is_release }}
@@ -211,16 +238,26 @@ jobs:
           fi
           DATE=$(date -u +%Y-%m-%d)
 
+          # WHY the downloads live on the Release and not on this branch: gh-pages
+          # is a git branch, so committing a binary here stores it forever even
+          # after a later commit deletes it. Rotating each release in and out still
+          # left ~1 GB of superseded builds in history, which every clone of the
+          # repository then had to fetch. Release assets are stored outside git,
+          # so the branch stays at a few kilobytes no matter how many tags ship.
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+
           # Platform table — adding a platform is a data change here, nothing else
           # in this step needs editing. Format: <releases.json key>|<filename>
           PLATFORMS=(
             "macos|QK4-${VERSION}-macos.dmg"
             "windows|QK4-${VERSION}-windows.zip"
             "raspberry-pi|QK4-${VERSION}-raspberry-pi-arm64.tar.gz"
+            "linux|QK4-${VERSION}-linux-x86_64.flatpak"
           )
 
+          # One-time removal of the binaries this branch used to host. git add -A
+          # in the commit step stages the deletion; nothing recreates it.
           rm -rf downloads/
-          mkdir -p "downloads/$TAG"
 
           # WHY jq and not a heredoc: a hand-maintained JSON template silently
           # produces invalid JSON on a missing comma, and index.html fails closed —
@@ -235,14 +272,13 @@ jobs:
               exit 1
             fi
 
-            cp "artifacts/$FILE" "downloads/$TAG/"
-            SZ=$(du -h "downloads/$TAG/$FILE" | cut -f1 | xargs)
-            HASH=$(sha256sum "downloads/$TAG/$FILE" | cut -d' ' -f1)
+            SZ=$(du -h "artifacts/$FILE" | cut -f1 | xargs)
+            HASH=$(sha256sum "artifacts/$FILE" | cut -d' ' -f1)
 
             ASSETS=$(jq -n \
               --argjson acc "$ASSETS" \
               --arg k "$KEY" --arg n "$FILE" \
-              --arg u "./downloads/$TAG/$FILE" \
+              --arg u "$BASE_URL/$FILE" \
               --arg s "$SZ" --arg h "$HASH" \
               '$acc + {($k): {name: $n, url: $u, size: $s, sha256: $h}}')
           done
@@ -261,22 +297,50 @@ jobs:
           rm -rf artifacts/
 
       - name: Validate releases.json
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          IS_RELEASE: ${{ needs.version.outputs.is_release }}
         run: |
           set -euo pipefail
           jq empty releases.json || { echo "ERROR: releases.json is not valid JSON"; exit 1; }
 
           # Every asset must carry the four fields index.html reads, and every
-          # referenced file must actually exist under downloads/.
+          # URL must address this release's own assets.
           jq -e 'has("tag") and has("version") and has("date") and has("prerelease")
                  and (.assets | length > 0)' releases.json > /dev/null \
             || { echo "ERROR: releases.json missing required top-level fields"; exit 1; }
+
+          TAG=$(jq -r '.tag' releases.json)
+          EXPECTED_PREFIX="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/"
 
           FAIL=0
           for key in $(jq -r '.assets | keys[]' releases.json); do
             jq -e --arg k "$key" '.assets[$k] | has("name") and has("url") and has("size") and has("sha256")' \
               releases.json > /dev/null || { echo "ERROR: asset '$key' missing fields"; FAIL=1; }
             URL=$(jq -r --arg k "$key" '.assets[$k].url' releases.json)
-            [ -f "${URL#./}" ] || { echo "ERROR: asset '$key' points at missing file: $URL"; FAIL=1; }
+            NAME=$(jq -r --arg k "$key" '.assets[$k].name' releases.json)
+
+            # Catches a filename drifting apart between PLATFORMS and the files:
+            # list in Create Release — the two are maintained separately, and a
+            # mismatch would render a card pointing at a 404.
+            case "$URL" in
+              "${EXPECTED_PREFIX}${NAME}") ;;
+              *) echo "ERROR: asset '$key' URL is not this release's '$NAME': $URL"; FAIL=1 ;;
+            esac
+
+            # WHY only on a real release: a rehearsal's tag is deliberately not a
+            # real ref, so there is no Release to resolve against. On a tag the
+            # Release already exists (this job needs: release), so the download
+            # users will click can be proven to work before the page ships.
+            if [ "$IS_RELEASE" = "true" ]; then
+              CODE=$(curl -sIL -o /dev/null -w '%{http_code}' "$URL")
+              if [ "$CODE" = "200" ]; then
+                echo "ok $key -> $URL"
+              else
+                echo "ERROR: asset '$key' not downloadable (HTTP $CODE): $URL"
+                FAIL=1
+              fi
+            fi
           done
           exit $FAIL
 
