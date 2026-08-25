@@ -3,6 +3,7 @@
 #include "ui/pages/stationpage.h"
 #include "ui/pages/audioinputpage.h"
 #include "ui/pages/audiooutputpage.h"
+#include "ui/pages/datamodepage.h"
 #include "ui/pages/rigcontrolpage.h"
 #include "ui/pages/cwkeyerpage.h"
 #include "ui/pages/kpodpage.h"
@@ -55,6 +56,7 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("Station");
     m_tabList->addItem("Audio Input");
     m_tabList->addItem("Audio Output");
+    m_tabList->addItem("Data Mode");
     m_tabList->addItem("Rig Control");
     m_tabList->addItem("HaliKey");
     m_tabList->addItem("K-Pod");
@@ -82,10 +84,14 @@ void OptionsDialog::setupUi() {
     connect(m_mediaDevices, &QMediaDevices::audioInputsChanged, this, [this]() {
         if (m_audioInputPage)
             m_audioInputPage->refresh();
+        if (m_dataModePage)
+            m_dataModePage->refresh();
     });
     connect(m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, [this]() {
         if (m_audioOutputPage)
             m_audioOutputPage->refresh();
+        if (m_dataModePage)
+            m_dataModePage->refresh();
     });
 
     mainLayout->addWidget(m_tabList);
@@ -121,6 +127,10 @@ void OptionsDialog::ensurePageCreated(int index) {
     case PageAudioOutput:
         m_audioOutputPage = new AudioOutputPage(m_audioController, this);
         page = m_audioOutputPage;
+        break;
+    case PageDataMode:
+        m_dataModePage = new DataModePage(this);
+        page = m_dataModePage;
         break;
     case PageRigControl:
         m_rigControlPage = new RigControlPage(m_catServer, this);
@@ -166,6 +176,9 @@ void OptionsDialog::refreshPage(int index) {
         // No refresh on tab switch -- device list populated at creation, hot-plug handles updates
         break;
     case PageAudioOutput:
+        // No refresh on tab switch -- device list populated at creation, hot-plug handles updates
+        break;
+    case PageDataMode:
         // No refresh on tab switch -- device list populated at creation, hot-plug handles updates
         break;
     case PageRigControl:

@@ -269,6 +269,59 @@ void RadioSettings::setSpeakerDevice(const QString &deviceId) {
     }
 }
 
+bool RadioSettings::dataModeAudioEnabled() const {
+    return m_settings.value("audio/dataModeEnabled", false).toBool();
+}
+
+void RadioSettings::setDataModeAudioEnabled(bool enabled) {
+    bool oldValue = m_settings.value("audio/dataModeEnabled", false).toBool();
+    if (oldValue != enabled) {
+        m_settings.setValue("audio/dataModeEnabled", enabled);
+        m_settings.sync();
+        emit dataModeAudioEnabledChanged(enabled);
+    }
+}
+
+QString RadioSettings::dataMicDevice() const {
+    return m_settings.value("audio/dataMicDevice", "").toString();
+}
+
+void RadioSettings::setDataMicDevice(const QString &deviceId) {
+    QString oldDevice = m_settings.value("audio/dataMicDevice", "").toString();
+    if (oldDevice != deviceId) {
+        m_settings.setValue("audio/dataMicDevice", deviceId);
+        m_settings.sync();
+        emit dataMicDeviceChanged(deviceId);
+    }
+}
+
+int RadioSettings::dataMicGain() const {
+    return m_settings.value("audio/dataMicGain", 25).toInt();
+}
+
+void RadioSettings::setDataMicGain(int value) {
+    value = qBound(0, value, 100);
+    int oldValue = m_settings.value("audio/dataMicGain", 25).toInt();
+    if (oldValue != value) {
+        m_settings.setValue("audio/dataMicGain", value);
+        m_settings.sync();
+        emit dataMicGainChanged(value);
+    }
+}
+
+QString RadioSettings::dataSpeakerDevice() const {
+    return m_settings.value("audio/dataSpeakerDevice", "").toString();
+}
+
+void RadioSettings::setDataSpeakerDevice(const QString &deviceId) {
+    QString oldDevice = m_settings.value("audio/dataSpeakerDevice", "").toString();
+    if (oldDevice != deviceId) {
+        m_settings.setValue("audio/dataSpeakerDevice", deviceId);
+        m_settings.sync();
+        emit dataSpeakerDeviceChanged(deviceId);
+    }
+}
+
 bool RadioSettings::catServerEnabled() const {
     return m_catServerEnabled;
 }

@@ -163,6 +163,7 @@ set(SOURCES
     src/ui/pages/stationpage.cpp
     src/ui/pages/audioinputpage.cpp
     src/ui/pages/audiooutputpage.cpp
+    src/ui/pages/datamodepage.cpp
     src/ui/pages/rigcontrolpage.cpp
     src/ui/pages/cwkeyerpage.cpp
     src/ui/pages/kpodpage.cpp
@@ -298,6 +299,7 @@ set(HEADERS
     src/ui/pages/stationpage.h
     src/ui/pages/audioinputpage.h
     src/ui/pages/audiooutputpage.h
+    src/ui/pages/datamodepage.h
     src/ui/pages/rigcontrolpage.h
     src/ui/pages/cwkeyerpage.h
     src/ui/pages/kpodpage.h

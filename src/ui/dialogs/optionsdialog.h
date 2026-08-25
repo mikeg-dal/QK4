@@ -23,6 +23,7 @@ class CwKeyerPage;
 class KpodPage;
 class Kpa1500Page;
 class DxClusterPage;
+class DataModePage;
 
 /**
  * @brief Tabbed Options dialog. Left QListWidget drives a QStackedWidget holding the 8 option
@@ -38,6 +39,7 @@ public:
         PageStation,
         PageAudioInput,
         PageAudioOutput,
+        PageDataMode,
         PageRigControl,
         PageCwKeyer,
         PageKpod,
@@ -76,6 +78,7 @@ private:
     StationPage *m_stationPage = nullptr;
     AudioInputPage *m_audioInputPage = nullptr;
     AudioOutputPage *m_audioOutputPage = nullptr;
+    DataModePage *m_dataModePage = nullptr;
     RigControlPage *m_rigControlPage = nullptr;
     CwKeyerPage *m_cwKeyerPage = nullptr;
     KpodPage *m_kpodPage = nullptr;

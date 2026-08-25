@@ -108,20 +108,15 @@ void AudioInputPage::onMicDeviceChanged(int index) {
 
     QString deviceId = m_micDeviceCombo->currentData().toString();
     RadioSettings::instance()->setMicDevice(deviceId);
-
-    if (m_audioController) {
-        m_audioController->setMicDevice(deviceId);
-    }
+    // AudioController listens to RadioSettings::micDeviceChanged and applies the device
+    // (taking Data Mode routing into account).
 }
 
 void AudioInputPage::onMicGainChanged(int value) {
     if (m_micGainValueLabel) {
         m_micGainValueLabel->setText(QString("%1%").arg(value));
     }
-
     RadioSettings::instance()->setMicGain(value);
-
-    if (m_audioController) {
-        m_audioController->setMicGain(value / 100.0f);
-    }
+    // AudioController listens to RadioSettings::micGainChanged and applies the gain
+    // (using the Data Mode gain when the TX VFO is in DATA/DATA-R).
 }

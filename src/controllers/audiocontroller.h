@@ -57,14 +57,22 @@ public:
 
 private slots:
     void onStreamingLatencyChanged(int tier);
+    void applyAudioRouting();
 
 private:
+    bool isTxVfoDataMode() const;
+
     ConnectionController *m_connectionController;
     RadioState *m_radioState;
 
     AudioEngine *m_audioEngine;
     QThread *m_audioThread = nullptr;
     OpusDecoder *m_opusDecoder;
+
+    // Last-applied audio routing -- avoids redundant device switches
+    QString m_appliedMicDevice;
+    QString m_appliedSpeakerDevice;
+    int m_appliedMicGain = -1;
 };
 
 #endif // AUDIOCONTROLLER_H

@@ -20,17 +20,25 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
     // thread (PR 12); AudioController no longer touches it.
     m_opusDecoder->initialize(12000, 2);
 
-    // Load saved audio device settings BEFORE moveToThread (only stores strings/floats,
-    // no Qt audio objects exist yet, so direct calls are safe)
-    QString savedMicDevice = RadioSettings::instance()->micDevice();
-    if (!savedMicDevice.isEmpty()) {
-        m_audioEngine->setMicDevice(savedMicDevice);
+    // Apply initial audio routing BEFORE moveToThread (no Qt audio objects exist yet,
+    // so direct calls are safe). Mode is Unknown at startup, so this picks the primary
+    // devices/gain. Subsequent changes go through applyAudioRouting() with queued invokes.
+    {
+        RadioSettings *rs = RadioSettings::instance();
+        QString initialMic = rs->micDevice();
+        QString initialSpeaker = rs->speakerDevice();
+        int initialGain = rs->micGain();
+        if (!initialMic.isEmpty()) {
+            m_audioEngine->setMicDevice(initialMic);
+        }
+        if (!initialSpeaker.isEmpty()) {
+            m_audioEngine->setOutputDevice(initialSpeaker);
+        }
+        m_audioEngine->setMicGain(initialGain / 100.0f);
+        m_appliedMicDevice = initialMic;
+        m_appliedSpeakerDevice = initialSpeaker;
+        m_appliedMicGain = initialGain;
     }
-    QString savedSpeakerDevice = RadioSettings::instance()->speakerDevice();
-    if (!savedSpeakerDevice.isEmpty()) {
-        m_audioEngine->setOutputDevice(savedSpeakerDevice);
-    }
-    m_audioEngine->setMicGain(RadioSettings::instance()->micGain() / 100.0f);
 
     // Move AudioEngine to dedicated thread for glitch-free audio playback
     m_audioThread = new QThread(this);
@@ -83,6 +91,68 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
             m_audioEngine->setAudioMix(left, right);
         }
     });
+
+    // Audio routing coordinator: re-evaluate device/gain selection whenever the TX VFO
+    // mode changes (mode/split) or any audio-routing setting changes.
+    connect(m_radioState, &RadioState::modeChanged, this, &AudioController::applyAudioRouting);
+    connect(m_radioState, &RadioState::modeBChanged, this, &AudioController::applyAudioRouting);
+    connect(m_radioState, &RadioState::splitChanged, this, &AudioController::applyAudioRouting);
+
+    RadioSettings *rs = RadioSettings::instance();
+    connect(rs, &RadioSettings::micDeviceChanged, this, &AudioController::applyAudioRouting);
+    connect(rs, &RadioSettings::micGainChanged, this, &AudioController::applyAudioRouting);
+    connect(rs, &RadioSettings::speakerDeviceChanged, this, &AudioController::applyAudioRouting);
+    connect(rs, &RadioSettings::dataModeAudioEnabledChanged, this, &AudioController::applyAudioRouting);
+    connect(rs, &RadioSettings::dataMicDeviceChanged, this, &AudioController::applyAudioRouting);
+    connect(rs, &RadioSettings::dataMicGainChanged, this, &AudioController::applyAudioRouting);
+    connect(rs, &RadioSettings::dataSpeakerDeviceChanged, this, &AudioController::applyAudioRouting);
+}
+
+bool AudioController::isTxVfoDataMode() const {
+    if (!m_radioState)
+        return false;
+    RadioState::Mode m = m_radioState->splitEnabled() ? m_radioState->modeB() : m_radioState->mode();
+    return (m == RadioState::DATA || m == RadioState::DATA_R);
+}
+
+void AudioController::applyAudioRouting() {
+    if (!m_audioEngine)
+        return;
+
+    RadioSettings *rs = RadioSettings::instance();
+    bool useDataDevices = rs->dataModeAudioEnabled() && isTxVfoDataMode();
+
+    // Pick devices: data devices when in DATA mode AND configured, otherwise primary.
+    QString primaryMic = rs->micDevice();
+    QString primarySpeaker = rs->speakerDevice();
+    QString chosenMic = primaryMic;
+    QString chosenSpeaker = primarySpeaker;
+    int chosenGain = rs->micGain();
+
+    if (useDataDevices) {
+        QString dataMic = rs->dataMicDevice();
+        QString dataSpeaker = rs->dataSpeakerDevice();
+        if (!dataMic.isEmpty())
+            chosenMic = dataMic;
+        if (!dataSpeaker.isEmpty())
+            chosenSpeaker = dataSpeaker;
+        chosenGain = rs->dataMicGain();
+    }
+
+    if (chosenMic != m_appliedMicDevice) {
+        m_appliedMicDevice = chosenMic;
+        QMetaObject::invokeMethod(m_audioEngine, "setMicDevice", Qt::QueuedConnection, Q_ARG(QString, chosenMic));
+    }
+    if (chosenSpeaker != m_appliedSpeakerDevice) {
+        m_appliedSpeakerDevice = chosenSpeaker;
+        QMetaObject::invokeMethod(m_audioEngine, "setOutputDevice", Qt::QueuedConnection,
+                                  Q_ARG(QString, chosenSpeaker));
+    }
+    if (chosenGain != m_appliedMicGain) {
+        m_appliedMicGain = chosenGain;
+        // setMicGain is atomic — safe to call directly from any thread.
+        m_audioEngine->setMicGain(chosenGain / 100.0f);
+    }
 }
 
 AudioController::~AudioController() {

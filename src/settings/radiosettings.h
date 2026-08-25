@@ -96,6 +96,16 @@ public:
     QString speakerDevice() const;
     void setSpeakerDevice(const QString &deviceId);
 
+    // Data Mode audio settings -- secondary devices used when TX VFO is in DATA/DATA-R mode
+    bool dataModeAudioEnabled() const;
+    void setDataModeAudioEnabled(bool enabled);
+    QString dataMicDevice() const;
+    void setDataMicDevice(const QString &deviceId);
+    int dataMicGain() const;
+    void setDataMicGain(int value); // 0-100, default 25
+    QString dataSpeakerDevice() const;
+    void setDataSpeakerDevice(const QString &deviceId);
+
     // CAT Server settings (local TCP server for external apps)
     bool catServerEnabled() const;
     void setCatServerEnabled(bool enabled);
@@ -171,6 +181,10 @@ signals:
     void micGainChanged(int value);
     void micDeviceChanged(const QString &deviceId);
     void speakerDeviceChanged(const QString &deviceId);
+    void dataModeAudioEnabledChanged(bool enabled);
+    void dataMicDeviceChanged(const QString &deviceId);
+    void dataMicGainChanged(int value);
+    void dataSpeakerDeviceChanged(const QString &deviceId);
     void catServerEnabledChanged(bool enabled);
     void catServerPortChanged(quint16 port);
     void macrosChanged();

@@ -86,8 +86,6 @@ void AudioOutputPage::onSpeakerDeviceChanged(int index) {
 
     QString deviceId = m_speakerDeviceCombo->currentData().toString();
     RadioSettings::instance()->setSpeakerDevice(deviceId);
-
-    if (m_audioController) {
-        m_audioController->setOutputDevice(deviceId);
-    }
+    // AudioController listens to RadioSettings::speakerDeviceChanged and applies the device
+    // (taking Data Mode routing into account).
 }
