@@ -127,6 +127,7 @@ set(SOURCES
     src/dsp/panadapter_rhi.cpp
     src/dsp/minipan_rhi.cpp
     src/dsp/spectrumscale.cpp
+    src/dsp/waterfallgeometry.cpp
     src/settings/radiosettings.cpp
     src/models/radiostate.cpp
     src/models/radiostate/antennastate.cpp

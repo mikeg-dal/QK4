@@ -7,6 +7,7 @@ GPU-accelerated spectrum + waterfall rendering via Qt RHI (Metal / DX / Vulkan /
 - `panadapter_rhi.{cpp,h}` — Main panadapter (spectrum + waterfall). Click-tune, passband overlays, DX spot overlays, TX markers. ~1870 LOC (naturally large — RHI pipeline + buffer management).
 - `minipan_rhi.{cpp,h}` — Per-VFO mini-pan widget. ~1065 LOC.
 - `panadapter_constants.h` — Shared rendering parameters: RTTY shift, grid cell size, line widths, dash pattern. Texture and history dimensions are **not** here; they live in `panadapter_rhi.h` (`BASE_TEXTURE_WIDTH`, `MAX_WATERFALL_HISTORY`).
+- `waterfallgeometry.{cpp,h}` — `WaterfallGeometry::` namespace. Which stored waterfall row each screen pixel shows: visible-row count, ring offsets, and the uniforms `waterfall.vert` consumes. Mirrors the shaders' V math so the mapping can be tested without a GPU; covered by `test_waterfallgeometry`.
 - `spectrumscale.{cpp,h}` — `SpectrumScale::` namespace. The amplitude axis: dBm → chart fraction, S-unit dBm values, and which values earn a label at a given size. Pure arithmetic, no widget dependency, covered by `test_spectrumscale`.
 - `rhi_utils.h` — Shared RHI helpers (color LUT size, texture builders).
 - `shaders/` — 4 shader pairs (vert/frag): spectrum, spectrum_fill, waterfall, overlay. Compiled at build time via `qt6_add_shaders()` in `CMakeLists.txt`.
@@ -46,6 +47,13 @@ one line of shader math is the entire difference between them:
   snaps to an exact texel centre, where bilinear returns that texel unchanged, so the waterfall is
   effectively nearest-neighbour and keeps hard bin edges (`8ad70ea`). That `floor()` also fixes a
   C++ integer vs GLSL float division mismatch that blurred 5/8/11 kHz spans.
+- `waterfall.frag` → `texV = (floor(texV * storedRows) + 0.5) / storedRows`, the vertical twin of
+  the above. A V between two rows makes bilinear blend **two different moments in time**, which is
+  the vertical smear; snapping is also what makes any rows-per-pixel ratio unblended rather than
+  only 1:1. `storedRows` of 0 opts out — the mini-pan passes that, because it spreads a fixed
+  100-row buffer over its own height and may be downsampling, where the blend is a useful box
+  filter. The visible-row fraction must stay `visibleRows / storedRows`; a `- 1` there (which the
+  panadapter carried) resolves the top pixel to `writeRow - 2` once snapped, hiding the newest row.
 
 There is no Lanczos. A 6-tap Lanczos-3 kernel existed briefly (`050eb4f`) and was replaced by
 hardware bilinear in `f274687` — equivalent quality on a wide texture, less shader complexity.

@@ -14,7 +14,8 @@ layout(std140, binding = 0) uniform buf {
     float tierSpanHz;       // Full tier bandwidth in Hz
     float spanHz;           // Display span in Hz
     float visibleFraction;  // Rows drawn / rows stored (vertex stage)
-    float padding[2];
+    float storedRows;       // Rows in the texture; 0.0 disables the V snap
+    float padding;
 };
 
 void main() {
@@ -35,6 +36,16 @@ void main() {
     // Nearest-neighbor: truncate to get bin, add 0.5 to sample center of texel
     float texU = (binOffset + floor(binIndex) + 0.5) / textureWidth;
 
-    float dbValue = texture(waterfallTex, vec2(texU, fragTexCoord.y)).r;
+    // Snap V to a texel centre, the vertical twin of the texU floor() above. A V landing between
+    // two rows makes Linear filtering return a blend of two different moments in time, which is
+    // the vertical smear. Snapping also makes any rows-per-pixel ratio unblended, not just 1:1.
+    // Composes with the ring wrap: Repeat addressing handles a snapped coordinate past 1.0 the
+    // same as an unsnapped one. storedRows 0.0 opts out — the mini-pan shares these shaders but
+    // may be downsampling its 100-row buffer, where the blend is a box filter worth keeping.
+    float texV = fragTexCoord.y;
+    if (storedRows > 0.0)
+        texV = (floor(texV * storedRows) + 0.5) / storedRows;
+
+    float dbValue = texture(waterfallTex, vec2(texU, texV)).r;
     outColor = texture(colorLutTex, vec2(dbValue, 0.5));
 }

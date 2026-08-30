@@ -1,5 +1,6 @@
 #include "panadapter_rhi.h"
 #include "dsp/spectrumscale.h"
+#include "dsp/waterfallgeometry.h"
 #include "panadapter_constants.h"
 #include "rhi_utils.h"
 #include "ui/styling/k4styles.h"
@@ -652,7 +653,8 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_overlayVbo->create();
 
     // Create uniform buffers
-    m_waterfallUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_waterfallUniformBuffer.reset(
+        m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(RhiUtils::WaterfallUniforms)));
     m_waterfallUniformBuffer->create();
 
     m_overlayUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
@@ -984,20 +986,25 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // several pixels and blended with its neighbours. Clamped to what is actually stored: past
     // that the old stretching returns, which the qk4.pan.diag geometry line reports as pxPerRow
     // climbing above 1.
-    m_visibleRows = qBound(MIN_VISIBLE_ROWS, qRound(waterfallHeight), m_waterfallHistory);
+    m_visibleRows = WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS);
 
     // Logged here rather than earlier in the frame: the geometry line reports pxPerRow, which is
     // only meaningful once the visible row count for this frame has been chosen.
     if (qk4PanDiag().isDebugEnabled())
         logRenderGeometry(outputSize);
 
-    // Show the newest m_visibleRows rows, ending one short of the row being written. The -1 is the
-    // same guard the quad's old tMax encoded: the in-flight row must not be sampled.
-    int oldestVisible = m_waterfallWriteRow - m_visibleRows;
-    while (oldestVisible < 0)
-        oldestVisible += m_waterfallHistory;
-    float scrollOffset = static_cast<float>(oldestVisible) / m_waterfallHistory;
-    float visibleFraction = static_cast<float>(m_visibleRows - 1) / m_waterfallHistory;
+    // Show the newest m_visibleRows rows, ending one short of the row being written.
+    //
+    // WHY visibleFraction has no -1: the in-flight guard lives entirely in oldestVisible, which
+    // starts the window m_visibleRows back from the write head so the top pixel lands on
+    // m_waterfallWriteRow - 1. Carrying a second -1 in the fraction compressed the rows into one
+    // slot fewer than there are pixels, which the shader's V snap turns from a half-row drift into
+    // a real defect: the top pixel resolves to writeRow - 2, the newest complete row is never
+    // drawn, and one row is skipped outright.
+    const int oldestVisible =
+        WaterfallGeometry::oldestVisibleRow(m_waterfallWriteRow, m_visibleRows, m_waterfallHistory);
+    const float scrollOffset = WaterfallGeometry::scrollOffsetFor(oldestVisible, m_waterfallHistory);
+    const float visibleFraction = WaterfallGeometry::visibleFractionFor(m_visibleRows, m_waterfallHistory);
 
     // Use full tier bin count for waterfall (matches what updateWaterfallData writes)
     float binCount = m_waterfallTierBinCount > 0   ? static_cast<float>(m_waterfallTierBinCount)
@@ -1007,7 +1014,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     float spanHz = static_cast<float>(m_spanHz);
     // Layout comes from RhiUtils so it cannot drift from the shaders or from the mini-pan.
     RhiUtils::WaterfallUniforms waterfallUniforms = {
-        scrollOffset, binCount, static_cast<float>(m_textureWidth), tierSpanHz, spanHz, visibleFraction, {0, 0}};
+        scrollOffset, binCount,        static_cast<float>(m_textureWidth),     tierSpanHz,
+        spanHz,       visibleFraction, static_cast<float>(m_waterfallHistory), 0.0f};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
     if (!m_currentSpectrum.isEmpty()) {

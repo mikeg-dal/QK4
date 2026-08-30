@@ -96,7 +96,8 @@ struct WaterfallUniforms {
     float tierSpanHz;      // bandwidth those bins cover
     float spanHz;          // bandwidth on display
     float visibleFraction; // rows drawn / rows stored; 1.0 to show the whole buffer
-    float padding[2];
+    float storedRows;      // rows in the texture, for the V snap; 0.0 disables snapping
+    float padding;
 };
 static_assert(sizeof(WaterfallUniforms) == 32, "must match the std140 block in waterfall.{vert,frag}");
 

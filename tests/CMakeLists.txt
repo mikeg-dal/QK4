@@ -122,6 +122,14 @@ target_include_directories(test_spectrumscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_spectrumscale Qt6::Core Qt6::Test)
 add_test(NAME SpectrumScaleTests COMMAND test_spectrumscale)
 
+# Waterfall row/pixel mapping: which stored row each screen pixel samples, mirroring the shaders.
+add_executable(test_waterfallgeometry test_waterfallgeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
+)
+target_include_directories(test_waterfallgeometry PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_waterfallgeometry Qt6::Core Qt6::Test)
+add_test(NAME WaterfallGeometryTests COMMAND test_waterfallgeometry)
+
 # BandPlan data/lookup tests (QColor needs Qt6::Gui)
 add_executable(test_bandplan test_bandplan.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/bandplan.cpp

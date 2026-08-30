@@ -143,7 +143,8 @@ void MiniPanRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_spectrumUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 16));
     m_spectrumUniformBuffer->create();
 
-    m_waterfallUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_waterfallUniformBuffer.reset(
+        m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(RhiUtils::WaterfallUniforms)));
     m_waterfallUniformBuffer->create();
 
     m_overlayUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
@@ -406,6 +407,13 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
     // Mini pan: tierSpan == span (no cropping, 1:1 mapping), and visibleFraction is 1.0 because it
     // shows its whole buffer — the quad's own texcoords already stop one row short of the row being
     // written.
+    //
+    // WHY storedRows is 0.0 (the second-to-last field): that opts out of waterfall.frag's V snap.
+    // The panadapter draws one stored row per device pixel, where snapping removes a blend of two
+    // moments in time. The mini-pan instead spreads a fixed WATERFALL_HISTORY across whatever
+    // height it happens to have, so when that height is under WATERFALL_HISTORY px it is
+    // downsampling — and there the linear blend is a cheap box filter, while snapping would drop
+    // rows outright. Revisit once the diagnostic reports this widget's px-per-row.
     float scrollOffset = static_cast<float>(m_waterfallWriteRow) / WATERFALL_HISTORY;
     RhiUtils::WaterfallUniforms waterfallUniforms = {scrollOffset,
                                                      static_cast<float>(TEXTURE_WIDTH),
@@ -413,7 +421,8 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
                                                      static_cast<float>(TEXTURE_WIDTH),
                                                      static_cast<float>(TEXTURE_WIDTH),
                                                      1.0f,
-                                                     {0, 0}};
+                                                     0.0f,
+                                                     0.0f};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
     // Build spectrum vertices with peak-hold downsampling

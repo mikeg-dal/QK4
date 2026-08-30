@@ -12,7 +12,8 @@ layout(std140, binding = 0) uniform buf {
     float tierSpanHz;       // Full tier bandwidth in Hz
     float spanHz;           // Display span in Hz
     float visibleFraction;  // Rows drawn / rows stored
-    float padding[2];
+    float storedRows;       // Rows in the texture; 0.0 disables the V snap
+    float padding;
 };
 
 void main() {
