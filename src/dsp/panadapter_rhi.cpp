@@ -1639,7 +1639,6 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
 void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
                                          qint32 sampleRate, float noiseFloor) {
     m_centerFreq = centerFreq;
-    m_sampleRate = sampleRate;
     m_noiseFloor = noiseFloor;
 
     // Zero-copy view into payload's bin data

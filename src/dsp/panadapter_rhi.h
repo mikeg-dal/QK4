@@ -252,7 +252,6 @@ private:
 
     // Frequency info
     qint64 m_centerFreq = 0;
-    qint32 m_sampleRate = 192000;
     float m_noiseFloor = -130.0f;
     qint64 m_tunedFreq = 0;
     int m_filterBw = 2400;
