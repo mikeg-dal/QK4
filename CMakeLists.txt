@@ -46,18 +46,14 @@ endif()
 
 # Platform-specific dependency handling
 if(APPLE)
-    # macOS with Homebrew
-    set(OPUS_PREFIX "/opt/homebrew/opt/opus")
-    set(OPUS_INCLUDE_DIRS "${OPUS_PREFIX}/include")
-    set(OPUS_LIBRARIES "${OPUS_PREFIX}/lib/libopus.dylib")
-
-    set(HIDAPI_PREFIX "/opt/homebrew/opt/hidapi")
-    set(HIDAPI_INCLUDE_DIRS "${HIDAPI_PREFIX}/include")
-    set(HIDAPI_LIBRARIES "${HIDAPI_PREFIX}/lib/libhidapi.dylib")
-
-    set(LIBUSB_PREFIX "/opt/homebrew/opt/libusb")
-    set(LIBUSB_INCLUDE_DIRS "${LIBUSB_PREFIX}/include")
-    set(LIBUSB_LIBRARIES "${LIBUSB_PREFIX}/lib/libusb-1.0.dylib")
+    # macOS with MacPorts (Intel Mac fork) - MacPorts always installs to /opt/local
+    set(MP_PREFIX "/opt/local")
+    set(OPUS_INCLUDE_DIRS "${MP_PREFIX}/include")
+    set(OPUS_LIBRARIES "${MP_PREFIX}/lib/libopus.dylib")
+    set(HIDAPI_INCLUDE_DIRS "${MP_PREFIX}/include")
+    set(HIDAPI_LIBRARIES "${MP_PREFIX}/lib/libhidapi.dylib")
+    set(LIBUSB_INCLUDE_DIRS "${MP_PREFIX}/include")
+    set(LIBUSB_LIBRARIES "${MP_PREFIX}/lib/libusb-1.0.dylib")
 elseif(WIN32)
     # Windows with vcpkg
     find_package(Opus CONFIG REQUIRED)
@@ -496,45 +492,39 @@ if(APPLE)
     # Find macdeployqt
     find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${Qt6_DIR}/../../../bin")
 
-    # OpenSSL locations (check both Apple Silicon and Intel paths)
-    set(OPENSSL_SEARCH_PATHS
-        "/opt/homebrew/opt/openssl@3/lib"   # Apple Silicon
-        "/usr/local/opt/openssl@3/lib"      # Intel Mac
-        "/opt/homebrew/opt/openssl/lib"
-        "/usr/local/opt/openssl/lib"
-    )
+    # Resolve Qt lib directory for macdeployqt - use get_filename_component to
+    # produce a clean absolute path (no unresolved ../.. components) that
+    # macdeployqt can consume. Works on both Intel (/usr/local) and
+    # Apple Silicon (/opt/homebrew).
+    get_filename_component(QT_LIB_DIR "${Qt6_DIR}/../../../lib" ABSOLUTE)
+    message(STATUS "Qt lib dir for macdeployqt: ${QT_LIB_DIR}")
 
-    foreach(OPENSSL_PATH ${OPENSSL_SEARCH_PATHS})
-        if(EXISTS "${OPENSSL_PATH}/libssl.3.dylib")
-            set(OPENSSL_LIB_DIR ${OPENSSL_PATH})
-            break()
-        endif()
-    endforeach()
-
-    if(OPENSSL_LIB_DIR)
+    # OpenSSL location (MacPorts)
+    set(OPENSSL_LIB_DIR "${MP_PREFIX}/lib")
+    if(EXISTS "${OPENSSL_LIB_DIR}/libssl.dylib")
         message(STATUS "Found OpenSSL at: ${OPENSSL_LIB_DIR}")
     else()
         message(WARNING "OpenSSL not found - TLS/PSK will not be available in bundled app")
     endif()
 
-    # Get the real (resolved) path for OpenSSL - Homebrew uses symlinks
-    execute_process(
-        COMMAND realpath "${OPENSSL_LIB_DIR}"
-        OUTPUT_VARIABLE OPENSSL_REAL_DIR
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
+    # MacPorts symlinks resolve to the same dir, so real path == lib dir
+    set(OPENSSL_REAL_DIR "${OPENSSL_LIB_DIR}")
     message(STATUS "OpenSSL real path: ${OPENSSL_REAL_DIR}")
+
+    # ICU libraries - macdeployqt misses these on Intel; MacPorts puts them in /opt/local/lib
+    file(GLOB ICU_LIBS "${MP_PREFIX}/lib/libicui18n.*.dylib" "${MP_PREFIX}/lib/libicuuc.*.dylib" "${MP_PREFIX}/lib/libicudata.*.dylib")
 
     # Custom target to create distributable app bundle
     add_custom_target(deploy
         COMMAND ${MACDEPLOYQT_EXECUTABLE} "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app" -always-overwrite
-        # Copy OpenSSL libraries
+            -libpath="${QT_LIB_DIR}"
+        # Copy OpenSSL libraries (MacPorts uses unversioned names)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${OPENSSL_LIB_DIR}/libssl.3.dylib"
+            "${OPENSSL_LIB_DIR}/libssl.dylib"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${OPENSSL_LIB_DIR}/libcrypto.3.dylib"
+            "${OPENSSL_LIB_DIR}/libcrypto.dylib"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/"
         # Copy Opus library
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -548,14 +538,18 @@ if(APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${LIBUSB_LIBRARIES}"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/"
-        # Fix OpenSSL library paths - use real Cellar path for -change
-        COMMAND install_name_tool -id "@executable_path/../Frameworks/libssl.3.dylib"
-            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libssl.3.dylib"
-        COMMAND install_name_tool -id "@executable_path/../Frameworks/libcrypto.3.dylib"
-            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libcrypto.3.dylib"
-        COMMAND install_name_tool -change "${OPENSSL_REAL_DIR}/libcrypto.3.dylib"
-            "@executable_path/../Frameworks/libcrypto.3.dylib"
-            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libssl.3.dylib"
+        # Copy ICU libraries (macdeployqt misses these on Intel Mac)
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${ICU_LIBS}
+            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/"
+        # Fix OpenSSL library paths (MacPorts unversioned names)
+        COMMAND install_name_tool -id "@executable_path/../Frameworks/libssl.dylib"
+            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libssl.dylib"
+        COMMAND install_name_tool -id "@executable_path/../Frameworks/libcrypto.dylib"
+            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libcrypto.dylib"
+        COMMAND install_name_tool -change "${OPENSSL_REAL_DIR}/libcrypto.dylib"
+            "@executable_path/../Frameworks/libcrypto.dylib"
+            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libssl.dylib"
         # Fix Opus library path
         COMMAND install_name_tool -id "@executable_path/../Frameworks/libopus.dylib"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libopus.dylib" || true
@@ -567,11 +561,13 @@ if(APPLE)
         # Fix libusb library path
         COMMAND install_name_tool -id "@executable_path/../Frameworks/libusb-1.0.dylib"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libusb-1.0.dylib" || true
-        # Re-sign the app bundle (required after modifying libraries)
-        # Uses ad-hoc signing by default; set CODESIGN_IDENTITY for Developer ID
-        COMMAND codesign --force --deep --sign "$ENV{CODESIGN_IDENTITY}"
-            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app" ||
-            codesign --force --deep --sign - "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app"
+        # Remove librsvg — macdeployqt can't rewrite its paths (header too small) and it
+        # is not needed on macOS (Qt uses native SVG rendering). All other GLib/Pango/Cairo
+        # libs ARE referenced directly by QtGui/QtCore built by MacPorts and must stay.
+        COMMAND ${CMAKE_COMMAND} -E rm -f
+            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/librsvg-2.2.dylib"
+        # Re-sign with ad-hoc signature (no Developer ID required)
+        COMMAND codesign --force --deep --sign - "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app"
         COMMENT "Creating deployable app bundle with all dependencies..."
         DEPENDS ${PROJECT_NAME}
     )
@@ -588,4 +584,3 @@ elseif(WIN32)
         DEPENDS ${PROJECT_NAME}
     )
 endif()
-
