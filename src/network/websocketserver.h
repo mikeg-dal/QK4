@@ -78,10 +78,12 @@ private:
         WebSocketDecoder decoder{/*requireMask=*/true};
     };
 
+    // These take an id, never a Session& : a held reference cannot survive a signal emission,
+    // because a consumer's slot can erase from or insert into m_sessions. See websocketserver.cpp.
     void onReadyRead(int clientId);
     void onDisconnected(int clientId);
-    bool tryUpgrade(int clientId, Session &session);
-    void pumpFrames(int clientId, Session &session);
+    bool tryUpgrade(int clientId);
+    void pumpFrames(int clientId);
     void dropSession(int clientId, quint16 code, const QString &why);
     void sendFrame(int clientId, quint8 opcode, const QByteArray &payload);
 

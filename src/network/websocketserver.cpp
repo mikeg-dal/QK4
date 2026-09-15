@@ -98,55 +98,60 @@ void WebSocketServer::onNewConnection() {
     }
 }
 
+// WHY every one of these re-looks-up by id instead of holding a Session& :
+// emitting a signal runs a consumer's slot synchronously on this thread, and that slot typically
+// writes to a socket. A write can surface a disconnect (erasing from m_sessions) and an accept can
+// insert (rehashing it). Either invalidates a held reference, and the crash lands later, in a loop
+// that looks unrelated. Found by a SIGSEGV that reproduced in roughly 1 run in 5.
+
 void WebSocketServer::onReadyRead(int clientId) {
     auto it = m_sessions.find(clientId);
     if (it == m_sessions.end() || !it->socket) {
         return;
     }
-    Session &session = *it;
-    const QByteArray chunk = session.socket->readAll();
+    const QByteArray chunk = it->socket->readAll();
 
-    if (!session.upgraded) {
-        session.handshakeBuffer.append(chunk);
-        if (!tryUpgrade(clientId, session)) {
-            return; // either still waiting for the rest, or the session was dropped
-        }
-        // Anything after the header block is already WebSocket data.
-        const int end = session.handshakeBuffer.indexOf(kHeaderEnd);
-        const QByteArray leftover = session.handshakeBuffer.mid(end + 4);
-        session.handshakeBuffer.clear();
-        if (!leftover.isEmpty()) {
-            session.decoder.append(leftover);
+    if (!it->upgraded) {
+        it->handshakeBuffer.append(chunk);
+        // tryUpgrade consumes the handshake buffer and emits; nothing may be held across it.
+        if (!tryUpgrade(clientId)) {
+            return; // still waiting for the rest, dropped, or gone during the emit
         }
     } else {
-        session.decoder.append(chunk);
+        it->decoder.append(chunk);
     }
 
-    pumpFrames(clientId, session);
+    pumpFrames(clientId);
 }
 
-bool WebSocketServer::tryUpgrade(int clientId, Session &session) {
-    const int end = session.handshakeBuffer.indexOf(kHeaderEnd);
+bool WebSocketServer::tryUpgrade(int clientId) {
+    auto it = m_sessions.find(clientId);
+    if (it == m_sessions.end() || !it->socket) {
+        return false;
+    }
+
+    const int end = it->handshakeBuffer.indexOf(kHeaderEnd);
     if (end < 0) {
-        if (session.handshakeBuffer.size() > MAX_HANDSHAKE_BYTES) {
+        if (it->handshakeBuffer.size() > MAX_HANDSHAKE_BYTES) {
             dropSession(clientId, WebSocketFrame::CloseProtocolError, QStringLiteral("handshake too large"));
         }
         return false;
     }
 
-    const QByteArray request = session.handshakeBuffer.left(end);
+    const QByteArray request = it->handshakeBuffer.left(end);
     const QString key = headerValue(request, "Sec-WebSocket-Key");
     const QString upgrade = headerValue(request, "Upgrade");
+
+    // Copied out before any write: flush() and disconnectFromHost() can re-enter and erase.
+    QTcpSocket *socket = it->socket;
 
     if (key.isEmpty() || upgrade.compare(QStringLiteral("websocket"), Qt::CaseInsensitive) != 0) {
         // Answer plain HTTP rather than dropping silently: a browser or curl pointed here should
         // get a readable error, not a reset connection.
-        if (session.socket) {
-            session.socket->write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n"
-                                  "Content-Length: 31\r\n\r\nThis endpoint expects WebSocket\n");
-            session.socket->flush();
-            session.socket->disconnectFromHost();
-        }
+        socket->write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n"
+                      "Content-Length: 31\r\n\r\nThis endpoint expects WebSocket\n");
+        socket->flush();
+        socket->disconnectFromHost();
         return false;
     }
 
@@ -159,23 +164,40 @@ bool WebSocketServer::tryUpgrade(int clientId, Session &session) {
                                 WebSocketFrame::acceptKey(key).toLatin1() +
                                 "\r\n"
                                 "Server: QK4\r\n\r\n";
-    session.socket->write(response);
-    session.socket->flush();
-    session.upgraded = true;
+    // Everything that reads the session is done BEFORE the first write, because a write or flush
+    // can surface a disconnect and erase the entry underneath us.
+    it->upgraded = true;
+    const QByteArray leftover = it->handshakeBuffer.mid(end + 4);
+    it->handshakeBuffer.clear();
+    if (!leftover.isEmpty()) {
+        it->decoder.append(leftover);
+    }
+    const QString peer = socket->peerAddress().toString();
 
-    emit clientConnected(clientId, session.socket->peerAddress().toString());
-    return true;
+    socket->write(response);
+    socket->flush();
+
+    emit clientConnected(clientId, peer);
+    // The consumer's slot may have dropped this client while sending its greeting.
+    return m_sessions.contains(clientId);
 }
 
-void WebSocketServer::pumpFrames(int clientId, Session &session) {
+void WebSocketServer::pumpFrames(int clientId) {
     for (;;) {
+        auto it = m_sessions.find(clientId);
+        if (it == m_sessions.end() || !it->socket) {
+            return;
+        }
+
         WebSocketDecoder::Message message;
-        const WebSocketDecoder::Status status = session.decoder.next(message);
+        const WebSocketDecoder::Status status = it->decoder.next(message);
         if (status == WebSocketDecoder::Status::NeedMoreData) {
             return;
         }
         if (status == WebSocketDecoder::Status::Error) {
-            dropSession(clientId, session.decoder.closeCode(), session.decoder.errorString());
+            const quint16 code = it->decoder.closeCode();
+            const QString why = it->decoder.errorString();
+            dropSession(clientId, code, why);
             return;
         }
 
@@ -215,14 +237,19 @@ void WebSocketServer::dropSession(int clientId, quint16 code, const QString &why
     if (it == m_sessions.end()) {
         return;
     }
-    emit errorOccurred(QStringLiteral("client %1: %2").arg(clientId).arg(why));
-    if (it->socket) {
-        if (it->upgraded) {
-            it->socket->write(WebSocketFrame::encodeClose(code, why));
-            it->socket->flush();
+    // Same rule as closeClient: copy out before anything that can re-enter, and emit last so a
+    // consumer cannot mutate m_sessions while a reference is live.
+    QTcpSocket *socket = it->socket;
+    const bool upgraded = it->upgraded;
+
+    if (socket) {
+        if (upgraded) {
+            socket->write(WebSocketFrame::encodeClose(code, why));
+            socket->flush();
         }
-        it->socket->disconnectFromHost();
+        socket->disconnectFromHost();
     }
+    emit errorOccurred(QStringLiteral("client %1: %2").arg(clientId).arg(why));
 }
 
 void WebSocketServer::onDisconnected(int clientId) {
@@ -248,7 +275,8 @@ void WebSocketServer::sendFrame(int clientId, quint8 opcode, const QByteArray &p
     if (it == m_sessions.end() || !it->socket || !it->upgraded) {
         return;
     }
-    it->socket->write(WebSocketFrame::encode(opcode, payload));
+    QTcpSocket *socket = it->socket; // write() can re-enter; do not hold the iterator across it
+    socket->write(WebSocketFrame::encode(opcode, payload));
 }
 
 void WebSocketServer::sendText(int clientId, const QString &text) {
@@ -261,10 +289,19 @@ void WebSocketServer::sendBinary(int clientId, const QByteArray &payload) {
 
 void WebSocketServer::broadcastText(const QString &text) {
     const QByteArray frame = WebSocketFrame::encode(WebSocketFrame::OpText, text.toUtf8());
-    for (auto it = m_sessions.begin(); it != m_sessions.end(); ++it) {
+
+    // WHY snapshot the sockets instead of writing while iterating: write() can surface a
+    // disconnect synchronously, and erasing from m_sessions mid-loop invalidates the iterator.
+    // This is the path every CAT broadcast will take, so it has to be safe by construction.
+    QList<QTcpSocket *> targets;
+    targets.reserve(m_sessions.size());
+    for (auto it = m_sessions.cbegin(); it != m_sessions.cend(); ++it) {
         if (it->socket && it->upgraded) {
-            it->socket->write(frame);
+            targets.append(it->socket);
         }
+    }
+    for (QTcpSocket *socket : targets) {
+        socket->write(frame);
     }
 }
 
@@ -273,9 +310,15 @@ void WebSocketServer::closeClient(int clientId, quint16 code, const QString &rea
     if (it == m_sessions.end() || !it->socket) {
         return;
     }
-    if (it->upgraded) {
-        it->socket->write(WebSocketFrame::encodeClose(code, reason));
-        it->socket->flush();
+    // WHY copy both out first: flush() on a socket whose peer has already gone delivers
+    // `disconnected` SYNCHRONOUSLY, which runs onDisconnected and erases this entry. Touching the
+    // iterator afterwards dereferences a dead node - it asserted in QHash about one run in twenty.
+    QTcpSocket *socket = it->socket;
+    const bool upgraded = it->upgraded;
+
+    if (upgraded) {
+        socket->write(WebSocketFrame::encodeClose(code, reason));
+        socket->flush();
     }
-    it->socket->disconnectFromHost();
+    socket->disconnectFromHost();
 }

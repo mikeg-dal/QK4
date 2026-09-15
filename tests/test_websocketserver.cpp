@@ -408,6 +408,86 @@ private slots:
         QVERIFY(!server.isListening());
     }
 
+    // ---- re-entrancy ---------------------------------------------------------------------------
+    //
+    // A write or flush on a socket whose peer has gone delivers `disconnected` SYNCHRONOUSLY, which
+    // erases that session. Any code holding a QHash iterator or reference across such a call then
+    // dereferences a dead node. That shipped in four places here and asserted in QHash about one
+    // run in twenty - rare enough to look like a flaky test rather than a bug.
+
+    void stopSurvivesAClientThatVanishedFirst() {
+        WebSocketServer server;
+        const quint16 port = freePort(server);
+        QSignalSpy connected(&server, &WebSocketServer::clientConnected);
+
+        TestClient a;
+        TestClient b;
+        QVERIFY(a.connectTo(port));
+        a.readHandshake();
+        QVERIFY(b.connectTo(port));
+        b.readHandshake();
+        QTRY_COMPARE(connected.count(), 2);
+
+        // Abort without a close handshake, then stop before the event loop has processed it: stop()
+        // writes a CLOSE and flushes to a socket that is already gone.
+        a.close();
+        server.stop();
+
+        QCOMPARE(server.clientCount(), 0);
+        QVERIFY(!server.isListening());
+        b.close();
+    }
+
+    void broadcastSurvivesAClientThatVanishedFirst() {
+        // Broadcast is the path every CAT state change will take, so it must tolerate a peer
+        // disappearing mid-loop rather than invalidating the iterator it is walking.
+        WebSocketServer server;
+        const quint16 port = freePort(server);
+        QSignalSpy connected(&server, &WebSocketServer::clientConnected);
+
+        std::vector<std::unique_ptr<TestClient>> clients;
+        for (int i = 0; i < 4; ++i) {
+            auto c = std::make_unique<TestClient>();
+            QVERIFY(c->connectTo(port));
+            c->readHandshake();
+            clients.push_back(std::move(c));
+        }
+        QTRY_COMPARE(connected.count(), 4);
+
+        clients[1]->close();
+        clients[2]->close();
+        server.broadcastText(QStringLiteral("vfo:0,0,14074000;"));
+
+        // A survivor still receives it.
+        WebSocketDecoder::Message m;
+        QVERIFY(clients[0]->nextMessage(m));
+        QCOMPARE(m.payload, QByteArray("vfo:0,0,14074000;"));
+
+        for (auto &c : clients) {
+            c->close();
+        }
+        server.stop();
+    }
+
+    void closingAnAlreadyGoneClientIsHarmless() {
+        WebSocketServer server;
+        const quint16 port = freePort(server);
+        QSignalSpy connected(&server, &WebSocketServer::clientConnected);
+
+        TestClient client;
+        QVERIFY(client.connectTo(port));
+        client.readHandshake();
+        QTRY_COMPARE(connected.count(), 1);
+        const int id = connected.at(0).at(0).toInt();
+
+        client.close();
+        server.closeClient(id); // writes and flushes to a dead peer
+        server.closeClient(id); // and again, now that the session is gone
+
+        QVERIFY(server.isListening());
+        server.stop();
+    }
+
     void sendingToAnUnknownClientIsHarmless() {
         // A send racing a disconnect is normal, not an error.
         WebSocketServer server;
