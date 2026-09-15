@@ -17,6 +17,10 @@ constexpr int kStereoProbePairs = 128;
 constexpr int kStereoMatchPercent = 90;
 constexpr float kStereoEpsilon = 1.0e-6f;
 
+// Below this a window carries no usable audio. Sits far above the denormal dust seen in unused
+// buffers (~7e-15) and far below anything a transmitting client actually sends.
+constexpr float kAudioFloor = 1.0e-7f;
+
 // Where the live samples actually start inside a TX_AUDIO payload.
 //
 // WSJT-X allocates twice the length it was asked for (TCITransceiver.cpp:871 — `AudioHeaderSize +
@@ -39,24 +43,34 @@ bool looksLikeLiveAudio(const float *f, int count) {
     if (count < 2 || (count % 2) != 0) {
         return false;
     }
-    bool anySignal = false;
+
+    // WHY a magnitude floor and not `!= 0.0f`: the unused window is not reliably all zeros. It has
+    // been observed holding denormal dust around 7e-15, which is non-zero but inaudible. Treating
+    // that as signal selected the wrong window and fed the radio silence - the meters moved a
+    // little and nothing decoded. Real audio is orders of magnitude above this.
+    float peak = 0.0f;
+    for (int i = 0; i < count; ++i) {
+        const float v = std::fabs(f[i]);
+        // Audio is normalised; anything this large is reinterpreted memory, not samples.
+        if (!(v <= 4.0f)) {
+            return false;
+        }
+        if (v > peak) {
+            peak = v;
+        }
+    }
+    if (peak < kAudioFloor) {
+        return false;
+    }
+
     const int probe = (count / 2 < kStereoProbePairs) ? count / 2 : kStereoProbePairs;
     int matched = 0;
     for (int i = 0; i < probe; ++i) {
-        const float l = f[i * 2];
-        const float r = f[i * 2 + 1];
-        // Audio is normalised; anything outside this is reinterpreted memory, not samples.
-        if (!(std::fabs(l) <= 4.0f) || !(std::fabs(r) <= 4.0f)) {
-            return false;
-        }
-        if (std::fabs(l - r) < kStereoEpsilon) {
+        if (std::fabs(f[i * 2] - f[i * 2 + 1]) < kStereoEpsilon) {
             ++matched;
         }
-        if (l != 0.0f || r != 0.0f) {
-            anySignal = true;
-        }
     }
-    return anySignal && matched >= (probe * kStereoMatchPercent) / 100;
+    return matched >= (probe * kStereoMatchPercent) / 100;
 }
 
 int liveWindowOffset(const char *body, int availableFloats, int validFloats) {
