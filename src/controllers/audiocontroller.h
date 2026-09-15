@@ -38,6 +38,17 @@ public:
 
     // PTT control — forwards to AudioEngine (runs on the audio thread).
     void setPttActive(bool active);
+
+    // Which source feeds the transmitter. Mirrors AudioEngine::TxSource so callers need not reach
+    // through to the engine (CONVENTIONS.md rule 2).
+    //
+    // WHY a remote PTT must set this first: setPttActive() opens the microphone, so keying without
+    // selecting the source would transmit the room.
+    enum class TxSource { Microphone = 0, Tci = 1 };
+    void setTxSource(TxSource source);
+
+    // One block of TCI transmit audio, 48 kHz mono Float32. Ignored unless the source is Tci.
+    void feedTciTxAudio(const QByteArray &f32Mono48k);
     bool isPttActive() const;
 
     // Volume/mix controls (atomic — safe from any thread)

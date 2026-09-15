@@ -149,6 +149,25 @@ void AudioController::setPttActive(bool active) {
     QMetaObject::invokeMethod(m_audioEngine, "setPttActive", Qt::QueuedConnection, Q_ARG(bool, active));
 }
 
+void AudioController::setTxSource(TxSource source) {
+    if (!m_audioEngine)
+        return;
+    // Direct, and deliberately so: the source must be in effect BEFORE the PTT that follows, and
+    // setPttActive is queued. A queued pair would arrive in order, but a direct source write
+    // followed by a queued PTT cannot be reordered at all.
+    //
+    // Safe from any thread because setTxSource on the engine writes only an atomic; it queues its
+    // own buffer flush to the audio thread rather than touching audio-thread state here.
+    m_audioEngine->setTxSource(static_cast<AudioEngine::TxSource>(source));
+}
+
+void AudioController::feedTciTxAudio(const QByteArray &f32Mono48k) {
+    if (!m_audioEngine)
+        return;
+    // Queued: the caller is on the TCI thread, the encode pipeline runs on the audio thread.
+    QMetaObject::invokeMethod(m_audioEngine, "feedTciTxAudio", Qt::QueuedConnection, Q_ARG(QByteArray, f32Mono48k));
+}
+
 bool AudioController::isPttActive() const {
     // Lock-free atomic read from AudioEngine — safe from any thread.
     return m_audioEngine ? m_audioEngine->isPttActive() : false;

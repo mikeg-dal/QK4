@@ -1,11 +1,13 @@
 #ifndef NETWORK_TCISERVER_H
 #define NETWORK_TCISERVER_H
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 
 #include <vector>
 
@@ -88,12 +90,27 @@ signals:
     void audioStopRequested();
     void clientCountChanged(int count);
 
+    // A client asserted or released PTT via `trx:<n>,<bool>`.
+    //
+    // WHY this is a gate and not a CAT command: the K4 keys when TX audio starts arriving, which is
+    // what CatServer's TX/RX handling already relies on ("Don't forward to K4 - the audio stream
+    // itself triggers K4 TX", catserver.cpp:317-330). Sending a PTT command as well would fight it.
+    void pttRequested(bool active);
+
+    // One block of client transmit audio, already reduced to 48 kHz mono.
+    void txAudioReceived(const QByteArray &f32Mono48k);
+
 private slots:
     void onClientConnected(int clientId, const QString &peerAddress);
     void onClientDisconnected(int clientId);
     void onTextMessageReceived(int clientId, const QString &text);
+    void onBinaryMessageReceived(int clientId, const QByteArray &payload);
+    void onChronoTick();
 
 private:
+    void setPtt(int clientId, bool active);
+    void startChrono(int clientId);
+    void stopChrono();
     WebSocketServer *m_socketServer;
     TciRadioSnapshot m_snapshot;
     // Clients that sent audio_start. Per-client because audio is opt-in and a client that never
@@ -101,6 +118,29 @@ private:
     QSet<int> m_audioClients;
     // One parser per client: a command can straddle frames, so buffers must not be shared.
     QHash<int, TciProtocol::Parser> m_parsers;
+
+    // PTT is owned by exactly one client at a time. -1 means nobody holds it.
+    //
+    // WHY ownership matters: losing the client that keyed must unkey (fail closed), while an
+    // UNOWNED `trx:<n>,false` is a status report and must never unkey the operator or another
+    // client.
+    int m_pttOwner = -1;
+
+    // TX_CHRONO pacing. WSJT-X sends no audio until asked and answers exactly one block per
+    // request, so this clock is both the pacing and the flow control.
+    //
+    // WHY an accumulator rather than a fixed interval: the period is 21.333 ms and a 21 ms timer
+    // runs ~1.6% fast, which warps digital-mode tones. Measured client tolerance is wide (65 ms
+    // instantaneous jitter, 9% of frames back-to-back) but the long-run MEAN RATE must be right.
+    QTimer *m_chronoTimer;
+    QElapsedTimer m_chronoClock;
+    qint64 m_chronoAccumNs = 0;
+    int m_chronoClient = -1;
+
+    // Counters behind the periodic log summaries. Blocks are far too frequent to log individually.
+    qint64 m_rxBlocks = 0;
+    qint64 m_txBlocks = 0;
+    qint64 m_chronoSent = 0;
 };
 
 #endif // NETWORK_TCISERVER_H

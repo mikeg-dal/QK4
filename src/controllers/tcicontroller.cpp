@@ -60,6 +60,26 @@ TciController::TciController(AudioController *audioController, RadioState *radio
 
     connect(m_server, &TciServer::clientCountChanged, this, &TciController::clientCountChanged);
 
+    // TX. Order matters on both edges and is the reason these are not one connection:
+    //  - keying:   select the TCI source BEFORE asserting PTT, or the first frames out are the
+    //              microphone picking up the room.
+    //  - unkeying: release PTT first, then hand the transmitter back to the microphone.
+    if (m_audioController) {
+        connect(m_server, &TciServer::pttRequested, this, [this](bool active) {
+            if (active) {
+                m_audioController->setTxSource(AudioController::TxSource::Tci);
+                m_audioController->setPttActive(true);
+            } else {
+                m_audioController->setPttActive(false);
+                m_audioController->setTxSource(AudioController::TxSource::Microphone);
+            }
+        });
+
+        // Queued: decoding lands on the TCI thread, the encode pipeline lives on the audio thread.
+        connect(m_server, &TciServer::txAudioReceived, this,
+                [this](const QByteArray &mono48k) { m_audioController->feedTciTxAudio(mono48k); });
+    }
+
     // Keep the server's snapshot in step with the radio. Without this the init burst reports the
     // struct's defaults forever - which showed up immediately as a client stuck on 20m while the
     // K4 was on 40m.

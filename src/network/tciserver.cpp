@@ -1,7 +1,13 @@
 #include "network/tciserver.h"
 
+#include <QLoggingCategory>
+
+#include <cmath>
+
 #include "network/tciaudioframe.h"
 #include "network/websocketserver.h"
+
+Q_LOGGING_CATEGORY(netTci, "net.tci")
 
 namespace {
 
@@ -24,12 +30,30 @@ constexpr int kIfHighHz = 48000;
 constexpr int kAudioSampleRate = 48000;
 constexpr int kAudioStreamSamples = TciAudioFrame::CHRONO_FLOATS;
 
+// One chrono asks for CHRONO_FLOATS floats = 1024 stereo frames = 21.333 ms at 48 kHz.
+constexpr qint64 kChronoPeriodNs =
+    static_cast<qint64>(TciAudioFrame::CHRONO_FLOATS / 2) * 1000000000LL / kAudioSampleRate;
+constexpr int kChronoPollMs = 5;
+
+// Audio blocks are far too frequent to log individually - roughly 47 a second each way. Summarise
+// instead, so a log can answer "is audio actually moving" without drowning everything else.
+constexpr int kRxSummaryEveryBlocks = 200; // ~4.3 s
+constexpr int kTxSummaryEveryBlocks = 100; // ~2.1 s
+
 } // namespace
 
-TciServer::TciServer(QObject *parent) : QObject(parent), m_socketServer(new WebSocketServer(this)) {
+TciServer::TciServer(QObject *parent)
+    : QObject(parent), m_socketServer(new WebSocketServer(this)), m_chronoTimer(new QTimer(this)) {
     connect(m_socketServer, &WebSocketServer::clientConnected, this, &TciServer::onClientConnected);
     connect(m_socketServer, &WebSocketServer::clientDisconnected, this, &TciServer::onClientDisconnected);
     connect(m_socketServer, &WebSocketServer::textMessageReceived, this, &TciServer::onTextMessageReceived);
+    connect(m_socketServer, &WebSocketServer::binaryMessageReceived, this, &TciServer::onBinaryMessageReceived);
+
+    // Poll faster than the period and emit from an accumulator, so scheduling jitter is absorbed
+    // rather than accumulated into a rate error.
+    m_chronoTimer->setTimerType(Qt::PreciseTimer);
+    m_chronoTimer->setInterval(kChronoPollMs);
+    connect(m_chronoTimer, &QTimer::timeout, this, &TciServer::onChronoTick);
 }
 
 TciServer::~TciServer() {
@@ -42,6 +66,14 @@ bool TciServer::start(quint16 port, bool loopbackOnly) {
 }
 
 void TciServer::stop() {
+    // Unkey before tearing the listener down, so stopping the server can never leave the radio
+    // transmitting.
+    if (m_pttOwner != -1) {
+        stopChrono();
+        m_pttOwner = -1;
+        m_snapshot.transmitting = false;
+        emit pttRequested(false);
+    }
     m_socketServer->stop();
     m_audioClients.clear();
     m_parsers.clear();
@@ -123,6 +155,7 @@ QStringList TciServer::initBurst() const {
 void TciServer::onClientConnected(int clientId, const QString &peerAddress) {
     Q_UNUSED(peerAddress);
     m_parsers.insert(clientId, TciProtocol::Parser());
+    qCInfo(netTci) << "client" << clientId << "connected from" << peerAddress << "- sending init burst";
 
     // One command per frame, matching what the reference server puts on the wire.
     const QStringList burst = initBurst();
@@ -134,6 +167,16 @@ void TciServer::onClientConnected(int clientId, const QString &peerAddress) {
 
 void TciServer::onClientDisconnected(int clientId) {
     m_parsers.remove(clientId);
+
+    // Fail closed: losing the client that keyed the transmitter must unkey it. A stuck PTT after a
+    // crashed client is the worst failure this server can have.
+    if (m_pttOwner == clientId) {
+        stopChrono();
+        m_pttOwner = -1;
+        m_snapshot.transmitting = false;
+        emit pttRequested(false);
+    }
+
     const bool hadAudio = m_audioClients.remove(clientId);
     // Fail closed: if the last audio consumer vanished, stop producing.
     if (hadAudio && m_audioClients.isEmpty()) {
@@ -159,6 +202,7 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             m_audioClients.insert(clientId);
             // Echo the request back, as the reference server does; WSJT-X waits for it.
             m_socketServer->sendText(clientId, message(name, QString::number(receiver)));
+            qCInfo(netTci) << "client" << clientId << "requested audio on receiver" << receiver;
             if (first) {
                 emit audioStartRequested(receiver);
             }
@@ -173,6 +217,24 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
         } else if (name == QLatin1String("rx_sensors_enable") || name == QLatin1String("tx_sensors_enable")) {
             // Echo only: acknowledged so the client does not wait, but nothing is measured yet.
             m_socketServer->sendText(clientId, message(name, command.args));
+        } else if (name == QLatin1String("trx")) {
+            int receiver = ONLY_RECEIVER;
+            bool keyed = false;
+            const bool haveReceiver = command.argAsInt(0, &receiver);
+            const bool haveState = command.argAsBool(1, &keyed);
+
+            // A GET, or a malformed argument: report, never guess. Coercing a non-boolean is how
+            // the reference server turns "trx:0,yes" into a silent unkey.
+            if (!haveReceiver || !haveState) {
+                m_socketServer->sendText(
+                    clientId, message(name, QString::number(ONLY_RECEIVER), boolText(m_snapshot.transmitting)));
+            } else if (receiver != ONLY_RECEIVER) {
+                // Only the main VFO exists. Decline explicitly - silence surfaces in WSJT-X as
+                // "TCI failed to set ptt" with no cause, and PTT must never fall back to trx 0.
+                m_socketServer->sendText(clientId, message(name, QString::number(receiver), boolText(false)));
+            } else {
+                setPtt(clientId, keyed);
+            }
         } else if (name == QLatin1String("split_enable")) {
             // Accepted without acting while CAT control is out of scope. Confirmed rather than met
             // with silence, because a refused command with no reply reads to a client as a hang.
@@ -184,6 +246,110 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
     }
 }
 
+void TciServer::setPtt(int clientId, bool active) {
+    if (active) {
+        // One owner at a time. A second client keying while another holds the transmitter is
+        // refused rather than silently stealing it.
+        if (m_pttOwner != -1 && m_pttOwner != clientId) {
+            m_socketServer->sendText(clientId,
+                                     message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(false)));
+            return;
+        }
+        m_pttOwner = clientId;
+        m_snapshot.transmitting = true;
+        qCInfo(netTci) << "PTT ON from client" << clientId;
+        // Confirm before starting the clock: the client waits for this echo, and WSJT-X drops the
+        // link if a PTT request is not reflected quickly.
+        m_socketServer->sendText(clientId,
+                                 message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(true)));
+        emit pttRequested(true);
+        startChrono(clientId);
+        return;
+    }
+
+    // An unkey from a client that does not hold PTT is a status report, not a command. Acting on it
+    // would let any client unkey the operator.
+    if (m_pttOwner != clientId) {
+        m_socketServer->sendText(clientId, message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER),
+                                                   boolText(m_snapshot.transmitting)));
+        return;
+    }
+
+    qCInfo(netTci) << "PTT OFF from client" << clientId;
+    stopChrono();
+    m_pttOwner = -1;
+    m_snapshot.transmitting = false;
+    m_socketServer->sendText(clientId, message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(false)));
+    emit pttRequested(false);
+}
+
+void TciServer::startChrono(int clientId) {
+    m_chronoClient = clientId;
+    m_chronoAccumNs = 0;
+    m_chronoClock.start();
+    qCInfo(netTci) << "TX_CHRONO started for client" << clientId << "- period" << (double(kChronoPeriodNs) / 1.0e6)
+                   << "ms, poll" << kChronoPollMs << "ms";
+    m_chronoTimer->start();
+    // Prime it: the client sends nothing at all until the first request arrives.
+    m_socketServer->sendBinary(clientId, TciAudioFrame::encodeTxChrono(ONLY_RECEIVER, kAudioSampleRate));
+}
+
+void TciServer::stopChrono() {
+    if (m_chronoTimer->isActive()) {
+        qCInfo(netTci) << "TX_CHRONO stopped after" << m_chronoSent << "requests," << m_txBlocks << "blocks received";
+    }
+    m_chronoTimer->stop();
+    m_chronoClient = -1;
+    m_chronoAccumNs = 0;
+    m_chronoClock.invalidate();
+}
+
+void TciServer::onChronoTick() {
+    if (m_chronoClient < 0) {
+        m_chronoTimer->stop();
+        return;
+    }
+    if (!m_chronoClock.isValid()) {
+        m_chronoClock.start();
+        return;
+    }
+    m_chronoAccumNs += m_chronoClock.nsecsElapsed();
+    m_chronoClock.restart();
+
+    // Drain the backlog rather than emitting one per tick: a late timer must not cost rate. This is
+    // what produces the bursty cadence measured on the reference server, which clients tolerate.
+    const QByteArray frame = TciAudioFrame::encodeTxChrono(ONLY_RECEIVER, kAudioSampleRate);
+    while (m_chronoAccumNs >= kChronoPeriodNs) {
+        m_chronoAccumNs -= kChronoPeriodNs;
+        m_socketServer->sendBinary(m_chronoClient, frame);
+        ++m_chronoSent;
+    }
+}
+
+void TciServer::onBinaryMessageReceived(int clientId, const QByteArray &payload) {
+    // Only the client holding PTT may put audio on the transmitter.
+    if (clientId != m_pttOwner) {
+        return;
+    }
+    std::vector<float> mono;
+    if (!TciAudioFrame::decodeTxAudioToMono(payload, &mono) || mono.empty()) {
+        qCDebug(netTci) << "TX audio: dropped an undecodable binary frame of" << payload.size() << "bytes";
+        return;
+    }
+
+    if (++m_txBlocks % kTxSummaryEveryBlocks == 0) {
+        float peak = 0.0f;
+        for (float v : mono) {
+            peak = std::max(peak, std::fabs(v));
+        }
+        qCInfo(netTci) << "TX audio:" << m_txBlocks << "blocks from client" << clientId << "," << mono.size()
+                       << "samples, peak" << peak << "- chrono sent" << m_chronoSent;
+    }
+
+    emit txAudioReceived(
+        QByteArray(reinterpret_cast<const char *>(mono.data()), static_cast<int>(mono.size() * sizeof(float))));
+}
+
 void TciServer::sendRxAudio(const std::vector<float> &interleavedStereo, int sampleRate) {
     if (m_audioClients.isEmpty() || interleavedStereo.empty()) {
         return;
@@ -192,5 +358,14 @@ void TciServer::sendRxAudio(const std::vector<float> &interleavedStereo, int sam
                                                           static_cast<int>(interleavedStereo.size()));
     for (int clientId : m_audioClients) {
         m_socketServer->sendBinary(clientId, frame);
+    }
+
+    if (++m_rxBlocks % kRxSummaryEveryBlocks == 0) {
+        float peak = 0.0f;
+        for (float v : interleavedStereo) {
+            peak = std::max(peak, std::fabs(v));
+        }
+        qCInfo(netTci) << "RX audio:" << m_rxBlocks << "blocks sent to" << m_audioClients.size() << "client(s),"
+                       << interleavedStereo.size() / 2 << "frames at" << sampleRate << "Hz, peak" << peak;
     }
 }

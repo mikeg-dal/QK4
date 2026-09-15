@@ -48,6 +48,12 @@ public:
         return header.startsWith("HTTP/1.1 101");
     }
 
+    void sendBinary(const QByteArray &payload) {
+        m_socket.write(encode(OpBinary, payload, /*mask=*/true));
+        m_socket.flush();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    }
+
     void send(const QByteArray &payload) {
         m_socket.write(encode(OpText, payload, /*mask=*/true));
         m_socket.flush();
@@ -355,6 +361,232 @@ private slots:
 
         WebSocketDecoder::Message m;
         QVERIFY(!client.next(m, 300));
+
+        client.close();
+        server.stop();
+    }
+
+    // ---- PTT ------------------------------------------------------------------------------------
+    //
+    // These guard the transmitter. A wrong answer here either keys the radio when it should not, or
+    // leaves it keyed when the client is gone.
+
+    void keysAndConfirmsOnTrxTrue() {
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("trx:0,true,tci;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,true;"));
+        QTRY_COMPARE(ptt.count(), 1);
+        QCOMPARE(ptt.at(0).at(0).toBool(), true);
+
+        client.close();
+        server.stop();
+    }
+
+    void refusesPttOnAReceiverThatDoesNotExist() {
+        // Silence surfaces in WSJT-X as "TCI failed to set ptt" with no cause, and PTT must never
+        // fall back to receiver 0.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("trx:1,true;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:1,false;"));
+        QCOMPARE(ptt.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
+    void doesNotKeyOnAMalformedBoolean() {
+        // The reference server reads anything that is not "true" as false; coercing the other way
+        // would key the transmitter on garbage.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("trx:0,yes;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,false;"));
+        QCOMPARE(ptt.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
+    void aSecondClientCannotStealTheTransmitter() {
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient owner;
+        TciTestClient other;
+        QVERIFY(owner.connectTo(server.port()));
+        owner.collectUntil("ready;");
+        QVERIFY(other.connectTo(server.port()));
+        other.collectUntil("ready;");
+
+        owner.send("trx:0,true;");
+        QTRY_COMPARE(ptt.count(), 1);
+
+        other.send("trx:0,true;");
+        WebSocketDecoder::Message m;
+        QVERIFY(other.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,false;"));
+        QCOMPARE(ptt.count(), 1); // still exactly one key event
+
+        owner.close();
+        other.close();
+        server.stop();
+    }
+
+    void anUnownedUnkeyReportsRatherThanUnkeying() {
+        // Otherwise any client could drop the operator's transmission.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient owner;
+        TciTestClient other;
+        QVERIFY(owner.connectTo(server.port()));
+        owner.collectUntil("ready;");
+        QVERIFY(other.connectTo(server.port()));
+        other.collectUntil("ready;");
+
+        owner.send("trx:0,true;");
+        QTRY_COMPARE(ptt.count(), 1);
+
+        other.send("trx:0,false;");
+        WebSocketDecoder::Message m;
+        QVERIFY(other.next(m));
+        // Reports the real state - still transmitting - and does not unkey.
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,true;"));
+        QCOMPARE(ptt.count(), 1);
+
+        owner.close();
+        other.close();
+        server.stop();
+    }
+
+    void unkeysWhenTheKeyingClientVanishes() {
+        // Fail closed. A stuck PTT after a crashed client is the worst failure this server has.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("trx:0,true;");
+        QTRY_COMPARE(ptt.count(), 1);
+
+        client.close();
+        QTRY_COMPARE(ptt.count(), 2);
+        QCOMPARE(ptt.at(1).at(0).toBool(), false);
+
+        server.stop();
+    }
+
+    void stoppingTheServerUnkeys() {
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("trx:0,true;");
+        QTRY_COMPARE(ptt.count(), 1);
+
+        server.stop();
+        QCOMPARE(ptt.count(), 2);
+        QCOMPARE(ptt.at(1).at(0).toBool(), false);
+        client.close();
+    }
+
+    void sendsChronoRequestsOnlyWhileKeyed() {
+        // WSJT-X sends no audio until asked, so the chrono clock is both the pacing and the flow
+        // control. It must not run when the transmitter is idle.
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        client.send("trx:0,true;");
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m)); // the trx confirmation
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,true;"));
+
+        // The next frame must be a header-only TX_CHRONO.
+        QVERIFY(client.next(m));
+        QCOMPARE(m.opcode, static_cast<quint8>(OpBinary));
+        QCOMPARE(m.payload.size(), TciAudioFrame::HEADER_BYTES);
+        TciAudioFrame::Header h;
+        QVERIFY(TciAudioFrame::parseHeader(m.payload, &h));
+        QCOMPARE(h.type, static_cast<quint32>(TciAudioFrame::TypeTxChrono));
+        QCOMPARE(h.length, static_cast<quint32>(TciAudioFrame::CHRONO_FLOATS));
+
+        client.close();
+        server.stop();
+    }
+
+    void ignoresTxAudioFromAClientThatDoesNotHoldPtt() {
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy audio(&server, &TciServer::txAudioReceived);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        // Well-formed TX_AUDIO, but nobody has keyed.
+        std::vector<float> mono(512, 0.25f);
+        std::vector<float> pairs(mono.size() * 2);
+        for (size_t i = 0; i < mono.size(); ++i) {
+            pairs[i * 2] = mono[i];
+            pairs[i * 2 + 1] = mono[i];
+        }
+        QByteArray frame;
+        auto put = [&frame](quint32 v) {
+            char le[4];
+            qToLittleEndian<quint32>(v, le);
+            frame.append(le, 4);
+        };
+        put(0);
+        put(48000);
+        put(3);
+        put(0);
+        put(0);
+        put(static_cast<quint32>(pairs.size()));
+        put(TciAudioFrame::TypeTxAudio);
+        put(2);
+        frame.append(32, '\0');
+        frame.append(reinterpret_cast<const char *>(pairs.data()), static_cast<int>(pairs.size() * sizeof(float)));
+
+        client.sendBinary(frame);
+        QTest::qWait(200);
+        QCOMPARE(audio.count(), 0);
 
         client.close();
         server.stop();

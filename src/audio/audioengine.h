@@ -79,6 +79,25 @@ public:
     void setEncodeMode(int mode);
     int encodeMode() const { return m_encodeMode.load(std::memory_order_relaxed); }
 
+    // Where TX audio comes from.
+    //
+    // WHY this must exist alongside any remote PTT: setPttActive() opens the microphone, so a TCI
+    // client keying the radio without a source selector would transmit whatever the room hears.
+    // The two sources are mutually exclusive, never mixed.
+    enum class TxSource { Microphone = 0, Tci = 1 };
+    void setTxSource(TxSource source);
+    TxSource txSource() const { return static_cast<TxSource>(m_txSource.load(std::memory_order_relaxed)); }
+
+    // Feed 48 kHz mono Float32 from a TCI client. Ignored unless the TX source is Tci.
+    //
+    // WHY it does not pass through m_micGain: WSJT-X transmits at full scale (measured peak 0.9990,
+    // rms 0.7056). Any operator slider position above unity would clip against the qBound, and any
+    // position below would silently attenuate digital drive. TCI carries its own level.
+    Q_INVOKABLE void feedTciTxAudio(const QByteArray &f32Mono48k);
+
+    // Drive trim for the TCI TX path, 0.0-2.0. Separate from mic gain by design.
+    void setTciTxGain(float gain);
+
     // PTT gate for the TX encode path. Setting to true on PTT-on edge also
     // opens the mic (if needed) and flushes any partial-frame tail from the
     // previous transmission. The TX encode runs on the audio thread; reading
@@ -124,6 +143,10 @@ private slots:
 private:
     bool setupAudioOutput();
     bool setupAudioInput();
+
+    // Shared tail of both TX sources: take 12 kHz Float32, apply `gain`, buffer as S16, and emit
+    // whole SL-tier frames while PTT is asserted. Audio thread only.
+    void bufferAndEmitTxFrames(const QByteArray &pcm12k, float gain);
 
     // Resample 48kHz Float32 samples to 12kHz (4:1 decimation with averaging).
     // Reads from input48k, writes into the pre-allocated m_resampleBuf12k
@@ -194,6 +217,9 @@ private:
     quint8 m_txSequence = 0;              // Audio-thread-only — no atomic needed
     std::atomic<int> m_encodeMode{3};     // EM3 (Opus float) default
     std::atomic<bool> m_pttActive{false}; // TX gate; read on every mic frame
+    // TxSource as an int so it is lock-free from the audio thread.
+    std::atomic<int> m_txSource{static_cast<int>(TxSource::Microphone)};
+    std::atomic<float> m_tciTxGain{1.0f};
 
     // Microphone frame buffering for Opus encoding
     // Buffer accumulates S16LE samples at 12kHz until we have a complete frame.

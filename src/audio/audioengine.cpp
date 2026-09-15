@@ -469,6 +469,34 @@ const QByteArray &AudioEngine::resample48kTo12k(const QByteArray &input48k) {
     return m_resampleBuf12k;
 }
 
+void AudioEngine::setTxSource(TxSource source) {
+    const int previous = m_txSource.exchange(static_cast<int>(source), std::memory_order_release);
+    if (previous == static_cast<int>(source)) {
+        return;
+    }
+    // Whatever is half-buffered belongs to the old source; carrying it across would splice two
+    // unrelated streams into one transmission.
+    //
+    // WHY queued rather than a direct call: m_micBuffer and m_micReadOffset are plain members owned
+    // by the audio thread, and this setter is called from whichever thread owns the PTT decision.
+    // Only the atomic above may be written from here.
+    QMetaObject::invokeMethod(this, "flushMicBuffer", Qt::QueuedConnection);
+}
+
+void AudioEngine::setTciTxGain(float gain) {
+    m_tciTxGain.store(qBound(0.0f, gain, 2.0f), std::memory_order_relaxed);
+}
+
+void AudioEngine::feedTciTxAudio(const QByteArray &f32Mono48k) {
+    // Ignored unless TCI owns the transmitter. A stale frame arriving after the operator took the
+    // microphone back must not reach the radio.
+    if (txSource() != TxSource::Tci || f32Mono48k.isEmpty()) {
+        return;
+    }
+    const QByteArray &data12k = resample48kTo12k(f32Mono48k);
+    bufferAndEmitTxFrames(data12k, m_tciTxGain.load(std::memory_order_relaxed));
+}
+
 void AudioEngine::onMicDataReady() {
     if (!m_audioSourceDevice || !m_micEnabled.load(std::memory_order_relaxed))
         return;
@@ -479,14 +507,22 @@ void AudioEngine::onMicDataReady() {
         return;
     }
 
+    // WHY drain but discard when TCI owns TX: the QAudioSource stays open across the whole
+    // connection (see openMic), so its buffer has to keep being emptied or it overruns. What must
+    // not happen is the room being transmitted while a TCI client holds the transmitter.
+    if (txSource() != TxSource::Microphone) {
+        return;
+    }
+
     // Resample from 48kHz to 12kHz (writes into pre-allocated member buffer)
     const QByteArray &data12k = resample48kTo12k(data48k);
+    bufferAndEmitTxFrames(data12k, m_micGain.load(std::memory_order_relaxed));
+}
 
+void AudioEngine::bufferAndEmitTxFrames(const QByteArray &pcm12k, float gain) {
     // Convert Float32 to S16LE, apply gain, and buffer for frame-based emission
-    const float *floatData = reinterpret_cast<const float *>(data12k.constData());
-    int floatSamples = data12k.size() / sizeof(float);
-
-    const float gain = m_micGain.load(std::memory_order_relaxed);
+    const float *floatData = reinterpret_cast<const float *>(pcm12k.constData());
+    int floatSamples = pcm12k.size() / sizeof(float);
 
     // Convert Float32 to S16LE with gain applied (cubic curve already baked into m_micGain)
     for (int i = 0; i < floatSamples; i++) {
