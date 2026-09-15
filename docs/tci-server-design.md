@@ -86,8 +86,9 @@ A single shared helper for both directions will be wrong in one of them.
 - The payload region beyond `length` is **81.77% non-zero** — stale buffer, not padding. Sizing the
   read from the frame size instead of `hdr.length` injects garbage audio.
 - Misreading it as true mono yields audio **2.0× too long with every tone an octave low**.
-- `channels` held **six distinct values** across 762 frames, including `1818781545`, `2959447138`,
-  `3523932582` and `0`. AetherSDR's comment calls it *"garbage (FIFO reuse)"*. **Never read it.**
+- `channels` held **eight distinct values** across 762 frames: `2`, `0`, `1818781545`, `1017483539`,
+  `2959447138`, `3523932582`, `4098833031`, `2059641691`. AetherSDR's comment calls it
+  *"garbage (FIFO reuse)"*. **Never read it.**
 - WSJT-X transmits at **full scale: peak 0.9990, RMS 0.7056**.
 
 ### TX_CHRONO is a pull clock, and QK4 owns it

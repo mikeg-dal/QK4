@@ -130,6 +130,14 @@ target_include_directories(test_websocketframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_websocketframe Qt6::Core Qt6::Test)
 add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
 
+# TCI binary audio framing: the 64-byte header, and the opposite payload rules per direction.
+add_executable(test_tciaudioframe test_tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+)
+target_include_directories(test_tciaudioframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciaudioframe Qt6::Core Qt6::Test)
+add_test(NAME TciAudioFrameTests COMMAND test_tciaudioframe)
+
 # TCI grammar: tokenising, the global one-argument form, and delimiter-safe formatting.
 add_executable(test_tciprotocol test_tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
