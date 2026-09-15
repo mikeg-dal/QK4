@@ -612,16 +612,35 @@ Note that this phase alone may already be independently useful: TCI carrying aud
 TCI rig backend to be selected. Worth testing once phase 3 works, because it would let the loopback
 sound card die before any TCI CAT exists.
 
-**4 — TX audio.** `trx:0,<bool>` → `AudioController::setPttActive()`, the TX_CHRONO accumulator,
-`TX_AUDIO` ingest (first `hdr.length` floats, deduplicate pairs), `feedTciTxAudio`, source selector
-and gain bypass in `AudioEngine`. **Gate: a third party decodes an FT8 transmission sent this way.**
+**4 — TX audio. BUILT 2026-09-15; bench gate still owed.** `trx:0,<bool>` →
+`AudioController::setPttActive()`, the TX_CHRONO accumulator, `TX_AUDIO` ingest (first
+`hdr.length` floats, deduplicate pairs), `feedTciTxAudio`, source selector and gain bypass in
+`AudioEngine`. PTT ownership enforced: one owner at a time, an unowned unkey only reports, and
+losing the client or stopping the server unkeys.
+
+**Gate still owed: a third party decodes an FT8 transmission sent this way.** Nothing below the
+wire proves itself, and this is the half that puts RF on the air.
 
 **5 — CAT control.** The rest of the minimum viable command set: `vfo`, `modulation`,
 `split_enable` transitions. Snapshot from queued `RadioState` signals, broadcast-on-diff, the
 marshalled optimistic `parseCATCommand` echo, per-session PTT ownership. Table-driven tests for
 every numbered client-behaviour rule — those are not deferrable even though most *commands* are.
 
-**6 — Wiring and UI.** `TciController`, settings page, `RadioSettings` keys, `CMakeLists.txt`.
+**6 — UI.** A **TCI Server** page mirroring the existing **CAT Server** panel on the Rig Control
+page, which is the established pattern for exactly this and should be copied rather than
+reinvented:
+
+| Element | Behaviour |
+|---|---|
+| Status | `Not running` / `Listening on <port>`, coloured as the CAT panel does |
+| Clients | `N connected`, live — driven by `TciController::clientCountChanged` |
+| Port | line edit, `(default: 50001)` beside it |
+| Enable TCI server | toggle, **effective immediately and persisted so it comes up enabled at startup** |
+| Enable TCI audio | toggle — CAT-only is a legitimate configuration, and audio is the expensive half |
+| Help text | which host and port to configure in WSJT-X, and that no loopback sound card is needed |
+
+`TciController` and the `RadioSettings` keys (`tciServer/enabled`, `tciServer/port`) already exist
+and are wired; this phase is the page itself plus registering it in `optionsdialog.cpp`.
 
 **7 — Bench.** Full end-to-end verification; see below. **This is the gate for declaring the
 feature working**, and it comes before any grammar expansion.
