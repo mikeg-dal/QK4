@@ -82,7 +82,13 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     connect(
         m_server, &TciServer::audioStartRequested, m_bridge, [this](int) { m_bridge->reset(); }, Qt::QueuedConnection);
 
-    connect(m_server, &TciServer::clientCountChanged, this, &TciController::clientCountChanged);
+    // Queued (m_server is on the TCI thread, this is not), so the cache is written on the main
+    // thread and read there too. Re-emitted rather than forwarded directly so no consumer can
+    // observe the signal before the cache it is expected to read.
+    connect(m_server, &TciServer::clientCountChanged, this, [this](int count) {
+        m_clientCount = count;
+        emit clientCountChanged(count);
+    });
 
     // TX. Order matters on both edges and is the reason these are not one connection:
     //  - keying:   select the TCI source BEFORE asserting PTT, or the first frames out are the
@@ -201,21 +207,18 @@ void TciController::start(quint16 port, bool loopbackOnly) {
     bool ok = false;
     QMetaObject::invokeMethod(m_server, "start", Qt::BlockingQueuedConnection, Q_RETURN_ARG(bool, ok),
                               Q_ARG(quint16, port), Q_ARG(bool, loopbackOnly));
+    // Blocking, so the result is authoritative by the time it lands here.
+    m_listening = ok;
     emit listeningChanged(ok, ok ? port : quint16(0));
 }
 
 void TciController::stop() {
     QMetaObject::invokeMethod(m_server, "stop", Qt::BlockingQueuedConnection);
+    m_listening = false;
+    // The server emits clientDisconnected for each session it tears down, so the queued
+    // clientCountChanged would converge on its own - but not before this function returns, and a
+    // page repainting on listeningChanged would show a listener that is down with clients still
+    // attached to it.
+    m_clientCount = 0;
     emit listeningChanged(false, 0);
-}
-
-bool TciController::isListening() const {
-    // Reading a bool the TCI thread may be writing is not worth a blocking round trip on every UI
-    // repaint, and QTcpServer's listening flag does not tear. Callers wanting a guaranteed-fresh
-    // value should watch listeningChanged instead.
-    return m_server->isListening();
-}
-
-int TciController::clientCount() const {
-    return m_server->clientCount();
 }

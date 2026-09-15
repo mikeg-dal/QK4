@@ -44,8 +44,16 @@ public:
     void start(quint16 port, bool loopbackOnly = true);
     void stop();
 
-    bool isListening() const;
-    int clientCount() const;
+    // Both answer from a MAIN-THREAD CACHE, never by reaching into the server.
+    //
+    // WHY: the server and its sessions live on the TCI thread. clientCount() used to return
+    // WebSocketServer::m_sessions.size(), and the options page calls it from the main thread while
+    // that QHash is being inserted into and erased from by socket events on the TCI thread. That is
+    // a data race, not a stale read - QHash::size() dereferences d, and an insert that rehashes
+    // frees the old d. The cache is fed by clientCountChanged, which is the same signal that
+    // prompted the re-read, so it carries no less information.
+    bool isListening() const { return m_listening; }
+    int clientCount() const { return m_clientCount; }
 
     // Carrying audio is separable from carrying CAT. Off means no RX frames are sent and no TX
     // audio is accepted; the control half keeps working.
@@ -73,6 +81,10 @@ private:
     TciServer *m_server;
     TciAudioBridge *m_bridge;
     QThread *m_tciThread = nullptr;
+
+    // Main-thread only. See isListening()/clientCount().
+    bool m_listening = false;
+    int m_clientCount = 0;
 };
 
 #endif // TCICONTROLLER_H
