@@ -98,8 +98,14 @@ private slots:
         owner.send("trx:0,true;");
         QTRY_COMPARE(ptt.count(), 1);
 
-        other.send("trx:0,true;");
+        // The OTHER client learns the transmitter was keyed, even though it did not ask. The
+        // protocol makes the server a synchroniser, and a logger with an ON indicator is useless
+        // if it only sees its own PTT.
         WebSocketDecoder::Message m;
+        QVERIFY(other.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,true;"));
+
+        other.send("trx:0,true;");
         QVERIFY(other.next(m));
         QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,false;"));
         QCOMPARE(ptt.count(), 1); // still exactly one key event
@@ -134,6 +140,73 @@ private slots:
 
         owner.close();
         other.close();
+        server.stop();
+    }
+
+    void broadcastsTransmitStartedByTheRadioItself() {
+        // REGRESSION, found with TR4W as the client. A transmit begun anywhere other than a TCI
+        // client - the microphone, a footswitch, another CAT client, the radio's own keying -
+        // never reached TCI clients at all, because the snapshot's transmit field was
+        // unconditionally carried over from the previous one. A logger sat showing RX while the
+        // radio was transmitting.
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        TciRadioSnapshot snapshot;
+        snapshot.transmitting = true; // the radio keyed; no TCI client asked for it
+        server.setSnapshot(snapshot);
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,true;"));
+
+        snapshot.transmitting = false;
+        server.setSnapshot(snapshot);
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,false;"));
+
+        client.close();
+        server.stop();
+    }
+
+    void aRadioStateUpdateStillDoesNotUnkeyTheOwningClient() {
+        // The other half of the same rule, and the defect that came FIRST: while a TCI client
+        // holds PTT, the radio's own state must not override it. The K4 keys only once TX audio
+        // starts arriving, so RadioState reports false for the first packets of a transmission,
+        // and broadcasting that stopped WSJT-X sending audio at all.
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("trx:0,true;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,true;"));
+
+        // A snapshot arrives from a radio that has not caught up yet.
+        TciRadioSnapshot lagging;
+        lagging.transmitting = false;
+        lagging.vfoAHz = 7074000; // something really did change, so a broadcast does happen
+        server.setSnapshot(lagging);
+
+        // Whatever else is broadcast, it must never be an unkey.
+        for (int i = 0; i < 4; ++i) {
+            if (!client.next(m, 200)) {
+                break;
+            }
+            QVERIFY2(QString::fromUtf8(m.payload) != QStringLiteral("trx:0,false;"),
+                     "unkeyed a client that still holds PTT");
+        }
+        QVERIFY(server.snapshot().transmitting);
+
+        client.close();
         server.stop();
     }
 

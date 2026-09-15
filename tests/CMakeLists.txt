@@ -171,6 +171,20 @@ target_include_directories(test_tciservertransmit PRIVATE ${CMAKE_SOURCE_DIR}/sr
 target_link_libraries(test_tciservertransmit Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciServerTransmitTests COMMAND test_tciservertransmit)
 
+# TCI server, answers: the read-only query group and the spec value constraints (AGC vocabulary,
+# squelch range, the one shared RIT/XIT offset). Split from test_tciserver to stay under the
+# 800-line limit in CONVENTIONS.md rule 7.
+add_executable(test_tciqueries test_tciqueries.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tciqueries PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciqueries Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciQueriesTests COMMAND test_tciqueries)
+
 # TCI binary audio framing: the 64-byte header, and the opposite payload rules per direction.
 add_executable(test_tciaudioframe test_tciaudioframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp

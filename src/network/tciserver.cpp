@@ -73,6 +73,9 @@ void TciServer::stop() {
         stopChrono();
         m_pttOwner = -1;
         m_snapshot.transmitting = false;
+        // Say so before the listener goes away: a client that is about to be disconnected should
+        // not be left holding an ON indicator.
+        m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(false)));
         emit pttRequested(false);
     }
     m_socketServer->stop();
@@ -96,11 +99,20 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
     const TciRadioSnapshot previous = m_snapshot;
     m_snapshot = snapshot;
 
-    // WHY transmitting is carried over rather than taken from the incoming snapshot: PTT state
-    // belongs to this server's ownership logic, not to the radio-state feed. Letting a caller's
-    // default overwrite it broadcast a spurious `trx:0,false;` mid-transmission, and the client
-    // stopped sending audio. PTT changes are broadcast from setPtt instead.
-    m_snapshot.transmitting = previous.transmitting;
+    // WHO OWNS THE TRANSMIT STATE depends on whether a TCI client is holding PTT.
+    //
+    //  * A CLIENT HOLDS IT: its own assertion wins. The K4 keys only once TX audio starts
+    //    arriving, so RadioState lags the client by whole packets; taking the radio's value here
+    //    broadcast a spurious `trx:0,false;` mid-transmission and WSJT-X stopped sending audio.
+    //
+    //  * NOBODY HOLDS IT: the radio is the only truth there is, and a change must reach every
+    //    client. An operator keying the mic or a footswitch, another CAT client, or the K4's own
+    //    keying are all invisible to TCI otherwise - a logger sits showing RX while the radio
+    //    transmits. This case used to be missed entirely, because the carry-over was
+    //    unconditional.
+    if (m_pttOwner != -1) {
+        m_snapshot.transmitting = previous.transmitting;
+    }
 
     if (clientCount() == 0) {
         return; // nobody to tell; the init burst will carry it
@@ -117,6 +129,10 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
     if (snapshot.txChannelHz() != previous.txChannelHz()) {
         m_socketServer->broadcastText(
             message(QStringLiteral("vfo"), trx, QStringLiteral("1"), QString::number(snapshot.txChannelHz())));
+        // tx_frequency is a server-to-client notification with no read form, so a client that
+        // wants the transmit frequency has no way to ask for it - it only ever learns by being
+        // told. Split is exactly when it matters and exactly when it differs from the RX VFO.
+        m_socketServer->broadcastText(message(QStringLiteral("tx_frequency"), QString::number(snapshot.txChannelHz())));
     }
     if (snapshot.modulation != previous.modulation) {
         m_socketServer->broadcastText(message(QStringLiteral("modulation"), trx, snapshot.modulation));
@@ -128,7 +144,27 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
     if (snapshot.split != previous.split) {
         m_socketServer->broadcastText(message(QStringLiteral("split_enable"), trx, boolText(snapshot.split)));
     }
-    // No `trx` diff here by design - see the note above. PTT is broadcast from setPtt.
+    // Radio-driven transmit. While a client owns PTT this can never fire, because the carry-over
+    // above makes the value identical; setPtt broadcasts that case instead.
+    if (m_snapshot.transmitting != previous.transmitting) {
+        m_socketServer->broadcastText(message(QStringLiteral("trx"), trx, boolText(m_snapshot.transmitting)));
+    }
+
+    if (snapshot.rit != previous.rit) {
+        m_socketServer->broadcastText(message(QStringLiteral("rit_enable"), trx, boolText(snapshot.rit)));
+    }
+    if (snapshot.xit != previous.xit) {
+        m_socketServer->broadcastText(message(QStringLiteral("xit_enable"), trx, boolText(snapshot.xit)));
+    }
+    if (snapshot.ritXitOffsetHz != previous.ritXitOffsetHz) {
+        // One register, reported under both names - see TciRadioSnapshot.
+        const QString offset = QString::number(snapshot.ritXitOffsetHz);
+        m_socketServer->broadcastText(message(QStringLiteral("rit_offset"), trx, offset));
+        m_socketServer->broadcastText(message(QStringLiteral("xit_offset"), trx, offset));
+    }
+    if (snapshot.agcMode != previous.agcMode) {
+        m_socketServer->broadcastText(message(QStringLiteral("agc_mode"), trx, snapshot.agcMode));
+    }
 }
 
 QStringList TciServer::initBurst() const {
@@ -150,6 +186,7 @@ QStringList TciServer::initBurst() const {
           << message(QStringLiteral("vfo"), trx, QStringLiteral("0"), QString::number(s.vfoAHz))
           << message(QStringLiteral("vfo"), trx, QStringLiteral("1"), QString::number(s.txChannelHz()))
           << message(QStringLiteral("dds"), trx, QString::number(s.vfoAHz))
+          << message(QStringLiteral("tx_frequency"), QString::number(s.txChannelHz()))
           << message(QStringLiteral("modulation"), trx, s.modulation)
           << message(QStringLiteral("rx_enable"), trx, boolText(true))
           // Channel A is always on; channel B follows the radio's Sub RX.
@@ -511,10 +548,13 @@ void TciServer::setPtt(int clientId, bool active) {
         m_pttOwner = clientId;
         m_snapshot.transmitting = true;
         qCInfo(netTci) << "PTT ON from client" << clientId;
-        // Confirm before starting the clock: the client waits for this echo, and WSJT-X drops the
-        // link if a PTT request is not reflected quickly.
-        m_socketServer->sendText(clientId,
-                                 message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(true)));
+        // BROADCAST, not a reply to the asker. The protocol makes the server a synchroniser: a
+        // state change reaches every client, so a second program (a logger showing an ON
+        // indicator, an amplifier controller) sees the transmitter key even though someone else
+        // asked for it. The requester is included, so this is still the echo it waits for -
+        // and WSJT-X drops the link if a PTT request is not reflected quickly, so it goes out
+        // before the chrono clock starts.
+        m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(true)));
         emit pttRequested(true);
         startChrono(clientId);
         return;
@@ -532,7 +572,8 @@ void TciServer::setPtt(int clientId, bool active) {
     stopChrono();
     m_pttOwner = -1;
     m_snapshot.transmitting = false;
-    m_socketServer->sendText(clientId, message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(false)));
+    // Broadcast for the same reason as the key: every client tracks the transmitter.
+    m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(false)));
     emit pttRequested(false);
 }
 

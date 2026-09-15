@@ -29,6 +29,9 @@ reply alone, which is why column 3 exists.
 | New in 2.0 (4.5) | 2 | 0 | `VFO_LOCK`, `RX_CHANNEL_SENSORS` |
 | CW (3.2) | 9 | 0 | **The largest single gap — see §5** |
 
+A fourth defect — **no transmit-status message was ever sent** — was found later with TR4W as the
+client and is covered in §11, along with an audit of everything a server must send unprompted.
+
 **Headline:** QK4 is complete for a *digital-mode* client (WSJT-X works end to end — receive,
 decode, transmit, and a full FT8 QSO). It is not usable by a **CW** client at all, and it reports
 several values it does not actually track.
@@ -518,3 +521,118 @@ fraction; the K4's routing matrix does not fit.
 3. **It also bounds the passthrough.** Anything in §10.1 should be a *proper* TCI command, not a
    passthrough, because the protocol already has a word for it. Passthrough is for §10.2 only.
    A passthrough used where a real command exists is how a protocol rots.
+---
+
+## 11. Server-to-client obligations — what QK4 must send unprompted
+
+Sections 2–7 audit what QK4 answers when **asked**. This section audits what the protocol requires
+a server to send when **nobody asked** — the half a read-only sweep like `--audit` can never
+measure, because the tool only ever sees replies to its own queries.
+
+This distinction is not academic. It is where the TR4W transmit-indicator bug lived: every command
+involved was "implemented", `--audit` reported it answered, and the status message still never
+arrived.
+
+### 11.1 The rule
+
+Spec §3.1 makes the server a **synchroniser**, not a request/response service:
+
+> When a parameter change occurs in the ExpertSDR3 (server) program, the server notifies all
+> connected clients, i.e., clients do not need to poll the server constantly, any change of state
+> will be sent in time to all clients. If the client sends a new state, the server will set it to
+> itself, as well as send it to all clients.
+
+Two obligations follow, and QK4 was violating both for `trx`:
+
+1. **A change of state is broadcast, whatever caused it** — including changes the radio made on
+   its own, with no client involved.
+2. **A change requested by one client is sent to _all_ clients**, not just the requester.
+
+### 11.2 Initialization — complete
+
+All nine (§2) are sent on connect, `ready;` last. QK4's burst is larger than the required set
+because it also seeds current state, which is what real servers do.
+
+### 11.3 Broadcast on change
+
+| Command | Broadcast? | Notes |
+|---|---|---|
+| `vfo` (both channels) | ✅ | |
+| `dds` | ✅ | |
+| `tx_frequency` | ✅ | Added — see §11.5 |
+| `modulation` | ✅ | |
+| `split_enable` | ✅ | |
+| `rx_channel_enable` | ✅ | Sub RX |
+| `trx` | ✅ | **Fixed — see §11.4** |
+| `rit_enable`, `xit_enable`, `rit_offset`, `xit_offset` | ✅ | |
+| `agc_mode` | ✅ | |
+| Everything else in §3.2 | n/a | Reported from constants, so nothing ever changes. **When those are wired to `RadioState` they must gain a broadcast in the same commit** — a value that can change and is not broadcast is this same bug again. |
+
+### 11.4 The `trx` defect — FIXED
+
+**Symptom, found with TR4W as the client:** QK4 never sent a transmit-status message. TR4W's ON
+indicator stayed dark while the radio transmitted. TR4W needed no change — it already handles
+`trx` — QK4 simply never sent it.
+
+**Cause.** `setSnapshot` carried the transmit flag over from the previous snapshot
+*unconditionally*, so a transmit state arriving from `RadioState` could never produce a broadcast.
+`TciController` compounded it by never populating the field and never subscribing to
+`transmitStateChanged`. A transmit begun by the microphone, a footswitch, another CAT client, or
+the radio's own keying was invisible to every TCI client.
+
+That carry-over was itself a fix for the opposite defect in phase 5: the K4 keys only once TX
+audio starts arriving, so `RadioState` lags a TCI client by whole packets, and broadcasting the
+radio's `false` mid-transmission made WSJT-X stop sending audio. The first fix was correct about
+the problem and too broad in the remedy.
+
+**The rule now:** ownership decides whose transmit state wins.
+
+- **A TCI client holds PTT** → its own assertion wins; the lagging radio value is ignored.
+- **Nobody holds PTT** → the radio is the only truth there is, and a change is broadcast.
+
+Both directions are pinned, and both were revert-tested:
+`broadcastsTransmitStartedByTheRadioItself` fails against the old unconditional carry-over (no
+message at all — the reported bug), and `aRadioStateUpdateStillDoesNotUnkeyTheOwningClient` fails
+if the ownership guard is removed (the phase 5 defect returns).
+
+**A second instance of the same class, also fixed:** `setPtt` confirmed a key with
+`sendText(clientId, …)` — a **unicast to the requester**. With two clients attached (WSJT-X and a
+logger, say), the second never learned the transmitter had been keyed. Now broadcast, which still
+includes the requester and so remains the echo WSJT-X waits for.
+
+### 11.5 `tx_frequency` — ADDED
+
+`TX_FREQUENCY` is server-to-client only: **the protocol defines no read form**, so a client that
+wants the transmit frequency cannot ask for it and only ever learns by being told. QK4 already
+computes the value (`txChannelHz()`); it simply never sent it. Now seeded in the burst and
+broadcast whenever it changes.
+
+It matters most under split, which is exactly when it differs from the receive VFO, and it is what
+an amplifier or band-decoder client needs.
+
+### 11.6 Still missing, and why
+
+| Message | QK4 has the data? | Status |
+|---|---|---|
+| `rx_sensors`, `rx_channel_sensors` | **Yes** — `sMeter`, `sMeterB` | Client enables it, QK4 echoes the enable and sends nothing. §7.2 |
+| `tx_sensors` | **Yes** — `alcMeter`, `swrMeter`, `forwardPower`, `micGain` | Same |
+| `tx_enable` on band change | Yes — frequency is tracked | Sent at connect only. The spec says also "when the band is changed, in case transmitter permission was changed" |
+| `vfo_lock` | **Yes** — `lockA`, `lockB` | Not sent. TCI 2.0 |
+| `tx_footswitch` | **No** | The K4 reports that it is transmitting, not *what* keyed it. Cannot be sent honestly |
+| `clicked_on_spot`, `rx_clicked_on_spot` | Partly | Needs panadapter/DX-cluster UI integration, not radio work |
+| `app_focus` | Yes | About the server's own window; low value for a headless-ish control app |
+| `cw_macros_empty`, `callsign_send` | No | CW, §5 |
+
+The sensors are the largest remaining omission and the cheapest to close: read-only, incapable of
+moving the radio, and every value is already in `RadioState`.
+
+### 11.7 Why `--audit` cannot catch this class
+
+`scripts/tciclient.py --audit` sends reads and checks replies. Every gap in this section is
+invisible to it: a message nobody asked for cannot appear in a reply. `tx_frequency` and
+`tx_footswitch` have no read form at all, so they can *never* show up in an audit sweep.
+
+Catching these needs the other kind of test — connect, change something on the radio, and assert a
+message arrives unprompted. `broadcastsTransmitStartedByTheRadioItself` and
+`announcesTheTransmitFrequency` are that shape. A future `--listen` mode for the tool that simply
+prints everything arriving unprompted while the operator works the radio would cover the rest.

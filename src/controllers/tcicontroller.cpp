@@ -168,6 +168,9 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode) { publishSnapshot(); });
         connect(m_radioState, &RadioState::splitChanged, this, [this](bool) { publishSnapshot(); });
         connect(m_radioState, &RadioState::ritXitChanged, this, [this](bool, bool, int) { publishSnapshot(); });
+        // Without this a transmit started anywhere other than a TCI client - the mic, a
+        // footswitch, another CAT client - never reaches TCI clients at all.
+        connect(m_radioState, &RadioState::transmitStateChanged, this, [this](bool) { publishSnapshot(); });
         connect(m_radioState, &RadioState::subRxEnabledChanged, this, [this](bool enabled) {
             // The bridge decides what goes in the right audio channel, and it lives on the TCI
             // thread, so this has to be marshalled rather than written from here.
@@ -230,6 +233,10 @@ void TciController::publishSnapshot() {
 
     // The Sub RX is TCI channel 1 of receiver 0, not a second receiver. See TciRadioSnapshot.
     snapshot.subEnabled = m_radioState->subReceiverEnabled();
+
+    // The radio's own transmit state. TciServer decides whether this or a TCI client's assertion
+    // wins - see setSnapshot - but it can only do that if the value actually arrives.
+    snapshot.transmitting = m_radioState->isTransmitting();
     snapshot.modulationB = tciModulationFor(m_radioState->modeB());
 
     // Queued: the server reads this from its own thread, so it must be handed over by value
