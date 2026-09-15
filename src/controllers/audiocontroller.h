@@ -55,6 +55,19 @@ public:
     void setOutputDevice(const QString &deviceId);
     void setMicGain(float gain); // 0.0 to 1.0
 
+signals:
+    // Decoded K4 receive audio: 12 kHz stereo Float32, L = Main, R = Sub.
+    //
+    // WHY here and not downstream of AudioEngine::enqueueAudio: this is the raw per-receiver audio,
+    // before the jitter buffer and before MX routing, volume and balance. A TCI listener must get
+    // what the radio sent, not what the operator chose to hear - and must not inherit the speaker
+    // path's policy of dropping the oldest audio to claw back latency.
+    //
+    // Emitted on the I/O thread. Consumers on another thread must connect with
+    // Qt::QueuedConnection; nothing may block here, because this thread also carries the K4
+    // control stream.
+    void rxAudioAvailable(const QByteArray &pcm12kStereo);
+
 private slots:
     void onStreamingLatencyChanged(int tier);
 

@@ -130,6 +130,20 @@ target_include_directories(test_websocketframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_websocketframe Qt6::Core Qt6::Test)
 add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
 
+# K4 receive audio -> TCI RX_AUDIO samples: rate, channel mapping, and packet-boundary continuity.
+add_executable(test_tciaudiobridge test_tciaudiobridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudiobridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/audioupsampler.cpp
+)
+target_include_directories(test_tciaudiobridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciaudiobridge Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciAudioBridgeTests COMMAND test_tciaudiobridge)
+
 # TCI server: init burst contents and ordering, audio subscription, and per-client isolation.
 add_executable(test_tciserver test_tciserver.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp

@@ -46,6 +46,10 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
         QByteArray pcmData = m_opusDecoder->decodeK4Packet(payload);
         if (!pcmData.isEmpty()) {
             m_audioEngine->enqueueAudio(pcmData);
+            // Fan-out for TCI listeners. Deliberately after enqueueAudio so the speaker path is
+            // never delayed by a consumer, and deliberately not downstream of it so a listener does
+            // not inherit the jitter buffer's drop-oldest policy. Free when nobody is connected.
+            emit rxAudioAvailable(pcmData);
         }
     });
 
