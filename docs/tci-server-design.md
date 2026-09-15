@@ -593,10 +593,19 @@ frame and send `RX_AUDIO`. **Gate: WSJT-X decodes FT8 from the K4 over TCI.** Th
 result that determines whether the feature is worth building, and it is reachable without one line
 of CAT SET handling.
 
-**The protocol half of this gate is already met** — see Open Questions. A standalone harness running
-the real server code streamed a recorded FT8 sample over a socket and `jt9` decoded 11 of 14. What
-remains for phase 3 is the fan-out itself: taking live K4 audio from `audiocontroller.cpp:45-50`
-instead of a WAV, which needs no new protocol work.
+**MET, off the air, 2026-09-15.** QK4 itself served TCI on 50001 with a live K4 on 40m at
+7.074 MHz, and `jt9` decoded **25 FT8 messages** from a single 15-second window pulled through the
+server — EA8BS, 9Y4DG, LU5BBV, HC2GRC, PD5FL, DL6TK and others.
+
+Two figures make this stronger than the recorded-sample run:
+
+- **DT clustered at 0.1-0.2 s.** Timing survives the whole path with no accumulated latency or drift.
+- **A −25 dB decode**, against an FT8 floor near −24. Distortion, aliasing or dropouts cost the
+  marginal signals first; none were lost.
+
+The path exercised: K4 -> `Protocol::audioDataReady` -> `OpusDecoder` -> the fan-out at
+`audiocontroller.cpp:45-50` -> queued to the TCI thread -> `TciAudioBridge` 12k->48k ->
+`TciAudioFrame` -> `WebSocketServer` -> client. No loopback sound card.
 
 Note that this phase alone may already be independently useful: TCI carrying audio while
 `CatServer` on 9299 carries CAT. **Unverified** — WSJT-X's "Use TCI Audio" checkbox may require the

@@ -46,6 +46,7 @@ class CwController;
 class DxClusterController;
 class KPA1500UiController;
 class CatServer;
+class TciController;
 class OptionsDialog;
 class NotificationWidget;
 class VfoRowWidget;
@@ -203,6 +204,10 @@ private:
 
     // CAT server for external app integration (WSJT-X, MacLoggerDX, etc.)
     CatServer *m_catServer;
+
+    // TCI server: the same job over a WebSocket, carrying audio as well as CAT. Independent of
+    // CatServer - neither goes through the other.
+    TciController *m_tciController = nullptr;
 
     // Persistent Options dialog (lazy-created on first open)
     OptionsDialog *m_optionsDialog = nullptr;

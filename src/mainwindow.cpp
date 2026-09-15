@@ -5,6 +5,7 @@
 #include "ui/widgets/rightsidepanel.h"
 #include "ui/widgets/bottommenubar.h"
 #include "controllers/featuremenucontroller.h"
+#include "controllers/tcicontroller.h"
 #include "controllers/modepopupcontroller.h"
 #include "controllers/bandnavigationcontroller.h"
 #include "controllers/buttonrowdispatcher.h"
@@ -394,6 +395,32 @@ void MainWindow::setupCatServer() {
     // Start CAT server if enabled
     if (RadioSettings::instance()->catServerEnabled()) {
         m_catServer->start(RadioSettings::instance()->catServerPort());
+    }
+
+    // TCI server: a second, independent route for external apps, carrying audio as well as CAT so
+    // WSJT-X needs no loopback sound card. It does NOT go through CatServer - both reach the same
+    // primitives directly. See docs/tci-server-design.md.
+    //
+    // Created unconditionally but started only when enabled, so the listener is genuinely
+    // runtime-toggleable rather than needing a restart.
+    m_tciController = new TciController(m_audioController, m_radioState, this);
+
+    connect(RadioSettings::instance(), &RadioSettings::tciServerEnabledChanged, this, [this](bool enabled) {
+        if (enabled) {
+            m_tciController->start(RadioSettings::instance()->tciServerPort());
+        } else {
+            m_tciController->stop();
+        }
+    });
+    connect(RadioSettings::instance(), &RadioSettings::tciServerPortChanged, this, [this](quint16 port) {
+        if (RadioSettings::instance()->tciServerEnabled()) {
+            m_tciController->stop();
+            m_tciController->start(port);
+        }
+    });
+
+    if (RadioSettings::instance()->tciServerEnabled()) {
+        m_tciController->start(RadioSettings::instance()->tciServerPort());
     }
 }
 

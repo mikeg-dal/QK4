@@ -295,6 +295,32 @@ void RadioSettings::setCatServerPort(quint16 port) {
     }
 }
 
+bool RadioSettings::tciServerEnabled() const {
+    return m_tciServerEnabled;
+}
+
+void RadioSettings::setTciServerEnabled(bool enabled) {
+    if (m_tciServerEnabled != enabled) {
+        m_tciServerEnabled = enabled;
+        save();
+        emit tciServerEnabledChanged(enabled);
+    }
+}
+
+quint16 RadioSettings::tciServerPort() const {
+    return m_tciServerPort;
+}
+
+void RadioSettings::setTciServerPort(quint16 port) {
+    // Clamp to valid port range (1024-65535)
+    port = qBound(quint16(1024), port, quint16(65535));
+    if (m_tciServerPort != port) {
+        m_tciServerPort = port;
+        save();
+        emit tciServerPortChanged(port);
+    }
+}
+
 QMap<QString, MacroEntry> RadioSettings::macros() const {
     return m_macros;
 }
@@ -537,6 +563,8 @@ void RadioSettings::load() {
     // CAT Server settings (migrate from old rigctld keys if present)
     m_catServerEnabled = m_settings.value("catServer/enabled", m_settings.value("rigctld/enabled", false)).toBool();
     m_catServerPort = m_settings.value("catServer/port", m_settings.value("rigctld/port", 9299)).toUInt();
+    m_tciServerEnabled = m_settings.value("tciServer/enabled", false).toBool();
+    m_tciServerPort = m_settings.value("tciServer/port", 50001).toUInt();
 
     // DX Cluster settings
     int dxCount = m_settings.beginReadArray("dxClusters");
@@ -660,6 +688,8 @@ void RadioSettings::save() {
     // CAT Server settings
     m_settings.setValue("catServer/enabled", m_catServerEnabled);
     m_settings.setValue("catServer/port", m_catServerPort);
+    m_settings.setValue("tciServer/enabled", m_tciServerEnabled);
+    m_settings.setValue("tciServer/port", m_tciServerPort);
 
     // HaliKey settings
     m_settings.setValue("halikey/portName", m_halikeyPortName);

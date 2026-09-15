@@ -102,6 +102,14 @@ public:
     quint16 catServerPort() const;
     void setCatServerPort(quint16 port);
 
+    // TCI server settings (WebSocket server carrying both CAT and audio for WSJT-X and friends).
+    // Off by default: an always-on listener would change behaviour for every user, and TCI is
+    // additive - the CAT server on 9299 keeps working untouched.
+    bool tciServerEnabled() const;
+    void setTciServerEnabled(bool enabled);
+    quint16 tciServerPort() const;
+    void setTciServerPort(quint16 port);
+
     // Macro settings
     QMap<QString, MacroEntry> macros() const;
     MacroEntry macro(const QString &functionId) const;
@@ -173,6 +181,8 @@ signals:
     void speakerDeviceChanged(const QString &deviceId);
     void catServerEnabledChanged(bool enabled);
     void catServerPortChanged(quint16 port);
+    void tciServerEnabledChanged(bool enabled);
+    void tciServerPortChanged(quint16 port);
     void macrosChanged();
     void halikeyEnabledChanged(bool enabled);
     void halikeyPortNameChanged(const QString &portName);
@@ -204,6 +214,10 @@ private:
     // CAT Server settings
     bool m_catServerEnabled = false;
     quint16 m_catServerPort = 9299;
+
+    // TCI server settings. 50001 is the TCI convention and what WSJT-X defaults to.
+    bool m_tciServerEnabled = false;
+    quint16 m_tciServerPort = 50001;
 
     // HaliKey settings
     QString m_halikeyPortName;
