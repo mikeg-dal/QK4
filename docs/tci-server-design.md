@@ -1,11 +1,16 @@
 # TCI Server for QK4
 
-**Status: phases 0-5 BUILT, and a COMPLETE FT8 QSO has been worked through the path (2026-09-15).** Both audio directions and CAT control
-work against a live K4 with WSJT-X: 25 FT8 decodes received through the server, and transmissions
-sent through it are decoded by the spotting networks, and a full two-way contact has been
-completed - receive, decode, transmit and be decoded holding together across successive 15-second
-periods with CAT tracking the radio throughout. That is the operating case, not a bench test.
-Phase 6 (the settings UI) and phase 7 (full TCI command coverage) remain.
+**Status: phases 0-6 BUILT, and a COMPLETE FT8 QSO has been worked through the path (2026-09-15).**
+Both audio directions and CAT control work against a live K4 with WSJT-X: 25 FT8 decodes received
+through the server, and transmissions sent through it are decoded by the spotting networks, and a
+full two-way contact has been completed - receive, decode, transmit and be decoded holding together
+across successive 15-second periods with CAT tracking the radio throughout. That is the operating
+case, not a bench test.
+
+Phase 6 (the settings UI) is built. Phase 8a - answering every value the init burst declares,
+read-only - is built and verified against the running app. **Phase 8b, the SETs that move the
+radio, is deliberately not built**: it needs a K4 on the bench, one command at a time. Phase 7
+(the bench sign-off) is the standing gate.
 
 ## Context
 
@@ -796,6 +801,18 @@ this design does not modify the parser.
 It takes a 12 kHz mono WAV and prints decodes. `samples/FT8/210703_133430.wav` yields 14. Push a
 sample through the upsampler, back down, and assert all 14 still decode with unchanged SNR/DT/freq.
 This belongs in CI if the sample can be vendored; otherwise it is a documented manual gate.
+
+**Live query check, no radio required.** Start QK4, connect a WebSocket client to the TCI port,
+collect the init burst, then send every name it declared back as a bare GET (`drive;agc_mode;...`)
+and assert **every reply is a string the burst already contained, verbatim**. Ordering makes the
+terminator easy: replies come back in command order on one socket, so put a known query last.
+
+This is the same invariant `answersQueriesConsistentlyWithTheInitBurst` pins in the unit tests, but
+run against the assembled app, so it also covers `TciController`'s thread hop - the unit tests
+drive `TciServer` directly on one thread and cannot see a marshalling mistake. Last run: 42-command
+burst, 40 names queried, 34 answered and all 34 matching the burst. The six silent ones (`vfo`,
+`dds`, `modulation`, `vfo_limits`, `if_limits`, `start`) either need a receiver argument or are not
+queryable, which is correct.
 
 **Protocol replay, no radio required.** The capture tooling built during design
 (`tci_tap.py`, `tci_decode.py`, `rate_probe.py`) records a real client session and replays a
