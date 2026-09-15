@@ -1,9 +1,11 @@
 # TCI Server for QK4
 
-**Status: phases 0-5 BUILT and PROVEN ON AIR (2026-09-15).** Both audio directions and CAT control
+**Status: phases 0-5 BUILT, and a COMPLETE FT8 QSO has been worked through the path (2026-09-15).** Both audio directions and CAT control
 work against a live K4 with WSJT-X: 25 FT8 decodes received through the server, and transmissions
-sent through it are decoded by the spotting networks. Phase 6 (the settings UI) and phase 7 (full
-TCI command coverage) remain.
+sent through it are decoded by the spotting networks, and a full two-way contact has been
+completed - receive, decode, transmit and be decoded holding together across successive 15-second
+periods with CAT tracking the radio throughout. That is the operating case, not a bench test.
+Phase 6 (the settings UI) and phase 7 (full TCI command coverage) remain.
 
 ## Context
 
