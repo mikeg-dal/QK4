@@ -593,6 +593,11 @@ frame and send `RX_AUDIO`. **Gate: WSJT-X decodes FT8 from the K4 over TCI.** Th
 result that determines whether the feature is worth building, and it is reachable without one line
 of CAT SET handling.
 
+**The protocol half of this gate is already met** — see Open Questions. A standalone harness running
+the real server code streamed a recorded FT8 sample over a socket and `jt9` decoded 11 of 14. What
+remains for phase 3 is the fan-out itself: taking live K4 audio from `audiocontroller.cpp:45-50`
+instead of a WAV, which needs no new protocol work.
+
 Note that this phase alone may already be independently useful: TCI carrying audio while
 `CatServer` on 9299 carries CAT. **Unverified** — WSJT-X's "Use TCI Audio" checkbox may require the
 TCI rig backend to be selected. Worth testing once phase 3 works, because it would let the loopback
@@ -668,10 +673,15 @@ known-good init burst. A replayed burst was verified to be accepted by a live WS
 
 ## Open questions
 
-- **FT8 has not yet been decoded over a live TCI stream.** The audio is proven good (`jt9` decodes
-  it 14/14 through this exact upsampler) and a stream was verified to be delivered and drained, but
-  no decode has been observed end to end. Unchecked at the time: whether WSJT-X's **Monitor** was
-  enabled, and whether traffic was visible on its waterfall. Resolve before phase 4.
+- ~~FT8 has not yet been decoded over a live TCI stream.~~ **CLOSED.** A standalone binary running
+  the real `TciServer`, `WebSocketServer`, `AudioUpsampler` and `TciAudioFrame` streamed the stock
+  FT8 sample over a real socket to an independent client, and `jt9` decoded **11 of the 14** messages
+  the file yields directly, with SNRs within 1 dB. The three that dropped were marginal signals
+  (−3, −6, −7 dB, two of them adjacent at 466/472 Hz) lost to about 0.1 s of timing offset in the
+  test client, which aligns by discarding audio until the UTC boundary and so lands up to one
+  21.3 ms block plus socket latency late — every decoded DT shifted 0.3 → 0.2 consistently. A real
+  client controls its own period timing and does not align that way. **The receive path is proven
+  end to end; the remaining gap is the harness, not the server.**
 - **`Qt6::WebSockets` versus a hand-rolled RFC 6455 subset.** Decide before phase 1.
 - **Sub receiver / RX Two.** Deferred. When picked up, note that `trx_count` is ignored by WSJT-X,
   so the client-side rig selection (`TCI Client RX2`) is the only lever — QK4 can only accept or
