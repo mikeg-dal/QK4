@@ -185,6 +185,19 @@ target_include_directories(test_tciqueries PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciqueries Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciQueriesTests COMMAND test_tciqueries)
 
+# TCI sensor reporting: subscription per direction, interval clamping, and the server-to-client
+# telemetry an --audit sweep cannot see because none of it is ever a reply to a query.
+add_executable(test_tcisensors test_tcisensors.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tcisensors PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tcisensors Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciSensorsTests COMMAND test_tcisensors)
+
 # TCI binary audio framing: the 64-byte header, and the opposite payload rules per direction.
 add_executable(test_tciaudioframe test_tciaudioframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp

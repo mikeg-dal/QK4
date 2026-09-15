@@ -38,13 +38,20 @@ constexpr int kChronoPollMs = 5;
 
 // Audio blocks are far too frequent to log individually - roughly 47 a second each way. Summarise
 // instead, so a log can answer "is audio actually moving" without drowning everything else.
+// Sensor reporting interval. The spec allows 30..1000 ms and makes the argument optional; 200 ms
+// is a readable meter without flooding the link, and is what the reference server defaults to.
+constexpr int kSensorIntervalDefaultMs = 200;
+constexpr int kSensorIntervalMinMs = 30;
+constexpr int kSensorIntervalMaxMs = 1000;
+
 constexpr int kRxSummaryEveryBlocks = 200; // ~4.3 s
 constexpr int kTxSummaryEveryBlocks = 100; // ~2.1 s
 
 } // namespace
 
 TciServer::TciServer(QObject *parent)
-    : QObject(parent), m_socketServer(new WebSocketServer(this)), m_chronoTimer(new QTimer(this)) {
+    : QObject(parent), m_socketServer(new WebSocketServer(this)), m_chronoTimer(new QTimer(this)),
+      m_sensorTimer(new QTimer(this)) {
     connect(m_socketServer, &WebSocketServer::clientConnected, this, &TciServer::onClientConnected);
     connect(m_socketServer, &WebSocketServer::clientDisconnected, this, &TciServer::onClientDisconnected);
     connect(m_socketServer, &WebSocketServer::textMessageReceived, this, &TciServer::onTextMessageReceived);
@@ -55,6 +62,11 @@ TciServer::TciServer(QObject *parent)
     m_chronoTimer->setTimerType(Qt::PreciseTimer);
     m_chronoTimer->setInterval(kChronoPollMs);
     connect(m_chronoTimer, &QTimer::timeout, this, &TciServer::onChronoTick);
+
+    // Ordinary timer, unlike the chrono clock: a meter reading a few milliseconds late is
+    // invisible, whereas the TX_CHRONO period warps digital-mode tones if its mean rate drifts.
+    m_sensorTimer->setInterval(kSensorIntervalDefaultMs);
+    connect(m_sensorTimer, &QTimer::timeout, this, &TciServer::onSensorTick);
 }
 
 TciServer::~TciServer() {
@@ -81,6 +93,9 @@ void TciServer::stop() {
     m_socketServer->stop();
     m_audioClients.clear();
     m_parsers.clear();
+    m_rxSensorClients.clear();
+    m_txSensorClients.clear();
+    m_sensorTimer->stop();
 }
 
 bool TciServer::isListening() const {
@@ -258,6 +273,12 @@ void TciServer::onClientDisconnected(int clientId) {
         emit pttRequested(false);
     }
 
+    // A vanished client cannot be sent anything; leaving it subscribed would keep the timer
+    // running for nobody.
+    m_rxSensorClients.remove(clientId);
+    m_txSensorClients.remove(clientId);
+    updateSensorTimer();
+
     const bool hadAudio = m_audioClients.remove(clientId);
     // Fail closed: if the last audio consumer vanished, stop producing.
     if (hadAudio && m_audioClients.isEmpty()) {
@@ -298,8 +319,30 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
         } else if (answerReadOnly(clientId, command)) {
             // Handled: a query answered from the snapshot. See answerReadOnly.
         } else if (name == QLatin1String("rx_sensors_enable") || name == QLatin1String("tx_sensors_enable")) {
-            // Echo only: acknowledged so the client does not wait, but nothing is measured yet.
+            // rx/tx_sensors_enable:<bool>[,<interval ms>] - per client, per direction.
+            bool wanted = false;
+            if (!command.argAsBool(0, &wanted)) {
+                continue; // a malformed enable is not a disable
+            }
+            const bool isRx = (name == QLatin1String("rx_sensors_enable"));
+            QSet<int> &subscribers = isRx ? m_rxSensorClients : m_txSensorClients;
+            if (wanted) {
+                subscribers.insert(clientId);
+            } else {
+                subscribers.remove(clientId);
+            }
+
+            int interval = 0;
+            if (command.argAsInt(1, &interval)) {
+                // Clamp rather than refuse: the spec gives 30..1000 ms, and a client asking for
+                // 1 ms wants "as fast as you can", not a rejection.
+                m_sensorIntervalMs = qBound(kSensorIntervalMinMs, interval, kSensorIntervalMaxMs);
+            }
+            updateSensorTimer();
+            // Echo, as before - the client waits for it.
             m_socketServer->sendText(clientId, message(name, command.args));
+            qCInfo(netTci) << "client" << clientId << (isRx ? "RX" : "TX") << "sensors" << (wanted ? "on" : "off")
+                           << "every" << m_sensorIntervalMs << "ms";
         } else if (name == QLatin1String("vfo") || name == QLatin1String("dds")) {
             // vfo:<trx>,<channel>,<hz> sets; vfo:<trx>,<channel> reads. dds is an alias for the
             // receive VFO and carries no channel.
@@ -534,6 +577,72 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
         return true;
     }
     return false;
+}
+
+void TciServer::setSensors(const TciSensorReadings &readings) {
+    // Stored only. Broadcasting here would put a message on the wire for every meter packet the
+    // radio sends, which is several a second per meter and is exactly what the interval argument
+    // exists to prevent.
+    m_sensors = readings;
+}
+
+void TciServer::updateSensorTimer() {
+    const bool wanted = !m_rxSensorClients.isEmpty() || !m_txSensorClients.isEmpty();
+    if (!wanted) {
+        m_sensorTimer->stop();
+        return;
+    }
+    if (m_sensorTimer->interval() != m_sensorIntervalMs) {
+        m_sensorTimer->setInterval(m_sensorIntervalMs);
+    }
+    if (!m_sensorTimer->isActive()) {
+        m_sensorTimer->start();
+    }
+}
+
+void TciServer::onSensorTick() {
+    const QString trx = QString::number(ONLY_RECEIVER);
+
+    // WHY a snapshot of the id sets rather than iterating them directly: sendText can surface a
+    // disconnect, whose handler removes from these very sets. Same hazard as the session table.
+    if (!m_rxSensorClients.isEmpty()) {
+        const QString mainLevel = QString::number(m_sensors.sMeterDbm, 'f', 1);
+        const QString subLevel = QString::number(m_sensors.sMeterSubDbm, 'f', 1);
+        // rx_sensors is deprecated in TCI 2.0 in favour of rx_channel_sensors, but older clients
+        // only understand the former, so both go out.
+        const QString legacy = message(QStringLiteral("rx_sensors"), trx, mainLevel);
+        const QString chanA = message(QStringLiteral("rx_channel_sensors"), trx, QString::number(CHANNEL_A), mainLevel);
+        const QString chanB = message(QStringLiteral("rx_channel_sensors"), trx, QString::number(CHANNEL_B), subLevel);
+
+        const QList<int> targets = m_rxSensorClients.values();
+        for (int id : targets) {
+            if (!m_rxSensorClients.contains(id)) {
+                continue; // dropped while we were sending to an earlier client
+            }
+            m_socketServer->sendText(id, legacy);
+            m_socketServer->sendText(id, chanA);
+            // Only claim a level for channel B when there is a receiver behind it.
+            if (m_snapshot.subEnabled) {
+                m_socketServer->sendText(id, chanB);
+            }
+        }
+    }
+
+    if (!m_txSensorClients.isEmpty()) {
+        // Five arguments, so the QStringList form: trx, mic dBm, RMS power W, peak power W, SWR.
+        const QString reading =
+            message(QStringLiteral("tx_sensors"),
+                    QStringList{trx, QString::number(m_sensors.micLevelDbm, 'f', 1),
+                                QString::number(m_sensors.forwardPowerW, 'f', 1),
+                                QString::number(m_sensors.peakPowerW, 'f', 1), QString::number(m_sensors.swr, 'f', 2)});
+        const QList<int> targets = m_txSensorClients.values();
+        for (int id : targets) {
+            if (!m_txSensorClients.contains(id)) {
+                continue;
+            }
+            m_socketServer->sendText(id, reading);
+        }
+    }
 }
 
 void TciServer::setPtt(int clientId, bool active) {

@@ -70,6 +70,11 @@ private:
     // thread must never touch it - it works from its own copy.
     void publishSnapshot();
 
+    // Reads the meters on the MAIN thread and pushes them across. Separate from publishSnapshot
+    // because meters move continuously and state does not: the server stores these and emits them
+    // on its own timer, rather than broadcasting every reading.
+    void publishSensors();
+
     // Send one CatFrames-built command to the radio and echo it into RadioState optimistically,
     // exactly as CatServer's wiring does for an external CAT client.
     void applyCat(const QByteArray &frame);

@@ -323,19 +323,42 @@ QK4 parses args 1–2 and ignores arg3, always routing TCI audio when PTT comes 
 WSJT-X, but a client sending `trx:0,true,mic1` expecting a *microphone* transmission gets a TCI
 one. Worth honouring once more clients are attached.
 
-### 7.2 Sensors are acknowledged but never sent
+### 7.2 Sensors — IMPLEMENTED
 
-QK4 echoes `RX_SENSORS_ENABLE` and `TX_SENSORS_ENABLE` so clients do not wait, then sends no data.
-**QK4 already has everything needed:**
+QK4 used to echo `RX_SENSORS_ENABLE` and `TX_SENSORS_ENABLE` and then send nothing. It now
+reports:
 
-| Sensor | Data source |
-|---|---|
-| `RX_SENSORS` / `RX_CHANNEL_SENSORS` | `RadioState::sMeter*`, `CatFrames::sMeterMain` |
-| `TX_SENSORS` (mic, power, peak, SWR) | `RadioState::txMeterChanged(alc, compression, fwdPower, swr)`, `swrMeter()` |
+| Sensor | Source | Notes |
+|---|---|---|
+| `RX_SENSORS` | `RadioState::sMeter` | Deprecated in 2.0, still sent — older clients know only this |
+| `RX_CHANNEL_SENSORS` | `sMeter`, `sMeterB` | Channel B only while the Sub RX is on |
+| `TX_SENSORS` | `forwardPower`, `swrMeter` | Five arguments always; see the mic caveat below |
 
-This is the cheapest high-value gap remaining: no new radio commands, no risk of moving the radio,
-and it makes QK4 useful to amplifier controllers and panadapter clients. `RX_SENSORS` is
-deprecated in 2.0 in favour of `RX_CHANNEL_SENSORS`; implement both.
+**Design: telemetry is not state.** Sensors live in `TciSensorReadings`, deliberately *outside*
+`TciRadioSnapshot`. The snapshot is slow state broadcast on change; meters move continuously, so
+running them through the same diff would either flood every client or need an arbitrary change
+threshold. Readings are stored as they arrive and emitted on a timer, per subscriber, at the
+interval that client asked for. Subscriptions are **per client and per direction** — asking for TX
+readings never delivers RX levels.
+
+The interval is clamped to the spec's 30–1000 ms rather than refused: a client asking for 1 ms
+means "as fast as you can", and without the clamp it can turn the server into a packet generator
+(measured: 500 readings in 500 ms).
+
+**dBm conversion.** `RadioState` carries the K4's S-meter in its own encoding — 0–9 is S0–S9, and
+anything stronger is `9.0 + dBoverS9/10`, so S9+20 arrives as `11.0`, not `29`. Converting that
+with `sUnitDbm()` would clamp it to S9 and silently discard every strong signal. `SpectrumScale::
+dbmForSMeterReading()` handles it, in the one place that already owns the S-unit convention.
+
+**Two fields QK4 cannot fill honestly**, both recorded in the code rather than faked:
+
+- **`TX_SENSORS` mic level.** The spec wants a calibrated microphone level in dBm. The K4 reports
+  ALC deflection, which is a drive indicator, not a level. Reports the floor rather than passing a
+  scaled ALC reading off as a measurement.
+- **`TX_SENSORS` peak power.** The K4 reports *one* forward-power figure. Peak is reported equal to
+  RMS; synthesising a peak by holding a maximum here would be a measurement QK4 never made.
+
+Power and SWR are real, which is what an amplifier or band-decoder client actually needs.
 
 ### 7.3 Spots and IQ not implemented
 
@@ -357,26 +380,23 @@ which is what makes the radio-touching items benchable at all.
   `419a53f`, verified live.
 - ~~**Collapse the RIT/XIT offset model**~~ (§6.3) — fixed in the same commit, and `rit`, `xit`
   and the offset now publish from `RadioState` instead of struct defaults.
+- ~~**Sub RX / VFO B**~~ — `rx_channel_enable`, and Sub audio in the right channel.
+- ~~**`trx` broadcast**~~ (§11.4) and ~~`tx_frequency`~~ (§11.5).
+- ~~**Implement the sensors**~~ (§7.2) — `rx_sensors`, `rx_channel_sensors`, `tx_sensors`.
 
 ### Next
 
-1. **Sub RX / VFO B** — the largest single unlock. `RadioState` already models the whole sub
-   receiver (`subReceiverEnabled`, `vfoB`, `modeB`, `sMeterB`, `filterBandwidthB`, `agcSpeedB`,
-   `ritEnabledB`, …), and it brings `RX_CHANNEL_ENABLE`, the B half of every per-channel command,
-   and a real use for the second audio channel — which today carries a duplicate of Main.
-2. **Implement the sensors** (§7.2) — read-only, cannot move the radio, and the data is already
-   in `RadioState`. `RX_CHANNEL_SENSORS` supersedes the deprecated `RX_SENSORS`.
-3. **Wire the remaining snapshot fields to `RadioState`** (NB, NR, ANF, APF, filter, squelch) —
+1. **Wire the remaining snapshot fields to `RadioState`** (NB, NR, ANF, APF, filter, squelch) —
    read-only; makes replies that are currently constants truthful. See §10.1.
-4. **`CW_MACROS` + speed, via a new `CatFrames::cwText`** (§5.2 layer 1) — the largest
+2. **`CW_MACROS` + speed, via a new `CatFrames::cwText`** (§5.2 layer 1) — the largest
    *capability* gap, and the one that makes QK4 usable to a CW client at all.
-5. **The ready-to-wire SETs** (`RIT_ENABLE`, `XIT_ENABLE`, `RX_NB_ENABLE`, `RX_NR_ENABLE`,
+3. **The ready-to-wire SETs** (`RIT_ENABLE`, `XIT_ENABLE`, `RX_NB_ENABLE`, `RX_NR_ENABLE`,
    `CW_KEYER_SPEED`) — builders exist; bench one at a time.
-6. **`DRIVE`/`TUNE_DRIVE`** — needs the percent↔watt decision first.
+4. **`DRIVE`/`TUNE_DRIVE`** — needs the percent↔watt decision first.
 
 ### Phase 2
 
-7. **Explicit opt-in CAT passthrough** (§5.2 layer 2), default off. Held to its own phase: it is
+5. **Explicit opt-in CAT passthrough** (§5.2 layer 2), default off. Held to its own phase: it is
    the one change that hands an external program unmediated control of the radio, and §10.3 sets
    its proper scope — the categories TCI has no vocabulary for, never the commands it does.
 ---
@@ -614,8 +634,8 @@ an amplifier or band-decoder client needs.
 
 | Message | QK4 has the data? | Status |
 |---|---|---|
-| `rx_sensors`, `rx_channel_sensors` | **Yes** — `sMeter`, `sMeterB` | Client enables it, QK4 echoes the enable and sends nothing. §7.2 |
-| `tx_sensors` | **Yes** — `alcMeter`, `swrMeter`, `forwardPower`, `micGain` | Same |
+| `rx_sensors`, `rx_channel_sensors` | Yes | **Implemented** — §7.2 |
+| `tx_sensors` | Partly | **Implemented**; mic level and peak power cannot be measured — §7.2 |
 | `tx_enable` on band change | Yes — frequency is tracked | Sent at connect only. The spec says also "when the band is changed, in case transmitter permission was changed" |
 | `vfo_lock` | **Yes** — `lockA`, `lockB` | Not sent. TCI 2.0 |
 | `tx_footswitch` | **No** | The K4 reports that it is transmitting, not *what* keyed it. Cannot be sent honestly |
@@ -623,8 +643,8 @@ an amplifier or band-decoder client needs.
 | `app_focus` | Yes | About the server's own window; low value for a headless-ish control app |
 | `cw_macros_empty`, `callsign_send` | No | CW, §5 |
 
-The sensors are the largest remaining omission and the cheapest to close: read-only, incapable of
-moving the radio, and every value is already in `RadioState`.
+With the sensors done, the largest remaining omissions are `tx_enable` on band change and
+`vfo_lock` — both small, both read-only.
 
 ### 11.7 Why `--audit` cannot catch this class
 
@@ -634,5 +654,10 @@ invisible to it: a message nobody asked for cannot appear in a reply. `tx_freque
 
 Catching these needs the other kind of test — connect, change something on the radio, and assert a
 message arrives unprompted. `broadcastsTransmitStartedByTheRadioItself` and
-`announcesTheTransmitFrequency` are that shape. A future `--listen` mode for the tool that simply
-prints everything arriving unprompted while the operator works the radio would cover the rest.
+`announcesTheTransmitFrequency` are that shape, and `tests/test_tcisensors.cpp` is an entire suite
+of it: nothing in that file is ever a reply to a query.
+
+**`scripts/tcimonitor.py` covers the interactive half.** It subscribes to the sensors and renders
+whatever arrives, live. If a meter is not moving on screen, the server is not sending it — which
+is the check that no amount of `--audit` can perform. It sends exactly two commands, both
+subscriptions, and never a SET, so it is safe to leave running against a live radio.

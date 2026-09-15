@@ -67,6 +67,30 @@ struct TciRadioSnapshot {
     qint64 txChannelHz() const { return (split && vfoBHz > 0) ? vfoBHz : vfoAHz; }
 };
 
+// Fast-moving telemetry, kept OUT of TciRadioSnapshot on purpose.
+//
+// The snapshot is slow state and is broadcast on change. Sensors move continuously - the S-meter
+// updates several times a second - so running them through the same diff would either flood every
+// client or need a change threshold nobody agreed on. They are stored instead, and emitted on a
+// timer at the interval the client asked for, only to clients that asked.
+struct TciSensorReadings {
+    // Absolute signal level in the RX filter bandwidth, per channel. dBm, as the protocol wants.
+    double sMeterDbm = -140.0;
+    double sMeterSubDbm = -140.0;
+
+    // Transmit. QK4 measures forward power and SWR; see micLevelDbm for the one field it cannot
+    // fill honestly.
+    double forwardPowerW = 0.0;
+    double peakPowerW = 0.0;
+    double swr = 1.0;
+
+    // The protocol wants microphone signal level in dBm. The K4 reports ALC deflection, which is a
+    // drive indicator and not a calibrated microphone level, so there is no truthful conversion.
+    // This stays at the floor rather than passing off a scaled ALC reading as a measurement.
+    // See docs/tci-command-coverage.md.
+    double micLevelDbm = -60.0;
+};
+
 // TCI protocol server.
 //
 // Implemented: the init burst, audio_start/audio_stop, RX and TX audio with TX_CHRONO pacing, the
@@ -114,6 +138,11 @@ public:
     // The commands sent to a freshly connected client, in order, ready-last.
     QStringList initBurst() const;
 
+    // Replaces the stored telemetry. Never broadcasts - the sensor timer decides when anything
+    // goes out, and to whom. Cheap enough to call on every meter update.
+    void setSensors(const TciSensorReadings &readings);
+    const TciSensorReadings &sensors() const { return m_sensors; }
+
     // Frame interleaved stereo float samples as RX_AUDIO and send to every client that asked for
     // audio. A no-op when nobody has.
     Q_INVOKABLE void sendRxAudio(const std::vector<float> &interleavedStereo, int sampleRate = 48000);
@@ -149,12 +178,16 @@ private slots:
     void onTextMessageReceived(int clientId, const QString &text);
     void onBinaryMessageReceived(int clientId, const QByteArray &payload);
     void onChronoTick();
+    void onSensorTick();
 
 private:
     // Answers a query from the snapshot without touching the radio. Returns true if the command was
     // recognised and answered. Read-only by design - the matching SETs move the radio and are
     // deferred until they can be bench-tested. See docs/tci-server-design.md, phase 8.
     bool answerReadOnly(int clientId, const TciProtocol::Command &command);
+
+    // Starts or stops the sensor timer to match the current subscriptions.
+    void updateSensorTimer();
 
     void setPtt(int clientId, bool active);
     void startChrono(int clientId);
@@ -184,6 +217,14 @@ private:
     QElapsedTimer m_chronoClock;
     qint64 m_chronoAccumNs = 0;
     int m_chronoClient = -1;
+
+    // Sensor subscriptions, per client and per direction: a client asks for RX levels and TX
+    // readings separately, and must not be sent the one it did not ask for.
+    QSet<int> m_rxSensorClients;
+    QSet<int> m_txSensorClients;
+    TciSensorReadings m_sensors;
+    QTimer *m_sensorTimer;
+    int m_sensorIntervalMs = 200;
 
     // Counters behind the periodic log summaries. Blocks are far too frequent to log individually.
     qint64 m_rxBlocks = 0;

@@ -6,6 +6,7 @@
 #include "controllers/connectioncontroller.h"
 #include "network/catframes.h"
 #include "models/radiostate.h"
+#include "dsp/spectrumscale.h"
 #include "network/tciaudiobridge.h"
 #include "network/tciserver.h"
 
@@ -171,6 +172,14 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         // Without this a transmit started anywhere other than a TCI client - the mic, a
         // footswitch, another CAT client - never reaches TCI clients at all.
         connect(m_radioState, &RadioState::transmitStateChanged, this, [this](bool) { publishSnapshot(); });
+
+        // Meters. Frequent by nature: the server stores these and emits on its own timer at the
+        // interval the client asked for, so a fast radio cannot flood the link.
+        connect(m_radioState, &RadioState::sMeterChanged, this, [this](double) { publishSensors(); });
+        connect(m_radioState, &RadioState::sMeterBChanged, this, [this](double) { publishSensors(); });
+        connect(m_radioState, &RadioState::swrChanged, this, [this](double) { publishSensors(); });
+        connect(m_radioState, &RadioState::txMeterChanged, this,
+                [this](int, int, double, double) { publishSensors(); });
         connect(m_radioState, &RadioState::subRxEnabledChanged, this, [this](bool enabled) {
             // The bridge decides what goes in the right audio channel, and it lives on the TCI
             // thread, so this has to be marshalled rather than written from here.
@@ -182,6 +191,7 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         // handleGT, and it also covers the NB/NR fields when those get wired.
         connect(m_radioState, &RadioState::processingChanged, this, [this]() { publishSnapshot(); });
         publishSnapshot();
+        publishSensors();
         // Seed the bridge too: the Sub RX may already be on when the controller is constructed,
         // and subRxEnabledChanged only fires on a change.
         const bool subOn = m_radioState->subReceiverEnabled();
@@ -212,6 +222,30 @@ void TciController::applyCat(const QByteArray &frame) {
         QMetaObject::invokeMethod(
             m_radioState, [this, command]() { m_radioState->parseCATCommand(command); }, Qt::QueuedConnection);
     }
+}
+
+void TciController::publishSensors() {
+    if (!m_radioState) {
+        return;
+    }
+    TciSensorReadings readings;
+
+    // The protocol wants an absolute level in dBm. RadioState carries the K4's S-meter in its own
+    // encoding, so the conversion goes through the one place that owns the S-unit convention.
+    readings.sMeterDbm = SpectrumScale::dbmForSMeterReading(m_radioState->sMeter());
+    readings.sMeterSubDbm = SpectrumScale::dbmForSMeterReading(m_radioState->sMeterB());
+
+    readings.forwardPowerW = m_radioState->forwardPower();
+    // The K4 reports ONE forward-power figure, not an RMS/peak pair. Reporting it as both is the
+    // honest reading of what we have; inventing a peak by holding a maximum here would be a
+    // measurement QK4 never made. See docs/tci-command-coverage.md.
+    readings.peakPowerW = m_radioState->forwardPower();
+    readings.swr = m_radioState->swrMeter();
+
+    // micLevelDbm is deliberately left at its floor - see TciSensorReadings. The K4 reports ALC
+    // deflection, which is a drive indicator, not a calibrated microphone level in dBm.
+
+    QMetaObject::invokeMethod(m_server, [this, readings]() { m_server->setSensors(readings); }, Qt::QueuedConnection);
 }
 
 void TciController::publishSnapshot() {
