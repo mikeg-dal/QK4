@@ -238,6 +238,50 @@ Deferring the rest is safe because an unhandled command is *silence*, not an err
 never sends them. It is not safe to defer any of the **behaviour rules** below: those apply to the
 minimum set from the first commit.
 
+### TCI command → QK4 function map
+
+**Rule: the TCI layer never spells a K4 command.** Every set goes through `CatFrames::` — documented
+in `src/network/README.md` as existing to keep "command spelling in one place instead of scattered
+string literals" — and then out via `ConnectionController::sendCAT`. A raw `"FA%1;"` anywhere in
+`tciserver` or `tcicontroller` is a defect.
+
+This also bounds the work: TCI defines 58 commands, QK4 has 24 frame builders, and the overlap is
+what can be supported honestly. Anything with no builder is refused or ignored rather than faked.
+
+| TCI command | QK4 function | Notes |
+|---|---|---|
+| `vfo:<t>,0,<hz>`, `dds` | `CatFrames::frequencyA` | `dds` is an alias for the receive VFO |
+| `vfo:<t>,1,<hz>`, `tx_frequency` | `CatFrames::frequencyB` | the TX VFO when split |
+| `modulation`, `mode` | `CatFrames::modeA` / `modeB` | needs a TCI-name ↔ `RadioState::Mode` map |
+| **`trx:<t>,<b>`** | **`AudioController::setPttActive`** | **NOT `CatFrames::ptt`** — see below |
+| `split_enable` | `CatFrames::split` | act on transitions only |
+| `rit_enable` / `rit_offset` | `CatFrames::ritEnabled` / `ritOffset` | |
+| `xit_enable` / `xit_offset` | `CatFrames::xitEnabled` / `ritOffset` | RIT and XIT share the `RO` register — see `docs/k4-protocol-quirks.md` |
+| `drive`, `tune_drive` | `CatFrames::rfPower` / `rfPowerExtended` | always reply `<trx>,<power>` |
+| `rx_filter_band` | `CatFrames::filterBandwidth` / `filterWidthExtended` | |
+| `rx_nb_enable` | `CatFrames::noiseBlanker` | |
+| `rx_nr_enable` | `CatFrames::noiseReduction` | |
+| `agc_mode` | `CatFrames::agcSpeed` | |
+| `cw_keyer_speed`, `cw_macros_speed` | `CatFrames::keyerSpeed` | |
+| `sql_enable`, `sql_level` | `RadioState::setSquelchLevel` | |
+| `volume`, `rx_volume`, `mute`, `rx_mute` | `AudioController` volume / mute | **local audio, never a CAT set** |
+| `mic_level` | `AudioController::setMicGain` | local; also the TCI TX drive control |
+
+**No QK4 equivalent — refuse or ignore, never fake:**
+`iq_start`/`iq_stop` and everything IQ (QK4 has no IQ stream), `rx_record`/`rx_play`,
+`rx_channel_enable`, `rx_balance`, `rx_bin_enable`, `rx_dse_enable`, `rx_anc_enable`,
+`rx_nf_enable`, `rx_nb_param`, `agc_gain`, `tx_gain`, `lock`/`vfo_lock`, `cw_terminal`,
+`cw_macros_delay`, `tune`.
+
+`spot`, `spot_delete` and `spot_clear` map onto QK4's DX-cluster overlay rather than the radio, and
+`cw_msg`/`cw_macros` onto the keyer path in `HardwareController`. Both are real features, both are
+later phases, and neither is a CAT set.
+
+**The one deliberate exception is PTT.** `CatFrames::ptt` exists (`TQ1;`/`TQ0;`) and is *not* used
+here: `catserver.cpp:317-330` establishes that the K4 keys when TX audio starts arriving — *"Don't
+forward to K4 - the audio stream itself triggers K4 TX"* — so `trx` sets the audio gate. Sending a
+PTT command as well would fight the mechanism that already works.
+
 ### Client-behaviour rules to build in from day one
 
 Drawn from TR4W's catalogue and AetherSDR's bug history; the starred ones were confirmed on the
