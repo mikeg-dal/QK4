@@ -144,7 +144,8 @@ target_include_directories(test_tciaudiobridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciaudiobridge Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciAudioBridgeTests COMMAND test_tciaudiobridge)
 
-# TCI server: init burst contents and ordering, audio subscription, and per-client isolation.
+# TCI server, protocol surface: init burst contents and ordering, audio subscription, per-client
+# isolation, CAT sets and the read-only queries. The transmit path is a separate target below.
 add_executable(test_tciserver test_tciserver.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
@@ -155,6 +156,20 @@ add_executable(test_tciserver test_tciserver.cpp
 target_include_directories(test_tciserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciserver Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciServerTests COMMAND test_tciserver)
+
+# TCI server, transmit path: PTT ownership, TX_CHRONO pacing and TX audio admission. Split from
+# test_tciserver so neither file passes the 800-line limit in CONVENTIONS.md rule 7; both share
+# the socket client in tcitestclient.h.
+add_executable(test_tciservertransmit test_tciservertransmit.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tciservertransmit PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciservertransmit Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciServerTransmitTests COMMAND test_tciservertransmit)
 
 # TCI binary audio framing: the 64-byte header, and the opposite payload rules per direction.
 add_executable(test_tciaudioframe test_tciaudioframe.cpp
