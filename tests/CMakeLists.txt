@@ -122,6 +122,14 @@ target_include_directories(test_spectrumscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_spectrumscale Qt6::Core Qt6::Test)
 add_test(NAME SpectrumScaleTests COMMAND test_spectrumscale)
 
+# 12kHz -> 48kHz interpolation for the TCI receive path: passband flatness and image rejection.
+add_executable(test_audioupsampler test_audioupsampler.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/audioupsampler.cpp
+)
+target_include_directories(test_audioupsampler PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_audioupsampler Qt6::Core Qt6::Test)
+add_test(NAME AudioUpsamplerTests COMMAND test_audioupsampler)
+
 # Waterfall row/pixel mapping: which stored row each screen pixel samples, mirroring the shaders.
 add_executable(test_waterfallgeometry test_waterfallgeometry.cpp
     ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
