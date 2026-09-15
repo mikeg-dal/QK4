@@ -680,6 +680,72 @@ private slots:
         client.close();
     }
 
+    void aRadioStateUpdateDoesNotUnkeyTheClient() {
+        // REGRESSION. publishSnapshot builds a fresh snapshot and never sets `transmitting`, so it
+        // arrives false. Once setSnapshot started broadcasting diffs, the first RadioState change
+        // after keying - and the K4 echoes state constantly during TX - saw true->false and sent a
+        // spurious trx:0,false;. The client concluded PTT had dropped and stopped sending audio.
+        //
+        // PTT belongs to this server's ownership logic, so a snapshot push must never move it.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("trx:0,true;");
+        QTRY_COMPARE(ptt.count(), 1);
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,true;"));
+        QVERIFY(client.next(m)); // the priming chrono
+
+        // A radio-state push carrying the struct default of transmitting == false.
+        TciRadioSnapshot s;
+        s.vfoAHz = 7074000;
+        s.vfoBHz = 7074000;
+        server.setSnapshot(s);
+
+        // The frequency change may be broadcast; an unkey must NOT be.
+        for (int i = 0; i < 4; ++i) {
+            if (!client.next(m, 300)) {
+                break;
+            }
+            if (m.opcode == OpText) {
+                QVERIFY2(QString::fromUtf8(m.payload) != QStringLiteral("trx:0,false;"),
+                         "a snapshot push unkeyed the client");
+            }
+        }
+        QCOMPARE(ptt.count(), 1); // still keyed
+        QVERIFY(server.snapshot().transmitting);
+
+        client.close();
+        server.stop();
+    }
+
+    void oneBadCommandDoesNotDiscardTheRestOfTheFrame() {
+        // REGRESSION. The per-command loop used `break` to skip a malformed command, which exits
+        // the whole loop - so everything after it in the same frame was silently dropped.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        // A vfo for a receiver that does not exist, then a perfectly good key request.
+        client.send("vfo:9,0,7074000;trx:0,true;");
+
+        QTRY_COMPARE(ptt.count(), 1);
+        QCOMPARE(ptt.at(0).at(0).toBool(), true);
+
+        client.close();
+        server.stop();
+    }
+
     void sendsChronoRequestsOnlyWhileKeyed() {
         // WSJT-X sends no audio until asked, so the chrono clock is both the pacing and the flow
         // control. It must not run when the transmitter is idle.

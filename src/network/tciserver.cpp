@@ -95,6 +95,12 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
     const TciRadioSnapshot previous = m_snapshot;
     m_snapshot = snapshot;
 
+    // WHY transmitting is carried over rather than taken from the incoming snapshot: PTT state
+    // belongs to this server's ownership logic, not to the radio-state feed. Letting a caller's
+    // default overwrite it broadcast a spurious `trx:0,false;` mid-transmission, and the client
+    // stopped sending audio. PTT changes are broadcast from setPtt instead.
+    m_snapshot.transmitting = previous.transmitting;
+
     if (clientCount() == 0) {
         return; // nobody to tell; the init burst will carry it
     }
@@ -117,9 +123,7 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
     if (snapshot.split != previous.split) {
         m_socketServer->broadcastText(message(QStringLiteral("split_enable"), trx, boolText(snapshot.split)));
     }
-    if (snapshot.transmitting != previous.transmitting) {
-        m_socketServer->broadcastText(message(QStringLiteral("trx"), trx, boolText(snapshot.transmitting)));
-    }
+    // No `trx` diff here by design - see the note above. PTT is broadcast from setPtt.
 }
 
 QStringList TciServer::initBurst() const {
@@ -260,11 +264,11 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             const bool haveHz = command.argAsLongLong(isDds ? 1 : 2, &hz);
 
             if (!haveReceiver || receiver != ONLY_RECEIVER || !haveChannel) {
-                break; // an unknown receiver produces no request at all
+                continue; // an unknown receiver produces no request at all
             }
             // Range-check the channel: "vfo:0,2,..." must not be treated as channel 0.
             if (!isDds && channel != 0 && channel != 1) {
-                break;
+                continue;
             }
             const qint64 current = (channel == 1) ? m_snapshot.txChannelHz() : m_snapshot.vfoAHz;
             if (haveHz) {
@@ -281,7 +285,7 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             const QString wanted = command.arg(1).toLower();
 
             if (!haveReceiver || receiver != ONLY_RECEIVER) {
-                break;
+                continue;
             }
             if (!wanted.isEmpty()) {
                 // An unknown modulation is refused rather than coerced. The reference server's
