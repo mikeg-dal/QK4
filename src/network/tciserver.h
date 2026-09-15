@@ -73,7 +73,11 @@ public:
     int clientCount() const;
     int audioClientCount() const { return m_audioClients.size(); }
 
-    void setSnapshot(const TciRadioSnapshot &snapshot) { m_snapshot = snapshot; }
+    // Replaces the snapshot and broadcasts whatever actually moved.
+    //
+    // WHY diff rather than broadcast everything: a chatty radio would otherwise flood every client
+    // on every CAT echo. A message that arrives should mean something changed.
+    void setSnapshot(const TciRadioSnapshot &snapshot);
     const TciRadioSnapshot &snapshot() const { return m_snapshot; }
 
     // The commands sent to a freshly connected client, in order, ready-last.

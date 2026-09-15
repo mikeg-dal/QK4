@@ -5,6 +5,7 @@
 #include <QString>
 
 class AudioController;
+class ConnectionController;
 class QThread;
 class RadioState;
 class TciAudioBridge;
@@ -35,7 +36,8 @@ class TciController : public QObject {
     Q_OBJECT
 
 public:
-    TciController(AudioController *audioController, RadioState *radioState, QObject *parent = nullptr);
+    TciController(AudioController *audioController, ConnectionController *connectionController, RadioState *radioState,
+                  QObject *parent = nullptr);
     ~TciController();
 
     // Both marshal to the TCI thread. start() is idempotent.
@@ -55,7 +57,12 @@ private:
     // thread must never touch it - it works from its own copy.
     void publishSnapshot();
 
+    // Send one CatFrames-built command to the radio and echo it into RadioState optimistically,
+    // exactly as CatServer's wiring does for an external CAT client.
+    void applyCat(const QByteArray &frame);
+
     AudioController *m_audioController;
+    ConnectionController *m_connectionController;
     RadioState *m_radioState;
     TciServer *m_server;
     TciAudioBridge *m_bridge;

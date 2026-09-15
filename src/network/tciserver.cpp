@@ -91,6 +91,37 @@ int TciServer::clientCount() const {
     return m_socketServer->clientCount();
 }
 
+void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
+    const TciRadioSnapshot previous = m_snapshot;
+    m_snapshot = snapshot;
+
+    if (clientCount() == 0) {
+        return; // nobody to tell; the init burst will carry it
+    }
+    const QString trx = QString::number(ONLY_RECEIVER);
+
+    if (snapshot.vfoAHz != previous.vfoAHz) {
+        m_socketServer->broadcastText(
+            message(QStringLiteral("vfo"), trx, QStringLiteral("0"), QString::number(snapshot.vfoAHz)));
+        m_socketServer->broadcastText(message(QStringLiteral("dds"), trx, QString::number(snapshot.vfoAHz)));
+    }
+    // Channel 1 follows VFO B while split is on and the receive frequency otherwise, so it can move
+    // when either changes.
+    if (snapshot.txChannelHz() != previous.txChannelHz()) {
+        m_socketServer->broadcastText(
+            message(QStringLiteral("vfo"), trx, QStringLiteral("1"), QString::number(snapshot.txChannelHz())));
+    }
+    if (snapshot.modulation != previous.modulation) {
+        m_socketServer->broadcastText(message(QStringLiteral("modulation"), trx, snapshot.modulation));
+    }
+    if (snapshot.split != previous.split) {
+        m_socketServer->broadcastText(message(QStringLiteral("split_enable"), trx, boolText(snapshot.split)));
+    }
+    if (snapshot.transmitting != previous.transmitting) {
+        m_socketServer->broadcastText(message(QStringLiteral("trx"), trx, boolText(snapshot.transmitting)));
+    }
+}
+
 QStringList TciServer::initBurst() const {
     const QString trx = QString::number(ONLY_RECEIVER);
     const TciRadioSnapshot &s = m_snapshot;
@@ -217,6 +248,50 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
         } else if (name == QLatin1String("rx_sensors_enable") || name == QLatin1String("tx_sensors_enable")) {
             // Echo only: acknowledged so the client does not wait, but nothing is measured yet.
             m_socketServer->sendText(clientId, message(name, command.args));
+        } else if (name == QLatin1String("vfo") || name == QLatin1String("dds")) {
+            // vfo:<trx>,<channel>,<hz> sets; vfo:<trx>,<channel> reads. dds is an alias for the
+            // receive VFO and carries no channel.
+            const bool isDds = (name == QLatin1String("dds"));
+            int receiver = ONLY_RECEIVER;
+            int channel = 0;
+            qint64 hz = 0;
+            const bool haveReceiver = command.argAsInt(0, &receiver);
+            const bool haveChannel = isDds ? true : command.argAsInt(1, &channel);
+            const bool haveHz = command.argAsLongLong(isDds ? 1 : 2, &hz);
+
+            if (!haveReceiver || receiver != ONLY_RECEIVER || !haveChannel) {
+                break; // an unknown receiver produces no request at all
+            }
+            // Range-check the channel: "vfo:0,2,..." must not be treated as channel 0.
+            if (!isDds && channel != 0 && channel != 1) {
+                break;
+            }
+            const qint64 current = (channel == 1) ? m_snapshot.txChannelHz() : m_snapshot.vfoAHz;
+            if (haveHz) {
+                emit setFrequencyRequested(isDds ? 0 : channel, hz);
+            }
+            // Confirm with what the model currently holds, never with silence. The radio's own
+            // change comes back as a broadcast from setSnapshot, which is the authoritative echo -
+            // a stale confirmation is what made WSJT-X transmit out of band in the reference server.
+            m_socketServer->sendText(clientId, message(QStringLiteral("vfo"), QString::number(ONLY_RECEIVER),
+                                                       QString::number(isDds ? 0 : channel), QString::number(current)));
+        } else if (name == QLatin1String("modulation") || name == QLatin1String("mode")) {
+            int receiver = ONLY_RECEIVER;
+            const bool haveReceiver = command.argAsInt(0, &receiver);
+            const QString wanted = command.arg(1).toLower();
+
+            if (!haveReceiver || receiver != ONLY_RECEIVER) {
+                break;
+            }
+            if (!wanted.isEmpty()) {
+                // An unknown modulation is refused rather than coerced. The reference server's
+                // coercion to usb puts the radio in a mode nobody asked for, silently.
+                if (QString::fromLatin1(kModulationsList).split(QLatin1Char(',')).contains(wanted)) {
+                    emit setModulationRequested(wanted);
+                }
+            }
+            m_socketServer->sendText(
+                clientId, message(QStringLiteral("modulation"), QString::number(ONLY_RECEIVER), m_snapshot.modulation));
         } else if (name == QLatin1String("trx")) {
             int receiver = ONLY_RECEIVER;
             bool keyed = false;
@@ -236,8 +311,19 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
                 setPtt(clientId, keyed);
             }
         } else if (name == QLatin1String("split_enable")) {
-            // Accepted without acting while CAT control is out of scope. Confirmed rather than met
-            // with silence, because a refused command with no reply reads to a client as a hang.
+            int receiver = ONLY_RECEIVER;
+            bool wanted = false;
+            const bool haveReceiver = command.argAsInt(0, &receiver);
+            const bool haveState = command.argAsBool(1, &wanted);
+
+            if (haveReceiver && receiver == ONLY_RECEIVER && haveState) {
+                // A STEADY false IS NOT AN EDGE. WSJT-X sends split_enable:<n>,false as part of its
+                // normal sequence BEFORE programming channel 1; acting on it every time would tear
+                // down a split the operator had just set up. Only a real transition does anything.
+                if (wanted != m_snapshot.split) {
+                    emit setSplitRequested(wanted);
+                }
+            }
             m_socketServer->sendText(clientId,
                                      message(name, QString::number(ONLY_RECEIVER), boolText(m_snapshot.split)));
         }

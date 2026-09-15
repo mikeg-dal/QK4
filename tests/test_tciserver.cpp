@@ -366,6 +366,163 @@ private slots:
         server.stop();
     }
 
+    // ---- CAT sets --------------------------------------------------------------------------------
+
+    void requestsAFrequencyChangeAndConfirmsWithWhatItHolds() {
+        // The confirmation carries the model's current value, never silence. The authoritative echo
+        // is the broadcast that follows once the radio actually moves.
+        TciServer server;
+        TciRadioSnapshot s;
+        s.vfoAHz = 14074000;
+        s.vfoBHz = 14074000;
+        server.setSnapshot(s);
+        QVERIFY(server.start(0));
+        QSignalSpy freq(&server, &TciServer::setFrequencyRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("vfo:0,0,7074000;");
+
+        QTRY_COMPARE(freq.count(), 1);
+        QCOMPARE(freq.at(0).at(0).toInt(), 0);
+        QCOMPARE(freq.at(0).at(1).toLongLong(), 7074000LL);
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("vfo:0,0,14074000;"));
+
+        client.close();
+        server.stop();
+    }
+
+    void rangeChecksTheVfoChannel() {
+        // "vfo:0,2,..." must produce no request at all, not a write to channel 0.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy freq(&server, &TciServer::setFrequencyRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("vfo:0,2,7074000;");
+
+        QTest::qWait(200);
+        QCOMPARE(freq.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
+    void refusesAnUnknownModulationRatherThanCoercingIt() {
+        // The reference server coerces to usb, which puts the radio in a mode nobody asked for.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy mode(&server, &TciServer::setModulationRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        client.send("modulation:0,banana;");
+        QTest::qWait(200);
+        QCOMPARE(mode.count(), 0);
+
+        client.send("modulation:0,digu;");
+        QTRY_COMPARE(mode.count(), 1);
+        QCOMPARE(mode.at(0).at(0).toString(), QStringLiteral("digu"));
+
+        client.close();
+        server.stop();
+    }
+
+    void aSteadySplitFalseIsNotAnEdge() {
+        // WSJT-X sends split_enable:<n>,false before programming channel 1. Acting on it every time
+        // would tear down a split the operator had just set up.
+        TciServer server;
+        QVERIFY(server.start(0)); // snapshot defaults to split == false
+        QSignalSpy split(&server, &TciServer::setSplitRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        client.send("split_enable:false;"); // the global one-argument form, already false
+        QTest::qWait(200);
+        QCOMPARE(split.count(), 0);
+
+        client.send("split_enable:0,true;"); // a real transition
+        QTRY_COMPARE(split.count(), 1);
+        QCOMPARE(split.at(0).at(0).toBool(), true);
+
+        client.close();
+        server.stop();
+    }
+
+    // ---- broadcast on change ---------------------------------------------------------------------
+
+    void broadcastsOnlyWhatActuallyMoved() {
+        // A message that arrives must mean something changed, or a chatty radio floods every client
+        // on every CAT echo.
+        TciServer server;
+        TciRadioSnapshot s;
+        s.vfoAHz = 14074000;
+        s.vfoBHz = 14074000;
+        s.modulation = QStringLiteral("usb");
+        server.setSnapshot(s);
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        // Same snapshot again: nothing should be sent.
+        server.setSnapshot(s);
+        WebSocketDecoder::Message m;
+        QVERIFY(!client.next(m, 300));
+
+        // Now move the frequency.
+        s.vfoAHz = 7074000;
+        s.vfoBHz = 7074000;
+        server.setSnapshot(s);
+
+        QStringList got;
+        for (int i = 0; i < 3; ++i) {
+            if (!client.next(m, 500)) {
+                break;
+            }
+            if (m.opcode == OpText) {
+                got << QString::fromUtf8(m.payload);
+            }
+        }
+        QVERIFY2(got.contains(QStringLiteral("vfo:0,0,7074000;")), qPrintable(got.join(QLatin1Char(' '))));
+
+        client.close();
+        server.stop();
+    }
+
+    void broadcastsAModeChange() {
+        TciServer server;
+        TciRadioSnapshot s;
+        s.modulation = QStringLiteral("usb");
+        server.setSnapshot(s);
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        s.modulation = QStringLiteral("digu");
+        server.setSnapshot(s);
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("modulation:0,digu;"));
+
+        client.close();
+        server.stop();
+    }
+
     // ---- PTT ------------------------------------------------------------------------------------
     //
     // These guard the transmitter. A wrong answer here either keys the radio when it should not, or

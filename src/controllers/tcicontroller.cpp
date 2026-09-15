@@ -3,6 +3,8 @@
 #include <QThread>
 
 #include "controllers/audiocontroller.h"
+#include "controllers/connectioncontroller.h"
+#include "network/catframes.h"
 #include "models/radiostate.h"
 #include "network/tciaudiobridge.h"
 #include "network/tciserver.h"
@@ -36,11 +38,33 @@ QString tciModulationFor(RadioState::Mode mode) {
     return QStringLiteral("usb");
 }
 
+// TCI modulation name -> K4 mode. The inverse of tciModulationFor; an unrecognised name never
+// reaches here because TciServer refuses anything outside modulations_list rather than coercing it.
+bool k4ModeFor(const QString &modulation, RadioState::Mode *out) {
+    static const QHash<QString, RadioState::Mode> kModes{
+        {QStringLiteral("lsb"), RadioState::LSB},     {QStringLiteral("usb"), RadioState::USB},
+        {QStringLiteral("cw"), RadioState::CW},       {QStringLiteral("cwr"), RadioState::CW_R},
+        {QStringLiteral("nfm"), RadioState::FM},      {QStringLiteral("fm"), RadioState::FM},
+        {QStringLiteral("am"), RadioState::AM},       {QStringLiteral("sam"), RadioState::AM},
+        {QStringLiteral("digu"), RadioState::DATA},   {QStringLiteral("digl"), RadioState::DATA_R},
+        {QStringLiteral("rtty"), RadioState::DATA_R},
+    };
+    const auto it = kModes.constFind(modulation.toLower());
+    if (it == kModes.constEnd()) {
+        return false;
+    }
+    if (out) {
+        *out = it.value();
+    }
+    return true;
+}
+
 } // namespace
 
-TciController::TciController(AudioController *audioController, RadioState *radioState, QObject *parent)
-    : QObject(parent), m_audioController(audioController), m_radioState(radioState), m_server(new TciServer(nullptr)),
-      m_bridge(new TciAudioBridge(m_server, nullptr)) {
+TciController::TciController(AudioController *audioController, ConnectionController *connectionController,
+                             RadioState *radioState, QObject *parent)
+    : QObject(parent), m_audioController(audioController), m_connectionController(connectionController),
+      m_radioState(radioState), m_server(new TciServer(nullptr)), m_bridge(new TciAudioBridge(m_server, nullptr)) {
     m_tciThread = new QThread(this);
     m_tciThread->setObjectName(QStringLiteral("TCI"));
     m_server->moveToThread(m_tciThread);
@@ -80,6 +104,29 @@ TciController::TciController(AudioController *audioController, RadioState *radio
                 [this](const QByteArray &mono48k) { m_audioController->feedTciTxAudio(mono48k); });
     }
 
+    // CAT sets from a client.
+    //
+    // WHY these go through CatFrames rather than formatted strings: CatFrames is where K4 command
+    // spelling lives (src/network/README.md), and a literal here would be a second place to get it
+    // wrong. The TCI layer never spells a K4 command.
+    if (m_connectionController) {
+        connect(m_server, &TciServer::setFrequencyRequested, this, [this](int channel, qint64 hz) {
+            if (hz <= 0) {
+                return;
+            }
+            applyCat(channel == 1 ? CatFrames::frequencyB(static_cast<quint64>(hz))
+                                  : CatFrames::frequencyA(static_cast<quint64>(hz)));
+        });
+        connect(m_server, &TciServer::setModulationRequested, this, [this](const QString &modulation) {
+            RadioState::Mode mode = RadioState::USB;
+            if (k4ModeFor(modulation, &mode)) {
+                applyCat(CatFrames::modeA(mode));
+            }
+        });
+        connect(m_server, &TciServer::setSplitRequested, this,
+                [this](bool enabled) { applyCat(CatFrames::split(enabled)); });
+    }
+
     // Keep the server's snapshot in step with the radio. Without this the init burst reports the
     // struct's defaults forever - which showed up immediately as a client stuck on 20m while the
     // K4 was on 40m.
@@ -93,6 +140,24 @@ TciController::TciController(AudioController *audioController, RadioState *radio
         connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode) { publishSnapshot(); });
         connect(m_radioState, &RadioState::splitChanged, this, [this](bool) { publishSnapshot(); });
         publishSnapshot();
+    }
+}
+
+void TciController::applyCat(const QByteArray &frame) {
+    const QString command = QString::fromLatin1(frame);
+
+    // Mirrors what CatServer's wiring does for an external client (mainwindow.cpp:352-375): send it,
+    // then parse it locally so the panadapter passband tracks immediately. K4 spectrum packets
+    // arrive BEFORE the CAT echo, so without the optimistic parse the passband goes off-screen
+    // until the echo lands.
+    m_connectionController->sendCAT(command);
+
+    // parseCATCommand is main-thread-only and CI-enforced (CONVENTIONS.md rule 4). This lambda runs
+    // on the main thread already, but the queue keeps that true if the signal is ever reconnected
+    // from the TCI thread.
+    if (m_radioState) {
+        QMetaObject::invokeMethod(
+            m_radioState, [this, command]() { m_radioState->parseCATCommand(command); }, Qt::QueuedConnection);
     }
 }
 
