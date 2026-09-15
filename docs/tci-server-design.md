@@ -1,6 +1,9 @@
 # TCI Server for QK4
 
-**Status: DESIGN ONLY — no code exists yet.**
+**Status: phases 0-5 BUILT and PROVEN ON AIR (2026-09-15).** Both audio directions and CAT control
+work against a live K4 with WSJT-X: 25 FT8 decodes received through the server, and transmissions
+sent through it are decoded by the spotting networks. Phase 6 (the settings UI) and phase 7 (full
+TCI command coverage) remain.
 
 ## Context
 
@@ -237,6 +240,33 @@ command, with the one exception of rule 8 below.
 Deferring the rest is safe because an unhandled command is *silence*, not an error, and WSJT-X
 never sends them. It is not safe to defer any of the **behaviour rules** below: those apply to the
 minimum set from the first commit.
+
+### Hard-won: the TX_AUDIO payload has two candidate windows
+
+This cost several on-air sessions and three fixes, so it is worth stating plainly.
+
+WSJT-X allocates **twice** the length it is asked for (`TCITransceiver.cpp:871`) and cycles an
+**8-entry ring of buffers** (`tx_fifo += 1; tx_fifo &= 7`). The live samples land in **either half**,
+and which half is not under the server's control:
+
+```
+against AetherSDR : offset 0 in 689 frames, 2048 in 34, 2049 in 18
+against QK4       : offset 2048 in all 581 frames carrying signal
+```
+
+So a decoder must **locate** the window, not assume it. Two traps on the way:
+
+1. **"Non-zero" is not a signal test.** The unused window holds stale buffer in one capture (81.77%
+   non-zero) and denormal dust around **7e-15** in a live session. Picking on non-zero chose garbage
+   in the first case (peaks near 5e35) and inaudible dust in the second — the radio transmitted, the
+   meters twitched, and nothing decoded. Require a real magnitude floor.
+2. **Pick on structure, not just level.** Live audio is duplicated stereo pairs bounded by unity;
+   stale memory is neither. Prefer the first window, which is what the reference server reads.
+
+Diagnostic note: several intermediate measurements that *seemed* to show WSJT-X fragmenting its
+audio into 64 ms bursts were artifacts of applying the same flawed "any non-zero" test during
+analysis. With a proper floor the client delivers one contiguous transmission. Do not trust a
+measurement that shares a bug with the code under test.
 
 ### TCI command → QK4 function map
 
@@ -662,7 +692,14 @@ sound card die before any TCI CAT exists.
 `AudioEngine`. PTT ownership enforced: one owner at a time, an unowned unkey only reports, and
 losing the client or stopping the server unkeys.
 
-**Gate met 2026-09-15: WSJT-X transmitted a valid FT8 signal through this path on 40m.** Measured
+**Gate fully met 2026-09-15: WSJT-X transmits through this path and is DECODED by the spotting
+networks.** Sustained peak 0.738846 across 1900+ blocks, constant as FT8 requires, with 2010 chrono
+requests against 2011 blocks received - 0.05%% apart.
+
+Getting here took three fixes after the first transmission; see "the TX_AUDIO payload has two
+candidate windows" above for what went wrong and why a capture alone did not reveal it.
+
+Earlier partial result, kept for the numbers: measured
 across two transmissions:
 
 ```
