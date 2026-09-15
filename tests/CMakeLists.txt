@@ -130,6 +130,18 @@ target_include_directories(test_websocketframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_websocketframe Qt6::Core Qt6::Test)
 add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
 
+# TCI server: init burst contents and ordering, audio subscription, and per-client isolation.
+add_executable(test_tciserver test_tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tciserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciserver Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciServerTests COMMAND test_tciserver)
+
 # TCI binary audio framing: the 64-byte header, and the opposite payload rules per direction.
 add_executable(test_tciaudioframe test_tciaudioframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
