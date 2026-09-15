@@ -100,6 +100,11 @@ signals:
     // One block of client transmit audio, already reduced to 48 kHz mono.
     void txAudioReceived(const QByteArray &f32Mono48k);
 
+    // CAT sets from a client. channel 0 is the receive VFO, 1 the transmit VFO.
+    void setFrequencyRequested(int channel, qint64 hz);
+    void setModulationRequested(const QString &modulation);
+    void setSplitRequested(bool enabled);
+
 private slots:
     void onClientConnected(int clientId, const QString &peerAddress);
     void onClientDisconnected(int clientId);

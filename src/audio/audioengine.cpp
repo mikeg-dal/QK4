@@ -483,10 +483,6 @@ void AudioEngine::setTxSource(TxSource source) {
     QMetaObject::invokeMethod(this, "flushMicBuffer", Qt::QueuedConnection);
 }
 
-void AudioEngine::setTciTxGain(float gain) {
-    m_tciTxGain.store(qBound(0.0f, gain, 2.0f), std::memory_order_relaxed);
-}
-
 void AudioEngine::feedTciTxAudio(const QByteArray &f32Mono48k) {
     // Ignored unless TCI owns the transmitter. A stale frame arriving after the operator took the
     // microphone back must not reach the radio.
@@ -494,7 +490,10 @@ void AudioEngine::feedTciTxAudio(const QByteArray &f32Mono48k) {
         return;
     }
     const QByteArray &data12k = resample48kTo12k(f32Mono48k);
-    bufferAndEmitTxFrames(data12k, m_tciTxGain.load(std::memory_order_relaxed));
+    // Same Mic Gain control as the sound-card path. WSJT-X sends at or near full scale, so an
+    // operator-facing level is required here, not optional - the first on-air test drove the K4
+    // far too hard without one.
+    bufferAndEmitTxFrames(data12k, m_micGain.load(std::memory_order_relaxed));
 }
 
 void AudioEngine::onMicDataReady() {

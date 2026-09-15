@@ -90,13 +90,11 @@ public:
 
     // Feed 48 kHz mono Float32 from a TCI client. Ignored unless the TX source is Tci.
     //
-    // WHY it does not pass through m_micGain: WSJT-X transmits at full scale (measured peak 0.9990,
-    // rms 0.7056). Any operator slider position above unity would clip against the qBound, and any
-    // position below would silently attenuate digital drive. TCI carries its own level.
+    // Passes through m_micGain, the same control the sound-card input uses. WSJT-X transmits at or
+    // near full scale, so without an operator-facing level this drives the K4 far too hard - which
+    // it did on the first on-air test. setMicGain clamps to 0..1 with a cubic curve, so it can only
+    // attenuate and can never introduce clipping of its own.
     Q_INVOKABLE void feedTciTxAudio(const QByteArray &f32Mono48k);
-
-    // Drive trim for the TCI TX path, 0.0-2.0. Separate from mic gain by design.
-    void setTciTxGain(float gain);
 
     // PTT gate for the TX encode path. Setting to true on PTT-on edge also
     // opens the mic (if needed) and flushes any partial-frame tail from the
@@ -219,7 +217,6 @@ private:
     std::atomic<bool> m_pttActive{false}; // TX gate; read on every mic frame
     // TxSource as an int so it is lock-free from the audio thread.
     std::atomic<int> m_txSource{static_cast<int>(TxSource::Microphone)};
-    std::atomic<float> m_tciTxGain{1.0f};
 
     // Microphone frame buffering for Opus encoding
     // Buffer accumulates S16LE samples at 12kHz until we have a complete frame.
