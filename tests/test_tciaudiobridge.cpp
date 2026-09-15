@@ -196,6 +196,83 @@ private slots:
         }
     }
 
+    void carriesSubInTheRightChannelWhenTheSubReceiverIsOn() {
+        // L = Main, R = Sub, matching what the K4 sends and what TCI channel 1 means.
+        TciAudioBridge bridge(nullptr);
+        bridge.setSubReceiverEnabled(true);
+
+        const std::vector<float> main = tone(1000.0, 12000.0, 512);
+        const std::vector<float> sub = tone(2000.0, 12000.0, 512);
+        const std::vector<float> out = bridge.convert(k4Packet(main, sub));
+        QVERIFY(!out.empty());
+
+        // Skip the filter's settling region before measuring.
+        QVERIFY(qAbs(amplitudeAt(channel(out, 0), 1000.0, 48000.0, 128) - 0.5) < 0.05);
+        QVERIFY(qAbs(amplitudeAt(channel(out, 1), 2000.0, 48000.0, 128) - 0.5) < 0.05);
+        // And the two channels must not be the same signal.
+        QVERIFY(amplitudeAt(channel(out, 1), 1000.0, 48000.0, 128) < 0.05);
+    }
+
+    void duplicatesMainWhenTheSubReceiverIsOff() {
+        // The default. A mono client hears Main in both ears rather than silence on one side.
+        TciAudioBridge bridge(nullptr);
+        const std::vector<float> main = tone(1000.0, 12000.0, 512);
+        const std::vector<float> sub = tone(2000.0, 12000.0, 512);
+        const std::vector<float> out = bridge.convert(k4Packet(main, sub));
+        QVERIFY(!out.empty());
+
+        const std::vector<float> left = channel(out, 0);
+        const std::vector<float> right = channel(out, 1);
+        QCOMPARE(left.size(), right.size());
+        for (size_t i = 0; i < left.size(); ++i) {
+            QCOMPARE(left[i], right[i]);
+        }
+    }
+
+    void togglingTheSubReceiverDropsStaleHistory() {
+        // The sub chain produces nothing while the Sub RX is off, so switching it on is a stream
+        // discontinuity - the same reason audio_start and the audio toggle reset.
+        const std::vector<float> main = tone(1000.0, 12000.0, 256);
+        const std::vector<float> sub = tone(2000.0, 12000.0, 256);
+
+        TciAudioBridge fresh(nullptr);
+        fresh.setSubReceiverEnabled(true);
+        const std::vector<float> expected = fresh.convert(k4Packet(main, sub));
+
+        TciAudioBridge toggled(nullptr);
+        toggled.setSubReceiverEnabled(true);
+        toggled.convert(k4Packet(main, sub)); // dirty the history
+        toggled.setSubReceiverEnabled(false);
+        toggled.setSubReceiverEnabled(true);
+        const std::vector<float> actual = toggled.convert(k4Packet(main, sub));
+
+        QCOMPARE(actual.size(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+            QCOMPARE(actual[i], expected[i]);
+        }
+    }
+
+    void aRedundantSubReceiverValueDoesNotDisturbTheStream() {
+        const std::vector<float> main = tone(1000.0, 12000.0, 256);
+        const std::vector<float> sub = tone(2000.0, 12000.0, 256);
+
+        TciAudioBridge undisturbed(nullptr);
+        undisturbed.setSubReceiverEnabled(true);
+        undisturbed.convert(k4Packet(main, sub));
+        const std::vector<float> expected = undisturbed.convert(k4Packet(main, sub));
+
+        TciAudioBridge repeated(nullptr);
+        repeated.setSubReceiverEnabled(true);
+        repeated.convert(k4Packet(main, sub));
+        repeated.setSubReceiverEnabled(true); // already on - must be a no-op
+        const std::vector<float> actual = repeated.convert(k4Packet(main, sub));
+
+        QCOMPARE(actual.size(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+            QCOMPARE(actual[i], expected[i]);
+        }
+    }
+
     void rejectsATornPacket() {
         // An odd float count cannot be interleaved stereo. Treating it as such would swap the
         // channels for every subsequent packet.

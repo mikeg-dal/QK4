@@ -3,7 +3,8 @@
 #include "network/tciserver.h"
 
 TciAudioBridge::TciAudioBridge(TciServer *server, QObject *parent)
-    : QObject(parent), m_server(server), m_upsampler(OUTPUT_RATE / INPUT_RATE, INPUT_RATE) {}
+    : QObject(parent), m_server(server), m_upsampler(OUTPUT_RATE / INPUT_RATE, INPUT_RATE),
+      m_upsamplerSub(OUTPUT_RATE / INPUT_RATE, INPUT_RATE) {}
 
 void TciAudioBridge::setEnabled(bool enabled) {
     // Enabling is a stream discontinuity. While disabled onRxAudio returns before converting
@@ -18,10 +19,22 @@ void TciAudioBridge::setEnabled(bool enabled) {
     m_enabled = enabled;
 }
 
+void TciAudioBridge::setSubReceiverEnabled(bool enabled) {
+    // Edge-triggered, like setEnabled. The sub chain produces nothing while the Sub RX is off, so
+    // switching it on is a stream discontinuity and its filter history is from before the gap.
+    if (enabled != m_subEnabled) {
+        reset();
+    }
+    m_subEnabled = enabled;
+}
+
 void TciAudioBridge::reset() {
     m_upsampler.reset();
+    m_upsamplerSub.reset();
     m_mono12k.clear();
     m_mono48k.clear();
+    m_sub12k.clear();
+    m_sub48k.clear();
     m_stereo48k.clear();
 }
 
@@ -35,7 +48,7 @@ const std::vector<float> &TciAudioBridge::convert(const QByteArray &pcm12kStereo
     const float *in = reinterpret_cast<const float *>(pcm12kStereo.constData());
     const int frames = floatCount / 2;
 
-    // Take the left channel only: L is Main, and Sub has no TCI address while trx_count is 1.
+    // L is Main, R is Sub, as the K4 sends it.
     m_mono12k.resize(static_cast<size_t>(frames));
     for (int i = 0; i < frames; ++i) {
         m_mono12k[static_cast<size_t>(i)] = in[i * 2];
@@ -44,11 +57,31 @@ const std::vector<float> &TciAudioBridge::convert(const QByteArray &pcm12kStereo
     m_mono48k.clear();
     m_upsampler.process(m_mono12k.data(), frames, m_mono48k);
 
-    m_stereo48k.resize(m_mono48k.size() * 2);
-    for (size_t i = 0; i < m_mono48k.size(); ++i) {
-        const float s = m_mono48k[i];
-        m_stereo48k[i * 2] = s;
-        m_stereo48k[i * 2 + 1] = s;
+    if (!m_subEnabled) {
+        // No Sub RX: duplicate Main into both channels, which is what a mono client expects.
+        m_stereo48k.resize(m_mono48k.size() * 2);
+        for (size_t i = 0; i < m_mono48k.size(); ++i) {
+            const float s = m_mono48k[i];
+            m_stereo48k[i * 2] = s;
+            m_stereo48k[i * 2 + 1] = s;
+        }
+        return m_stereo48k;
+    }
+
+    m_sub12k.resize(static_cast<size_t>(frames));
+    for (int i = 0; i < frames; ++i) {
+        m_sub12k[static_cast<size_t>(i)] = in[i * 2 + 1];
+    }
+    m_sub48k.clear();
+    m_upsamplerSub.process(m_sub12k.data(), frames, m_sub48k);
+
+    // Both chains see the same input length and the same filter, so they produce the same count.
+    // Pair defensively anyway rather than trusting that across future upsampler changes.
+    const size_t pairs = m_mono48k.size() < m_sub48k.size() ? m_mono48k.size() : m_sub48k.size();
+    m_stereo48k.resize(pairs * 2);
+    for (size_t i = 0; i < pairs; ++i) {
+        m_stereo48k[i * 2] = m_mono48k[i];
+        m_stereo48k[i * 2 + 1] = m_sub48k[i];
     }
     return m_stereo48k;
 }

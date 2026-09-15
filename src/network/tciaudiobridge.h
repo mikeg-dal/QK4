@@ -21,9 +21,13 @@ class TciServer;
 // Cmd_AudioSR has no dispatch case), so the 12 kHz stream has to be interpolated rather than
 // announced. See docs/tci-server-design.md.
 //
-// WHY Main is duplicated into both channels: with trx_count:1 a client only addresses receiver 0,
-// so there is no TCI address for the Sub receiver yet. Sending Sub in the right channel would
-// deliver audio no client asked for and no client can identify. Revisit with the RX Two work.
+// WHY the right channel depends on the Sub RX: TCI addresses the Sub receiver as CHANNEL 1 of
+// receiver 0 (rx_channel_enable), and the audio stream is stereo, so the natural carrier for it is
+// the right channel. With the Sub RX off there is nothing to put there and Main is duplicated into
+// both, which is what a mono client expects to hear. With it on, L = Main and R = Sub.
+//
+// The alternative - always sending Sub on the right - delivers audio to clients that never asked
+// for a second receiver and cannot tell the two apart, which is why it follows the radio.
 //
 // Thread affinity: lives on the TCI thread. onRxAudio is a slot, so a queued connection from the
 // I/O thread lands it here and the resampling cost is paid off the I/O thread - which also carries
@@ -42,6 +46,12 @@ public:
     void setEnabled(bool enabled);
     bool isEnabled() const { return m_enabled; }
 
+    // Follows the radio's Sub RX. Off duplicates Main into both output channels; on puts Main in
+    // the left and Sub in the right. Changing it drops resampler history for the same reason
+    // setEnabled does - the sub chain has been running dry and its taps are stale.
+    void setSubReceiverEnabled(bool enabled);
+    bool subReceiverEnabled() const { return m_subEnabled; }
+
     // Drop resampler history. Call on stream discontinuity - a reconnect or a K4 audio restart -
     // so samples from before the gap cannot bleed across it.
     void reset();
@@ -56,10 +66,18 @@ public slots:
 private:
     TciServer *m_server;
     bool m_enabled = true;
+    bool m_subEnabled = false;
+
+    // One upsampler per channel: the FIR carries history, so a single instance fed alternating
+    // channels would filter each against the other's samples.
     AudioUpsampler m_upsampler;
+    AudioUpsampler m_upsamplerSub;
+
     // Scratch buffers kept as members so a 10 ms audio callback does not allocate.
     std::vector<float> m_mono12k;
     std::vector<float> m_mono48k;
+    std::vector<float> m_sub12k;
+    std::vector<float> m_sub48k;
     std::vector<float> m_stereo48k;
 };
 

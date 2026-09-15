@@ -28,6 +28,13 @@ struct TciRadioSnapshot {
     QString modulation = QStringLiteral("usb");
     bool split = false;
     bool transmitting = false;
+
+    // The K4's Sub RX, which tunes VFO B. In TCI terms this is CHANNEL 1 of receiver 0, not a
+    // second receiver: the spec's RX_CHANNEL_ENABLE is described as "enable additional receive
+    // channel (VFO B)" and says channel A is always on. That matches the radio exactly, and it is
+    // why trx_count stays 1 while channels_count is 2.
+    bool subEnabled = false;
+    QString modulationB = QStringLiteral("usb");
     bool rit = false;
     bool xit = false;
 
@@ -81,6 +88,11 @@ public:
     // trx_count, so anything addressing receiver 1 has to be refused explicitly rather than steered.
     static constexpr int ONLY_RECEIVER = 0;
 
+    // Channel 0 is VFO A (Main), channel 1 is VFO B (Sub, and the split transmit VFO). Both are
+    // the same VFO B on a K4, which is why one channel index serves both jobs.
+    static constexpr int CHANNEL_A = 0;
+    static constexpr int CHANNEL_B = 1;
+
     explicit TciServer(QObject *parent = nullptr);
     ~TciServer() override;
 
@@ -127,6 +139,9 @@ signals:
     void setFrequencyRequested(int channel, qint64 hz);
     void setModulationRequested(const QString &modulation);
     void setSplitRequested(bool enabled);
+
+    // A client asked to turn the Sub RX (VFO B) on or off.
+    void setSubReceiverRequested(bool enabled);
 
 private slots:
     void onClientConnected(int clientId, const QString &peerAddress);

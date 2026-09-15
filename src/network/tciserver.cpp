@@ -121,6 +121,10 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
     if (snapshot.modulation != previous.modulation) {
         m_socketServer->broadcastText(message(QStringLiteral("modulation"), trx, snapshot.modulation));
     }
+    if (snapshot.subEnabled != previous.subEnabled) {
+        m_socketServer->broadcastText(message(QStringLiteral("rx_channel_enable"), trx, QString::number(CHANNEL_B),
+                                              boolText(snapshot.subEnabled)));
+    }
     if (snapshot.split != previous.split) {
         m_socketServer->broadcastText(message(QStringLiteral("split_enable"), trx, boolText(snapshot.split)));
     }
@@ -148,6 +152,9 @@ QStringList TciServer::initBurst() const {
           << message(QStringLiteral("dds"), trx, QString::number(s.vfoAHz))
           << message(QStringLiteral("modulation"), trx, s.modulation)
           << message(QStringLiteral("rx_enable"), trx, boolText(true))
+          // Channel A is always on; channel B follows the radio's Sub RX.
+          << message(QStringLiteral("rx_channel_enable"), trx, QString::number(CHANNEL_A), boolText(true))
+          << message(QStringLiteral("rx_channel_enable"), trx, QString::number(CHANNEL_B), boolText(s.subEnabled))
           << message(QStringLiteral("rx_filter_band"), trx, QString::number(s.filterLowHz),
                      QString::number(s.filterHighHz))
           << message(QStringLiteral("rit_enable"), trx, boolText(s.rit))
@@ -318,6 +325,37 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             } else {
                 setPtt(clientId, keyed);
             }
+        } else if (name == QLatin1String("rx_channel_enable")) {
+            // rx_channel_enable:<trx>,<channel>[,<bool>] - channel 1 is the Sub RX on VFO B.
+            int receiver = ONLY_RECEIVER;
+            int channel = CHANNEL_A;
+            bool wanted = false;
+            const bool haveReceiver = command.argAsInt(0, &receiver);
+            const bool haveChannel = command.argAsInt(1, &channel);
+            const bool haveState = command.argAsBool(2, &wanted);
+
+            if (!haveReceiver || receiver != ONLY_RECEIVER || !haveChannel) {
+                continue;
+            }
+            if (channel == CHANNEL_A) {
+                // Channel A is the main receiver and cannot be switched off. Report it rather than
+                // staying silent, and never act - a client that believes it turned the main
+                // receiver off would stop asking for audio.
+                m_socketServer->sendText(clientId, message(name, QString::number(ONLY_RECEIVER),
+                                                           QString::number(CHANNEL_A), boolText(true)));
+                continue;
+            }
+            if (channel != CHANNEL_B) {
+                continue; // no such channel
+            }
+            // A steady value is not an edge, for the same reason split_enable checks: repeating
+            // the state the radio already holds must not generate CAT traffic.
+            if (haveState && wanted != m_snapshot.subEnabled) {
+                emit setSubReceiverRequested(wanted);
+            }
+            // Confirm with what the model holds; the radio's own change arrives as a broadcast.
+            m_socketServer->sendText(clientId, message(name, QString::number(ONLY_RECEIVER), QString::number(CHANNEL_B),
+                                                       boolText(m_snapshot.subEnabled)));
         } else if (name == QLatin1String("split_enable")) {
             int receiver = ONLY_RECEIVER;
             bool wanted = false;

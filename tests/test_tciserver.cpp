@@ -588,6 +588,125 @@ private slots:
         server.stop();
     }
 
+    // ---- Sub RX (TCI channel 1 / VFO B) ----------------------------------------------------------
+
+    void advertisesBothChannelsInTheBurst() {
+        // Channel A is always on; channel B follows the radio. A client that never sees channel B
+        // advertised has no reason to ask for it.
+        TciRadioSnapshot snapshot;
+        snapshot.subEnabled = true;
+        TciServer server;
+        server.setSnapshot(snapshot);
+
+        const QStringList burst = server.initBurst();
+        QVERIFY(burst.contains(QStringLiteral("rx_channel_enable:0,0,true;")));
+        QVERIFY(burst.contains(QStringLiteral("rx_channel_enable:0,1,true;")));
+    }
+
+    void reportsChannelAAsAlwaysOnAndNeverActsOnIt() {
+        // The main receiver cannot be switched off. Silence would be worse than a refusal: a
+        // client that believed it had turned the main receiver off would stop asking for audio.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy sub(&server, &TciServer::setSubReceiverRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("rx_channel_enable:0,0,false;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("rx_channel_enable:0,0,true;"));
+        QCOMPARE(sub.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
+    void requestsTheSubReceiverAndConfirmsWithWhatItHolds() {
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy sub(&server, &TciServer::setSubReceiverRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("rx_channel_enable:0,1,true;");
+
+        QTRY_COMPARE(sub.count(), 1);
+        QCOMPARE(sub.at(0).at(0).toBool(), true);
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        // Still false: the radio has not confirmed yet, and a stale optimistic echo is what made
+        // WSJT-X transmit out of band in the reference server.
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("rx_channel_enable:0,1,false;"));
+
+        client.close();
+        server.stop();
+    }
+
+    void aSteadySubReceiverValueIsNotAnEdge() {
+        // Repeating the state the radio already holds must not generate CAT traffic, for the same
+        // reason split_enable checks.
+        TciRadioSnapshot snapshot;
+        snapshot.subEnabled = true;
+        TciServer server;
+        server.setSnapshot(snapshot);
+        QVERIFY(server.start(0));
+        QSignalSpy sub(&server, &TciServer::setSubReceiverRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("rx_channel_enable:0,1,true;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("rx_channel_enable:0,1,true;"));
+        QCOMPARE(sub.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
+    void refusesAChannelThatDoesNotExist() {
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("rx_channel_enable:0,2,true;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(!client.next(m, 300));
+
+        client.close();
+        server.stop();
+    }
+
+    void broadcastsWhenTheSubReceiverChanges() {
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        TciRadioSnapshot snapshot;
+        snapshot.subEnabled = true;
+        server.setSnapshot(snapshot);
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("rx_channel_enable:0,1,true;"));
+
+        client.close();
+        server.stop();
+    }
+
     // ---- broadcast on change ---------------------------------------------------------------------
 
     void broadcastsOnlyWhatActuallyMoved() {

@@ -36,6 +36,10 @@ QByteArray split(bool enabled) {
     return QString("FT%1;").arg(enabled ? 1 : 0).toUtf8();
 }
 
+QByteArray subReceiver(bool enabled) {
+    return QString("SB%1;").arg(enabled ? 1 : 0).toUtf8();
+}
+
 QByteArray ritOffset(int offset) {
     return QString("RO%1%2;").arg(offset >= 0 ? "+" : "-").arg(qAbs(offset), 4, 10, QChar('0')).toUtf8();
 }

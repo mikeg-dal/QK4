@@ -151,6 +151,8 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         });
         connect(m_server, &TciServer::setSplitRequested, this,
                 [this](bool enabled) { applyCat(CatFrames::split(enabled)); });
+        connect(m_server, &TciServer::setSubReceiverRequested, this,
+                [this](bool enabled) { applyCat(CatFrames::subReceiver(enabled)); });
     }
 
     // Keep the server's snapshot in step with the radio. Without this the init burst reports the
@@ -166,10 +168,22 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode) { publishSnapshot(); });
         connect(m_radioState, &RadioState::splitChanged, this, [this](bool) { publishSnapshot(); });
         connect(m_radioState, &RadioState::ritXitChanged, this, [this](bool, bool, int) { publishSnapshot(); });
+        connect(m_radioState, &RadioState::subRxEnabledChanged, this, [this](bool enabled) {
+            // The bridge decides what goes in the right audio channel, and it lives on the TCI
+            // thread, so this has to be marshalled rather than written from here.
+            QMetaObject::invokeMethod(
+                m_bridge, [this, enabled]() { m_bridge->setSubReceiverEnabled(enabled); }, Qt::QueuedConnection);
+            publishSnapshot();
+        });
         // RadioState has no per-field AGC signal; processingChanged is the coarse one it emits from
         // handleGT, and it also covers the NB/NR fields when those get wired.
         connect(m_radioState, &RadioState::processingChanged, this, [this]() { publishSnapshot(); });
         publishSnapshot();
+        // Seed the bridge too: the Sub RX may already be on when the controller is constructed,
+        // and subRxEnabledChanged only fires on a change.
+        const bool subOn = m_radioState->subReceiverEnabled();
+        QMetaObject::invokeMethod(
+            m_bridge, [this, subOn]() { m_bridge->setSubReceiverEnabled(subOn); }, Qt::QueuedConnection);
     }
 }
 
@@ -213,6 +227,10 @@ void TciController::publishSnapshot() {
     snapshot.ritXitOffsetHz = m_radioState->ritXitOffset();
 
     snapshot.agcMode = tciAgcModeFor(m_radioState->agcSpeed());
+
+    // The Sub RX is TCI channel 1 of receiver 0, not a second receiver. See TciRadioSnapshot.
+    snapshot.subEnabled = m_radioState->subReceiverEnabled();
+    snapshot.modulationB = tciModulationFor(m_radioState->modeB());
 
     // Queued: the server reads this from its own thread, so it must be handed over by value
     // through the event loop rather than written under it.
