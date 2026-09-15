@@ -724,9 +724,11 @@ gain would clip.
 marshalled optimistic `parseCATCommand` echo, per-session PTT ownership. Table-driven tests for
 every numbered client-behaviour rule — those are not deferrable even though most *commands* are.
 
-**6 — UI.** A **TCI Server** page mirroring the existing **CAT Server** panel on the Rig Control
-page, which is the established pattern for exactly this and should be copied rather than
-reinvented:
+**6 — UI. BUILT 2026-09-15.** A **TCI Server** page mirroring the existing **CAT Server** panel on
+the Rig Control page, copied rather than reinvented because the two servers do the same job for
+different clients. Its own entry in the options list; `src/ui/pages/tciserverpage.{h,cpp}`. Both
+toggles write to `RadioSettings` and MainWindow acts on the change, so a setting behaves
+identically whether altered in the dialog or restored at startup:
 
 | Element | Behaviour |
 |---|---|
