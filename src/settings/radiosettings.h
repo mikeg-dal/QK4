@@ -109,6 +109,10 @@ public:
     void setTciServerEnabled(bool enabled);
     quint16 tciServerPort() const;
     void setTciServerPort(quint16 port);
+    // Audio is the expensive half and CAT-only is a legitimate configuration, so it is separately
+    // switchable. Defaults on, because carrying audio is the reason the TCI server exists.
+    bool tciAudioEnabled() const;
+    void setTciAudioEnabled(bool enabled);
 
     // Macro settings
     QMap<QString, MacroEntry> macros() const;
@@ -183,6 +187,7 @@ signals:
     void catServerPortChanged(quint16 port);
     void tciServerEnabledChanged(bool enabled);
     void tciServerPortChanged(quint16 port);
+    void tciAudioEnabledChanged(bool enabled);
     void macrosChanged();
     void halikeyEnabledChanged(bool enabled);
     void halikeyPortNameChanged(const QString &portName);
@@ -218,6 +223,7 @@ private:
     // TCI server settings. 50001 is the TCI convention and what WSJT-X defaults to.
     bool m_tciServerEnabled = false;
     quint16 m_tciServerPort = 50001;
+    bool m_tciAudioEnabled = true;
 
     // HaliKey settings
     QString m_halikeyPortName;

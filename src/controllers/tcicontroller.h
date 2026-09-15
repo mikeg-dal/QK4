@@ -47,6 +47,11 @@ public:
     bool isListening() const;
     int clientCount() const;
 
+    // Carrying audio is separable from carrying CAT. Off means no RX frames are sent and no TX
+    // audio is accepted; the control half keeps working.
+    void setAudioEnabled(bool enabled);
+    bool audioEnabled() const { return m_audioEnabled; }
+
 signals:
     void listeningChanged(bool listening, quint16 port);
     void clientCountChanged(int count);
@@ -63,6 +68,7 @@ private:
 
     AudioController *m_audioController;
     ConnectionController *m_connectionController;
+    bool m_audioEnabled = true;
     RadioState *m_radioState;
     TciServer *m_server;
     TciAudioBridge *m_bridge;

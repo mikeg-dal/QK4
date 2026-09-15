@@ -37,6 +37,11 @@ public:
 
     explicit TciAudioBridge(TciServer *server, QObject *parent = nullptr);
 
+    // Audio can be switched off while the CAT half keeps running - a legitimate configuration, and
+    // audio is the expensive half.
+    void setEnabled(bool enabled) { m_enabled = enabled; }
+    bool isEnabled() const { return m_enabled; }
+
     // Drop resampler history. Call on stream discontinuity - a reconnect or a K4 audio restart -
     // so samples from before the gap cannot bleed across it.
     void reset();
@@ -50,6 +55,7 @@ public slots:
 
 private:
     TciServer *m_server;
+    bool m_enabled = true;
     AudioUpsampler m_upsampler;
     // Scratch buffers kept as members so a 10 ms audio callback does not allocate.
     std::vector<float> m_mono12k;

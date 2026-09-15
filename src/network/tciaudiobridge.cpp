@@ -41,7 +41,7 @@ const std::vector<float> &TciAudioBridge::convert(const QByteArray &pcm12kStereo
 }
 
 void TciAudioBridge::onRxAudio(const QByteArray &pcm12kStereo) {
-    if (!m_server || m_server->audioClientCount() == 0) {
+    if (!m_enabled || !m_server || m_server->audioClientCount() == 0) {
         // Nobody is listening. Skipping the work entirely also means the resampler keeps no state
         // across an idle period, which is why reset() exists for the resume.
         return;

@@ -174,6 +174,7 @@ set(SOURCES
     src/ui/pages/audioinputpage.cpp
     src/ui/pages/audiooutputpage.cpp
     src/ui/pages/rigcontrolpage.cpp
+    src/ui/pages/tciserverpage.cpp
     src/ui/pages/cwkeyerpage.cpp
     src/ui/pages/kpodpage.cpp
     src/ui/pages/kpa1500page.cpp

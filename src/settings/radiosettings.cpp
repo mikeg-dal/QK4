@@ -321,6 +321,18 @@ void RadioSettings::setTciServerPort(quint16 port) {
     }
 }
 
+bool RadioSettings::tciAudioEnabled() const {
+    return m_tciAudioEnabled;
+}
+
+void RadioSettings::setTciAudioEnabled(bool enabled) {
+    if (m_tciAudioEnabled != enabled) {
+        m_tciAudioEnabled = enabled;
+        save();
+        emit tciAudioEnabledChanged(enabled);
+    }
+}
+
 QMap<QString, MacroEntry> RadioSettings::macros() const {
     return m_macros;
 }
@@ -565,6 +577,7 @@ void RadioSettings::load() {
     m_catServerPort = m_settings.value("catServer/port", m_settings.value("rigctld/port", 9299)).toUInt();
     m_tciServerEnabled = m_settings.value("tciServer/enabled", false).toBool();
     m_tciServerPort = m_settings.value("tciServer/port", 50001).toUInt();
+    m_tciAudioEnabled = m_settings.value("tciServer/audio", true).toBool();
 
     // DX Cluster settings
     int dxCount = m_settings.beginReadArray("dxClusters");
@@ -690,6 +703,7 @@ void RadioSettings::save() {
     m_settings.setValue("catServer/port", m_catServerPort);
     m_settings.setValue("tciServer/enabled", m_tciServerEnabled);
     m_settings.setValue("tciServer/port", m_tciServerPort);
+    m_settings.setValue("tciServer/audio", m_tciAudioEnabled);
 
     // HaliKey settings
     m_settings.setValue("halikey/portName", m_halikeyPortName);

@@ -419,6 +419,10 @@ void MainWindow::setupCatServer() {
         }
     });
 
+    connect(RadioSettings::instance(), &RadioSettings::tciAudioEnabledChanged, this,
+            [this](bool enabled) { m_tciController->setAudioEnabled(enabled); });
+    m_tciController->setAudioEnabled(RadioSettings::instance()->tciAudioEnabled());
+
     if (RadioSettings::instance()->tciServerEnabled()) {
         m_tciController->start(RadioSettings::instance()->tciServerPort());
     }
@@ -445,8 +449,9 @@ void MainWindow::setupMenuBar() {
     optionsAction->setMenuRole(QAction::PreferencesRole); // macOS: moves to app menu as Preferences
     connect(optionsAction, &QAction::triggered, this, [this]() {
         if (!m_optionsDialog) {
-            m_optionsDialog = new OptionsDialog(m_radioState, m_audioController, m_hardwareController, m_catServer,
-                                                m_kpa1500UiController->client(), m_dxClusterController, this);
+            m_optionsDialog =
+                new OptionsDialog(m_radioState, m_audioController, m_hardwareController, m_catServer, m_tciController,
+                                  m_kpa1500UiController->client(), m_dxClusterController, this);
         }
         m_optionsDialog->show();
         m_optionsDialog->raise();

@@ -100,8 +100,11 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         });
 
         // Queued: decoding lands on the TCI thread, the encode pipeline lives on the audio thread.
-        connect(m_server, &TciServer::txAudioReceived, this,
-                [this](const QByteArray &mono48k) { m_audioController->feedTciTxAudio(mono48k); });
+        connect(m_server, &TciServer::txAudioReceived, this, [this](const QByteArray &mono48k) {
+            if (m_audioEnabled) {
+                m_audioController->feedTciTxAudio(mono48k);
+            }
+        });
     }
 
     // CAT sets from a client.
@@ -141,6 +144,12 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         connect(m_radioState, &RadioState::splitChanged, this, [this](bool) { publishSnapshot(); });
         publishSnapshot();
     }
+}
+
+void TciController::setAudioEnabled(bool enabled) {
+    m_audioEnabled = enabled;
+    // The bridge lives on the TCI thread; its flag is a plain bool read on that thread only.
+    QMetaObject::invokeMethod(m_bridge, [this, enabled]() { m_bridge->setEnabled(enabled); }, Qt::QueuedConnection);
 }
 
 void TciController::applyCat(const QByteArray &frame) {
