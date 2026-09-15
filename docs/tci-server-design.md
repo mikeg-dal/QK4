@@ -549,31 +549,52 @@ Per Rule 5, every buffer fed from an external source needs an explicit limit. Mi
 
 Each phase builds green and is committable on its own (Rule 9: one commit per logical change).
 
+**Ordering rationale (NY4I): audio first.** CAT control already works over `CatServer` on 9299, so
+a TCI server that only does CAT is a lateral move — *"if the audio does not work, the TCI CAT
+control is less useful but still potentially useful."* Audio is the whole reason this feature
+exists: it is what removes the loopback sound card. It is also the highest-risk part, and the one
+open question in this document is an audio question. So audio is front-loaded, and CAT control —
+the part we already know how to do, via primitives that are already proven in `CatServer` — comes
+after.
+
 **0 — Upsampler.** `RadioUtils` or a dedicated unit, plus `test_upsampler.cpp` asserting the
-measured acceptance criteria above. No sockets, no threads. Independently useful and independently
-verifiable.
+measured acceptance criteria above. No sockets, no threads. Independently verifiable, and already
+prototyped and proven against `jt9`.
 
 **1 — WebSocket transport.** `websocketserver.{h,cpp}`: handshake, frame encode/decode, server-side
 unmasking, ping/pong/close, the limits above. Test by round-tripping text and binary over loopback.
 
-**2 — Grammar, minimum set.** `tciprotocol.{h,cpp}`: tokeniser, arity table, formatters, and the
-global-form expansion for `split_enable:false`. Implement **only the minimum viable command set**
-above. Pure unit; table-driven tests for every numbered client-behaviour rule — those are not
-deferrable even though most commands are.
+**2 — Just enough protocol to reach audio.** `tciprotocol.{h,cpp}` tokeniser and formatters, plus
+the init burst built from one snapshot pass, `ready;` last, and handling for `audio_start` /
+`audio_stop` (echo), `rx_sensors_enable` / `tx_sensors_enable` (echo), and `split_enable` accepted
+as a no-op. **No CAT SETs yet.** The goal is narrow: WSJT-X connects, completes the handshake, and
+asks for audio.
 
-**3 — Server and state.** `tciserver.{h,cpp}`: snapshot from queued `RadioState` signals, init burst
-built in one pass, GET/SET dispatch, broadcast-on-diff, per-session PTT ownership, TX_CHRONO
-accumulator.
+**3 — RX audio. First real milestone.** Fan-out at `audiocontroller.cpp:45-50`, upsample 12k → 48k,
+frame and send `RX_AUDIO`. **Gate: WSJT-X decodes FT8 from the K4 over TCI.** This is the single
+result that determines whether the feature is worth building, and it is reachable without one line
+of CAT SET handling.
 
-**4 — Audio.** RX fan-out at `audiocontroller.cpp:45-50`; TX ingest and `feedTciTxAudio`; source
-selector and gain bypass in `AudioEngine`.
+Note that this phase alone may already be independently useful: TCI carrying audio while
+`CatServer` on 9299 carries CAT. **Unverified** — WSJT-X's "Use TCI Audio" checkbox may require the
+TCI rig backend to be selected. Worth testing once phase 3 works, because it would let the loopback
+sound card die before any TCI CAT exists.
 
-**5 — Wiring and UI.** `TciController`, settings page, `RadioSettings` keys, `CMakeLists.txt`.
+**4 — TX audio.** `trx:0,<bool>` → `AudioController::setPttActive()`, the TX_CHRONO accumulator,
+`TX_AUDIO` ingest (first `hdr.length` floats, deduplicate pairs), `feedTciTxAudio`, source selector
+and gain bypass in `AudioEngine`. **Gate: a third party decodes an FT8 transmission sent this way.**
 
-**6 — Bench.** WSJT-X end to end. Not provable by review; see below. **This is the gate for
-declaring the feature working**, and it comes before any grammar expansion.
+**5 — CAT control.** The rest of the minimum viable command set: `vfo`, `modulation`,
+`split_enable` transitions. Snapshot from queued `RadioState` signals, broadcast-on-diff, the
+marshalled optimistic `parseCATCommand` echo, per-session PTT ownership. Table-driven tests for
+every numbered client-behaviour rule — those are not deferrable even though most *commands* are.
 
-**7 — Full TCI coverage.** Flesh out every call a TCI client can make, beyond WSJT-X's seven:
+**6 — Wiring and UI.** `TciController`, settings page, `RadioSettings` keys, `CMakeLists.txt`.
+
+**7 — Bench.** Full end-to-end verification; see below. **This is the gate for declaring the
+feature working**, and it comes before any grammar expansion.
+
+**8 — Full TCI coverage.** Flesh out every call a TCI client can make, beyond WSJT-X's seven:
 `tune`, `drive`/`tune_drive` SET, `rit_offset`/`xit_offset`, `rx_filter_band`, `cw_macros*`,
 `spot`/`spot_delete`/`spot_clear`, `iq_start`/`iq_stop`, `volume`, `mute`, `agc_mode`, `sql_*`,
 the `rx_*_enable` DSP flags, and `dds`. Each needs an arity-table entry, a snapshot field, and a
