@@ -256,6 +256,90 @@ private slots:
         QVERIFY(std::fabs(got[1] - (100.0f / 32768.0f)) < 1e-6f);
     }
 
+    // ---- which half of the payload holds the samples ---------------------------------------------
+    //
+    // WSJT-X allocates twice the length it is asked for and cycles an 8-entry buffer ring, so the
+    // live window lands in EITHER half. Every case below cost an on-air session to find.
+
+    void findsAudioInTheSecondWindow() {
+        // Measured against QK4: offset 2048 in all 581 frames carrying signal.
+        const std::vector<float> wanted = tone(1500.0, 48000.0, 512);
+        QByteArray frame = wsjtxTxFrame(wanted, 2, /*dirtyTail=*/false);
+
+        // Move the samples into the second window and blank the first.
+        const int declared = static_cast<int>(wanted.size()) * 2;
+        float *body = reinterpret_cast<float *>(frame.data() + HEADER_BYTES);
+        for (int i = 0; i < declared; ++i) {
+            body[declared + i] = body[i];
+            body[i] = 0.0f;
+        }
+
+        std::vector<float> got;
+        QVERIFY(decodeTxAudioToMono(frame, &got));
+        QCOMPARE(got.size(), wanted.size());
+        for (size_t i = 0; i < wanted.size(); ++i) {
+            QCOMPARE(got[i], wanted[i]);
+        }
+    }
+
+    void isNotFooledByDenormalDustInTheFirstWindow() {
+        // THE BUG THAT SHIPPED. The unused window is not reliably all zeros - a live session had it
+        // holding ~7e-15. A non-zero test picked that over the real samples and the radio
+        // transmitted silence while the meters twitched. Fixtures of exact zeros never caught it.
+        const std::vector<float> wanted = tone(1500.0, 48000.0, 512);
+        QByteArray frame = wsjtxTxFrame(wanted, 2, /*dirtyTail=*/false);
+
+        const int declared = static_cast<int>(wanted.size()) * 2;
+        float *body = reinterpret_cast<float *>(frame.data() + HEADER_BYTES);
+        for (int i = 0; i < declared; ++i) {
+            body[declared + i] = body[i];
+            body[i] = 7.05055e-15f; // exactly what was observed on the wire
+        }
+
+        std::vector<float> got;
+        QVERIFY(decodeTxAudioToMono(frame, &got));
+        QCOMPARE(got.size(), wanted.size());
+        float peak = 0.0f;
+        for (float v : got) {
+            peak = std::max(peak, std::fabs(v));
+        }
+        QVERIFY2(peak > 0.1f, qPrintable(QString("picked the dust: peak %1").arg(static_cast<double>(peak))));
+    }
+
+    void isNotFooledByStaleGarbageInTheSecondWindow() {
+        // The mirror image: when the FIRST window holds the audio, the second can hold stale buffer
+        // that is 81.77% non-zero with absurd magnitudes. Choosing it produced peaks around 5e35.
+        const std::vector<float> wanted = tone(1500.0, 48000.0, 512);
+        QByteArray frame = wsjtxTxFrame(wanted, 2, /*dirtyTail=*/false);
+
+        const int declared = static_cast<int>(wanted.size()) * 2;
+        float *body = reinterpret_cast<float *>(frame.data() + HEADER_BYTES);
+        for (int i = 0; i < declared; ++i) {
+            body[declared + i] = 5.0e35f;
+        }
+
+        std::vector<float> got;
+        QVERIFY(decodeTxAudioToMono(frame, &got));
+        QCOMPARE(got.size(), wanted.size());
+        for (size_t i = 0; i < wanted.size(); ++i) {
+            QCOMPARE(got[i], wanted[i]);
+        }
+    }
+
+    void treatsGenuineSilenceAsSilenceRatherThanHunting() {
+        // Silence is legitimate audio - between transmissions, and the wind-down block before an
+        // unkey. It must not be mistaken for "look in the other window".
+        const std::vector<float> quiet(512, 0.0f);
+        const QByteArray frame = wsjtxTxFrame(quiet, 2, /*dirtyTail=*/false);
+
+        std::vector<float> got;
+        QVERIFY(decodeTxAudioToMono(frame, &got));
+        QCOMPARE(got.size(), quiet.size());
+        for (float v : got) {
+            QCOMPARE(v, 0.0f);
+        }
+    }
+
     // ---- refusals -------------------------------------------------------------------------------
 
     void refusesAFrameThatIsNotTxAudio() {
