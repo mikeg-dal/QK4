@@ -152,15 +152,16 @@ QStringList TciServer::initBurst() const {
                      QString::number(s.filterHighHz))
           << message(QStringLiteral("rit_enable"), trx, boolText(s.rit))
           << message(QStringLiteral("xit_enable"), trx, boolText(s.xit))
-          << message(QStringLiteral("rit_offset"), trx, QString::number(s.ritOffsetHz))
-          << message(QStringLiteral("xit_offset"), trx, QString::number(s.xitOffsetHz))
+          // Both from the one register the radio actually has.
+          << message(QStringLiteral("rit_offset"), trx, QString::number(s.ritXitOffsetHz))
+          << message(QStringLiteral("xit_offset"), trx, QString::number(s.ritXitOffsetHz))
           // Not decoration: the RF2K-S amplifier uses split_enable:0,false as its signal that VFO 0
           // is active, and reports "No TCI available" until it arrives.
           << message(QStringLiteral("split_enable"), trx, boolText(s.split))
           << message(QStringLiteral("lock"), trx, boolText(false))
-          << message(QStringLiteral("sql_enable"), trx, boolText(false))
-          << message(QStringLiteral("sql_level"), trx, QStringLiteral("20"))
-          << message(QStringLiteral("agc_mode"), trx, QStringLiteral("med"))
+          << message(QStringLiteral("sql_enable"), trx, boolText(s.sqlEnabled))
+          << message(QStringLiteral("sql_level"), trx, QString::number(s.sqlLevelDbm))
+          << message(QStringLiteral("agc_mode"), trx, s.agcMode)
           << message(QStringLiteral("rx_nb_enable"), trx, boolText(false))
           << message(QStringLiteral("rx_nr_enable"), trx, boolText(false))
           << message(QStringLiteral("rx_anf_enable"), trx, boolText(false))
@@ -377,10 +378,9 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             reply = message(name, trx, boolText(s.rit));
         } else if (name == QLatin1String("xit_enable")) {
             reply = message(name, trx, boolText(s.xit));
-        } else if (name == QLatin1String("rit_offset")) {
-            reply = message(name, trx, QString::number(s.ritOffsetHz));
-        } else if (name == QLatin1String("xit_offset")) {
-            reply = message(name, trx, QString::number(s.xitOffsetHz));
+        } else if (name == QLatin1String("rit_offset") || name == QLatin1String("xit_offset")) {
+            // Deliberately the same value for both: the radio has one offset register.
+            reply = message(name, trx, QString::number(s.ritXitOffsetHz));
         } else if (name == QLatin1String("rx_filter_band")) {
             reply = message(name, trx, QString::number(s.filterLowHz), QString::number(s.filterHighHz));
         } else if (name == QLatin1String("drive")) {
@@ -389,11 +389,13 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
         } else if (name == QLatin1String("tune_drive")) {
             reply = message(name, trx, QString::number(s.tuneDrive));
         } else if (name == QLatin1String("agc_mode")) {
-            reply = message(name, trx, QStringLiteral("med"));
+            reply = message(name, trx, s.agcMode);
         } else if (name == QLatin1String("rx_enable") || name == QLatin1String("tx_enable")) {
             reply = message(name, trx, boolText(true));
         } else if (name == QLatin1String("sql_level")) {
-            reply = message(name, trx, QStringLiteral("20"));
+            reply = message(name, trx, QString::number(s.sqlLevelDbm));
+        } else if (name == QLatin1String("sql_enable")) {
+            reply = message(name, trx, boolText(s.sqlEnabled));
         } else {
             // lock, sql_enable, mute and the DSP flags are all reported false: QK4 does not model
             // them for TCI yet, and claiming otherwise would be a lie a client could act on.

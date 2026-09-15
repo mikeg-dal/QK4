@@ -59,6 +59,23 @@ bool k4ModeFor(const QString &modulation, RadioState::Mode *out) {
     return true;
 }
 
+// K4 AGC speed -> TCI AGC mode. TCI defines exactly three: normal, fast, off. QK4 previously
+// answered "med", which is not one of them, so a client matching the documented vocabulary could
+// not parse it.
+QString tciAgcModeFor(RadioState::AGCSpeed speed) {
+    switch (speed) {
+    case RadioState::AGC_Off:
+        return QStringLiteral("off");
+    case RadioState::AGC_Fast:
+        return QStringLiteral("fast");
+    case RadioState::AGC_Slow:
+        break;
+    }
+    // AGC_Slow is the K4's sustained setting and TCI's "normal" is the same idea. It is also the
+    // safe default for a value we have not read yet.
+    return QStringLiteral("normal");
+}
+
 } // namespace
 
 TciController::TciController(AudioController *audioController, ConnectionController *connectionController,
@@ -148,6 +165,10 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         connect(m_radioState, &RadioState::frequencyBChanged, this, [this](quint64) { publishSnapshot(); });
         connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode) { publishSnapshot(); });
         connect(m_radioState, &RadioState::splitChanged, this, [this](bool) { publishSnapshot(); });
+        connect(m_radioState, &RadioState::ritXitChanged, this, [this](bool, bool, int) { publishSnapshot(); });
+        // RadioState has no per-field AGC signal; processingChanged is the coarse one it emits from
+        // handleGT, and it also covers the NB/NR fields when those get wired.
+        connect(m_radioState, &RadioState::processingChanged, this, [this]() { publishSnapshot(); });
         publishSnapshot();
     }
 }
@@ -185,6 +206,13 @@ void TciController::publishSnapshot() {
     snapshot.vfoBHz = static_cast<qint64>(m_radioState->vfoB());
     snapshot.split = m_radioState->splitEnabled();
     snapshot.modulation = tciModulationFor(m_radioState->mode());
+
+    // RIT/XIT: two enables, ONE offset - the shape the radio and RadioState both use.
+    snapshot.rit = m_radioState->ritEnabled();
+    snapshot.xit = m_radioState->xitEnabled();
+    snapshot.ritXitOffsetHz = m_radioState->ritXitOffset();
+
+    snapshot.agcMode = tciAgcModeFor(m_radioState->agcSpeed());
 
     // Queued: the server reads this from its own thread, so it must be handed over by value
     // through the event loop rather than written under it.

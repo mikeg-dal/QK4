@@ -30,13 +30,30 @@ struct TciRadioSnapshot {
     bool transmitting = false;
     bool rit = false;
     bool xit = false;
-    int ritOffsetHz = 0;
-    int xitOffsetHz = 0;
+
+    // ONE offset, matching the radio. The K4 has a single RO register shared by RIT and XIT, with
+    // RT and XT as independent enables, and RadioState models it the same way
+    // (ritXitOffset(), ritXitChanged(rit, xit, offset)). TCI defines RIT_OFFSET and XIT_OFFSET as
+    // two values; they are reported from this one and can never be set independently.
+    // See docs/tci-command-coverage.md section 4.1.
+    int ritXitOffsetHz = 0;
+
     int filterLowHz = 100;
     int filterHighHz = 2800;
     int drive = 100;
     int tuneDrive = 100;
     int micLevel = 50;
+
+    // TCI defines exactly three AGC modes: normal, fast, off. Anything else is unparseable to a
+    // client matching the documented vocabulary.
+    QString agcMode = QStringLiteral("normal");
+
+    bool sqlEnabled = false;
+    // TCI squelch is an ABSOLUTE threshold in dBm, range -140..0. QK4 does not know the K4's
+    // squelch threshold in dBm - the radio reports SQ as an arbitrary integer scale - so no
+    // truthful conversion exists. -140 is "opens on anything", which is both in range and the
+    // least misleading thing to claim. See docs/tci-command-coverage.md.
+    int sqlLevelDbm = -140;
 
     // Channel 1 is the transmit VFO. With split off it must still report something coherent - the
     // receive frequency - rather than the 0 a blank VFO B holds, which a client will try to tune to.

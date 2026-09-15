@@ -66,6 +66,63 @@ private slots:
         }
     }
 
+    void agcModeIsAlwaysOneOfTheThreeSpecValues() {
+        // REGRESSION. QK4 answered "med", which TCI does not define: the spec lists exactly
+        // normal, fast and off. A client matching the documented vocabulary cannot parse
+        // anything else, so this pins the CONSTRAINT rather than one literal value.
+        TciRadioSnapshot snapshot;
+        for (const QString &mode : {QStringLiteral("normal"), QStringLiteral("fast"), QStringLiteral("off")}) {
+            snapshot.agcMode = mode;
+            TciServer server;
+            server.setSnapshot(snapshot);
+            bool seen = false;
+            for (const QString &command : server.initBurst()) {
+                if (!command.startsWith(QStringLiteral("agc_mode:"))) {
+                    continue;
+                }
+                seen = true;
+                const TciProtocol::Command c = TciProtocol::parseOne(command.chopped(1));
+                const QString value = c.arg(1);
+                QVERIFY2(value == QLatin1String("normal") || value == QLatin1String("fast") ||
+                             value == QLatin1String("off"),
+                         qPrintable(QStringLiteral("not a spec AGC mode: ") + command));
+                QCOMPARE(value, mode);
+            }
+            QVERIFY(seen);
+        }
+    }
+
+    void squelchLevelStaysInsideTheSpecRange() {
+        // REGRESSION. QK4 answered 20; TCI defines the squelch threshold as dBm over -140..0, so
+        // any positive value is outside the range in either direction of interpretation.
+        const QStringList burst = TciServer().initBurst();
+        bool seen = false;
+        for (const QString &command : burst) {
+            if (!command.startsWith(QStringLiteral("sql_level:"))) {
+                continue;
+            }
+            seen = true;
+            const TciProtocol::Command c = TciProtocol::parseOne(command.chopped(1));
+            bool ok = false;
+            const int level = c.arg(1).toInt(&ok);
+            QVERIFY2(ok, qPrintable(command));
+            QVERIFY2(level >= -140 && level <= 0, qPrintable(QStringLiteral("out of range: ") + command));
+        }
+        QVERIFY(seen);
+    }
+
+    void ritAndXitReportTheSameOffset() {
+        // The K4 has ONE offset register (RO) shared by RIT and XIT, with RT and XT as separate
+        // enables. Reporting two different offsets would describe a radio that does not exist.
+        TciRadioSnapshot snapshot;
+        snapshot.ritXitOffsetHz = 95; // a real value read off the radio
+        TciServer server;
+        server.setSnapshot(snapshot);
+
+        QVERIFY(server.initBurst().contains(QStringLiteral("rit_offset:0,95;")));
+        QVERIFY(server.initBurst().contains(QStringLiteral("xit_offset:0,95;")));
+    }
+
     void channelOneReportsTheReceiveFrequencyWhenSplitIsOff() {
         // Never the 0 a blank VFO B holds - a client will try to tune to it.
         TciServer server;
@@ -319,9 +376,9 @@ private slots:
             QStringLiteral("drive:0,100;"),
             QStringLiteral("tune_drive:0,100;"),
             QStringLiteral("mic_level:50;"),
-            QStringLiteral("agc_mode:0,med;"),
+            QStringLiteral("agc_mode:0,normal;"),
             QStringLiteral("rx_filter_band:0,100,2800;"),
-            QStringLiteral("sql_level:0,20;"),
+            QStringLiteral("sql_level:0,-140;"),
             QStringLiteral("trx_count:1;"),
             QStringLiteral("channels_count:2;"),
             QStringLiteral("protocol:ExpertSDR3,1.5;"),
@@ -427,7 +484,7 @@ private slots:
         QVERIFY(replies.contains(QStringLiteral("mic_level:50;")));
         QVERIFY(replies.contains(QStringLiteral("mute:0,false;")));
         QVERIFY(replies.contains(QStringLiteral("rit_offset:0,0;")));
-        QVERIFY(replies.contains(QStringLiteral("sql_level:0,20;")));
+        QVERIFY(replies.contains(QStringLiteral("sql_level:0,-140;")));
 
         QCOMPARE(frequency.count(), 0);
         QCOMPARE(modulation.count(), 0);
