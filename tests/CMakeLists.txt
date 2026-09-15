@@ -130,6 +130,15 @@ target_include_directories(test_websocketframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_websocketframe Qt6::Core Qt6::Test)
 add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
 
+# WebSocket transport over a real loopback socket: upgrade, session lifecycle, ping/pong, limits.
+add_executable(test_websocketserver test_websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_websocketserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_websocketserver Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME WebSocketServerTests COMMAND test_websocketserver)
+
 # 12kHz -> 48kHz interpolation for the TCI receive path: passband flatness and image rejection.
 add_executable(test_audioupsampler test_audioupsampler.cpp
     ${CMAKE_SOURCE_DIR}/src/dsp/audioupsampler.cpp
