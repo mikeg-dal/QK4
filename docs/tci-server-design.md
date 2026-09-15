@@ -150,8 +150,19 @@ resampler — WSJT-X sends 48 kHz, which is exactly what `AudioEngine`'s TX path
 
 ### Init burst
 
-One WebSocket text frame, `;`-separated, **`ready;` last**. This is the burst AetherSDR sends,
-which WSJT-X accepts; a replay of it was verified to work against a live WSJT-X.
+**`ready;` last.** This is the burst AetherSDR sends, which WSJT-X accepts; a replay of it was
+verified to work against a live WSJT-X.
+
+**Framing: AetherSDR sends one command per WebSocket text frame** — 42 commands, 42 frames,
+verified by decoding the capture without splitting payloads on `;` (`vfo_limits:1000,75000000;` is
+a 25-byte frame on its own). TR4W's notes claim the opposite — *"AetherSDR sends its entire init
+burst as one string of `;`-terminated commands"* — and that is not what this version does.
+
+Either framing works on the sending side: the design-phase probe sent all 42 in a single frame and
+WSJT-X accepted it, connected, and streamed audio. QK4 should send one command per frame to match
+the proven reference. **The receive path must still tolerate several commands in one frame**, since
+nothing stops a client from batching, and must buffer a trailing partial command for the next
+frame.
 
 ```
 vfo_limits:<lo>,<hi>;  if_limits:-48000,48000;  trx_count:1;  channels_count:2;
@@ -188,7 +199,13 @@ rx_sensors_enable:false,500;
 tx_sensors_enable:false,500;
 modulation:0,digu;
 vfo:0,0,<hz>;
+trx:0,true,tci;                <- third argument present on BOTH edges
+trx:0,false,tci;
 ```
+
+Eleven text frames across a full session with two transmit cycles. Note `trx:0,false,tci` — the
+`tci` audio-source tag is sent on the **unkey** as well as the key, so a parser that only expects
+it on `true` will mis-handle the unkey.
 
 Everything else in the grammar is answered but never exercised by this client.
 

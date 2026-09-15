@@ -122,6 +122,14 @@ target_include_directories(test_spectrumscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_spectrumscale Qt6::Core Qt6::Test)
 add_test(NAME SpectrumScaleTests COMMAND test_spectrumscale)
 
+# RFC 6455 framing for the TCI server: length forms, masking, fragment reassembly, size limits.
+add_executable(test_websocketframe test_websocketframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_websocketframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_websocketframe Qt6::Core Qt6::Test)
+add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
+
 # 12kHz -> 48kHz interpolation for the TCI receive path: passband flatness and image rejection.
 add_executable(test_audioupsampler test_audioupsampler.cpp
     ${CMAKE_SOURCE_DIR}/src/dsp/audioupsampler.cpp
