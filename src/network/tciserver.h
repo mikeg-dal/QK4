@@ -45,10 +45,12 @@ struct TciRadioSnapshot {
 
 // TCI protocol server.
 //
-// Scope is deliberately the minimum that reaches audio: the init burst, audio_start/audio_stop, the
-// sensor echoes, and split_enable accepted without acting. CAT SETs (vfo, modulation, trx) arrive
-// in a later phase; an unhandled TCI command is silence, not an error, so deferring them is safe.
-// See docs/tci-server-design.md.
+// Implemented: the init burst, audio_start/audio_stop, RX and TX audio with TX_CHRONO pacing, the
+// sensor echoes, and the CAT sets a digital-mode client needs - vfo, dds, modulation, trx (PTT) and
+// split_enable. Everything else the burst declares is answered READ-ONLY from the snapshot by
+// answerReadOnly: the matching SETs move real hardware and are deferred until they can be benched.
+// An unhandled TCI command is silence, not an error, so deferring them is safe. See
+// docs/tci-server-design.md, phase 8.
 //
 // Thread affinity: create, start and drive this on the thread that owns it. It is not thread-safe.
 class TciServer : public QObject {
@@ -117,6 +119,11 @@ private slots:
     void onChronoTick();
 
 private:
+    // Answers a query from the snapshot without touching the radio. Returns true if the command was
+    // recognised and answered. Read-only by design - the matching SETs move the radio and are
+    // deferred until they can be bench-tested. See docs/tci-server-design.md, phase 8.
+    bool answerReadOnly(int clientId, const TciProtocol::Command &command);
+
     void setPtt(int clientId, bool active);
     void startChrono(int clientId);
     void stopChrono();

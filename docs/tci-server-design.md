@@ -752,6 +752,33 @@ the `rx_*_enable` DSP flags, and `dds`. Each needs an arity-table entry, a snaps
 test. Driven by whichever clients get attached next (SDC, JTDX, RF2K-S, Stream Deck), since the
 client population is the real spec.
 
+**8a — the read half: BUILT.** `TciServer::answerReadOnly` answers every query above from the
+snapshot, without touching the radio. Split this way deliberately:
+
+- **A GET is safe; a SET moves the radio.** Every one of the deferred SETs (`drive`, `tune_drive`,
+  `agc_mode`, `sql_level`, `rit_offset`, `mute`, the DSP flags) changes transmit power, filtering
+  or audio routing on real hardware. Four defects reached the air during phases 4–6 and **every one
+  was found by the radio, not by a test.** Shipping unbenched SETs is how the fifth happens.
+- **Silence is a failure mode too.** These commands are *declared in the init burst*. A client that
+  re-reads one and gets nothing can sit waiting — the exact failure TR4W recorded for an
+  unexpanded `split_enable`. Answering with what we hold is honest and cheap.
+- **A SET-shaped query gets the truth, not an acknowledgement.** `drive:0,5;` replies
+  `drive:0,100;` — the value the radio actually has. The reply never claims an unapplied change.
+
+Pinned by `answersQueriesConsistentlyWithTheInitBurst`: **every reply to a bare GET must be a
+string the init burst already contains, verbatim.** The burst is a set of claims about the radio;
+an answer that disagrees with what was advertised is worse than no answer, because WSJT-X caches
+the burst and acts on the difference. That test is what keeps the two from drifting apart as
+snapshot fields gain real backing.
+
+Receiver handling: a first argument that **parses as an integer** is the receiver index, and
+anything but 0 is refused with silence. One that does not parse is a value in the global form
+(`rit_enable:true;`), which addresses the only receiver by definition. Refusing on a failed parse
+instead dropped that form silently.
+
+**8b — the write half: deferred.** Needs a K4 on the bench, one command at a time, each with a
+`CatFrames` builder from the mapping table above rather than a raw K4 string on the wire.
+
 ---
 
 ## Verification

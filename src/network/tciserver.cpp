@@ -1,6 +1,7 @@
 #include "network/tciserver.h"
 
 #include <QLoggingCategory>
+#include <QSet>
 
 #include <cmath>
 
@@ -249,6 +250,8 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             if (had && m_audioClients.isEmpty()) {
                 emit audioStopRequested();
             }
+        } else if (answerReadOnly(clientId, command)) {
+            // Handled: a query answered from the snapshot. See answerReadOnly.
         } else if (name == QLatin1String("rx_sensors_enable") || name == QLatin1String("tx_sensors_enable")) {
             // Echo only: acknowledged so the client does not wait, but nothing is measured yet.
             m_socketServer->sendText(clientId, message(name, command.args));
@@ -334,6 +337,126 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
         // Everything else: silence. That is what the protocol specifies for an unknown or refused
         // command, and WSJT-X sends nothing else during a receive session.
     }
+}
+
+bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command) {
+    // Answers a query from the snapshot without touching the radio.
+    //
+    // WHY answer at all rather than stay silent: silence is what the protocol specifies for an
+    // unknown command, but these are commands this server does declare in its init burst. A client
+    // that polls one and gets nothing back can sit waiting - the failure TR4W recorded for an
+    // unexpanded split_enable. Reporting the state we hold is honest and cheap.
+    //
+    // WHY read-only: the matching SETs move the radio, and none of them has been bench-tested
+    // against a K4. They are deliberately deferred rather than shipped untested - see
+    // docs/tci-server-design.md, phase 8.
+    const QString &name = command.name;
+    const QString trx = QString::number(ONLY_RECEIVER);
+    const TciRadioSnapshot &s = m_snapshot;
+
+    // Per-receiver values: a bad receiver index produces no answer at all.
+    static const QSet<QString> perReceiver{
+        QStringLiteral("rit_enable"),   QStringLiteral("xit_enable"),     QStringLiteral("rit_offset"),
+        QStringLiteral("xit_offset"),   QStringLiteral("rx_filter_band"), QStringLiteral("drive"),
+        QStringLiteral("tune_drive"),   QStringLiteral("agc_mode"),       QStringLiteral("rx_enable"),
+        QStringLiteral("tx_enable"),    QStringLiteral("lock"),           QStringLiteral("sql_enable"),
+        QStringLiteral("sql_level"),    QStringLiteral("mute"),           QStringLiteral("rx_nb_enable"),
+        QStringLiteral("rx_nr_enable"), QStringLiteral("rx_anf_enable"),  QStringLiteral("rx_apf_enable"),
+    };
+    if (perReceiver.contains(name)) {
+        // A first argument that PARSES AS AN INTEGER is the receiver index - that is the TCI
+        // convention for every command in this group. One that does not parse is a value in the
+        // global form (`rit_enable:true;`), which addresses the only receiver by definition.
+        // Refusing on a failed parse instead would drop that form silently.
+        int receiver = ONLY_RECEIVER;
+        if (command.argCount() > 0 && command.argAsInt(0, &receiver) && receiver != ONLY_RECEIVER) {
+            return true; // addressed a receiver that does not exist
+        }
+        QString reply;
+        if (name == QLatin1String("rit_enable")) {
+            reply = message(name, trx, boolText(s.rit));
+        } else if (name == QLatin1String("xit_enable")) {
+            reply = message(name, trx, boolText(s.xit));
+        } else if (name == QLatin1String("rit_offset")) {
+            reply = message(name, trx, QString::number(s.ritOffsetHz));
+        } else if (name == QLatin1String("xit_offset")) {
+            reply = message(name, trx, QString::number(s.xitOffsetHz));
+        } else if (name == QLatin1String("rx_filter_band")) {
+            reply = message(name, trx, QString::number(s.filterLowHz), QString::number(s.filterHighHz));
+        } else if (name == QLatin1String("drive")) {
+            // Always <trx>,<power>: a bare "drive:0;" crashes ESDR3-mode WSJT-X and JTDX.
+            reply = message(name, trx, QString::number(s.drive));
+        } else if (name == QLatin1String("tune_drive")) {
+            reply = message(name, trx, QString::number(s.tuneDrive));
+        } else if (name == QLatin1String("agc_mode")) {
+            reply = message(name, trx, QStringLiteral("med"));
+        } else if (name == QLatin1String("rx_enable") || name == QLatin1String("tx_enable")) {
+            reply = message(name, trx, boolText(true));
+        } else if (name == QLatin1String("sql_level")) {
+            reply = message(name, trx, QStringLiteral("20"));
+        } else {
+            // lock, sql_enable, mute and the DSP flags are all reported false: QK4 does not model
+            // them for TCI yet, and claiming otherwise would be a lie a client could act on.
+            reply = message(name, trx, boolText(false));
+        }
+        m_socketServer->sendText(clientId, reply);
+        return true;
+    }
+
+    // Global values carry no receiver index.
+    if (name == QLatin1String("mic_level")) {
+        m_socketServer->sendText(clientId, message(name, QString::number(s.micLevel)));
+        return true;
+    }
+    if (name == QLatin1String("volume")) {
+        m_socketServer->sendText(clientId, message(name, QStringLiteral("0")));
+        return true;
+    }
+    if (name == QLatin1String("trx_count")) {
+        m_socketServer->sendText(clientId, message(name, QStringLiteral("1")));
+        return true;
+    }
+    if (name == QLatin1String("channels_count")) {
+        m_socketServer->sendText(clientId, message(name, QStringLiteral("2")));
+        return true;
+    }
+    if (name == QLatin1String("device")) {
+        m_socketServer->sendText(clientId, message(name, QStringLiteral("QK4")));
+        return true;
+    }
+    if (name == QLatin1String("receive_only")) {
+        m_socketServer->sendText(clientId, message(name, boolText(false)));
+        return true;
+    }
+    if (name == QLatin1String("protocol")) {
+        m_socketServer->sendText(clientId, messageFreeText(name, QLatin1String(kProtocolIdentity)));
+        return true;
+    }
+    if (name == QLatin1String("modulations_list")) {
+        m_socketServer->sendText(clientId, messageFreeText(name, QLatin1String(kModulationsList)));
+        return true;
+    }
+    if (name == QLatin1String("audio_samplerate") || name == QLatin1String("iq_samplerate")) {
+        m_socketServer->sendText(clientId, message(name, QString::number(kAudioSampleRate)));
+        return true;
+    }
+    if (name == QLatin1String("audio_stream_samples")) {
+        m_socketServer->sendText(clientId, message(name, QString::number(kAudioStreamSamples)));
+        return true;
+    }
+    if (name == QLatin1String("tx_stream_audio_buffering")) {
+        m_socketServer->sendText(clientId, message(name, QStringLiteral("50")));
+        return true;
+    }
+    if (name == QLatin1String("audio_stream_channels")) {
+        m_socketServer->sendText(clientId, message(name, QStringLiteral("2")));
+        return true;
+    }
+    if (name == QLatin1String("audio_stream_sample_type")) {
+        m_socketServer->sendText(clientId, message(name, QStringLiteral("float32")));
+        return true;
+    }
+    return false;
 }
 
 void TciServer::setPtt(int clientId, bool active) {
