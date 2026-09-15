@@ -1,0 +1,639 @@
+# TCI Server for QK4
+
+**Status: DESIGN ONLY — no code exists yet.**
+
+## Context
+
+QK4 owns the network link to the K4, including the audio path. A remote K4 is reachable only
+through QK4, so any other program that wants the radio has to go *through* QK4.
+
+Today that is `src/network/catserver.cpp` — a TCP server on port 9299 speaking native K4 CAT.
+GETs are answered from the `RadioState` cache, SETs are forwarded to the radio over `TcpClient`,
+and `pttRequested(bool)` gates TX audio. It works, and WSJT-X drives it using its built-in
+Elecraft K4 support.
+
+What it does **not** carry is audio. To run WSJT-X through QK4 today the operator must also wire a
+loopback sound card: QK4 plays K4 receive audio to a virtual output device, WSJT-X listens to it,
+WSJT-X transmits into a virtual input device, QK4 captures it. Two extra devices, per-machine
+setup, and a per-platform support burden.
+
+TCI (Transceiver Control Interface, Expert Electronics) carries **both** control and audio over one
+WebSocket. WSJT-X speaks it natively. A TCI server in QK4 removes the loopback sound card entirely.
+
+**Intended outcome:** WSJT-X connects to QK4 over TCI and gets CAT *and* audio in both directions,
+with no virtual audio devices anywhere.
+
+### Decisions taken (NY4I, 2026-09-14)
+
+| | |
+|---|---|
+| **Coexistence** | New listener **alongside** `CatServer`. Nothing in `catserver.cpp` is deleted or changed. Retiring the 9299 path is a later, separate decision. |
+| **Not a chain** | TCI **bypasses** `CatServer` — it does not connect to 9299 or call into it. It reuses the same underlying primitives (`sendCAT`, `parseCATCommand`, `setPttActive`) directly. |
+| **Scope** | TCI carries **both CAT and audio**, and the two control paths must stay consistent. |
+| **First cut** | Implement only the commands WSJT-X actually sends; full TCI command coverage is a later phase. |
+| **Receiver mapping** | **Main VFO only.** `trx_count:1`; channel 0 = VFO A, channel 1 = VFO B. Sub receiver / "RX Two" is deferred. `trx:1,*` is refused. |
+| **Threading** | The TCI server **does not run on the main thread**. |
+| **Branch** | `development` on the `ny4i/QK4` fork. |
+
+---
+
+## Evidence base
+
+Everything in the "Measured" sections below came from a live capture of WSJT-X talking to
+AetherSDR on this machine (2026-09-14), plus direct experiments against WSJT-X. Where a fact was
+verified in WSJT-X's own source, the file and line are cited from `~/projects/wsjtx`.
+
+Two reference implementations were read:
+
+- **AetherSDR** (`~/projects/AetherSDR/src/core/TciServer.cpp`, `TciProtocol.cpp`) — a production
+  TCI **server** that WSJT-X, JTDX, SDC and RF2K-S all run against. The only source for the audio
+  half.
+- **TR4W-D12** (`~/projects/TR4W-D12/tr4w/src/uTCIServer.pas`, `docs/TCI_SERVER_DESIGN.md`) — a TCI
+  server for a contest logger. **CAT only; audio/IQ explicitly out of scope.** Valuable for grammar,
+  init-burst ordering, and its catalogue of client misbehaviour.
+
+---
+
+## Measured: the audio wire format
+
+Binary frame = **64-byte header + samples**. Header is 8 × `quint32` followed by 8 reserved
+`quint32`, little-endian:
+
+| Field | Meaning |
+|---|---|
+| `receiver` | TRX index |
+| `sampleRate` | Hz |
+| `format` | 0 = int16, 1 = int24, 2 = int32, 3 = float32 |
+| `codec` | 0 (uncompressed) |
+| `crc` | 0 (unused) |
+| `length` | number of floats in the valid region — **see the asymmetry below** |
+| `type` | **0 = IQ, 1 = RX_AUDIO, 2 = TX_AUDIO, 3 = TX_CHRONO** |
+| `channels` | nominally 1 or 2 — **untrustworthy inbound** |
+| `reserved[8]` | zero-filled |
+
+### The two directions use opposite payload rules
+
+| | `length` | payload | interpretation |
+|---|---|---|---|
+| **RX_AUDIO** (QK4 → WSJT-X) | 2048 | 8192 B = 2048 floats | genuine interleaved stereo, 1024 frames. `floats/length = 1.0` |
+| **TX_AUDIO** (WSJT-X → QK4) | 2048 | 16384 B = 4096 floats | **first 2048 floats only**, as 1024 duplicated pairs. `floats/length = 2.0` |
+
+A single shared helper for both directions will be wrong in one of them.
+
+**Measured on 400 captured TX frames:**
+
+- Adjacent pairs with L == R: **409600 / 409600 = 100.00%**. Deduplicate by taking every other float.
+- The payload region beyond `length` is **81.77% non-zero** — stale buffer, not padding. Sizing the
+  read from the frame size instead of `hdr.length` injects garbage audio.
+- Misreading it as true mono yields audio **2.0× too long with every tone an octave low**.
+- `channels` held **six distinct values** across 762 frames, including `1818781545`, `2959447138`,
+  `3523932582` and `0`. AetherSDR's comment calls it *"garbage (FIFO reuse)"*. **Never read it.**
+- WSJT-X transmits at **full scale: peak 0.9990, RMS 0.7056**.
+
+### TX_CHRONO is a pull clock, and QK4 owns it
+
+WSJT-X sends **no** TX audio unless asked. The server emits a header-only `type = 3` frame; each one
+requests 2048 floats = 1024 stereo frames = 21.333 ms at 48 kHz. Measured over the capture:
+
+```
+TX_CHRONO frames : 762
+TX_AUDIO  frames : 762
+ratio            : 1.0000      <- strict one-block-per-request
+```
+
+Cadence during the FT8 transmission (637 frames over 13.56 s):
+
+```
+mean   21.328 ms   (target 21.333)
+median 20.118 ms
+stdev  14.082 ms   min 0.000   max 65.434   p95 47.067
+frames sent back-to-back (<1 ms apart): 9.1%
+implied sample rate: 48,087 Hz  ->  +0.18% error
+```
+
+**The requirement is correct long-run mean rate, not low jitter.** WSJT-X tolerated 65 ms
+instantaneous gaps and 9% back-to-back frames without complaint. What it cannot tolerate is
+systematic rate error — AetherSDR's own comment records that *a fixed 21 ms timer runs ~1.6% fast
+and warps digital-mode tones*.
+
+So: a `Qt::PreciseTimer` polling faster than the period, driving a **monotonic nanosecond
+accumulator** with a `while (accum >= period) { send(); accum -= period; }` drain. Never a
+fixed-interval one-shot.
+
+WSJT-X's turnaround is median **0.702 ms**, p95 1.612 ms — it answers a chrono almost immediately.
+
+### Sample rate is 48 kHz, and it is not negotiable
+
+**WSJT-X ignores `audio_samplerate` entirely.** Confirmed four independent ways:
+
+1. It never *sends* `audio_samplerate` — it only consumes what the server declares.
+2. Declaring 12000 and streaming a 500 Hz tone rendered it at **2000 Hz** (4×).
+3. WSJT-X's own saved WAV of that run measured **2000.0 Hz at 100.0% purity**, rms/peak 0.717.
+4. In `~/projects/wsjtx/Transceiver/TCITransceiver.cpp`:
+   - `audioSampleRate = 48000u;` at **line 216** is the only assignment in the file.
+   - `Cmd_AudioSR` appears exactly **twice** — enum declaration and `mapCmd_` registration — with
+     **no `case` in the dispatch switch**. Compare `Cmd_Device`, which has three (`case` at :824).
+     The command is tokenised and silently dropped.
+   - 48000 also appears as a **bare literal** at `:1624`, so patching the variable upstream would
+     not even suffice.
+
+`Cmd_TrxCount` and `Cmd_IqSR` are **also** parsed-and-ignored. WSJT-X therefore never adapts to a
+declared `trx_count`; RX1 vs RX2 is chosen entirely in its own rig setting (`Rig: TCI Client RX1`).
+QK4 must refuse `trx:1,*` explicitly rather than rely on `trx_count:1` steering the client.
+
+**Consequence: QK4 must upsample its native 12 kHz K4 audio to 48 kHz for RX.** TX needs no
+resampler — WSJT-X sends 48 kHz, which is exactly what `AudioEngine`'s TX path already wants.
+
+---
+
+## Measured: the CAT contract
+
+### Init burst
+
+One WebSocket text frame, `;`-separated, **`ready;` last**. This is the burst AetherSDR sends,
+which WSJT-X accepts; a replay of it was verified to work against a live WSJT-X.
+
+```
+vfo_limits:<lo>,<hi>;  if_limits:-48000,48000;  trx_count:1;  channels_count:2;
+device:QK4;  receive_only:false;
+modulations_list:usb,lsb,cw,cwr,am,sam,fm,nfm,digu,digl,rtty;
+protocol:ExpertSDR3,1.5;
+vfo:0,0,<hz>;  vfo:0,1,<hz>;  dds:0,<hz>;  modulation:0,<mode>;
+rx_enable:0,true;  rx_filter_band:0,<lo>,<hi>;
+rit_enable:0,<b>;  xit_enable:0,<b>;  rit_offset:0,<hz>;  xit_offset:0,<hz>;
+split_enable:0,<b>;  lock:0,false;  sql_enable:0,false;  sql_level:0,<n>;
+agc_mode:0,<mode>;  rx_nb_enable:0,false;  rx_nr_enable:0,false;
+rx_anf_enable:0,false;  rx_apf_enable:0,false;  mute:0,false;
+tx_enable:0,true;  drive:0,<pwr>;  tune_drive:0,<pwr>;
+mic_level:<n>;  trx:0,false;  volume:0;
+audio_samplerate:48000;  audio_stream_sample_type:float32;
+audio_stream_channels:2;  audio_stream_samples:2048;
+tx_stream_audio_buffering:50;  iq_samplerate:48000;
+start;  ready;
+```
+
+`mic_level`, `volume` and `trx` are **global, single-argument** — no trx index.
+`active_slice:0,A` is an AetherSDR extension; QK4 omits it.
+
+The HTTP upgrade accepts **any path** (`GET /`) and negotiates **no subprotocol**.
+
+### What WSJT-X actually sends
+
+Its entire client→server vocabulary across a full receive + transmit session was **seven commands**:
+
+```
+split_enable:false;            <- ONE-ARGUMENT GLOBAL FORM
+audio_start:0;
+rx_sensors_enable:false,500;
+tx_sensors_enable:false,500;
+modulation:0,digu;
+vfo:0,0,<hz>;
+```
+
+Everything else in the grammar is answered but never exercised by this client.
+
+### Minimum viable command set — what ships first
+
+Scope the first working server to exactly what WSJT-X exercises. Everything else in the TCI
+grammar is deferred to the full-coverage phase.
+
+**Inbound, must be handled:**
+
+| Command | Action |
+|---|---|
+| `vfo:0,0,<hz>` | SET VFO A → `sendCAT("FA...")` + marshalled optimistic echo |
+| `vfo:0,1,<hz>` | SET VFO B (TX VFO when split) |
+| `modulation:0,<mode>` | SET mode → `sendCAT("MD...")` |
+| `trx:0,<bool>[,tci]` | PTT → `AudioController::setPttActive()`, **no CAT command** |
+| `split_enable[:0],<bool>` | split; accept the one-argument global form; act on transitions only |
+| `audio_start:<n>` / `audio_stop:<n>` | begin/end RX_AUDIO; echo the command back |
+| `rx_sensors_enable` / `tx_sensors_enable` | echo only, no effect |
+
+**Outbound:** the init burst, broadcast-on-change for `vfo` / `modulation` / `trx` /
+`split_enable`, `RX_AUDIO` frames, and `TX_CHRONO` frames.
+
+**Everything else:** answered per the arity table with a GET reply where the snapshot has a value,
+and otherwise met with silence — which is what the protocol specifies for an unknown or refused
+command, with the one exception of rule 8 below.
+
+Deferring the rest is safe because an unhandled command is *silence*, not an error, and WSJT-X
+never sends them. It is not safe to defer any of the **behaviour rules** below: those apply to the
+minimum set from the first commit.
+
+### Client-behaviour rules to build in from day one
+
+Drawn from TR4W's catalogue and AetherSDR's bug history; the starred ones were confirmed on the
+wire in our own capture.
+
+1. **\* `split_enable:false` arrives with no trx index.** Expand it to `split_enable:0,false` at the
+   parse boundary or it reads as a GET for receiver −1 and is answered with silence.
+2. **A steady `false` is not an edge.** WSJT-X sends `split_enable:<n>,false` routinely *before*
+   programming channel 1. Only a true→false transition may tear anything down.
+3. **`drive` and `tune_drive` replies must always carry `<trx>,<power>`.** A bare `drive:0;` crashes
+   ESDR3-mode WSJT-X and JTDX, which index `args[1]` unconditionally.
+4. **Channel 1 reports VFO A's frequency when split is off** — never the 0 a blank VFO B holds,
+   which a client will try to tune to.
+5. **`ready;` is last.** Never emit `audio_start`/`iq_start` in the greeting; those are client-owned
+   and a greeting-side primer wedges SDC.
+6. **`channels_count` is plural.** The published PDF says `CHANNEL_COUNT`; the reference parser
+   aborts the handshake on the singular form.
+7. **Do not comma-scrub identity values.** `modulations_list` *is* comma-separated and
+   `ExpertSDR3,1.5` is a two-field value. Scrubbing yields `protocol:expertsdr3_1.5;`, which WSJT-X
+   fails to match — after which it halves transmit amplitude.
+8. **A refused `trx:<n>,true` must answer `trx:<n>,false;`.** Silence surfaces in WSJT-X as
+   "TCI failed to set ptt" with no cause.
+9. **PTT never guesses a receiver.** `trx:1,*` is declined with `trx:1,false;`, never folded onto
+   trx 0.
+10. **Per-command GET/SET arity, never a global `argc >= 2` rule.** AetherSDR's global rule makes
+    every legitimately single-argument SET unreachable (`cw_macros_speed:20` is answered as a GET).
+11. **`vfo:` confirmation echoes the frequency actually reached**, not the requested one. A stale
+    echo caused WSJT-X to transmit out of band (AetherSDR #4500/#4493). A refused or no-op tune must
+    still be confirmed with what the model holds — never met with silence.
+12. **Inbound `tx_enable` is notification-only** — mutate nothing, reply nothing.
+13. **Sanitise at the wire boundary.** Any value containing `;` or `,` corrupts framing for every
+    client on the socket.
+
+---
+
+## Architecture
+
+### Unit layout
+
+Rule 7 (no file over 800 lines) is **binding for new code**, so this is four units, not one.
+
+```
+src/network/websocketserver.{h,cpp}   NEW  RFC 6455 server: handshake, framing, masking,
+                                           ping/pong/close, size limits. No TCI knowledge.
+src/network/tciprotocol.{h,cpp}       NEW  Grammar only: tokenise "name:a,b;", per-command
+                                           arity table, reply formatting. Pure, no sockets.
+src/network/tciserver.{h,cpp}         NEW  Session state, init burst, GET/SET dispatch,
+                                           broadcast-on-diff, TX_CHRONO, audio framing.
+src/controllers/tcicontroller.{h,cpp} NEW  Owns the TCI thread and the server object;
+                                           task-level API; bridges to Audio/Connection.
+```
+
+The seam to preserve: **transport moves opaque bytes, grammar lives above it.** Do not let TCI
+vocabulary leak into `websocketserver`, and do not let sockets leak into `tciprotocol`.
+
+`Qt6::WebSockets` is **not** currently a dependency — `CMakeLists.txt:19` and the link list at
+`:410-416` have no entry. It ships with Homebrew Qt, but adding it touches the macOS, Windows
+(vcpkg) and Linux (apt) workflow files, which are upstream-owned. **Alternative under consideration:**
+implement the RFC 6455 subset directly over `QTcpServer`, which is what TR4W chose
+(*"~300 lines in one dependency-free unit"*) and which avoids a three-platform dependency change for
+one feature. Decide before phase 1; the rest of the design is unaffected either way.
+
+### Threading
+
+QK4 has ten `new QThread` sites and one uniform convention: `new QThread(this)` +
+`setObjectName(...)` + `moveToThread()` at construction, owned by a controller. Teardown is a
+blocking-invoked stop, then `quit()` + `wait(2000)`, then delete
+(`connectioncontroller.cpp:42-50`, `audiocontroller.cpp:88-99`).
+
+`TciController` follows it exactly:
+
+```cpp
+m_tciThread = new QThread(this);
+m_tciThread->setObjectName("TCI");
+m_tciServer->moveToThread(m_tciThread);
+m_tciThread->start();
+```
+
+Destructor, per Rule 11: `disconnect(this)` first, then blocking-invoke `stop()` (which closes
+sessions and unkeys any owned PTT), then `quit()` + `wait(2000)`. Producers stop before consumers —
+the TCI server stops before `AudioController` and `ConnectionController`.
+
+### The four cross-thread edges
+
+**1. CAT sets — TCI thread → radio. Mechanism already exists.**
+`TcpClient::sendCAT` / `sendRaw` / `sendCATBytes` are `Q_INVOKABLE` and auto-marshal to the I/O
+thread. `tcpclient.h:50-55` documents the precedent: the KPOD+ EP02 reader, a HighPriority worker
+thread, delivers straight to the I/O thread bypassing main. TCI takes the identical path.
+
+**2. CAT state reads — radio → TCI thread. The trap.**
+
+Rule 4 is CI-enforced: `RadioState::parseCATCommand()` asserts main-thread affinity, and the getters
+carry **no locking**. Reading `vfoA()` from the TCI thread is a data race that will mostly work and
+occasionally publish a torn frequency.
+
+Instead: connect `RadioState`'s `*Changed` signals to `TciServer` slots with
+`Qt::QueuedConnection`, and keep a **snapshot owned solely by the TCI thread**. Qt's event queue
+does the serialising — no lock, no retry loop. This is the idiomatic equivalent of the seqlock TR4W
+had to add to `logradio.pas`.
+
+**Known limitation to design around:** `RadioState` emits fine-grained per-field signals with **no
+batch boundary**. TR4W deliberately bracketed its whole poll update (*"THE BATCH BOUNDARY"*) so
+observers saw coherent multi-field state; QK4 has nothing equivalent. One CAT burst changing
+frequency *and* mode arrives as two queued events.
+
+- Tolerable for broadcasts — TCI is a change-notification protocol.
+- **Not** tolerable for the init burst: build it from **one pass over the snapshot**, never from
+  live reads, or a client can be seeded with a frequency and mode that never coexisted.
+- Diff before broadcasting, so a message means something actually moved.
+
+**3. TX audio — TCI thread → audio thread.**
+Add `Q_INVOKABLE void feedTciTxAudio(const QByteArray &f32Mono48k)` to `AudioEngine`, invoked
+queued. It then runs the existing `resample48kTo12k` → S16 → SL-tier frame → encode path.
+
+**Never touch `m_micBuffer` / `m_micReadOffset` from the TCI thread** — `audioengine.h:191-194`
+declares them audio-thread-only, deliberately, so a busy GUI cannot stall voice TX.
+
+**4. RX audio — I/O thread → TCI thread.**
+Fan out at `audiocontroller.cpp:45-50`, the lambda on `Protocol::audioDataReady`, which holds
+decoded 12 kHz stereo Float32 (L = Main, R = Sub) **before** the jitter buffer and before
+mix/volume/balance. Emit a signal there; connect queued to `TciServer`.
+
+Do **not** tap downstream of `enqueueAudio` — it deliberately drops the oldest audio to recover
+speaker latency (`audioengine.cpp:230-240`), and WSJT-X must not inherit the operator's speaker
+buffer policy. Do **not** frame RFC 6455 on the I/O thread; it also carries the K4 control stream.
+
+**TX_CHRONO placement:** on the TCI thread. Measured client tolerance (65 ms instantaneous jitter,
+9% back-to-back) means the accumulator absorbs ordinary scheduling delay, so a dedicated thread is
+not justified. Instrument the cadence (mean/stdev) and revisit only if measurement says so.
+
+---
+
+## RX audio path
+
+```
+K4 -> Protocol -> OpusDecoder -> [FAN-OUT at audiocontroller.cpp:45-50]
+                                     |                    |
+                          AudioEngine::enqueueAudio   TciController
+                          (speakers, unchanged)           |
+                                                   upsample 12k -> 48k
+                                                   interleave L/R
+                                                   RX_AUDIO frames -> client
+```
+
+### The upsampler
+
+**Designed, measured, and proven against the real decoder.** 4× zero-stuff followed by a 255-tap
+Blackman-windowed sinc, cutoff 5000 Hz, normalised to unity passband gain.
+
+Prototype measurements — **use these as the unit-test acceptance criteria**:
+
+```
+passband ripple (<= 2800 Hz)   +0.00 dB
+image rejection (>= 11 kHz)    -124.8 dB
+worst image above 6.5 kHz      -123.7 dBc
+round-trip correlation          1.000000
+round-trip SNR                  72.0 dB
+```
+
+**Decoder proof:** `~/projects/wsjtx/samples/FT8/210703_133430.wav` (12 kHz, mono, 15.000 s)
+upsampled to 48 kHz, decimated back, and decoded with WSJT-X's own `jt9`:
+**14 / 14 messages recovered, with identical SNR, DT and audio frequency to the original.** The
+upsampler costs nothing in sensitivity, timing or frequency accuracy.
+
+A naive design is not acceptable here. The existing `resample48kTo12k` is a 4-tap boxcar whose
+stopband is roughly −10 dB; mirroring that approach upward would fold images at 12/24/36 kHz
+straight back into the passband.
+
+### Channel mapping
+
+The K4 packet is already L = Main, R = Sub, which is the exact shape a stereo TCI `RX_AUDIO` frame
+wants. With `trx_count:1` the client only addresses receiver 0, so **send Main in both channels**
+for now and keep the Sub routing decision with the deferred RX Two work.
+
+---
+
+## TX audio path
+
+```
+client -> TX_AUDIO frame
+       -> take FIRST hdr.length floats (ignore the oversized tail)
+       -> deduplicate stereo pairs -> 1024 mono samples @ 48 kHz
+       -> [queued] AudioEngine::feedTciTxAudio
+       -> resample48kTo12k -> S16 -> SL-tier frame -> encode -> txPacketReady -> K4
+```
+
+The seam is `audioengine.cpp:476`, `m_audioSourceDevice->readAll()` — the only source-specific line.
+Everything below it is source-agnostic, and QK4's TX path natively wants 48 kHz mono Float32, which
+is exactly what WSJT-X sends.
+
+Three things this path must do that the microphone path does not:
+
+1. **Source selection, not merging.** Mic and TCI must not both feed the encode pipeline. An
+   explicit selector; the existing `m_pttActive` gate and `flushMicBuffer()` still apply.
+2. **Bypass `m_micGain`.** It is applied unconditionally at `audioengine.cpp:489-495`, and WSJT-X
+   transmits at full scale (peak 0.9990). Any slider position above unity **clips** against the
+   `qBound(-1.0f, ..., 1.0f)`; below unity it silently attenuates digital drive. TCI needs its own
+   calibrated level.
+3. **Flow control is the chrono clock.** `m_micBuffer` has no backpressure and no drain policy
+   because a capture device produces at exactly real time. A network source does not. Pacing
+   TX_CHRONO correctly *is* the flow control; get it wrong and latency grows monotonically across a
+   13-second FT8 transmission.
+
+Quality of the existing decimator on this path was measured and is **adequate**: against a synthetic
+FT8 GFSK burst it gave SINAD 85.0 dB, worst spur −75.0 dBc, 0.0125 dB gain spread across the eight
+FT8 tones, and linear phase. It is adequate *because WSJT-X sends a clean band-limited waveform* —
+its alias rejection is poor (−9.95 dB at 9 kHz), which remains a latent weakness of the **microphone**
+path and is out of scope here.
+
+---
+
+## Relationship to CatServer: reuse the primitives, bypass the server
+
+**`TciServer` does not call `CatServer` and does not connect to port 9299.** TCI is a peer of the
+CAT server, not a client of it. Chaining them would put a K4-CAT text encode/decode round trip in
+the middle of a TCI request for no benefit, and would couple two protocols that have no reason to
+know about each other.
+
+What TCI reuses is the **primitives `CatServer`'s wiring already calls** — the same three
+functions, reached directly.
+
+Tracing the existing path (`mainwindow.cpp:352-375`):
+
+| Need | Primitive | Notes |
+|---|---|---|
+| Send a SET to the K4 | `ConnectionController::sendCAT(QString)` | marshals to the I/O thread itself |
+| Optimistic local echo | `RadioState::parseCATCommand(QString)` | **main-thread only, Rule 4** |
+| PTT | `AudioController::setPttActive(bool)` | **not** a K4 CAT command — see below |
+| Answer a GET | `RadioState` getters | TCI reads its own snapshot instead |
+
+### PTT is an audio gate, not a CAT command
+
+`catserver.cpp:317-330` is explicit, and it is the single most important thing to copy:
+
+> `TX`/`RX` commands - control audio input gate for external app transmit.
+> Don't forward to K4 - the audio stream itself triggers K4 TX.
+
+So `trx:0,true` from a TCI client maps to `AudioController::setPttActive(true)` and **must not**
+send a PTT command to the radio. The K4 keys because TX audio starts arriving. This is the proven
+path for FT8 through QK4 today, and the comment flags it as timing-critical.
+
+### The optimistic echo must be marshalled
+
+`CatServer`'s SET path does two things, not one:
+
+```cpp
+m_connectionController->sendCAT(command);
+m_radioState->parseCATCommand(command);   // optimistic, so the passband tracks immediately
+```
+
+The second exists because K4 spectrum packets arrive *before* the CAT echo, so without it the
+panadapter passband goes off-screen until the echo lands. TCI wants the same behaviour — but
+`parseCATCommand` is main-thread-only and CI-enforced. From the TCI thread it must go through
+`QMetaObject::invokeMethod(..., Qt::QueuedConnection)`.
+
+Per Rule 12 this wiring belongs in `TciController`, not as another lambda on `MainWindow`.
+
+### Two servers, one radio
+
+Both listeners can be active at once, and two clients can then fight over frequency and PTT. TR4W
+hit this and explicitly declined to arbitrate: *"Out of scope to arbitrate, but worth a warning in
+the log when both are on."* QK4 adopts the same position — log a warning when both are listening,
+do not arbitrate. Consistency comes from a single source of truth upstream (`RadioState` and the
+K4 itself), not from inter-server coordination.
+
+PTT ownership is per-session and **fails closed**: losing the client that owns a TCI PTT unkeys.
+An *unowned* `trx:<n>,false` reports actual state and must never unkey the operator or another
+client.
+
+---
+
+## Configuration and UI
+
+Per Rule 12, nothing goes on `MainWindow`. A new **TCI** page under `src/ui/pages/`, following
+`audioinputpage.cpp` exactly — build widgets, read/write `RadioSettings`, delegate to the
+controller, no logic:
+
+- Enable / disable the TCI server (runtime-toggleable, not construction-time)
+- Port (default **50001**, the TCI convention)
+- Bind loopback-only by default, with an explicit opt-in to all interfaces
+- Read-only status: listening state, connected client count
+- TCI transmit drive level (separate from mic gain — see TX path above)
+
+Register it in `optionsdialog.cpp` alongside the existing pages.
+
+Avoid the trap TR4W documented in its own predecessor: create the server object unconditionally at
+startup and let `start()`/`stop()` be genuinely runtime-toggleable, rather than reading the enable
+flag only in the constructor and requiring a restart.
+
+---
+
+## Hardening
+
+Per Rule 5, every buffer fed from an external source needs an explicit limit. Mirroring AetherSDR's
+(`TciServer.cpp:41-42, 685-699`):
+
+- **Bind 127.0.0.1 by default.** `CatServer` binds all interfaces; do not repeat that here without
+  an explicit opt-in.
+- Maximum 8 concurrent clients.
+- 64 KiB cap on both message and frame; `K4Protocol::MAX_BUFFER_SIZE` (1 MB) is the fallback ceiling.
+- No path check and no subprotocol negotiation — clients rely on both being permissive.
+- Reject a masked-violation or oversize frame by closing that session only, never the listener.
+
+---
+
+## Files
+
+**New:**
+`src/network/websocketserver.{h,cpp}`, `src/network/tciprotocol.{h,cpp}`,
+`src/network/tciserver.{h,cpp}`, `src/controllers/tcicontroller.{h,cpp}`,
+`src/ui/pages/tcipage.{h,cpp}`, `tests/test_tciprotocol.cpp`, `tests/test_tciserver.cpp`,
+`tests/test_upsampler.cpp`, `docs/tci-server-design.md`.
+
+**Modified:**
+`src/audio/audioengine.{h,cpp}` (TCI TX source + `feedTciTxAudio` + gain bypass + upsampler hook),
+`src/controllers/audiocontroller.{h,cpp}` (RX fan-out signal),
+`src/ui/dialogs/optionsdialog.{h,cpp}` (register the page),
+`src/settings/radiosettings.{h,cpp}` (enable, port, bind-all, TCI drive),
+`CMakeLists.txt` (new sources; possibly `Qt6::WebSockets`),
+`src/mainwindow.cpp` (construct `TciController` only — no widgets, no slots).
+
+**Untouched:** `src/network/catserver.cpp`, `src/models/radiostate.{h,cpp}`.
+
+---
+
+## Phases
+
+Each phase builds green and is committable on its own (Rule 9: one commit per logical change).
+
+**0 — Upsampler.** `RadioUtils` or a dedicated unit, plus `test_upsampler.cpp` asserting the
+measured acceptance criteria above. No sockets, no threads. Independently useful and independently
+verifiable.
+
+**1 — WebSocket transport.** `websocketserver.{h,cpp}`: handshake, frame encode/decode, server-side
+unmasking, ping/pong/close, the limits above. Test by round-tripping text and binary over loopback.
+
+**2 — Grammar, minimum set.** `tciprotocol.{h,cpp}`: tokeniser, arity table, formatters, and the
+global-form expansion for `split_enable:false`. Implement **only the minimum viable command set**
+above. Pure unit; table-driven tests for every numbered client-behaviour rule — those are not
+deferrable even though most commands are.
+
+**3 — Server and state.** `tciserver.{h,cpp}`: snapshot from queued `RadioState` signals, init burst
+built in one pass, GET/SET dispatch, broadcast-on-diff, per-session PTT ownership, TX_CHRONO
+accumulator.
+
+**4 — Audio.** RX fan-out at `audiocontroller.cpp:45-50`; TX ingest and `feedTciTxAudio`; source
+selector and gain bypass in `AudioEngine`.
+
+**5 — Wiring and UI.** `TciController`, settings page, `RadioSettings` keys, `CMakeLists.txt`.
+
+**6 — Bench.** WSJT-X end to end. Not provable by review; see below. **This is the gate for
+declaring the feature working**, and it comes before any grammar expansion.
+
+**7 — Full TCI coverage.** Flesh out every call a TCI client can make, beyond WSJT-X's seven:
+`tune`, `drive`/`tune_drive` SET, `rit_offset`/`xit_offset`, `rx_filter_band`, `cw_macros*`,
+`spot`/`spot_delete`/`spot_clear`, `iq_start`/`iq_stop`, `volume`, `mute`, `agc_mode`, `sql_*`,
+the `rx_*_enable` DSP flags, and `dds`. Each needs an arity-table entry, a snapshot field, and a
+test. Driven by whichever clients get attached next (SDC, JTDX, RF2K-S, Stream Deck), since the
+client population is the real spec.
+
+---
+
+## Verification
+
+**Unit** — `ctest --test-dir build` (currently 16 tests, all passing). New suites add to it.
+Per Rule 6, any `RadioState` parser change needs a matching case in `tests/test_radiostate.cpp`;
+this design does not modify the parser.
+
+**Decoder-in-the-loop, no radio required.** WSJT-X's decoder runs standalone:
+
+```
+/Applications/wsjtx.app/Contents/MacOS/jt9 -8 -a <dir> -t <dir> file.wav
+```
+
+It takes a 12 kHz mono WAV and prints decodes. `samples/FT8/210703_133430.wav` yields 14. Push a
+sample through the upsampler, back down, and assert all 14 still decode with unchanged SNR/DT/freq.
+This belongs in CI if the sample can be vendored; otherwise it is a documented manual gate.
+
+**Protocol replay, no radio required.** The capture tooling built during design
+(`tci_tap.py`, `tci_decode.py`, `rate_probe.py`) records a real client session and replays a
+known-good init burst. A replayed burst was verified to be accepted by a live WSJT-X.
+
+**Bench (the real gate)** — none of this is provable by review:
+
+1. WSJT-X connects to QK4, reads frequency and mode, sets frequency, keys and unkeys.
+2. K4 receive audio reaches WSJT-X over TCI and **decodes FT8**.
+3. WSJT-X FT8 audio reaches the K4 over TCI and is **decoded by a third party**.
+4. PTT round-trip latency inside the client's timeout.
+5. Kill a client mid-transmission; verify it unkeys and the session is released.
+6. `CatServer` on 9299 and the TCI server both active; confirm neither corrupts the other.
+
+---
+
+## Risks
+
+- **Highest: the client population is the spec.** Every numbered rule above exists because a
+  technically-correct server broke a real client. Phase 6 is the gate, not phase 5.
+- **New Qt module on three platforms** if `Qt6::WebSockets` is chosen over a hand-rolled RFC 6455
+  subset. The workflow files are upstream-owned.
+- **No batch boundary in `RadioState`.** The init burst must be built from one snapshot pass.
+  A future `RadioState` change that alters signal granularity can silently change broadcast volume.
+- **Two masters, one radio.** Logged, not arbitrated. Revisit if it bites in practice.
+- **TX flow control.** The chrono accumulator is the only thing preventing unbounded latency growth
+  during a 13-second transmission. It needs instrumentation, not just correctness at review time.
+
+---
+
+## Open questions
+
+- **FT8 has not yet been decoded over a live TCI stream.** The audio is proven good (`jt9` decodes
+  it 14/14 through this exact upsampler) and a stream was verified to be delivered and drained, but
+  no decode has been observed end to end. Unchecked at the time: whether WSJT-X's **Monitor** was
+  enabled, and whether traffic was visible on its waterfall. Resolve before phase 4.
+- **`Qt6::WebSockets` versus a hand-rolled RFC 6455 subset.** Decide before phase 1.
+- **Sub receiver / RX Two.** Deferred. When picked up, note that `trx_count` is ignored by WSJT-X,
+  so the client-side rig selection (`TCI Client RX2`) is the only lever — QK4 can only accept or
+  refuse it.
