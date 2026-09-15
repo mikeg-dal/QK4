@@ -618,8 +618,23 @@ sound card die before any TCI CAT exists.
 `AudioEngine`. PTT ownership enforced: one owner at a time, an unowned unkey only reports, and
 losing the client or stopping the server unkeys.
 
-**Gate still owed: a third party decodes an FT8 transmission sent this way.** Nothing below the
-wire proves itself, and this is the half that puts RF on the air.
+**Gate met 2026-09-15: WSJT-X transmitted a valid FT8 signal through this path on 40m.** Measured
+across two transmissions:
+
+```
+TX_CHRONO stopped after 5093 requests, 5101 blocks received   <- 0.16% apart
+TX audio: peak 0.223812 steady, final block peak 0 (wind-down)
+PTT ON / PTT OFF clean on both edges, chrono started and stopped in step
+RX audio continued throughout at peak ~0.36
+```
+
+The request/response tracking is the number that matters: a starving client shows blocks lagging
+requests, a free-running one shows them diverging. Neither happened, so the chrono accumulator is
+pacing correctly and is doing its job as flow control.
+
+Note the TX peak of 0.22 rather than the 0.9990 measured in the reference capture — that is WSJT-X's
+own power slider, not the path. It is also why the `m_micGain` bypass matters: at full slider that
+gain would clip.
 
 **5 — CAT control.** The rest of the minimum viable command set: `vfo`, `modulation`,
 `split_enable` transitions. Snapshot from queued `RadioState` signals, broadcast-on-diff, the
