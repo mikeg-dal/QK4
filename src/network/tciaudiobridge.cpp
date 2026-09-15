@@ -5,6 +5,19 @@
 TciAudioBridge::TciAudioBridge(TciServer *server, QObject *parent)
     : QObject(parent), m_server(server), m_upsampler(OUTPUT_RATE / INPUT_RATE, INPUT_RATE) {}
 
+void TciAudioBridge::setEnabled(bool enabled) {
+    // Enabling is a stream discontinuity. While disabled onRxAudio returns before converting
+    // anything, so the resampler still holds taps from before the gap - the same staleness
+    // audio_start resets for, and the same reason reset() exists.
+    //
+    // EDGE-TRIGGERED, not level: a settings write can repeat the value already in force, and
+    // resetting on every call would punch a hole in a stream that was running fine.
+    if (enabled && !m_enabled) {
+        reset();
+    }
+    m_enabled = enabled;
+}
+
 void TciAudioBridge::reset() {
     m_upsampler.reset();
     m_mono12k.clear();

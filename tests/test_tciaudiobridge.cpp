@@ -154,6 +154,48 @@ private slots:
         }
     }
 
+    void reEnablingAudioDropsHistoryFromBeforeTheGap() {
+        // While audio is off onRxAudio skips conversion entirely, so the resampler keeps taps from
+        // before the gap. Switching back on must behave like a fresh start, exactly as audio_start
+        // does - otherwise the first packet after the toggle is filtered against stale samples.
+        TciAudioBridge bridge(nullptr);
+        const std::vector<float> main = tone(1000.0, 12000.0, 256);
+
+        const std::vector<float> fresh = bridge.convert(k4Packet(main, {}));
+
+        bridge.convert(k4Packet(main, {})); // dirty the filter history
+        bridge.setEnabled(false);
+        bridge.setEnabled(true);
+        const std::vector<float> afterToggle = bridge.convert(k4Packet(main, {}));
+
+        QCOMPARE(afterToggle.size(), fresh.size());
+        for (size_t i = 0; i < fresh.size(); ++i) {
+            QCOMPARE(afterToggle[i], fresh[i]);
+        }
+    }
+
+    void aRedundantEnableDoesNotDisturbAStreamInProgress() {
+        // Settings writes repeat the value already in force. Resetting on every call rather than on
+        // the rising edge would punch a hole in a stream that was running fine.
+        const std::vector<float> main = tone(1000.0, 12000.0, 256);
+
+        TciAudioBridge undisturbed(nullptr);
+        undisturbed.convert(k4Packet(main, {}));
+        undisturbed.convert(k4Packet(main, {}));
+        const std::vector<float> expected = undisturbed.convert(k4Packet(main, {}));
+
+        TciAudioBridge reEnabled(nullptr);
+        reEnabled.convert(k4Packet(main, {}));
+        reEnabled.convert(k4Packet(main, {}));
+        reEnabled.setEnabled(true); // already enabled - must be a no-op
+        const std::vector<float> actual = reEnabled.convert(k4Packet(main, {}));
+
+        QCOMPARE(actual.size(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+            QCOMPARE(actual[i], expected[i]);
+        }
+    }
+
     void rejectsATornPacket() {
         // An odd float count cannot be interleaved stereo. Treating it as such would swap the
         // channels for every subsequent packet.

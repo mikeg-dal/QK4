@@ -38,8 +38,8 @@ public:
     explicit TciAudioBridge(TciServer *server, QObject *parent = nullptr);
 
     // Audio can be switched off while the CAT half keeps running - a legitimate configuration, and
-    // audio is the expensive half.
-    void setEnabled(bool enabled) { m_enabled = enabled; }
+    // audio is the expensive half. Enabling drops resampler history; see the definition.
+    void setEnabled(bool enabled);
     bool isEnabled() const { return m_enabled; }
 
     // Drop resampler history. Call on stream discontinuity - a reconnect or a K4 audio restart -
