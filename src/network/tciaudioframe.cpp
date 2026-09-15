@@ -17,6 +17,64 @@ constexpr int kStereoProbePairs = 128;
 constexpr int kStereoMatchPercent = 90;
 constexpr float kStereoEpsilon = 1.0e-6f;
 
+// Where the live samples actually start inside a TX_AUDIO payload.
+//
+// WSJT-X allocates twice the length it was asked for (TCITransceiver.cpp:871 — `AudioHeaderSize +
+// pStream->length * sizeof(float) * 2`) and the valid window lands in EITHER half. Measured across
+// two captures of the same client:
+//
+//   against AetherSDR : offset 0    in 689 frames, 2048 in 34, 2049 in 18
+//   against QK4       : offset 2048 in all 581 frames carrying signal
+//
+// So the offset cannot be assumed. Prefer the first window, which is what the reference server
+// reads and what the client does most of the time; fall back to the second only when the first is
+// entirely silent. Both windows are the same size, so this picks between "the audio" and "zeros" -
+// never between two different signals. Genuine silence resolves to the first window, which is
+// correct either way.
+// A window is plausible audio only if it is non-silent, in range, and shaped like the duplicated
+// stereo this client sends. "Non-zero" alone is NOT enough: the unused window holds stale buffer
+// which is also non-zero, and picking it produced peaks around 5e35 - it has no pair structure and
+// no amplitude bound.
+bool looksLikeLiveAudio(const float *f, int count) {
+    if (count < 2 || (count % 2) != 0) {
+        return false;
+    }
+    bool anySignal = false;
+    const int probe = (count / 2 < kStereoProbePairs) ? count / 2 : kStereoProbePairs;
+    int matched = 0;
+    for (int i = 0; i < probe; ++i) {
+        const float l = f[i * 2];
+        const float r = f[i * 2 + 1];
+        // Audio is normalised; anything outside this is reinterpreted memory, not samples.
+        if (!(std::fabs(l) <= 4.0f) || !(std::fabs(r) <= 4.0f)) {
+            return false;
+        }
+        if (std::fabs(l - r) < kStereoEpsilon) {
+            ++matched;
+        }
+        if (l != 0.0f || r != 0.0f) {
+            anySignal = true;
+        }
+    }
+    return anySignal && matched >= (probe * kStereoMatchPercent) / 100;
+}
+
+int liveWindowOffset(const char *body, int availableFloats, int validFloats) {
+    if (availableFloats < validFloats * 2) {
+        return 0; // no second window to choose from
+    }
+    const float *f = reinterpret_cast<const float *>(body);
+    if (looksLikeLiveAudio(f, validFloats)) {
+        return 0;
+    }
+    if (looksLikeLiveAudio(f + validFloats, validFloats)) {
+        return validFloats;
+    }
+    // Neither window carries audio: genuine silence, or a layout we have not seen. The first window
+    // is what the reference server reads, so it is the safe default.
+    return 0;
+}
+
 void appendU32(QByteArray &out, quint32 v) {
     char le[4];
     qToLittleEndian<quint32>(v, le);
@@ -124,7 +182,8 @@ bool decodeTxAudioToMono(const QByteArray &payload, std::vector<float> *out, Hea
     }
     const char *body = payload.constData() + HEADER_BYTES;
 
-    // Honour header.length, never the frame size: the region beyond it is stale buffer.
+    // Honour header.length as the COUNT, never the frame size: the payload is twice as large and
+    // only `length` floats are live.
     if (h.format == FormatFloat32) {
         const int available = payloadBytes / static_cast<int>(sizeof(float));
         int valid = static_cast<int>(h.length);
@@ -134,8 +193,10 @@ bool decodeTxAudioToMono(const QByteArray &payload, std::vector<float> *out, Hea
         if (valid <= 0) {
             return false;
         }
+        const float *window = reinterpret_cast<const float *>(body) + liveWindowOffset(body, available, valid);
+
         std::vector<float> samples(static_cast<size_t>(valid));
-        std::memcpy(samples.data(), body, static_cast<size_t>(valid) * sizeof(float));
+        std::memcpy(samples.data(), window, static_cast<size_t>(valid) * sizeof(float));
 
         if (looksLikeDuplicatedStereo(samples.data(), valid)) {
             out->resize(static_cast<size_t>(valid) / 2);
