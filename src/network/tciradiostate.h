@@ -112,8 +112,15 @@ struct TciRadioSnapshot {
     // See docs/tci-command-coverage.md.
     int drive = 100;
 
-    // The K4 has no separate tune-power setting, so this tracks drive. Reporting an independent
-    // value would invent a control the radio does not have.
+    // Tracks drive, because QK4 cannot read the K4's real tune power.
+    //
+    // The radio DOES have one: menu item 69, "TUNE LP (Low power TUNE)", range 1-50. QK4 parses
+    // the MEDF menu definitions that carry it but has no path to SET a menu value, so there is
+    // nothing to report and nothing to write.
+    //
+    // REPORT ONLY, and that matters. A tune_drive SET used to share drive's handler and therefore
+    // sent PC - the OPERATING power - so asking for tune power changed the wrong control. Found on
+    // the bench. Until a menu-set path exists, ignoring the request is the only honest option.
     int tuneDrive = 100;
     int micLevel = 50;
 

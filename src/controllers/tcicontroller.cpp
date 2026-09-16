@@ -269,7 +269,9 @@ TciController::TciController(AudioController *audioController, ConnectionControl
                 applyCat(CatFrames::ritOffset(value));
             } else if (name == QLatin1String("agc_mode")) {
                 applyCat(CatFrames::agcSpeed(value));
-            } else if (name == QLatin1String("drive") || name == QLatin1String("tune_drive")) {
+            } else if (name == QLatin1String("drive")) {
+                // drive ONLY. tune_drive must never reach here: PC is the operating power, and
+                // sending it for a tune-power request changes the wrong control.
                 // PCnnnr, with the range letter - the same form QK4's UI sends. The PCX variant
                 // is the extended QUERY and the radio ignores it as a set, which is why drive
                 // failed on the bench until this changed.

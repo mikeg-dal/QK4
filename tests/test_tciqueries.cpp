@@ -298,6 +298,34 @@ private slots:
         server.stop();
     }
 
+    void aTuneDriveSetNeverChangesTheOperatingPower() {
+        // REGRESSION, found on the radio: tune_drive shared drive's handler, so asking for tune
+        // power sent PC and moved the TRANSMIT power instead. The K4 has no separate tune-power
+        // command, so the only correct behaviour is to report and not act.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy setInt(&server, &TciServer::setIntRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("tune_drive:0,30;device;");
+
+        const QStringList replies = client.collectUntil("device:QK4;");
+        // Answered, so a client is not left waiting...
+        QVERIFY(replies.contains(QStringLiteral("tune_drive:0,100;")));
+        // ...but nothing is sent to the radio.
+        QCOMPARE(setInt.count(), 0);
+
+        // And drive itself still works, so this is a targeted refusal and not a broken branch.
+        client.send("drive:0,35;");
+        QTRY_COMPARE(setInt.count(), 1);
+        QCOMPARE(setInt.at(0).at(1).toString(), QStringLiteral("drive"));
+
+        client.close();
+        server.stop();
+    }
+
     void refusesAnAgcModeOutsideTheSpecVocabulary() {
         // Coercing an unknown mode is how a radio ends up in a state nobody asked for. The old
         // value is reported back instead.
