@@ -6,6 +6,8 @@
 #include "controllers/connectioncontroller.h"
 #include "network/catframes.h"
 #include "models/radiostate.h"
+#include <cmath>
+
 #include "dsp/spectrumscale.h"
 #include "network/tciaudiobridge.h"
 #include "network/tciserver.h"
@@ -139,20 +141,21 @@ void tciFilterEdges(RadioState::Mode mode, int bandwidthHz, int shiftHz, int *lo
     *highOut = centre + half;
 }
 
-// K4 AF gain -> TCI rx_volume, in dB.
+// QK4's own playback gain -> TCI rx_volume, in dB.
 //
-// The K4's AG is 0-60 with 0 silent; the protocol's field is -60..0 dB with -60 documented as "no
-// sound". Same width, matching endpoints, so dB = AG - 60 lines the two up exactly - AG 0 gives
-// -60, AG 60 gives 0. An AF control numbered 0-60 with silence at zero is very likely a dB
-// attenuator already, which would make this exact rather than merely well fitted.
+// A TCI client is listening to QK4'S AUDIO STREAM, not to the rig's speaker, so the level that
+// means something to it is QK4's mix - the Main and Sub sliders - and not the K4's AF gain. That
+// also avoids polling the radio for a value QK4 otherwise has no use for.
 //
-// -1 is RadioState's not-read-yet sentinel; report full level rather than claiming silence, since
-// a client that sees -60 may stop expecting audio.
-int tciVolumeDb(int afGain) {
-    if (afGain < 0) {
-        return 0;
+// The conversion is exact rather than fitted: QK4's sliders are 0-100 scaled to a linear amplitude
+// gain of 0.0-1.0, and dB = 20*log10(gain) is the definition of that ratio in dB. Gain 1.0 gives
+// 0 dB, 0.5 gives -6 dB, and silence clamps to the -60 the protocol documents as "no sound".
+int tciVolumeDbForGain(float gain) {
+    if (!(gain > 0.0f)) {
+        return -60; // silent, and log10(0) is undefined
     }
-    return qBound(-60, afGain - 60, 0);
+    const double db = 20.0 * std::log10(static_cast<double>(gain));
+    return qBound(-60, static_cast<int>(std::lround(db)), 0);
 }
 
 } // namespace
@@ -294,6 +297,10 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     }
 }
 
+void TciController::audioLevelsChanged() {
+    publishSnapshot();
+}
+
 void TciController::setAudioEnabled(bool enabled) {
     m_audioEnabled = enabled;
     // The bridge lives on the TCI thread; its flag is a plain bool read on that thread only.
@@ -362,7 +369,7 @@ void TciController::publishSnapshot() {
     main.autoNotch = m_radioState->autoNotchEnabled();
     main.apf = m_radioState->apfEnabled();
     main.notchFilter = m_radioState->manualNotchEnabled();
-    main.volumeDb = tciVolumeDb(m_radioState->afGain());
+    main.volumeDb = m_audioController ? tciVolumeDbForGain(m_audioController->mainVolume()) : 0;
     main.lock = m_radioState->lockA();
     tciFilterEdges(m_radioState->mode(), m_radioState->filterBandwidth(), m_radioState->shiftHz(), &main.filterLowHz,
                    &main.filterHighHz);
@@ -382,9 +389,7 @@ void TciController::publishSnapshot() {
     sub.autoNotch = m_radioState->autoNotchEnabledB();
     sub.apf = m_radioState->apfEnabledB();
     sub.notchFilter = m_radioState->manualNotchEnabledB();
-    // With the SUB AF knob assigned to balance control via BL, the radio returns the SAME value
-    // for AG$ as for AG. Sub volume mirroring main is expected in that mode, not a fault.
-    sub.volumeDb = tciVolumeDb(m_radioState->afGainB());
+    sub.volumeDb = m_audioController ? tciVolumeDbForGain(m_audioController->subVolume()) : 0;
     sub.lock = m_radioState->lockB();
     tciFilterEdges(m_radioState->modeB(), m_radioState->filterBandwidthB(), m_radioState->shiftBHz(), &sub.filterLowHz,
                    &sub.filterHighHz);

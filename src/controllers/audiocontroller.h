@@ -54,6 +54,15 @@ public:
     // Volume/mix controls (atomic — safe from any thread)
     void setMainVolume(float vol);
     void setSubVolume(float vol);
+
+    // Read-through to the engine's atomics. READS ONLY - these change nothing. Safe from any
+    // thread because the underlying members are std::atomic<float>.
+    //
+    // WHY read the APPLIED GAIN rather than the slider position: in BAL mode the sub slider drives
+    // the L/R balance offset and leaves sub volume alone (mainwindow.cpp), so the slider and the
+    // actual gain disagree there. The gain is what the listener hears.
+    float mainVolume() const;
+    float subVolume() const;
     void setBalanceMode(int mode);
     void setBalanceOffset(int offset);
     void setAudioMix(int left, int right);

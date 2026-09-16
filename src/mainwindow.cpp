@@ -560,6 +560,10 @@ void MainWindow::setupUi() {
     connect(m_sideControlPanel, &SideControlPanel::volumeChanged, this, [this](int value) {
         m_audioController->setMainVolume(value / 100.0f);
         RadioSettings::instance()->setVolume(value); // Persist setting
+        // TCI reports QK4's mix as rx_volume, and no radio state changes when a slider moves.
+        if (m_tciController) {
+            m_tciController->audioLevelsChanged();
+        }
     });
 
     // Connect sub volume slider to AudioController (Sub RX / VFO B)
@@ -579,6 +583,9 @@ void MainWindow::setupUi() {
             m_audioController->setSubVolume(value / 100.0f);
         }
         RadioSettings::instance()->setSubVolume(value); // Persist setting
+        if (m_tciController) {
+            m_tciController->audioLevelsChanged();
+        }
     });
 
     // SideControlPanel scroll signals are owned by SideControlScrollController

@@ -173,6 +173,14 @@ bool AudioController::isPttActive() const {
     return m_audioEngine ? m_audioEngine->isPttActive() : false;
 }
 
+float AudioController::mainVolume() const {
+    return m_audioEngine ? m_audioEngine->mainVolume() : 1.0f;
+}
+
+float AudioController::subVolume() const {
+    return m_audioEngine ? m_audioEngine->subVolume() : 1.0f;
+}
+
 void AudioController::setMainVolume(float vol) {
     if (m_audioEngine)
         m_audioEngine->setMainVolume(vol);

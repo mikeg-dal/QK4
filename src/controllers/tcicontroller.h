@@ -57,6 +57,10 @@ public:
 
     // Carrying audio is separable from carrying CAT. Off means no RX frames are sent and no TX
     // audio is accepted; the control half keeps working.
+    // Call when QK4's own audio levels move. rx_volume reports QK4's mix, and nothing in
+    // RadioState changes when a slider does, so there is no radio event to ride on.
+    void audioLevelsChanged();
+
     void setAudioEnabled(bool enabled);
     bool audioEnabled() const { return m_audioEnabled; }
 
