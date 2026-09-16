@@ -28,6 +28,26 @@ QByteArray rfPowerExtended(double watts, bool qrp);
 QByteArray filterBandwidth(int bwHz);
 QByteArray filterWidthExtended(int bwHz);
 QByteArray keyerSpeed(int wpm);
+// WHY THESE TWO EXIST ALONGSIDE noiseBlanker() AND filterBandwidth() BELOW.
+//
+// The pair below build REPLIES to a CAT client (catserver.cpp, catpushbroadcaster.cpp). They have
+// never been used to send anything TO the radio, and neither is in the K4's actual command form:
+// noiseBlanker() emits "NB1;" where the K4 wants NBnnm, and filterBandwidth() emits the width in
+// Hz where the K4 wants 10-Hz units. Both are pre-existing reply-direction bugs, reported
+// separately rather than changed here - altering them would change what every existing CAT client
+// on port 9299 is told.
+//
+// These two are for SENDING, and match what QK4's own UI already sends by hand
+// (sidecontrolscrollcontroller.cpp divides the bandwidth by 10; featuremenucontroller.cpp uses the
+// NB/ toggle).
+
+// NBnnm: nn is the level 00-15, m is on/off. The level is preserved by the caller, because TCI's
+// RX_NB_ENABLE is on/off only and must not silently move the level.
+QByteArray setNoiseBlanker(int level, bool on);
+
+// BWnnnn in 10-Hz units, which is the inverse of what RadioState's handleBW parses.
+QByteArray setFilterBandwidth(int bwHz);
+
 QByteArray noiseBlanker(bool on);
 QByteArray noiseReduction(bool on);
 QByteArray agcSpeed(int agc);

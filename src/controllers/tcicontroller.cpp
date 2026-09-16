@@ -253,7 +253,10 @@ TciController::TciController(AudioController *audioController, ConnectionControl
             } else if (name == QLatin1String("xit_enable")) {
                 applyCat(CatFrames::xitEnabled(value));
             } else if (name == QLatin1String("rx_nb_enable")) {
-                applyCat(CatFrames::noiseBlanker(value));
+                // Preserve the level: TCI asks for on/off and nothing more, so changing the level
+                // here would be a setting the client never requested.
+                const int level = m_radioState ? m_radioState->noiseBlankerLevel() : 0;
+                applyCat(CatFrames::setNoiseBlanker(level < 0 ? 0 : level, value));
             } else if (name == QLatin1String("rx_nr_enable")) {
                 applyCat(CatFrames::noiseReduction(value));
             }
@@ -279,7 +282,7 @@ TciController::TciController(AudioController *audioController, ConnectionControl
             // TCI gives two edges; the K4 takes a WIDTH. The conversion is lossy in one direction
             // and that is unavoidable - the centre is set by the mode and the IF shift, not by
             // this command, so only the width survives.
-            applyCat(CatFrames::filterBandwidth(highHz - lowHz));
+            applyCat(CatFrames::setFilterBandwidth(highHz - lowHz));
         });
     }
 

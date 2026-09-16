@@ -72,6 +72,16 @@ QByteArray keyerSpeed(int wpm) {
     return QString("KS%1;").arg(wpm, 3, 10, QChar('0')).toUtf8();
 }
 
+QByteArray setNoiseBlanker(int level, bool on) {
+    return QString("NB%1%2;").arg(qBound(0, level, 15), 2, 10, QChar('0')).arg(on ? 1 : 0).toUtf8();
+}
+
+QByteArray setFilterBandwidth(int bwHz) {
+    // The K4 takes 10-Hz units: BW0280 is 2800 Hz. Sending Hz directly asks for ten times the
+    // width, which the radio ignores as out of range.
+    return QString("BW%1;").arg(qBound(0, bwHz / 10, 9999), 4, 10, QChar('0')).toUtf8();
+}
+
 QByteArray noiseBlanker(bool on) {
     return QString("NB%1;").arg(on ? 1 : 0).toUtf8();
 }
