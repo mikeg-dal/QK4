@@ -403,7 +403,8 @@ void MainWindow::setupCatServer() {
     //
     // Created unconditionally but started only when enabled, so the listener is genuinely
     // runtime-toggleable rather than needing a restart.
-    m_tciController = new TciController(m_audioController, m_connectionController, m_radioState, this);
+    m_tciController =
+        new TciController(m_audioController, m_connectionController, m_radioState, m_menuController, this);
 
     connect(RadioSettings::instance(), &RadioSettings::tciServerEnabledChanged, this, [this](bool enabled) {
         if (enabled) {

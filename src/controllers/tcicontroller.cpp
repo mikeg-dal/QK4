@@ -4,6 +4,7 @@
 
 #include "controllers/audiocontroller.h"
 #include "controllers/connectioncontroller.h"
+#include "controllers/menucontroller.h"
 #include "network/catframes.h"
 #include "models/radiostate.h"
 #include <cmath>
@@ -168,9 +169,10 @@ constexpr int kTuneDriveMaxW = 50;
 } // namespace
 
 TciController::TciController(AudioController *audioController, ConnectionController *connectionController,
-                             RadioState *radioState, QObject *parent)
+                             RadioState *radioState, MenuController *menuController, QObject *parent)
     : QObject(parent), m_audioController(audioController), m_connectionController(connectionController),
-      m_radioState(radioState), m_server(new TciServer(nullptr)), m_bridge(new TciAudioBridge(m_server, nullptr)) {
+      m_radioState(radioState), m_menuController(menuController), m_server(new TciServer(nullptr)),
+      m_bridge(new TciAudioBridge(m_server, nullptr)) {
     m_tciThread = new QThread(this);
     m_tciThread->setObjectName(QStringLiteral("TCI"));
     m_server->moveToThread(m_tciThread);
@@ -280,9 +282,9 @@ TciController::TciController(AudioController *audioController, ConnectionControl
                 // MENU ITEM 69, "TUNE LP (Low power TUNE)", 1-50 W - NOT PC. Sending PC here is
                 // the bug this branch exists to prevent: it changes the operating power.
                 const int watts = qBound(kTuneDriveMinW, value, kTuneDriveMaxW);
-                m_tuneDriveWatts = watts; // optimistic, see publishSnapshot
                 applyCat(CatFrames::setMenuValue(kTuneDriveMenuId, watts));
-                publishSnapshot();
+                // No optimistic write: MenuModel is updated by the ME echo the radio sends back,
+                // and menuValueChanged republishes the snapshot from it.
             } else if (name == QLatin1String("drive")) {
                 // drive ONLY - tune_drive is handled above and must not fall through to PC.
                 // PCnnnr, with the range letter - the same form QK4's UI sends. The PCX variant
@@ -307,6 +309,15 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     // A whole snapshot is pushed on every change rather than individual fields: RadioState emits
     // fine-grained signals with no batch boundary, so a client seeded field-by-field could see a
     // frequency and mode that never coexisted.
+    if (m_menuController) {
+        // Covers the front panel as well as our own writes: the radio echoes an ME for both.
+        connect(m_menuController, &MenuController::menuValueChanged, this, [this](int menuId, int) {
+            if (menuId == kTuneDriveMenuId) {
+                publishSnapshot();
+            }
+        });
+    }
+
     if (m_radioState) {
         connect(m_radioState, &RadioState::frequencyChanged, this, [this](quint64) { publishSnapshot(); });
         connect(m_radioState, &RadioState::frequencyBChanged, this, [this](quint64) { publishSnapshot(); });
@@ -454,11 +465,21 @@ void TciController::publishSnapshot() {
     // The value QK4 already displays - see tciDriveFor. The K4 has no separate tune power, so
     // tune_drive tracks it rather than claiming a control the radio does not have.
     snapshot.drive = tciDriveFor(m_radioState->rfPower());
-    // Tune power is not read back. QK4 parses the MEDF menu definitions that carry item 69, but
-    // wiring MenuModel through to here to re-read a value that changes rarely is not worth the
-    // coupling. So: report what a client last set, and fall back to drive before anything has.
-    // Same optimistic pattern MenuController already uses for its own menu writes.
-    snapshot.tuneDrive = (m_tuneDriveWatts > 0) ? m_tuneDriveWatts : snapshot.drive;
+    // Tune power comes from the radio, not from a local guess. The K4 pushes the full MEDF menu
+    // definitions at connect and individual ME updates afterwards, so MenuModel already holds the
+    // live value for item 69 and reading it costs no extra traffic.
+    //
+    // Reporting a remembered value instead would have been actively harmful: a client that reads,
+    // changes and restores would write back a number the radio never had, silently clobbering a
+    // TUNE LP set on the front panel.
+    int tuneWatts = 0;
+    if (m_menuController && m_menuController->menuValue(kTuneDriveMenuId, &tuneWatts) && tuneWatts > 0) {
+        snapshot.tuneDrive = tuneWatts;
+    } else {
+        // No menu yet - no radio, or it has not sent MEDF. Falling back to drive keeps the field
+        // plausible rather than reporting a zero a client might write back.
+        snapshot.tuneDrive = snapshot.drive;
+    }
     // RadioState uses -1 as "not read from the radio yet", and a negative WPM is nonsense on the
     // wire. Report the K4 default until the radio says otherwise.
     const int wpm = m_radioState->keyerSpeed();

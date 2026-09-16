@@ -15,6 +15,7 @@ MenuController::MenuController(ConnectionController *connection, SpectrumControl
                                QObject *parent)
     : QObject(parent), m_connection(connection), m_spectrum(spectrum), m_parentWidget(parentWidget),
       m_menuModel(new MenuModel(this)), m_menuOverlay(new MenuOverlayWidget(m_menuModel, parentWidget)) {
+    connect(m_menuModel, &MenuModel::menuValueChanged, this, &MenuController::menuValueChanged);
 
     m_menuOverlay->hide();
 
@@ -184,4 +185,15 @@ void MenuController::onMenuItemAdded(int menuId) {
         qCDebug(qk4Menu) << "FSK Mark-Tone: menuId=" << m_fskMarkToneMenuId << "tone=" << toneHz << "Hz";
         m_spectrum->setFskMarkTone(toneHz);
     }
+}
+
+bool MenuController::menuValue(int menuId, int *valueOut) const {
+    const MenuItem *item = m_menuModel ? m_menuModel->getMenuItem(menuId) : nullptr;
+    if (!item) {
+        return false;
+    }
+    if (valueOut) {
+        *valueOut = item->currentValue;
+    }
+    return true;
 }

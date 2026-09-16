@@ -6,6 +6,7 @@
 
 class AudioController;
 class ConnectionController;
+class MenuController;
 class QThread;
 class RadioState;
 class TciAudioBridge;
@@ -36,8 +37,10 @@ class TciController : public QObject {
     Q_OBJECT
 
 public:
+    // menuController may be null; without it tune power falls back to the drive level, since the
+    // K4 keeps tune power in the menu rather than in a command of its own.
     TciController(AudioController *audioController, ConnectionController *connectionController, RadioState *radioState,
-                  QObject *parent = nullptr);
+                  MenuController *menuController = nullptr, QObject *parent = nullptr);
     ~TciController();
 
     // Both marshal to the TCI thread. start() is idempotent.
@@ -91,9 +94,7 @@ private:
     TciAudioBridge *m_bridge;
     QThread *m_tciThread = nullptr;
 
-    // Last tune power a TCI client set, in watts; -1 before any. Not read back from the radio -
-    // see publishSnapshot.
-    int m_tuneDriveWatts = -1;
+    MenuController *m_menuController;
 
     // Main-thread only. See isListening()/clientCount().
     bool m_listening = false;
