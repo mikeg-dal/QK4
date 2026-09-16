@@ -132,6 +132,9 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
         // args[1] unconditionally. That rule applies to the broadcast as much as the reply.
         m_socketServer->broadcastText(message(QStringLiteral("drive"), mainTrx, QString::number(m_snapshot.drive)));
     }
+    if (m_snapshot.micLevel != previous.micLevel) {
+        m_socketServer->broadcastText(message(QStringLiteral("mic_level"), QString::number(m_snapshot.micLevel)));
+    }
     if (m_snapshot.cwKeyerSpeedWpm != previous.cwKeyerSpeedWpm) {
         // No receiver index: CW_KEYER_SPEED is a single-argument command.
         m_socketServer->broadcastText(

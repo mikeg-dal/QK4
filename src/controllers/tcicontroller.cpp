@@ -256,6 +256,7 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         connect(m_radioState, &RadioState::filterBandwidthChanged, this, [this](int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::filterBandwidthBChanged, this, [this](int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::keyerSpeedChanged, this, [this](int) { publishSnapshot(); });
+        connect(m_radioState, &RadioState::micGainChanged, this, [this](int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::subRxEnabledChanged, this, [this](bool enabled) {
             // The bridge decides what goes in the right audio channel, and it lives on the TCI
             // thread, so this has to be marshalled rather than written from here.
@@ -378,6 +379,13 @@ void TciController::publishSnapshot() {
     // wire. Report the K4 default until the radio says otherwise.
     const int wpm = m_radioState->keyerSpeed();
     snapshot.cwKeyerSpeedWpm = (wpm > 0) ? wpm : 20;
+
+    // mic_level is not in the published 2.0 spec - it is an ExpertSDR3 extension real clients
+    // expect - so there is no documented range to map onto. RadioState::micGain is the K4's own
+    // 0-80 MG value; reporting it directly beats the constant that was here before. -1 is the
+    // not-read-yet sentinel.
+    const int mic = m_radioState->micGain();
+    snapshot.micLevel = (mic >= 0) ? mic : 0;
 
     // Queued: the server reads this from its own thread, so it must be handed over by value
     // through the event loop rather than written under it.
