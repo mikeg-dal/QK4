@@ -66,6 +66,7 @@ private:
     QLineEdit *m_portEdit;
     QLineEdit *m_passwordEdit;
     QCheckBox *m_tlsCheckbox;
+    QCheckBox *m_startupCheckbox;
     QLineEdit *m_identityEdit;
     QLabel *m_identityLabel;
     QComboBox *m_encodeModeCombo;

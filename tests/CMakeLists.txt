@@ -203,6 +203,15 @@ target_include_directories(test_tcisensors PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tcisensors Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciSensorsTests COMMAND test_tcisensors)
 
+# RadioSettings: the connect-at-startup rule, which is enforced in the model rather than only in
+# the dialog because a settings file can also be hand-edited or restored from a backup.
+add_executable(test_radiosettings test_radiosettings.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
+)
+target_include_directories(test_radiosettings PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_radiosettings Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME RadioSettingsTests COMMAND test_radiosettings)
+
 # TCI binary audio framing: the 64-byte header, and the opposite payload rules per direction.
 add_executable(test_tciaudioframe test_tciaudioframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp

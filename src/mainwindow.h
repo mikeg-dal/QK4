@@ -73,6 +73,10 @@ private slots:
     void onCatResponse(const QString &response);
     void showRadioManager();
     void connectToRadio(const RadioEntry &radio);
+
+    // Connects to the radio flagged connectAtStartup, if any. Deferred to the event loop rather
+    // than run in the constructor - see the call site.
+    void connectToStartupRadio();
     void toggleDisplayPopup();
     void toggleBandPopup();
     void toggleFnPopup();

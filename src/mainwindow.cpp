@@ -1,4 +1,6 @@
 #include "mainwindow.h"
+
+#include <QTimer>
 #include "utils/radioutils.h"
 #include "ui/dialogs/radiomanagerdialog.h"
 #include "ui/widgets/sidecontrolpanel.h"
@@ -427,6 +429,28 @@ void MainWindow::setupCatServer() {
     if (RadioSettings::instance()->tciServerEnabled()) {
         m_tciController->start(RadioSettings::instance()->tciServerPort());
     }
+
+    // Auto-connect, if a radio is flagged for it.
+    //
+    // WHY QUEUED RATHER THAN A DIRECT CALL: this is still the constructor, so the window is not
+    // shown and the controllers' signal wiring is only just complete. Connecting here would race
+    // the first connection-state change against a UI that cannot display it yet, and a failure
+    // would surface before there is a status bar to report it in. A zero-timer defers this to the
+    // first pass of the event loop, by which point the window is up.
+    QTimer::singleShot(0, this, &MainWindow::connectToStartupRadio);
+}
+
+void MainWindow::connectToStartupRadio() {
+    const int index = RadioSettings::instance()->connectAtStartupIndex();
+    if (index < 0) {
+        return;
+    }
+    const auto radios = RadioSettings::instance()->radios();
+    if (index >= radios.size()) {
+        return; // settings and list disagree; do nothing rather than connect to the wrong radio
+    }
+    qInfo() << "Auto-connecting to" << radios[index].name << "at startup";
+    connectToRadio(radios[index]);
 }
 
 void MainWindow::setupMenuBar() {

@@ -48,6 +48,13 @@ struct RadioEntry {
     int streamingLatency = 3; // Remote streaming audio latency: 0-7 (default 3)
     int displayFps = 15;      // Display FPS: 12-30 (default 15, good balance for large monitors)
 
+    // Connect to this radio automatically when QK4 starts.
+    //
+    // AT MOST ONE radio may have this set. The rule is enforced in RadioSettings rather than in
+    // the dialog, because settings can also be edited by hand or restored from a backup, and a
+    // second flagged radio would make startup depend on list order.
+    bool connectAtStartup = false;
+
     bool operator==(const RadioEntry &other) const {
         return name == other.name && host == other.host && port == other.port;
     }
@@ -60,6 +67,13 @@ public:
     static RadioSettings *instance();
 
     QVector<RadioEntry> radios() const;
+
+    // The radio to connect to at startup, or -1 if none is flagged. Returns the FIRST flagged
+    // entry; setConnectAtStartupRadio keeps that unique, and load() repairs a file that is not.
+    int connectAtStartupIndex() const;
+
+    // Flags one radio and clears every other. Pass -1 to disable auto-connect entirely.
+    void setConnectAtStartupRadio(int index);
     void addRadio(const RadioEntry &radio);
     void removeRadio(int index);
     void updateRadio(int index, const RadioEntry &radio);

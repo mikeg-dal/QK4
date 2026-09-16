@@ -34,6 +34,33 @@ QVector<RadioEntry> RadioSettings::radios() const {
     return m_radios;
 }
 
+int RadioSettings::connectAtStartupIndex() const {
+    for (int i = 0; i < m_radios.size(); ++i) {
+        if (m_radios[i].connectAtStartup) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void RadioSettings::setConnectAtStartupRadio(int index) {
+    // Clearing every other entry is the whole point: the flag means "the radio QK4 opens with",
+    // which only has meaning for one. Enforcing it here rather than in the dialog covers a
+    // settings file edited by hand or restored from a backup.
+    bool changed = false;
+    for (int i = 0; i < m_radios.size(); ++i) {
+        const bool wanted = (i == index);
+        if (m_radios[i].connectAtStartup != wanted) {
+            m_radios[i].connectAtStartup = wanted;
+            changed = true;
+        }
+    }
+    if (changed) {
+        save();
+        emit radiosChanged();
+    }
+}
+
 void RadioSettings::addRadio(const RadioEntry &radio) {
     m_radios.append(radio);
     sortRadios();
@@ -558,10 +585,25 @@ void RadioSettings::load() {
         entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus Float)
         entry.streamingLatency = m_settings.value("streamingLatency", 3).toInt(); // Default SL3
         entry.displayFps = m_settings.value("displayFps", 15).toInt();            // Default 15 FPS
+        entry.connectAtStartup = m_settings.value("connectAtStartup", false).toBool();
         m_radios.append(entry);
     }
     m_settings.endArray();
     sortRadios();
+
+    // Keep the "at most one" rule true even for a settings file that was not written by us - a
+    // hand edit, or a backup from before the rule existed. First flagged entry wins; the rest are
+    // cleared so startup cannot depend on list order.
+    bool seenStartupRadio = false;
+    for (RadioEntry &entry : m_radios) {
+        if (!entry.connectAtStartup) {
+            continue;
+        }
+        if (seenStartupRadio) {
+            entry.connectAtStartup = false;
+        }
+        seenStartupRadio = true;
+    }
 
     m_lastSelectedIndex = m_settings.value("lastSelectedIndex", -1).toInt();
     m_kpodEnabled = m_settings.value("kpodEnabled", false).toBool();
@@ -686,6 +728,7 @@ void RadioSettings::save() {
         m_settings.setValue("encodeMode", m_radios[i].encodeMode);
         m_settings.setValue("streamingLatency", m_radios[i].streamingLatency);
         m_settings.setValue("displayFps", m_radios[i].displayFps);
+        m_settings.setValue("connectAtStartup", m_radios[i].connectAtStartup);
     }
     m_settings.endArray();
 
