@@ -87,6 +87,10 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
         if (now.apf != was.apf) {
             m_socketServer->broadcastText(message(QStringLiteral("rx_apf_enable"), trx, boolText(now.apf)));
         }
+        if (now.volumeDb != was.volumeDb) {
+            m_socketServer->broadcastText(
+                message(QStringLiteral("rx_volume"), trx, QString::number(CHANNEL_A), QString::number(now.volumeDb)));
+        }
         if (now.notchFilter != was.notchFilter) {
             m_socketServer->broadcastText(message(QStringLiteral("rx_nf_enable"), trx, boolText(now.notchFilter)));
         }
@@ -173,6 +177,8 @@ QStringList TciServer::receiverBurst(int receiver) const {
           << message(QStringLiteral("rx_anf_enable"), trx, boolText(r.autoNotch))
           << message(QStringLiteral("rx_apf_enable"), trx, boolText(r.apf))
           << message(QStringLiteral("rx_nf_enable"), trx, boolText(r.notchFilter))
+          // rx_volume carries a channel index; the receiver's own channel is A.
+          << message(QStringLiteral("rx_volume"), trx, QString::number(CHANNEL_A), QString::number(r.volumeDb))
           << message(QStringLiteral("mute"), trx, boolText(false))
           << message(QStringLiteral("tx_enable"), trx, boolText(receiver == MAIN_RECEIVER));
 
@@ -328,6 +334,26 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             reply = message(name, trx, boolText(false));
         }
         m_socketServer->sendText(clientId, reply);
+        return true;
+    }
+
+    if (name == QLatin1String("rx_volume")) {
+        // rx_volume:<trx>,<channel>[,<dB>] - a read carries two arguments, not one.
+        int receiver = MAIN_RECEIVER;
+        if (command.argCount() > 0 && command.argAsInt(0, &receiver) && !s.validReceiver(receiver)) {
+            return true;
+        }
+        if (!s.validReceiver(receiver)) {
+            receiver = MAIN_RECEIVER;
+        }
+        int channel = CHANNEL_A;
+        if (command.argCount() > 1 && command.argAsInt(1, &channel) && channel != CHANNEL_A) {
+            // Each receiver's audio is its own channel A; there is no separate level for the
+            // main receiver's channel B, which is the transmit VFO rather than a receiver.
+            return true;
+        }
+        m_socketServer->sendText(clientId, message(name, QString::number(receiver), QString::number(CHANNEL_A),
+                                                   QString::number(s.rx[receiver].volumeDb)));
         return true;
     }
 

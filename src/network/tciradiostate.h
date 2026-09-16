@@ -75,6 +75,14 @@ struct TciReceiverState {
     // least misleading thing to claim. See docs/tci-command-coverage.md.
     int sqlLevelDbm = -140;
 
+    // Receiver audio level in dB, the protocol's -60..0 with -60 silent.
+    //
+    // The K4's AG runs 0-60 with 0 silent, so the two scales have the SAME WIDTH and matching
+    // endpoints and the conversion is dB = AG - 60. That correspondence is why this can be
+    // reported at all, where squelch cannot: SQ is 0-40 against a -140..0 dBm field, which is a
+    // calibration guess rather than a mapping. See docs/tci-command-coverage.md.
+    int volumeDb = 0;
+
     bool noiseBlanker = false;
     bool noiseReduction = false;
     bool autoNotch = false;

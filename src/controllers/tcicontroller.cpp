@@ -139,6 +139,22 @@ void tciFilterEdges(RadioState::Mode mode, int bandwidthHz, int shiftHz, int *lo
     *highOut = centre + half;
 }
 
+// K4 AF gain -> TCI rx_volume, in dB.
+//
+// The K4's AG is 0-60 with 0 silent; the protocol's field is -60..0 dB with -60 documented as "no
+// sound". Same width, matching endpoints, so dB = AG - 60 lines the two up exactly - AG 0 gives
+// -60, AG 60 gives 0. An AF control numbered 0-60 with silence at zero is very likely a dB
+// attenuator already, which would make this exact rather than merely well fitted.
+//
+// -1 is RadioState's not-read-yet sentinel; report full level rather than claiming silence, since
+// a client that sees -60 may stop expecting audio.
+int tciVolumeDb(int afGain) {
+    if (afGain < 0) {
+        return 0;
+    }
+    return qBound(-60, afGain - 60, 0);
+}
+
 } // namespace
 
 TciController::TciController(AudioController *audioController, ConnectionController *connectionController,
@@ -257,6 +273,7 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         connect(m_radioState, &RadioState::filterBandwidthBChanged, this, [this](int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::keyerSpeedChanged, this, [this](int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::micGainChanged, this, [this](int) { publishSnapshot(); });
+        connect(m_radioState, &RadioState::afGainChanged, this, [this](int, int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::subRxEnabledChanged, this, [this](bool enabled) {
             // The bridge decides what goes in the right audio channel, and it lives on the TCI
             // thread, so this has to be marshalled rather than written from here.
@@ -345,6 +362,7 @@ void TciController::publishSnapshot() {
     main.autoNotch = m_radioState->autoNotchEnabled();
     main.apf = m_radioState->apfEnabled();
     main.notchFilter = m_radioState->manualNotchEnabled();
+    main.volumeDb = tciVolumeDb(m_radioState->afGain());
     main.lock = m_radioState->lockA();
     tciFilterEdges(m_radioState->mode(), m_radioState->filterBandwidth(), m_radioState->shiftHz(), &main.filterLowHz,
                    &main.filterHighHz);
@@ -364,6 +382,9 @@ void TciController::publishSnapshot() {
     sub.autoNotch = m_radioState->autoNotchEnabledB();
     sub.apf = m_radioState->apfEnabledB();
     sub.notchFilter = m_radioState->manualNotchEnabledB();
+    // With the SUB AF knob assigned to balance control via BL, the radio returns the SAME value
+    // for AG$ as for AG. Sub volume mirroring main is expected in that mode, not a fault.
+    sub.volumeDb = tciVolumeDb(m_radioState->afGainB());
     sub.lock = m_radioState->lockB();
     tciFilterEdges(m_radioState->modeB(), m_radioState->filterBandwidthB(), m_radioState->shiftBHz(), &sub.filterLowHz,
                    &sub.filterHighHz);

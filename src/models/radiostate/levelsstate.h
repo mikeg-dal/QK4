@@ -33,6 +33,13 @@ struct LevelsState {
     int squelchLevel = -1;
     int squelchLevelB = -1;
 
+    // AF gain, 0-60 on the K4 (AG / AG$). -1 until the radio reports.
+    //
+    // NOT the same thing as QK4's own playback volume, which is local gain applied to the decoded
+    // audio stream in AudioEngine. This is the radio's own AF control.
+    int afGain = -1;
+    int afGainB = -1;
+
     void reset();
 };
 
@@ -44,7 +51,9 @@ void handleCP(LevelsState &state, RadioState &owner, const QString &cmd); // Com
 void handlePC(LevelsState &state, RadioState &owner, const QString &cmd); // Power control (rfPower + isQrpMode)
 void handleRG(LevelsState &state, RadioState &owner, const QString &cmd); // RF gain (Main)
 void handleRGSub(LevelsState &state, RadioState &owner, const QString &cmd);
-void handleSQ(LevelsState &state, RadioState &owner, const QString &cmd); // Squelch (Main)
+void handleAG(LevelsState &state, RadioState &owner, const QString &cmd);    // AF gain (Main)
+void handleAGSub(LevelsState &state, RadioState &owner, const QString &cmd); // AF gain (Sub, AG$)
+void handleSQ(LevelsState &state, RadioState &owner, const QString &cmd);    // Squelch (Main)
 void handleSQSub(LevelsState &state, RadioState &owner, const QString &cmd);
 
 // Optimistic setters (radio may not echo these; UI sets them directly).
