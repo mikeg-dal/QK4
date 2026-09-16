@@ -3,6 +3,7 @@
 #include <QSignalSpy>
 
 #include "network/tciprotocol.h"
+#include "network/tciradiostate.h"
 #include "network/tciserver.h"
 #include "network/websocketframe.h"
 #include "tcitestclient.h"
@@ -62,7 +63,7 @@ private slots:
         client.collectUntil("ready;");
 
         TciSensorReadings readings;
-        readings.sMeterDbm = -73.0;
+        readings.sMeterDbm[TciRadio::MAIN_RECEIVER] = -73.0;
         server.setSensors(readings);
 
         const QStringList seen = collectFor(client, 400);
@@ -83,7 +84,7 @@ private slots:
         client.collectUntil("ready;");
 
         TciSensorReadings readings;
-        readings.sMeterDbm = -73.0; // S9
+        readings.sMeterDbm[TciRadio::MAIN_RECEIVER] = -73.0; // S9
         server.setSensors(readings);
         client.send("rx_sensors_enable:true,50;");
 
@@ -112,10 +113,10 @@ private slots:
         QVERIFY(countStartingWith(seen, QStringLiteral("rx_channel_sensors:0,0,")) > 0);
 
         TciRadioSnapshot snapshot;
-        snapshot.subEnabled = true;
+        snapshot.rx[TciRadio::SUB_RECEIVER].enabled = true;
         server.setSnapshot(snapshot);
         TciSensorReadings readings;
-        readings.sMeterSubDbm = -91.0;
+        readings.sMeterDbm[TciRadio::SUB_RECEIVER] = -91.0;
         server.setSensors(readings);
 
         seen = collectFor(client, 400);

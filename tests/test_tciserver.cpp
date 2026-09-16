@@ -7,6 +7,7 @@
 
 #include "network/tciaudioframe.h"
 #include "network/tciprotocol.h"
+#include "network/tciradiostate.h"
 #include "network/tciserver.h"
 #include "network/websocketframe.h"
 #include "tcitestclient.h"
@@ -52,7 +53,7 @@ private slots:
         // halves transmit amplitude.
         const QStringList burst = TciServer().initBurst();
         QVERIFY(burst.contains(QStringLiteral("protocol:ExpertSDR3,1.5;")));
-        QVERIFY(burst.contains(QStringLiteral("modulations_list:usb,lsb,cw,cwr,am,sam,fm,nfm,digu,digl,rtty;")));
+        QVERIFY(burst.contains(QStringLiteral("modulations_list:usb,lsb,cw,cwr,am,sam,fm,digu,digl,rtty;")));
     }
 
     void driveAlwaysCarriesReceiverAndPower() {
@@ -71,8 +72,8 @@ private slots:
         // that wants it can never ask. It has to be seeded at connect and broadcast on change, or
         // it is unobtainable. Split is when it matters, and when it differs from the RX VFO.
         TciRadioSnapshot snapshot;
-        snapshot.vfoAHz = 14074000;
-        snapshot.vfoBHz = 14095000;
+        snapshot.rx[TciRadio::MAIN_RECEIVER].vfoHz = 14074000;
+        snapshot.rx[TciRadio::SUB_RECEIVER].vfoHz = 14095000;
         snapshot.split = true;
 
         TciServer server;
@@ -84,7 +85,7 @@ private slots:
         QVERIFY(client.connectTo(server.port()));
         client.collectUntil("ready;");
 
-        snapshot.vfoBHz = 14097000;
+        snapshot.rx[TciRadio::SUB_RECEIVER].vfoHz = 14097000;
         server.setSnapshot(snapshot);
 
         const QStringList replies = client.collectUntil("tx_frequency:14097000;");
@@ -99,8 +100,8 @@ private slots:
         // Never the 0 a blank VFO B holds - a client will try to tune to it.
         TciServer server;
         TciRadioSnapshot s;
-        s.vfoAHz = 14074000;
-        s.vfoBHz = 0;
+        s.rx[TciRadio::MAIN_RECEIVER].vfoHz = 14074000;
+        s.rx[TciRadio::SUB_RECEIVER].vfoHz = 0;
         s.split = false;
         server.setSnapshot(s);
         QVERIFY(server.initBurst().contains(QStringLiteral("vfo:0,1,14074000;")));
@@ -109,8 +110,8 @@ private slots:
     void channelOneFollowsVfoBWhenSplitIsOn() {
         TciServer server;
         TciRadioSnapshot s;
-        s.vfoAHz = 14074000;
-        s.vfoBHz = 14080000;
+        s.rx[TciRadio::MAIN_RECEIVER].vfoHz = 14074000;
+        s.rx[TciRadio::SUB_RECEIVER].vfoHz = 14080000;
         s.split = true;
         server.setSnapshot(s);
         const QStringList burst = server.initBurst();
@@ -311,8 +312,8 @@ private slots:
         // is the broadcast that follows once the radio actually moves.
         TciServer server;
         TciRadioSnapshot s;
-        s.vfoAHz = 14074000;
-        s.vfoBHz = 14074000;
+        s.rx[TciRadio::MAIN_RECEIVER].vfoHz = 14074000;
+        s.rx[TciRadio::SUB_RECEIVER].vfoHz = 14074000;
         server.setSnapshot(s);
         QVERIFY(server.start(0));
         QSignalSpy freq(&server, &TciServer::setFrequencyRequested);
@@ -323,8 +324,10 @@ private slots:
         client.send("vfo:0,0,7074000;");
 
         QTRY_COMPARE(freq.count(), 1);
-        QCOMPARE(freq.at(0).at(0).toInt(), 0);
-        QCOMPARE(freq.at(0).at(1).toLongLong(), 7074000LL);
+        // setFrequencyRequested now carries (receiver, channel, hz).
+        QCOMPARE(freq.at(0).at(0).toInt(), 0); // main receiver
+        QCOMPARE(freq.at(0).at(1).toInt(), 0); // channel A
+        QCOMPARE(freq.at(0).at(2).toLongLong(), 7074000LL);
 
         WebSocketDecoder::Message m;
         QVERIFY(client.next(m));
@@ -368,7 +371,9 @@ private slots:
 
         client.send("modulation:0,digu;");
         QTRY_COMPARE(mode.count(), 1);
-        QCOMPARE(mode.at(0).at(0).toString(), QStringLiteral("digu"));
+        // setModulationRequested now carries (receiver, modulation).
+        QCOMPARE(mode.at(0).at(0).toInt(), 0);
+        QCOMPARE(mode.at(0).at(1).toString(), QStringLiteral("digu"));
 
         client.close();
         server.stop();
@@ -403,7 +408,7 @@ private slots:
         // Channel A is always on; channel B follows the radio. A client that never sees channel B
         // advertised has no reason to ask for it.
         TciRadioSnapshot snapshot;
-        snapshot.subEnabled = true;
+        snapshot.rx[TciRadio::SUB_RECEIVER].enabled = true;
         TciServer server;
         server.setSnapshot(snapshot);
 
@@ -460,7 +465,7 @@ private slots:
         // Repeating the state the radio already holds must not generate CAT traffic, for the same
         // reason split_enable checks.
         TciRadioSnapshot snapshot;
-        snapshot.subEnabled = true;
+        snapshot.rx[TciRadio::SUB_RECEIVER].enabled = true;
         TciServer server;
         server.setSnapshot(snapshot);
         QVERIFY(server.start(0));
@@ -505,12 +510,15 @@ private slots:
         client.collectUntil("ready;");
 
         TciRadioSnapshot snapshot;
-        snapshot.subEnabled = true;
+        snapshot.rx[TciRadio::SUB_RECEIVER].enabled = true;
         server.setSnapshot(snapshot);
 
-        WebSocketDecoder::Message m;
-        QVERIFY(client.next(m));
-        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("rx_channel_enable:0,1,true;"));
+        // BOTH spellings go out, because clients disagree about how a second receiver is
+        // addressed: rx_enable names the receiver, rx_channel_enable names channel B of receiver
+        // 0. They describe the same K4 Sub RX.
+        const QStringList seen = client.collectUntil("rx_channel_enable:0,1,true;");
+        QVERIFY2(seen.contains(QStringLiteral("rx_enable:1,true;")), "receiver form missing");
+        QVERIFY2(seen.contains(QStringLiteral("rx_channel_enable:0,1,true;")), "channel form missing");
 
         client.close();
         server.stop();
@@ -523,9 +531,9 @@ private slots:
         // on every CAT echo.
         TciServer server;
         TciRadioSnapshot s;
-        s.vfoAHz = 14074000;
-        s.vfoBHz = 14074000;
-        s.modulation = QStringLiteral("usb");
+        s.rx[TciRadio::MAIN_RECEIVER].vfoHz = 14074000;
+        s.rx[TciRadio::SUB_RECEIVER].vfoHz = 14074000;
+        s.rx[TciRadio::MAIN_RECEIVER].modulation = QStringLiteral("usb");
         server.setSnapshot(s);
         QVERIFY(server.start(0));
 
@@ -539,8 +547,8 @@ private slots:
         QVERIFY(!client.next(m, 300));
 
         // Now move the frequency.
-        s.vfoAHz = 7074000;
-        s.vfoBHz = 7074000;
+        s.rx[TciRadio::MAIN_RECEIVER].vfoHz = 7074000;
+        s.rx[TciRadio::SUB_RECEIVER].vfoHz = 7074000;
         server.setSnapshot(s);
 
         QStringList got;
@@ -617,7 +625,7 @@ private slots:
     void broadcastsAModeChange() {
         TciServer server;
         TciRadioSnapshot s;
-        s.modulation = QStringLiteral("usb");
+        s.rx[TciRadio::MAIN_RECEIVER].modulation = QStringLiteral("usb");
         server.setSnapshot(s);
         QVERIFY(server.start(0));
 
@@ -625,7 +633,7 @@ private slots:
         QVERIFY(client.connectTo(server.port()));
         client.collectUntil("ready;");
 
-        s.modulation = QStringLiteral("digu");
+        s.rx[TciRadio::MAIN_RECEIVER].modulation = QStringLiteral("digu");
         server.setSnapshot(s);
 
         WebSocketDecoder::Message m;

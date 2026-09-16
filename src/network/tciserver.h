@@ -12,91 +12,9 @@
 #include <vector>
 
 #include "network/tciprotocol.h"
+#include "network/tciradiostate.h"
 
 class WebSocketServer;
-
-// Radio state the init burst and broadcasts are built from.
-//
-// WHY a snapshot struct rather than a RadioState pointer: RadioState is main-thread-only and
-// CI-enforced (CONVENTIONS.md rule 4), and its getters carry no locking. The TCI server runs on its
-// own thread, so it keeps its own copy, fed by queued signals. Building the init burst from one
-// pass over this struct also keeps it self-consistent - RadioState emits per-field signals with no
-// batch boundary, so live reads could seed a client with a frequency and mode that never coexisted.
-struct TciRadioSnapshot {
-    qint64 vfoAHz = 14074000;
-    qint64 vfoBHz = 14074000;
-    QString modulation = QStringLiteral("usb");
-    bool split = false;
-    bool transmitting = false;
-
-    // The K4's Sub RX, which tunes VFO B. In TCI terms this is CHANNEL 1 of receiver 0, not a
-    // second receiver: the spec's RX_CHANNEL_ENABLE is described as "enable additional receive
-    // channel (VFO B)" and says channel A is always on. That matches the radio exactly, and it is
-    // why trx_count stays 1 while channels_count is 2.
-    bool subEnabled = false;
-    QString modulationB = QStringLiteral("usb");
-    bool rit = false;
-    bool xit = false;
-
-    // ONE offset, matching the radio. The K4 has a single RO register shared by RIT and XIT, with
-    // RT and XT as independent enables, and RadioState models it the same way
-    // (ritXitOffset(), ritXitChanged(rit, xit, offset)). TCI defines RIT_OFFSET and XIT_OFFSET as
-    // two values; they are reported from this one and can never be set independently.
-    // See docs/tci-command-coverage.md section 4.1.
-    int ritXitOffsetHz = 0;
-
-    int filterLowHz = 100;
-    int filterHighHz = 2800;
-    // The power QK4 displays, reported as-is: watts in QRP and QRO, mW in XVTR. Not rescaled to a
-    // percentage, so the K4 front panel, QK4's PWR button and a TCI client all show the same
-    // number. Clamped to the protocol's 0..100, which only bites in the 101-110 W QRO headroom.
-    // See docs/tci-command-coverage.md.
-    int drive = 100;
-
-    // The K4 has no separate tune-power setting, so this tracks drive. Reporting an independent
-    // value would invent a control the radio does not have.
-    int tuneDrive = 100;
-    int micLevel = 50;
-
-    // TCI defines exactly three AGC modes: normal, fast, off. Anything else is unparseable to a
-    // client matching the documented vocabulary.
-    QString agcMode = QStringLiteral("normal");
-
-    bool sqlEnabled = false;
-    // TCI squelch is an ABSOLUTE threshold in dBm, range -140..0. QK4 does not know the K4's
-    // squelch threshold in dBm - the radio reports SQ as an arbitrary integer scale - so no
-    // truthful conversion exists. -140 is "opens on anything", which is both in range and the
-    // least misleading thing to claim. See docs/tci-command-coverage.md.
-    int sqlLevelDbm = -140;
-
-    // Channel 1 is the transmit VFO. With split off it must still report something coherent - the
-    // receive frequency - rather than the 0 a blank VFO B holds, which a client will try to tune to.
-    qint64 txChannelHz() const { return (split && vfoBHz > 0) ? vfoBHz : vfoAHz; }
-};
-
-// Fast-moving telemetry, kept OUT of TciRadioSnapshot on purpose.
-//
-// The snapshot is slow state and is broadcast on change. Sensors move continuously - the S-meter
-// updates several times a second - so running them through the same diff would either flood every
-// client or need a change threshold nobody agreed on. They are stored instead, and emitted on a
-// timer at the interval the client asked for, only to clients that asked.
-struct TciSensorReadings {
-    // Absolute signal level in the RX filter bandwidth, per channel. dBm, as the protocol wants.
-    double sMeterDbm = -140.0;
-    double sMeterSubDbm = -140.0;
-
-    // Transmit. QK4 measures forward power and SWR; see micLevelDbm for the one field it cannot
-    // fill honestly.
-    double forwardPowerW = 0.0;
-    double peakPowerW = 0.0;
-    double swr = 1.0;
-
-    // The protocol wants microphone signal level in dBm. The K4 reports ALC deflection, which is a
-    // drive indicator and not a calibrated microphone level, so there is no truthful conversion.
-    // This stays at the floor rather than passing off a scaled ALC reading as a measurement.
-    // See docs/tci-command-coverage.md.
-    double micLevelDbm = -60.0;
-};
 
 // TCI protocol server.
 //
@@ -115,14 +33,15 @@ public:
     // The TCI convention, and what WSJT-X defaults to.
     static constexpr quint16 DEFAULT_PORT = 50001;
 
-    // Only receiver 0 exists while the design is scoped to the main VFO. WSJT-X ignores a declared
-    // trx_count, so anything addressing receiver 1 has to be refused explicitly rather than steered.
-    static constexpr int ONLY_RECEIVER = 0;
+    // Receiver 0 is the K4's Main RX, receiver 1 its Sub RX. See tciradiostate.h for why the Sub
+    // RX is a receiver rather than a channel.
+    static constexpr int MAIN_RECEIVER = TciRadio::MAIN_RECEIVER;
+    static constexpr int SUB_RECEIVER = TciRadio::SUB_RECEIVER;
+    static constexpr int RECEIVER_COUNT = TciRadio::RECEIVER_COUNT;
 
-    // Channel 0 is VFO A (Main), channel 1 is VFO B (Sub, and the split transmit VFO). Both are
-    // the same VFO B on a K4, which is why one channel index serves both jobs.
-    static constexpr int CHANNEL_A = 0;
-    static constexpr int CHANNEL_B = 1;
+    // Channel 0 is a receiver's own VFO; channel 1 of the MAIN receiver is the split transmit VFO.
+    static constexpr int CHANNEL_A = TciRadio::CHANNEL_A;
+    static constexpr int CHANNEL_B = TciRadio::CHANNEL_B;
 
     explicit TciServer(QObject *parent = nullptr);
     ~TciServer() override;
@@ -171,12 +90,13 @@ signals:
     // One block of client transmit audio, already reduced to 48 kHz mono.
     void txAudioReceived(const QByteArray &f32Mono48k);
 
-    // CAT sets from a client. channel 0 is the receive VFO, 1 the transmit VFO.
-    void setFrequencyRequested(int channel, qint64 hz);
-    void setModulationRequested(const QString &modulation);
+    // CAT sets from a client, addressed by receiver. For the main receiver, channel 0 is its own
+    // VFO and channel 1 the transmit VFO; the sub receiver has only channel 0.
+    void setFrequencyRequested(int receiver, int channel, qint64 hz);
+    void setModulationRequested(int receiver, const QString &modulation);
     void setSplitRequested(bool enabled);
 
-    // A client asked to turn the Sub RX (VFO B) on or off.
+    // A client asked to turn the Sub RX (receiver 1) on or off.
     void setSubReceiverRequested(bool enabled);
 
 private slots:
@@ -192,6 +112,9 @@ private:
     // recognised and answered. Read-only by design - the matching SETs move the radio and are
     // deferred until they can be bench-tested. See docs/tci-server-design.md, phase 8.
     bool answerReadOnly(int clientId, const TciProtocol::Command &command);
+
+    // The per-receiver half of the init burst, so the burst builder stays readable with two.
+    QStringList receiverBurst(int receiver) const;
 
     // Starts or stops the sensor timer to match the current subscriptions.
     void updateSensorTimer();

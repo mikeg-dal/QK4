@@ -6,6 +6,7 @@
 
 #include "network/tciaudioframe.h"
 #include "network/tciprotocol.h"
+#include "network/tciradiostate.h"
 #include "network/tciserver.h"
 #include "network/websocketframe.h"
 #include "tcitestclient.h"
@@ -193,7 +194,7 @@ private slots:
         // A snapshot arrives from a radio that has not caught up yet.
         TciRadioSnapshot lagging;
         lagging.transmitting = false;
-        lagging.vfoAHz = 7074000; // something really did change, so a broadcast does happen
+        lagging.rx[TciRadio::MAIN_RECEIVER].vfoHz = 7074000; // something really did change, so a broadcast does happen
         server.setSnapshot(lagging);
 
         // Whatever else is broadcast, it must never be an unkey.
@@ -270,8 +271,8 @@ private slots:
 
         // A radio-state push carrying the struct default of transmitting == false.
         TciRadioSnapshot s;
-        s.vfoAHz = 7074000;
-        s.vfoBHz = 7074000;
+        s.rx[TciRadio::MAIN_RECEIVER].vfoHz = 7074000;
+        s.rx[TciRadio::SUB_RECEIVER].vfoHz = 7074000;
         server.setSnapshot(s);
 
         // The frequency change may be broadcast; an unkey must NOT be.

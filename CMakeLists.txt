@@ -126,6 +126,7 @@ set(SOURCES
     src/network/tciprotocol.cpp
     src/network/tciaudioframe.cpp
     src/network/tciserver.cpp
+    src/network/tciserverstate.cpp
     src/network/tciaudiobridge.cpp
     src/dsp/audioupsampler.cpp
     src/audio/audioengine.cpp

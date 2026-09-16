@@ -134,6 +134,7 @@ add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
 add_executable(test_tciaudiobridge test_tciaudiobridge.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudiobridge.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
@@ -148,6 +149,7 @@ add_test(NAME TciAudioBridgeTests COMMAND test_tciaudiobridge)
 # isolation, CAT sets and the read-only queries. The transmit path is a separate target below.
 add_executable(test_tciserver test_tciserver.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
@@ -162,6 +164,7 @@ add_test(NAME TciServerTests COMMAND test_tciserver)
 # the socket client in tcitestclient.h.
 add_executable(test_tciservertransmit test_tciservertransmit.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
@@ -176,6 +179,7 @@ add_test(NAME TciServerTransmitTests COMMAND test_tciservertransmit)
 # 800-line limit in CONVENTIONS.md rule 7.
 add_executable(test_tciqueries test_tciqueries.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
@@ -189,6 +193,7 @@ add_test(NAME TciQueriesTests COMMAND test_tciqueries)
 # telemetry an --audit sweep cannot see because none of it is ever a reply to a query.
 add_executable(test_tcisensors test_tcisensors.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp

@@ -1,5 +1,7 @@
 #include "network/tciserver.h"
 
+#include "network/tciserver_internal.h"
+
 #include <QLoggingCategory>
 #include <QSet>
 
@@ -10,44 +12,7 @@
 
 Q_LOGGING_CATEGORY(netTci, "net.tci")
 
-namespace {
-
-using namespace TciProtocol;
-
-// What QK4 claims to support. Sent verbatim as free text because it is legitimately
-// comma-separated - scrubbing it would corrupt the value.
-const char kModulationsList[] = "usb,lsb,cw,cwr,am,sam,fm,nfm,digu,digl,rtty";
-// WSJT-X matches on this string; a mangled one makes it halve transmit amplitude.
-const char kProtocolIdentity[] = "ExpertSDR3,1.5";
-
-// The K4's tuning range.
-constexpr qint64 kVfoLowHz = 100000;
-constexpr qint64 kVfoHighHz = 54000000;
-constexpr int kIfLowHz = -48000;
-constexpr int kIfHighHz = 48000;
-
-// WSJT-X always treats TCI audio as 48 kHz regardless of what a server declares, so declaring
-// anything else is misleading at best. See docs/tci-server-design.md.
-constexpr int kAudioSampleRate = 48000;
-constexpr int kAudioStreamSamples = TciAudioFrame::CHRONO_FLOATS;
-
-// One chrono asks for CHRONO_FLOATS floats = 1024 stereo frames = 21.333 ms at 48 kHz.
-constexpr qint64 kChronoPeriodNs =
-    static_cast<qint64>(TciAudioFrame::CHRONO_FLOATS / 2) * 1000000000LL / kAudioSampleRate;
-constexpr int kChronoPollMs = 5;
-
-// Audio blocks are far too frequent to log individually - roughly 47 a second each way. Summarise
-// instead, so a log can answer "is audio actually moving" without drowning everything else.
-// Sensor reporting interval. The spec allows 30..1000 ms and makes the argument optional; 200 ms
-// is a readable meter without flooding the link, and is what the reference server defaults to.
-constexpr int kSensorIntervalDefaultMs = 200;
-constexpr int kSensorIntervalMinMs = 30;
-constexpr int kSensorIntervalMaxMs = 1000;
-
-constexpr int kRxSummaryEveryBlocks = 200; // ~4.3 s
-constexpr int kTxSummaryEveryBlocks = 100; // ~2.1 s
-
-} // namespace
+using namespace TciServerInternal;
 
 TciServer::TciServer(QObject *parent)
     : QObject(parent), m_socketServer(new WebSocketServer(this)), m_chronoTimer(new QTimer(this)),
@@ -87,7 +52,7 @@ void TciServer::stop() {
         m_snapshot.transmitting = false;
         // Say so before the listener goes away: a client that is about to be disconnected should
         // not be left holding an ON indicator.
-        m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(false)));
+        m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
         emit pttRequested(false);
     }
     m_socketServer->stop();
@@ -108,152 +73,6 @@ quint16 TciServer::port() const {
 
 int TciServer::clientCount() const {
     return m_socketServer->clientCount();
-}
-
-void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
-    const TciRadioSnapshot previous = m_snapshot;
-    m_snapshot = snapshot;
-
-    // WHO OWNS THE TRANSMIT STATE depends on whether a TCI client is holding PTT.
-    //
-    //  * A CLIENT HOLDS IT: its own assertion wins. The K4 keys only once TX audio starts
-    //    arriving, so RadioState lags the client by whole packets; taking the radio's value here
-    //    broadcast a spurious `trx:0,false;` mid-transmission and WSJT-X stopped sending audio.
-    //
-    //  * NOBODY HOLDS IT: the radio is the only truth there is, and a change must reach every
-    //    client. An operator keying the mic or a footswitch, another CAT client, or the K4's own
-    //    keying are all invisible to TCI otherwise - a logger sits showing RX while the radio
-    //    transmits. This case used to be missed entirely, because the carry-over was
-    //    unconditional.
-    if (m_pttOwner != -1) {
-        m_snapshot.transmitting = previous.transmitting;
-    }
-
-    if (clientCount() == 0) {
-        return; // nobody to tell; the init burst will carry it
-    }
-    const QString trx = QString::number(ONLY_RECEIVER);
-
-    if (snapshot.vfoAHz != previous.vfoAHz) {
-        m_socketServer->broadcastText(
-            message(QStringLiteral("vfo"), trx, QStringLiteral("0"), QString::number(snapshot.vfoAHz)));
-        m_socketServer->broadcastText(message(QStringLiteral("dds"), trx, QString::number(snapshot.vfoAHz)));
-    }
-    // Channel 1 follows VFO B while split is on and the receive frequency otherwise, so it can move
-    // when either changes.
-    if (snapshot.txChannelHz() != previous.txChannelHz()) {
-        m_socketServer->broadcastText(
-            message(QStringLiteral("vfo"), trx, QStringLiteral("1"), QString::number(snapshot.txChannelHz())));
-        // tx_frequency is a server-to-client notification with no read form, so a client that
-        // wants the transmit frequency has no way to ask for it - it only ever learns by being
-        // told. Split is exactly when it matters and exactly when it differs from the RX VFO.
-        m_socketServer->broadcastText(message(QStringLiteral("tx_frequency"), QString::number(snapshot.txChannelHz())));
-    }
-    if (snapshot.modulation != previous.modulation) {
-        m_socketServer->broadcastText(message(QStringLiteral("modulation"), trx, snapshot.modulation));
-    }
-    if (snapshot.subEnabled != previous.subEnabled) {
-        m_socketServer->broadcastText(message(QStringLiteral("rx_channel_enable"), trx, QString::number(CHANNEL_B),
-                                              boolText(snapshot.subEnabled)));
-    }
-    if (snapshot.split != previous.split) {
-        m_socketServer->broadcastText(message(QStringLiteral("split_enable"), trx, boolText(snapshot.split)));
-    }
-    // Radio-driven transmit. While a client owns PTT this can never fire, because the carry-over
-    // above makes the value identical; setPtt broadcasts that case instead.
-    if (m_snapshot.transmitting != previous.transmitting) {
-        m_socketServer->broadcastText(message(QStringLiteral("trx"), trx, boolText(m_snapshot.transmitting)));
-    }
-
-    if (snapshot.rit != previous.rit) {
-        m_socketServer->broadcastText(message(QStringLiteral("rit_enable"), trx, boolText(snapshot.rit)));
-    }
-    if (snapshot.xit != previous.xit) {
-        m_socketServer->broadcastText(message(QStringLiteral("xit_enable"), trx, boolText(snapshot.xit)));
-    }
-    if (snapshot.ritXitOffsetHz != previous.ritXitOffsetHz) {
-        // One register, reported under both names - see TciRadioSnapshot.
-        const QString offset = QString::number(snapshot.ritXitOffsetHz);
-        m_socketServer->broadcastText(message(QStringLiteral("rit_offset"), trx, offset));
-        m_socketServer->broadcastText(message(QStringLiteral("xit_offset"), trx, offset));
-    }
-    if (snapshot.agcMode != previous.agcMode) {
-        m_socketServer->broadcastText(message(QStringLiteral("agc_mode"), trx, snapshot.agcMode));
-    }
-    if (snapshot.drive != previous.drive) {
-        // Always <trx>,<power>: a bare "drive:0;" crashes ESDR3-mode WSJT-X and JTDX, which index
-        // args[1] unconditionally. That rule applies to the broadcast as much as the reply.
-        m_socketServer->broadcastText(message(QStringLiteral("drive"), trx, QString::number(snapshot.drive)));
-    }
-    if (snapshot.tuneDrive != previous.tuneDrive) {
-        m_socketServer->broadcastText(message(QStringLiteral("tune_drive"), trx, QString::number(snapshot.tuneDrive)));
-    }
-}
-
-QStringList TciServer::initBurst() const {
-    const QString trx = QString::number(ONLY_RECEIVER);
-    const TciRadioSnapshot &s = m_snapshot;
-
-    QStringList burst;
-    burst << message(QStringLiteral("vfo_limits"), QString::number(kVfoLowHz), QString::number(kVfoHighHz))
-          << message(QStringLiteral("if_limits"), QString::number(kIfLowHz), QString::number(kIfHighHz))
-          // trx_count is 1 while only the main VFO is in scope. WSJT-X ignores it, so refusing
-          // trx:1 explicitly is what actually keeps a misconfigured client honest.
-          << message(QStringLiteral("trx_count"), QStringLiteral("1"))
-          // Plural. The published PDF says CHANNEL_COUNT and the reference parser aborts on it.
-          << message(QStringLiteral("channels_count"), QStringLiteral("2"))
-          << message(QStringLiteral("device"), QStringLiteral("QK4"))
-          << message(QStringLiteral("receive_only"), boolText(false))
-          << messageFreeText(QStringLiteral("modulations_list"), QLatin1String(kModulationsList))
-          << messageFreeText(QStringLiteral("protocol"), QLatin1String(kProtocolIdentity))
-          << message(QStringLiteral("vfo"), trx, QStringLiteral("0"), QString::number(s.vfoAHz))
-          << message(QStringLiteral("vfo"), trx, QStringLiteral("1"), QString::number(s.txChannelHz()))
-          << message(QStringLiteral("dds"), trx, QString::number(s.vfoAHz))
-          << message(QStringLiteral("tx_frequency"), QString::number(s.txChannelHz()))
-          << message(QStringLiteral("modulation"), trx, s.modulation)
-          << message(QStringLiteral("rx_enable"), trx, boolText(true))
-          // Channel A is always on; channel B follows the radio's Sub RX.
-          << message(QStringLiteral("rx_channel_enable"), trx, QString::number(CHANNEL_A), boolText(true))
-          << message(QStringLiteral("rx_channel_enable"), trx, QString::number(CHANNEL_B), boolText(s.subEnabled))
-          << message(QStringLiteral("rx_filter_band"), trx, QString::number(s.filterLowHz),
-                     QString::number(s.filterHighHz))
-          << message(QStringLiteral("rit_enable"), trx, boolText(s.rit))
-          << message(QStringLiteral("xit_enable"), trx, boolText(s.xit))
-          // Both from the one register the radio actually has.
-          << message(QStringLiteral("rit_offset"), trx, QString::number(s.ritXitOffsetHz))
-          << message(QStringLiteral("xit_offset"), trx, QString::number(s.ritXitOffsetHz))
-          // Not decoration: the RF2K-S amplifier uses split_enable:0,false as its signal that VFO 0
-          // is active, and reports "No TCI available" until it arrives.
-          << message(QStringLiteral("split_enable"), trx, boolText(s.split))
-          << message(QStringLiteral("lock"), trx, boolText(false))
-          << message(QStringLiteral("sql_enable"), trx, boolText(s.sqlEnabled))
-          << message(QStringLiteral("sql_level"), trx, QString::number(s.sqlLevelDbm))
-          << message(QStringLiteral("agc_mode"), trx, s.agcMode)
-          << message(QStringLiteral("rx_nb_enable"), trx, boolText(false))
-          << message(QStringLiteral("rx_nr_enable"), trx, boolText(false))
-          << message(QStringLiteral("rx_anf_enable"), trx, boolText(false))
-          << message(QStringLiteral("rx_apf_enable"), trx, boolText(false))
-          << message(QStringLiteral("mute"), trx, boolText(false))
-          << message(QStringLiteral("tx_enable"), trx, boolText(true))
-          // drive and tune_drive must always carry <trx>,<power>: a bare "drive:0;" crashes
-          // ESDR3-mode WSJT-X and JTDX, which index args[1] unconditionally.
-          << message(QStringLiteral("drive"), trx, QString::number(s.drive))
-          << message(QStringLiteral("tune_drive"), trx, QString::number(s.tuneDrive))
-          // mic_level, trx, volume are global single-argument commands - no receiver index.
-          << message(QStringLiteral("mic_level"), QString::number(s.micLevel))
-          << message(QStringLiteral("trx"), trx, boolText(s.transmitting))
-          << message(QStringLiteral("volume"), QStringLiteral("0"))
-          << message(QStringLiteral("audio_samplerate"), QString::number(kAudioSampleRate))
-          << message(QStringLiteral("audio_stream_sample_type"), QStringLiteral("float32"))
-          << message(QStringLiteral("audio_stream_channels"), QStringLiteral("2"))
-          << message(QStringLiteral("audio_stream_samples"), QString::number(kAudioStreamSamples))
-          << message(QStringLiteral("tx_stream_audio_buffering"), QStringLiteral("50"))
-          << message(QStringLiteral("iq_samplerate"), QString::number(kAudioSampleRate))
-          << message(QStringLiteral("start"))
-          // ready LAST, after everything. SDC and CW Skimmer latch cached settings the instant it
-          // arrives, and audio_start must never appear in the greeting - it is client-owned.
-          << message(QStringLiteral("ready"));
-    return burst;
 }
 
 void TciServer::onClientConnected(int clientId, const QString &peerAddress) {
@@ -306,7 +125,7 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
         const QString &name = command.name;
 
         if (name == QLatin1String("audio_start")) {
-            int receiver = ONLY_RECEIVER;
+            int receiver = MAIN_RECEIVER;
             command.argAsInt(0, &receiver);
             const bool first = m_audioClients.isEmpty();
             m_audioClients.insert(clientId);
@@ -317,7 +136,7 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
                 emit audioStartRequested(receiver);
             }
         } else if (name == QLatin1String("audio_stop")) {
-            int receiver = ONLY_RECEIVER;
+            int receiver = MAIN_RECEIVER;
             command.argAsInt(0, &receiver);
             const bool had = m_audioClients.remove(clientId);
             m_socketServer->sendText(clientId, message(name, QString::number(receiver)));
@@ -355,48 +174,55 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             // vfo:<trx>,<channel>,<hz> sets; vfo:<trx>,<channel> reads. dds is an alias for the
             // receive VFO and carries no channel.
             const bool isDds = (name == QLatin1String("dds"));
-            int receiver = ONLY_RECEIVER;
-            int channel = 0;
+            int receiver = MAIN_RECEIVER;
+            int channel = CHANNEL_A;
             qint64 hz = 0;
             const bool haveReceiver = command.argAsInt(0, &receiver);
             const bool haveChannel = isDds ? true : command.argAsInt(1, &channel);
             const bool haveHz = command.argAsLongLong(isDds ? 1 : 2, &hz);
 
-            if (!haveReceiver || receiver != ONLY_RECEIVER || !haveChannel) {
+            if (!haveReceiver || !m_snapshot.validReceiver(receiver) || !haveChannel) {
                 continue; // an unknown receiver produces no request at all
             }
-            // Range-check the channel: "vfo:0,2,..." must not be treated as channel 0.
-            if (!isDds && channel != 0 && channel != 1) {
+            if (isDds) {
+                channel = CHANNEL_A;
+            }
+            // Channel B exists only on the main receiver, where it is the transmit VFO.
+            if (channel != CHANNEL_A && !(receiver == MAIN_RECEIVER && channel == CHANNEL_B)) {
                 continue;
             }
-            const qint64 current = (channel == 1) ? m_snapshot.txChannelHz() : m_snapshot.vfoAHz;
+            const qint64 current = (receiver == MAIN_RECEIVER && channel == CHANNEL_B) ? m_snapshot.txChannelHz()
+                                                                                       : m_snapshot.rx[receiver].vfoHz;
             if (haveHz) {
-                emit setFrequencyRequested(isDds ? 0 : channel, hz);
+                emit setFrequencyRequested(receiver, channel, hz);
             }
             // Confirm with what the model currently holds, never with silence. The radio's own
             // change comes back as a broadcast from setSnapshot, which is the authoritative echo -
-            // a stale confirmation is what made WSJT-X transmit out of band in the reference server.
-            m_socketServer->sendText(clientId, message(QStringLiteral("vfo"), QString::number(ONLY_RECEIVER),
-                                                       QString::number(isDds ? 0 : channel), QString::number(current)));
+            // a stale confirmation is what made WSJT-X transmit out of band in the reference
+            // server.
+            m_socketServer->sendText(clientId, message(QStringLiteral("vfo"), QString::number(receiver),
+                                                       QString::number(channel), QString::number(current)));
         } else if (name == QLatin1String("modulation") || name == QLatin1String("mode")) {
-            int receiver = ONLY_RECEIVER;
+            // Per RECEIVER, with no channel argument - which is exactly why the Sub RX is modelled
+            // as receiver 1. As channel 1 of receiver 0 its mode had nowhere to live at all.
+            int receiver = MAIN_RECEIVER;
             const bool haveReceiver = command.argAsInt(0, &receiver);
             const QString wanted = command.arg(1).toLower();
 
-            if (!haveReceiver || receiver != ONLY_RECEIVER) {
+            if (!haveReceiver || !m_snapshot.validReceiver(receiver)) {
                 continue;
             }
             if (!wanted.isEmpty()) {
                 // An unknown modulation is refused rather than coerced. The reference server's
                 // coercion to usb puts the radio in a mode nobody asked for, silently.
                 if (QString::fromLatin1(kModulationsList).split(QLatin1Char(',')).contains(wanted)) {
-                    emit setModulationRequested(wanted);
+                    emit setModulationRequested(receiver, wanted);
                 }
             }
-            m_socketServer->sendText(
-                clientId, message(QStringLiteral("modulation"), QString::number(ONLY_RECEIVER), m_snapshot.modulation));
+            m_socketServer->sendText(clientId, message(QStringLiteral("modulation"), QString::number(receiver),
+                                                       m_snapshot.rx[receiver].modulation));
         } else if (name == QLatin1String("trx")) {
-            int receiver = ONLY_RECEIVER;
+            int receiver = MAIN_RECEIVER;
             bool keyed = false;
             const bool haveReceiver = command.argAsInt(0, &receiver);
             const bool haveState = command.argAsBool(1, &keyed);
@@ -405,52 +231,80 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             // the reference server turns "trx:0,yes" into a silent unkey.
             if (!haveReceiver || !haveState) {
                 m_socketServer->sendText(
-                    clientId, message(name, QString::number(ONLY_RECEIVER), boolText(m_snapshot.transmitting)));
-            } else if (receiver != ONLY_RECEIVER) {
-                // Only the main VFO exists. Decline explicitly - silence surfaces in WSJT-X as
-                // "TCI failed to set ptt" with no cause, and PTT must never fall back to trx 0.
+                    clientId, message(name, QString::number(MAIN_RECEIVER), boolText(m_snapshot.transmitting)));
+            } else if (receiver != MAIN_RECEIVER) {
+                // ONLY THE MAIN RECEIVER TRANSMITS. The K4 has one transmitter, and the sub
+                // receiver is receive-only however it is addressed. Decline explicitly - silence
+                // surfaces in WSJT-X as "TCI failed to set ptt" with no cause, and PTT must never
+                // fall back to another receiver.
                 m_socketServer->sendText(clientId, message(name, QString::number(receiver), boolText(false)));
             } else {
                 setPtt(clientId, keyed);
             }
-        } else if (name == QLatin1String("rx_channel_enable")) {
-            // rx_channel_enable:<trx>,<channel>[,<bool>] - channel 1 is the Sub RX on VFO B.
-            int receiver = ONLY_RECEIVER;
+        } else if (name == QLatin1String("rx_channel_enable") || name == QLatin1String("rx_enable")) {
+            // Two spellings for one thing, because clients disagree about how a second receiver is
+            // addressed:
+            //   rx_channel_enable:<trx>,<channel>[,<bool>]  - ExpertSDR3's channel B of receiver 0
+            //   rx_enable:<trx>[,<bool>]                    - receiver 1 directly
+            // Both land on the K4's Sub RX. See tciradiostate.h.
+            const bool byChannel = (name == QLatin1String("rx_channel_enable"));
+            int receiver = MAIN_RECEIVER;
             int channel = CHANNEL_A;
             bool wanted = false;
             const bool haveReceiver = command.argAsInt(0, &receiver);
-            const bool haveChannel = command.argAsInt(1, &channel);
-            const bool haveState = command.argAsBool(2, &wanted);
+            const bool haveChannel = byChannel ? command.argAsInt(1, &channel) : true;
+            const bool haveState = command.argAsBool(byChannel ? 2 : 1, &wanted);
 
-            if (!haveReceiver || receiver != ONLY_RECEIVER || !haveChannel) {
+            if (!haveReceiver || !m_snapshot.validReceiver(receiver) || !haveChannel) {
                 continue;
             }
-            if (channel == CHANNEL_A) {
-                // Channel A is the main receiver and cannot be switched off. Report it rather than
-                // staying silent, and never act - a client that believes it turned the main
-                // receiver off would stop asking for audio.
-                m_socketServer->sendText(clientId, message(name, QString::number(ONLY_RECEIVER),
-                                                           QString::number(CHANNEL_A), boolText(true)));
+
+            // Which receiver is actually being addressed, whichever spelling was used.
+            int target = receiver;
+            if (byChannel) {
+                if (receiver != MAIN_RECEIVER) {
+                    continue; // only the main receiver has a second channel
+                }
+                if (channel == CHANNEL_B) {
+                    target = SUB_RECEIVER;
+                } else if (channel != CHANNEL_A) {
+                    continue; // no such channel
+                }
+            }
+
+            if (target == MAIN_RECEIVER) {
+                // The main receiver cannot be switched off. Report it rather than staying silent:
+                // a client that believed it had turned the main receiver off would stop asking
+                // for audio.
+                if (byChannel) {
+                    m_socketServer->sendText(clientId, message(name, QString::number(MAIN_RECEIVER),
+                                                               QString::number(CHANNEL_A), boolText(true)));
+                } else {
+                    m_socketServer->sendText(clientId, message(name, QString::number(MAIN_RECEIVER), boolText(true)));
+                }
                 continue;
             }
-            if (channel != CHANNEL_B) {
-                continue; // no such channel
-            }
+
             // A steady value is not an edge, for the same reason split_enable checks: repeating
             // the state the radio already holds must not generate CAT traffic.
-            if (haveState && wanted != m_snapshot.subEnabled) {
+            if (haveState && wanted != m_snapshot.rx[SUB_RECEIVER].enabled) {
                 emit setSubReceiverRequested(wanted);
             }
             // Confirm with what the model holds; the radio's own change arrives as a broadcast.
-            m_socketServer->sendText(clientId, message(name, QString::number(ONLY_RECEIVER), QString::number(CHANNEL_B),
-                                                       boolText(m_snapshot.subEnabled)));
+            const bool held = m_snapshot.rx[SUB_RECEIVER].enabled;
+            if (byChannel) {
+                m_socketServer->sendText(clientId, message(name, QString::number(MAIN_RECEIVER),
+                                                           QString::number(CHANNEL_B), boolText(held)));
+            } else {
+                m_socketServer->sendText(clientId, message(name, QString::number(SUB_RECEIVER), boolText(held)));
+            }
         } else if (name == QLatin1String("split_enable")) {
-            int receiver = ONLY_RECEIVER;
+            int receiver = MAIN_RECEIVER;
             bool wanted = false;
             const bool haveReceiver = command.argAsInt(0, &receiver);
             const bool haveState = command.argAsBool(1, &wanted);
 
-            if (haveReceiver && receiver == ONLY_RECEIVER && haveState) {
+            if (haveReceiver && receiver == MAIN_RECEIVER && haveState) {
                 // A STEADY false IS NOT AN EDGE. WSJT-X sends split_enable:<n>,false as part of its
                 // normal sequence BEFORE programming channel 1; acting on it every time would tear
                 // down a split the operator had just set up. Only a real transition does anything.
@@ -459,132 +313,11 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
                 }
             }
             m_socketServer->sendText(clientId,
-                                     message(name, QString::number(ONLY_RECEIVER), boolText(m_snapshot.split)));
+                                     message(name, QString::number(MAIN_RECEIVER), boolText(m_snapshot.split)));
         }
         // Everything else: silence. That is what the protocol specifies for an unknown or refused
         // command, and WSJT-X sends nothing else during a receive session.
     }
-}
-
-bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command) {
-    // Answers a query from the snapshot without touching the radio.
-    //
-    // WHY answer at all rather than stay silent: silence is what the protocol specifies for an
-    // unknown command, but these are commands this server does declare in its init burst. A client
-    // that polls one and gets nothing back can sit waiting - the failure TR4W recorded for an
-    // unexpanded split_enable. Reporting the state we hold is honest and cheap.
-    //
-    // WHY read-only: the matching SETs move the radio, and none of them has been bench-tested
-    // against a K4. They are deliberately deferred rather than shipped untested - see
-    // docs/tci-server-design.md, phase 8.
-    const QString &name = command.name;
-    const QString trx = QString::number(ONLY_RECEIVER);
-    const TciRadioSnapshot &s = m_snapshot;
-
-    // Per-receiver values: a bad receiver index produces no answer at all.
-    static const QSet<QString> perReceiver{
-        QStringLiteral("rit_enable"),   QStringLiteral("xit_enable"),     QStringLiteral("rit_offset"),
-        QStringLiteral("xit_offset"),   QStringLiteral("rx_filter_band"), QStringLiteral("drive"),
-        QStringLiteral("tune_drive"),   QStringLiteral("agc_mode"),       QStringLiteral("rx_enable"),
-        QStringLiteral("tx_enable"),    QStringLiteral("lock"),           QStringLiteral("sql_enable"),
-        QStringLiteral("sql_level"),    QStringLiteral("mute"),           QStringLiteral("rx_nb_enable"),
-        QStringLiteral("rx_nr_enable"), QStringLiteral("rx_anf_enable"),  QStringLiteral("rx_apf_enable"),
-    };
-    if (perReceiver.contains(name)) {
-        // A first argument that PARSES AS AN INTEGER is the receiver index - that is the TCI
-        // convention for every command in this group. One that does not parse is a value in the
-        // global form (`rit_enable:true;`), which addresses the only receiver by definition.
-        // Refusing on a failed parse instead would drop that form silently.
-        int receiver = ONLY_RECEIVER;
-        if (command.argCount() > 0 && command.argAsInt(0, &receiver) && receiver != ONLY_RECEIVER) {
-            return true; // addressed a receiver that does not exist
-        }
-        QString reply;
-        if (name == QLatin1String("rit_enable")) {
-            reply = message(name, trx, boolText(s.rit));
-        } else if (name == QLatin1String("xit_enable")) {
-            reply = message(name, trx, boolText(s.xit));
-        } else if (name == QLatin1String("rit_offset") || name == QLatin1String("xit_offset")) {
-            // Deliberately the same value for both: the radio has one offset register.
-            reply = message(name, trx, QString::number(s.ritXitOffsetHz));
-        } else if (name == QLatin1String("rx_filter_band")) {
-            reply = message(name, trx, QString::number(s.filterLowHz), QString::number(s.filterHighHz));
-        } else if (name == QLatin1String("drive")) {
-            // Always <trx>,<power>: a bare "drive:0;" crashes ESDR3-mode WSJT-X and JTDX.
-            reply = message(name, trx, QString::number(s.drive));
-        } else if (name == QLatin1String("tune_drive")) {
-            reply = message(name, trx, QString::number(s.tuneDrive));
-        } else if (name == QLatin1String("agc_mode")) {
-            reply = message(name, trx, s.agcMode);
-        } else if (name == QLatin1String("rx_enable") || name == QLatin1String("tx_enable")) {
-            reply = message(name, trx, boolText(true));
-        } else if (name == QLatin1String("sql_level")) {
-            reply = message(name, trx, QString::number(s.sqlLevelDbm));
-        } else if (name == QLatin1String("sql_enable")) {
-            reply = message(name, trx, boolText(s.sqlEnabled));
-        } else {
-            // lock, sql_enable, mute and the DSP flags are all reported false: QK4 does not model
-            // them for TCI yet, and claiming otherwise would be a lie a client could act on.
-            reply = message(name, trx, boolText(false));
-        }
-        m_socketServer->sendText(clientId, reply);
-        return true;
-    }
-
-    // Global values carry no receiver index.
-    if (name == QLatin1String("mic_level")) {
-        m_socketServer->sendText(clientId, message(name, QString::number(s.micLevel)));
-        return true;
-    }
-    if (name == QLatin1String("volume")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("0")));
-        return true;
-    }
-    if (name == QLatin1String("trx_count")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("1")));
-        return true;
-    }
-    if (name == QLatin1String("channels_count")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("2")));
-        return true;
-    }
-    if (name == QLatin1String("device")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("QK4")));
-        return true;
-    }
-    if (name == QLatin1String("receive_only")) {
-        m_socketServer->sendText(clientId, message(name, boolText(false)));
-        return true;
-    }
-    if (name == QLatin1String("protocol")) {
-        m_socketServer->sendText(clientId, messageFreeText(name, QLatin1String(kProtocolIdentity)));
-        return true;
-    }
-    if (name == QLatin1String("modulations_list")) {
-        m_socketServer->sendText(clientId, messageFreeText(name, QLatin1String(kModulationsList)));
-        return true;
-    }
-    if (name == QLatin1String("audio_samplerate") || name == QLatin1String("iq_samplerate")) {
-        m_socketServer->sendText(clientId, message(name, QString::number(kAudioSampleRate)));
-        return true;
-    }
-    if (name == QLatin1String("audio_stream_samples")) {
-        m_socketServer->sendText(clientId, message(name, QString::number(kAudioStreamSamples)));
-        return true;
-    }
-    if (name == QLatin1String("tx_stream_audio_buffering")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("50")));
-        return true;
-    }
-    if (name == QLatin1String("audio_stream_channels")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("2")));
-        return true;
-    }
-    if (name == QLatin1String("audio_stream_sample_type")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("float32")));
-        return true;
-    }
-    return false;
 }
 
 void TciServer::setSensors(const TciSensorReadings &readings) {
@@ -609,38 +342,48 @@ void TciServer::updateSensorTimer() {
 }
 
 void TciServer::onSensorTick() {
-    const QString trx = QString::number(ONLY_RECEIVER);
-
     // WHY a snapshot of the id sets rather than iterating them directly: sendText can surface a
     // disconnect, whose handler removes from these very sets. Same hazard as the session table.
     if (!m_rxSensorClients.isEmpty()) {
-        const QString mainLevel = QString::number(m_sensors.sMeterDbm, 'f', 1);
-        const QString subLevel = QString::number(m_sensors.sMeterSubDbm, 'f', 1);
+        // Built once per tick, not once per client.
+        QStringList readings;
         // rx_sensors is deprecated in TCI 2.0 in favour of rx_channel_sensors, but older clients
-        // only understand the former, so both go out.
-        const QString legacy = message(QStringLiteral("rx_sensors"), trx, mainLevel);
-        const QString chanA = message(QStringLiteral("rx_channel_sensors"), trx, QString::number(CHANNEL_A), mainLevel);
-        const QString chanB = message(QStringLiteral("rx_channel_sensors"), trx, QString::number(CHANNEL_B), subLevel);
+        // only understand the former. It has no receiver index in practice, so it carries the
+        // main receiver.
+        readings << message(QStringLiteral("rx_sensors"), QString::number(MAIN_RECEIVER),
+                            QString::number(m_sensors.sMeterDbm[MAIN_RECEIVER], 'f', 1));
+        for (int r = 0; r < RECEIVER_COUNT; ++r) {
+            // Only claim a level for a receiver that is switched on.
+            if (!m_snapshot.rx[r].enabled) {
+                continue;
+            }
+            readings << message(QStringLiteral("rx_channel_sensors"), QString::number(r), QString::number(CHANNEL_A),
+                                QString::number(m_sensors.sMeterDbm[r], 'f', 1));
+        }
+        // The sub receiver doubles as channel B of the main one, for clients that model it the
+        // ExpertSDR3 way rather than as a second receiver.
+        if (m_snapshot.rx[SUB_RECEIVER].enabled) {
+            readings << message(QStringLiteral("rx_channel_sensors"), QString::number(MAIN_RECEIVER),
+                                QString::number(CHANNEL_B), QString::number(m_sensors.sMeterDbm[SUB_RECEIVER], 'f', 1));
+        }
 
         const QList<int> targets = m_rxSensorClients.values();
         for (int id : targets) {
             if (!m_rxSensorClients.contains(id)) {
                 continue; // dropped while we were sending to an earlier client
             }
-            m_socketServer->sendText(id, legacy);
-            m_socketServer->sendText(id, chanA);
-            // Only claim a level for channel B when there is a receiver behind it.
-            if (m_snapshot.subEnabled) {
-                m_socketServer->sendText(id, chanB);
+            for (const QString &line : readings) {
+                m_socketServer->sendText(id, line);
             }
         }
     }
 
     if (!m_txSensorClients.isEmpty()) {
         // Five arguments, so the QStringList form: trx, mic dBm, RMS power W, peak power W, SWR.
+        // Transmit belongs to the main receiver; the K4 has one transmitter.
         const QString reading =
             message(QStringLiteral("tx_sensors"),
-                    QStringList{trx, QString::number(m_sensors.micLevelDbm, 'f', 1),
+                    QStringList{QString::number(MAIN_RECEIVER), QString::number(m_sensors.micLevelDbm, 'f', 1),
                                 QString::number(m_sensors.forwardPowerW, 'f', 1),
                                 QString::number(m_sensors.peakPowerW, 'f', 1), QString::number(m_sensors.swr, 'f', 2)});
         const QList<int> targets = m_txSensorClients.values();
@@ -659,7 +402,7 @@ void TciServer::setPtt(int clientId, bool active) {
         // refused rather than silently stealing it.
         if (m_pttOwner != -1 && m_pttOwner != clientId) {
             m_socketServer->sendText(clientId,
-                                     message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(false)));
+                                     message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
             return;
         }
         m_pttOwner = clientId;
@@ -671,7 +414,7 @@ void TciServer::setPtt(int clientId, bool active) {
         // asked for it. The requester is included, so this is still the echo it waits for -
         // and WSJT-X drops the link if a PTT request is not reflected quickly, so it goes out
         // before the chrono clock starts.
-        m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(true)));
+        m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(true)));
         emit pttRequested(true);
         startChrono(clientId);
         return;
@@ -680,7 +423,7 @@ void TciServer::setPtt(int clientId, bool active) {
     // An unkey from a client that does not hold PTT is a status report, not a command. Acting on it
     // would let any client unkey the operator.
     if (m_pttOwner != clientId) {
-        m_socketServer->sendText(clientId, message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER),
+        m_socketServer->sendText(clientId, message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER),
                                                    boolText(m_snapshot.transmitting)));
         return;
     }
@@ -690,7 +433,7 @@ void TciServer::setPtt(int clientId, bool active) {
     m_pttOwner = -1;
     m_snapshot.transmitting = false;
     // Broadcast for the same reason as the key: every client tracks the transmitter.
-    m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(ONLY_RECEIVER), boolText(false)));
+    m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
     emit pttRequested(false);
 }
 
@@ -702,7 +445,7 @@ void TciServer::startChrono(int clientId) {
                    << "ms, poll" << kChronoPollMs << "ms";
     m_chronoTimer->start();
     // Prime it: the client sends nothing at all until the first request arrives.
-    m_socketServer->sendBinary(clientId, TciAudioFrame::encodeTxChrono(ONLY_RECEIVER, kAudioSampleRate));
+    m_socketServer->sendBinary(clientId, TciAudioFrame::encodeTxChrono(MAIN_RECEIVER, kAudioSampleRate));
 }
 
 void TciServer::stopChrono() {
@@ -729,7 +472,7 @@ void TciServer::onChronoTick() {
 
     // Drain the backlog rather than emitting one per tick: a late timer must not cost rate. This is
     // what produces the bursty cadence measured on the reference server, which clients tolerate.
-    const QByteArray frame = TciAudioFrame::encodeTxChrono(ONLY_RECEIVER, kAudioSampleRate);
+    const QByteArray frame = TciAudioFrame::encodeTxChrono(MAIN_RECEIVER, kAudioSampleRate);
     while (m_chronoAccumNs >= kChronoPeriodNs) {
         m_chronoAccumNs -= kChronoPeriodNs;
         m_socketServer->sendBinary(m_chronoClient, frame);
@@ -765,7 +508,7 @@ void TciServer::sendRxAudio(const std::vector<float> &interleavedStereo, int sam
     if (m_audioClients.isEmpty() || interleavedStereo.empty()) {
         return;
     }
-    const QByteArray frame = TciAudioFrame::encodeRxAudio(ONLY_RECEIVER, sampleRate, interleavedStereo.data(),
+    const QByteArray frame = TciAudioFrame::encodeRxAudio(MAIN_RECEIVER, sampleRate, interleavedStereo.data(),
                                                           static_cast<int>(interleavedStereo.size()));
     for (int clientId : m_audioClients) {
         m_socketServer->sendBinary(clientId, frame);

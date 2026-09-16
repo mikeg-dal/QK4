@@ -4,6 +4,7 @@
 #include <QSignalSpy>
 
 #include "network/tciprotocol.h"
+#include "network/tciradiostate.h"
 #include "network/tciserver.h"
 #include "network/websocketframe.h"
 #include "tcitestclient.h"
@@ -26,7 +27,9 @@ private slots:
         // anything else, so this pins the CONSTRAINT rather than one literal value.
         TciRadioSnapshot snapshot;
         for (const QString &mode : {QStringLiteral("normal"), QStringLiteral("fast"), QStringLiteral("off")}) {
-            snapshot.agcMode = mode;
+            // Both receivers, because the burst now carries an agc_mode for each.
+            snapshot.rx[TciRadio::MAIN_RECEIVER].agcMode = mode;
+            snapshot.rx[TciRadio::SUB_RECEIVER].agcMode = mode;
             TciServer server;
             server.setSnapshot(snapshot);
             bool seen = false;
@@ -69,7 +72,7 @@ private slots:
         // The K4 has ONE offset register (RO) shared by RIT and XIT, with RT and XT as separate
         // enables. Reporting two different offsets would describe a radio that does not exist.
         TciRadioSnapshot snapshot;
-        snapshot.ritXitOffsetHz = 95; // a real value read off the radio
+        snapshot.rx[TciRadio::MAIN_RECEIVER].ritXitOffsetHz = 95; // a real value read off the radio
         TciServer server;
         server.setSnapshot(snapshot);
 
@@ -124,10 +127,10 @@ private slots:
             QStringLiteral("agc_mode:0,normal;"),
             QStringLiteral("rx_filter_band:0,100,2800;"),
             QStringLiteral("sql_level:0,-140;"),
-            QStringLiteral("trx_count:1;"),
+            QStringLiteral("trx_count:2;"),
             QStringLiteral("channels_count:2;"),
             QStringLiteral("protocol:ExpertSDR3,1.5;"),
-            QStringLiteral("modulations_list:usb,lsb,cw,cwr,am,sam,fm,nfm,digu,digl,rtty;"),
+            QStringLiteral("modulations_list:usb,lsb,cw,cwr,am,sam,fm,digu,digl,rtty;"),
             QStringLiteral("audio_samplerate:48000;"),
             QStringLiteral("rit_offset:0,0;"),
         };
@@ -173,7 +176,8 @@ private slots:
         QVERIFY(client.connectTo(server.port()));
         client.collectUntil("ready;");
 
-        client.send("rit_offset:1;");
+        // Receiver 2: there are two receivers, 0 and 1, so this is the first that does not exist.
+        client.send("rit_offset:2;");
         WebSocketDecoder::Message m;
         QVERIFY(!client.next(m, 300));
 
@@ -182,6 +186,12 @@ private slots:
         client.send("rit_offset:0;");
         QVERIFY(client.next(m));
         QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("rit_offset:0,0;"));
+
+        // And the sub receiver answers for itself, which is the whole point of it being a
+        // receiver rather than a channel.
+        client.send("rit_offset:1;");
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("rit_offset:1,0;"));
 
         client.close();
         server.stop();

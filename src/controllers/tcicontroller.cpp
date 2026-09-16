@@ -26,7 +26,11 @@ QString tciModulationFor(RadioState::Mode mode) {
     case RadioState::CW_R:
         return QStringLiteral("cwr");
     case RadioState::FM:
-        return QStringLiteral("nfm");
+        // "fm", not "nfm". The K4 has ONE FM mode and no narrow variant, so reporting nfm
+        // describes a mode the radio does not have. nfm is still ACCEPTED from a client (see
+        // k4ModeFor) because other servers use that name for the same thing - lenient in, exact
+        // out.
+        return QStringLiteral("fm");
     case RadioState::AM:
         return QStringLiteral("am");
     case RadioState::DATA:
@@ -160,18 +164,26 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     // spelling lives (src/network/README.md), and a literal here would be a second place to get it
     // wrong. The TCI layer never spells a K4 command.
     if (m_connectionController) {
-        connect(m_server, &TciServer::setFrequencyRequested, this, [this](int channel, qint64 hz) {
+        connect(m_server, &TciServer::setFrequencyRequested, this, [this](int receiver, int channel, qint64 hz) {
             if (hz <= 0) {
                 return;
             }
-            applyCat(channel == 1 ? CatFrames::frequencyB(static_cast<quint64>(hz))
-                                  : CatFrames::frequencyA(static_cast<quint64>(hz)));
+            // VFO B is addressed two ways and both mean the same register: as the SUB receiver's
+            // own VFO, and as channel 1 of the main receiver (the split transmit VFO). On a K4
+            // they are one piece of hardware.
+            const bool isVfoB = (receiver == TciRadio::SUB_RECEIVER) ||
+                                (receiver == TciRadio::MAIN_RECEIVER && channel == TciRadio::CHANNEL_B);
+            applyCat(isVfoB ? CatFrames::frequencyB(static_cast<quint64>(hz))
+                            : CatFrames::frequencyA(static_cast<quint64>(hz)));
         });
-        connect(m_server, &TciServer::setModulationRequested, this, [this](const QString &modulation) {
+        connect(m_server, &TciServer::setModulationRequested, this, [this](int receiver, const QString &modulation) {
             RadioState::Mode mode = RadioState::USB;
-            if (k4ModeFor(modulation, &mode)) {
-                applyCat(CatFrames::modeA(mode));
+            if (!k4ModeFor(modulation, &mode)) {
+                return;
             }
+            // The whole reason the Sub RX is a receiver rather than a channel: modulation has no
+            // channel argument, so this could not be addressed at all before.
+            applyCat(receiver == TciRadio::SUB_RECEIVER ? CatFrames::modeB(mode) : CatFrames::modeA(mode));
         });
         connect(m_server, &TciServer::setSplitRequested, this,
                 [this](bool enabled) { applyCat(CatFrames::split(enabled)); });
@@ -205,6 +217,7 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         connect(m_radioState, &RadioState::swrChanged, this, [this](double) { publishSensors(); });
         connect(m_radioState, &RadioState::txMeterChanged, this,
                 [this](int, int, double, double) { publishSensors(); });
+        connect(m_radioState, &RadioState::modeBChanged, this, [this](RadioState::Mode) { publishSnapshot(); });
         connect(m_radioState, &RadioState::subRxEnabledChanged, this, [this](bool enabled) {
             // The bridge decides what goes in the right audio channel, and it lives on the TCI
             // thread, so this has to be marshalled rather than written from here.
@@ -257,8 +270,8 @@ void TciController::publishSensors() {
 
     // The protocol wants an absolute level in dBm. RadioState carries the K4's S-meter in its own
     // encoding, so the conversion goes through the one place that owns the S-unit convention.
-    readings.sMeterDbm = SpectrumScale::dbmForSMeterReading(m_radioState->sMeter());
-    readings.sMeterSubDbm = SpectrumScale::dbmForSMeterReading(m_radioState->sMeterB());
+    readings.sMeterDbm[TciRadio::MAIN_RECEIVER] = SpectrumScale::dbmForSMeterReading(m_radioState->sMeter());
+    readings.sMeterDbm[TciRadio::SUB_RECEIVER] = SpectrumScale::dbmForSMeterReading(m_radioState->sMeterB());
 
     readings.forwardPowerW = m_radioState->forwardPower();
     // The K4 reports ONE forward-power figure, not an RMS/peak pair. Reporting it as both is the
@@ -278,30 +291,45 @@ void TciController::publishSnapshot() {
         return;
     }
     TciRadioSnapshot snapshot;
-    snapshot.vfoAHz = static_cast<qint64>(m_radioState->vfoA());
-    snapshot.vfoBHz = static_cast<qint64>(m_radioState->vfoB());
+
+    // MAIN receiver: the K4's VFO A side.
+    TciReceiverState &main = snapshot.rx[TciRadio::MAIN_RECEIVER];
+    main.vfoHz = static_cast<qint64>(m_radioState->vfoA());
+    main.modulation = tciModulationFor(m_radioState->mode());
+    main.enabled = true; // always on
+    main.rit = m_radioState->ritEnabled();
+    main.xit = m_radioState->xitEnabled();
+    main.ritXitOffsetHz = m_radioState->ritXitOffset();
+    main.agcMode = tciAgcModeFor(m_radioState->agcSpeed());
+    main.noiseBlanker = m_radioState->noiseBlankerEnabled();
+    main.noiseReduction = m_radioState->noiseReductionEnabled();
+    main.autoNotch = m_radioState->autoNotchEnabled();
+    main.apf = m_radioState->apfEnabled();
+    main.lock = m_radioState->lockA();
+
+    // SUB receiver: the K4's VFO B side. Every one of these has a *B counterpart in RadioState,
+    // and none of them could be expressed at all while the Sub RX was modelled as a channel -
+    // modulation, rx_filter_band and agc_mode carry no channel argument. See tciradiostate.h.
+    TciReceiverState &sub = snapshot.rx[TciRadio::SUB_RECEIVER];
+    sub.vfoHz = static_cast<qint64>(m_radioState->vfoB());
+    sub.modulation = tciModulationFor(m_radioState->modeB());
+    sub.enabled = m_radioState->subReceiverEnabled();
+    sub.rit = m_radioState->ritEnabledB();
+    sub.ritXitOffsetHz = m_radioState->ritXitOffsetB();
+    sub.agcMode = tciAgcModeFor(m_radioState->agcSpeedB());
+    sub.noiseBlanker = m_radioState->noiseBlankerEnabledB();
+    sub.noiseReduction = m_radioState->noiseReductionEnabledB();
+    sub.autoNotch = m_radioState->autoNotchEnabledB();
+    sub.apf = m_radioState->apfEnabledB();
+    sub.lock = m_radioState->lockB();
+
     snapshot.split = m_radioState->splitEnabled();
-    snapshot.modulation = tciModulationFor(m_radioState->mode());
-
-    // RIT/XIT: two enables, ONE offset - the shape the radio and RadioState both use.
-    snapshot.rit = m_radioState->ritEnabled();
-    snapshot.xit = m_radioState->xitEnabled();
-    snapshot.ritXitOffsetHz = m_radioState->ritXitOffset();
-
-    snapshot.agcMode = tciAgcModeFor(m_radioState->agcSpeed());
-
-    // The Sub RX is TCI channel 1 of receiver 0, not a second receiver. See TciRadioSnapshot.
-    snapshot.subEnabled = m_radioState->subReceiverEnabled();
-
-    // The radio's own transmit state. TciServer decides whether this or a TCI client's assertion
-    // wins - see setSnapshot - but it can only do that if the value actually arrives.
     snapshot.transmitting = m_radioState->isTransmitting();
 
     // The value QK4 already displays - see tciDriveFor. The K4 has no separate tune power, so
     // tune_drive tracks it rather than claiming a control the radio does not have.
     snapshot.drive = tciDriveFor(m_radioState->rfPower());
     snapshot.tuneDrive = snapshot.drive;
-    snapshot.modulationB = tciModulationFor(m_radioState->modeB());
 
     // Queued: the server reads this from its own thread, so it must be handed over by value
     // through the event loop rather than written under it.
