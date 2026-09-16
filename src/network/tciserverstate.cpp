@@ -174,11 +174,18 @@ QStringList TciServer::receiverBurst(int receiver) const {
           << message(QStringLiteral("rx_apf_enable"), trx, boolText(r.apf))
           << message(QStringLiteral("rx_nf_enable"), trx, boolText(r.notchFilter))
           << message(QStringLiteral("mute"), trx, boolText(false))
-          << message(QStringLiteral("tx_enable"), trx, boolText(receiver == MAIN_RECEIVER))
-          // drive and tune_drive must always carry <trx>,<power>: a bare "drive:0;" crashes
-          // ESDR3-mode WSJT-X and JTDX, which index args[1] unconditionally.
-          << message(QStringLiteral("drive"), trx, QString::number(m_snapshot.drive))
-          << message(QStringLiteral("tune_drive"), trx, QString::number(m_snapshot.tuneDrive));
+          << message(QStringLiteral("tx_enable"), trx, boolText(receiver == MAIN_RECEIVER));
+
+    // Drive belongs to the TRANSMITTER, and the K4 has exactly one, behind the main receiver.
+    // Reporting it for the sub receiver as well was duplication describing a control that does
+    // not exist there - a client could reasonably read drive:1,45 as a second power setting.
+    //
+    // Always <trx>,<power> when it IS sent: a bare "drive:0;" crashes ESDR3-mode WSJT-X and JTDX,
+    // which index args[1] unconditionally.
+    if (receiver == MAIN_RECEIVER) {
+        burst << message(QStringLiteral("drive"), trx, QString::number(m_snapshot.drive))
+              << message(QStringLiteral("tune_drive"), trx, QString::number(m_snapshot.tuneDrive));
+    }
     return burst;
 }
 
@@ -283,12 +290,15 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             reply = message(name, trx, QString::number(r.ritXitOffsetHz));
         } else if (name == QLatin1String("rx_filter_band")) {
             reply = message(name, trx, QString::number(r.filterLowHz), QString::number(r.filterHighHz));
-        } else if (name == QLatin1String("drive")) {
+        } else if (name == QLatin1String("drive") || name == QLatin1String("tune_drive")) {
+            // Only the main receiver has a transmitter behind it, so only it has a drive level.
+            // Answering for the sub receiver would invent a second power control - and the reply
+            // has to match the burst, which no longer carries one.
+            if (receiver != MAIN_RECEIVER) {
+                return true; // recognised, deliberately unanswered
+            }
             // Always <trx>,<power>: a bare "drive:0;" crashes ESDR3-mode WSJT-X and JTDX.
-            // Power belongs to the transmitter, so it reads the same for either receiver.
-            reply = message(name, trx, QString::number(s.drive));
-        } else if (name == QLatin1String("tune_drive")) {
-            reply = message(name, trx, QString::number(s.tuneDrive));
+            reply = message(name, trx, QString::number(name == QLatin1String("drive") ? s.drive : s.tuneDrive));
         } else if (name == QLatin1String("agc_mode")) {
             reply = message(name, trx, r.agcMode);
         } else if (name == QLatin1String("rx_enable")) {
