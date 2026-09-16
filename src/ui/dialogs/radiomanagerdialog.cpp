@@ -166,14 +166,12 @@ void RadioManagerDialog::setupUi() {
                                      .arg(K4Styles::Dimensions::BorderRadiusLarge));
     formLayout->addWidget(m_tlsCheckbox, 5, 0, 1, 2);
 
-    // "Only one radio can have this" is enforced by RadioSettings, not here - a settings file can
-    // also be edited by hand. The label says so because the checkbox silently clearing another
-    // radio's setting would otherwise look like a bug.
-    m_startupCheckbox = new QCheckBox("Connect to this radio at startup (only one)", this);
-    m_startupCheckbox->setStyleSheet(m_tlsCheckbox->styleSheet());
-    formLayout->addWidget(m_startupCheckbox, 6, 0, 1, 2);
+    // NO "connect at startup" control here. It lives on the LIST instead, as a tick beside each
+    // radio: with ten K4s saved, a flag buried in the edit form means opening every entry in turn
+    // to find which one is armed. It is also a choice ACROSS the list rather than a property of
+    // one entry, and the list is where the whole list is visible.
 
-    // Row 7: Encode Mode dropdown
+    // Row 6: Encode Mode dropdown
     auto *encodeModeLabel = new QLabel("Audio Mode", this);
     encodeModeLabel->setStyleSheet(labelStyle);
     m_encodeModeCombo = new QComboBox(this);
@@ -208,10 +206,10 @@ void RadioManagerDialog::setupUi() {
     m_encodeModeCombo->addItem("EM1 - RAW 16-bit", 1);
     m_encodeModeCombo->addItem("EM0 - RAW 32-bit", 0);
     m_encodeModeCombo->setCurrentIndex(0); // EM3 default
-    formLayout->addWidget(encodeModeLabel, 7, 0);
-    formLayout->addWidget(m_encodeModeCombo, 7, 1);
+    formLayout->addWidget(encodeModeLabel, 6, 0);
+    formLayout->addWidget(m_encodeModeCombo, 6, 1);
 
-    // Row 8: Streaming Latency dropdown
+    // Row 7: Streaming Latency dropdown
     auto *streamingLatencyLabel = new QLabel("Streaming Latency", this);
     streamingLatencyLabel->setStyleSheet(labelStyle);
     m_streamingLatencyCombo = new QComboBox(this);
@@ -220,8 +218,8 @@ void RadioManagerDialog::setupUi() {
         m_streamingLatencyCombo->addItem(QString::number(i), i);
     }
     m_streamingLatencyCombo->setCurrentIndex(3); // Default: 3
-    formLayout->addWidget(streamingLatencyLabel, 8, 0);
-    formLayout->addWidget(m_streamingLatencyCombo, 8, 1);
+    formLayout->addWidget(streamingLatencyLabel, 7, 0);
+    formLayout->addWidget(m_streamingLatencyCombo, 7, 1);
 
     // Initially hide ID field (shown when TLS is checked)
     m_identityLabel->setVisible(false);
@@ -277,6 +275,7 @@ void RadioManagerDialog::setupUi() {
     connect(m_backButton, &QPushButton::clicked, this, &RadioManagerDialog::onBackClicked);
     connect(m_radioList, &QListWidget::itemSelectionChanged, this, &RadioManagerDialog::onSelectionChanged);
     connect(m_radioList, &QListWidget::itemDoubleClicked, this, &RadioManagerDialog::onItemDoubleClicked);
+    connect(m_radioList, &QListWidget::itemChanged, this, &RadioManagerDialog::onStartupCheckChanged);
     connect(m_tlsCheckbox, &QCheckBox::toggled, this, &RadioManagerDialog::onTlsCheckboxToggled);
 
     // Update button states when host field changes
@@ -289,10 +288,23 @@ void RadioManagerDialog::setupUi() {
 void RadioManagerDialog::refreshList() {
     m_radioList->clear();
 
+    // Populating check states emits itemChanged; without this guard the rebuild reads as the
+    // operator clicking every box in the list.
+    m_populatingList = true;
+
     const auto radios = RadioSettings::instance()->radios();
     for (const auto &radio : radios) {
-        m_radioList->addItem(radio.name.isEmpty() ? radio.host : radio.name);
+        auto *item = new QListWidgetItem(radio.name.isEmpty() ? radio.host : radio.name);
+        // A CHECKBOX that behaves exclusively, rather than a radio button. Exclusivity is the rule
+        // - ticking one clears the rest - but a radio group cannot be cleared at all, and "no
+        // radio opens at startup" has to stay expressible. Untick the armed one and it is off.
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(radio.connectAtStartup ? Qt::Checked : Qt::Unchecked);
+        item->setToolTip(QStringLiteral("Connect to this radio when QK4 starts. Only one radio can be ticked."));
+        m_radioList->addItem(item);
     }
+
+    m_populatingList = false;
 
     // Re-add discovered (unconfigured) entries — prune any that were just saved
     QList<K4RadioInfo> stillUnconfigured;
@@ -333,7 +345,7 @@ void RadioManagerDialog::onConnectClicked() {
         entry.identity = m_identityEdit->text();
         entry.encodeMode = m_encodeModeCombo->currentData().toInt();
         entry.streamingLatency = m_streamingLatencyCombo->currentData().toInt();
-        entry.connectAtStartup = m_startupCheckbox->isChecked();
+        entry.connectAtStartup = startupFlagOfCurrentEntry();
 
         // Set port based on TLS mode if not specified
         if (portText.isEmpty()) {
@@ -348,6 +360,45 @@ void RadioManagerDialog::onConnectClicked() {
         emit connectRequested(entry);
         accept();
     }
+}
+
+void RadioManagerDialog::onStartupCheckChanged(QListWidgetItem *item) {
+    if (m_populatingList || !item) {
+        return;
+    }
+    // Discovered rows are not saved entries; they carry no flag and are not checkable.
+    if (item->data(Qt::UserRole).toString() == QStringLiteral("discovered")) {
+        return;
+    }
+    const int row = m_radioList->row(item);
+    if (row < 0 || row >= RadioSettings::instance()->radios().size()) {
+        return;
+    }
+
+    // Clearing the other ticks is RadioSettings' job, not this handler's - the rule has to hold
+    // for a settings file written by hand too. Setting it emits radiosChanged, which rebuilds the
+    // list from the model, so the boxes end up reflecting what was actually stored rather than
+    // what this click assumed.
+    const int selected = m_radioList->currentRow();
+    if (item->checkState() == Qt::Checked) {
+        RadioSettings::instance()->setConnectAtStartupRadio(row);
+    } else if (RadioSettings::instance()->connectAtStartupIndex() == row) {
+        RadioSettings::instance()->setConnectAtStartupRadio(-1);
+    }
+
+    // The rebuild re-selects the LAST-USED row. Ticking a box beside one radio while editing
+    // another must not drag the form onto a third, so put the selection back.
+    if (selected >= 0 && selected < m_radioList->count()) {
+        m_radioList->setCurrentRow(selected);
+    }
+}
+
+bool RadioManagerDialog::startupFlagOfCurrentEntry() const {
+    const auto radios = RadioSettings::instance()->radios();
+    if (m_currentIndex < 0 || m_currentIndex >= radios.size()) {
+        return false; // a new or discovered radio is never armed by being saved
+    }
+    return radios[m_currentIndex].connectAtStartup;
 }
 
 void RadioManagerDialog::onNewClicked() {
@@ -385,7 +436,7 @@ void RadioManagerDialog::onSaveClicked() {
     entry.identity = identity;
     entry.encodeMode = m_encodeModeCombo->currentData().toInt();
     entry.streamingLatency = m_streamingLatencyCombo->currentData().toInt();
-    entry.connectAtStartup = m_startupCheckbox->isChecked();
+    entry.connectAtStartup = startupFlagOfCurrentEntry();
 
     // Set port based on TLS mode if not specified
     if (portText.isEmpty()) {
@@ -407,26 +458,9 @@ void RadioManagerDialog::onSaveClicked() {
         emit streamingLatencyChanged(entry.streamingLatency);
     }
 
-    // Enforce "only one radio connects at startup" ACROSS the list, not just on this entry.
-    // addRadio/updateRadio store what they are given, so without this a second radio could be
-    // flagged and startup would silently depend on sort order. The list is sorted alphabetically,
-    // so the entry has to be located by identity rather than by the index it was saved at.
-    if (entry.connectAtStartup) {
-        const auto saved = RadioSettings::instance()->radios();
-        for (int i = 0; i < saved.size(); ++i) {
-            if (saved[i] == entry) {
-                RadioSettings::instance()->setConnectAtStartupRadio(i);
-                break;
-            }
-        }
-    } else if (RadioSettings::instance()->connectAtStartupIndex() >= 0) {
-        // Unticking the box on the radio that held the flag turns auto-connect off entirely.
-        const auto saved = RadioSettings::instance()->radios();
-        const int flagged = RadioSettings::instance()->connectAtStartupIndex();
-        if (flagged >= 0 && flagged < saved.size() && saved[flagged] == entry) {
-            RadioSettings::instance()->setConnectAtStartupRadio(-1);
-        }
-    }
+    // NO cross-list enforcement here any more. Saving an entry no longer EDITS the flag - it
+    // carries the stored one through - so nothing this function does can put a second radio in the
+    // armed state. setConnectAtStartupRadio, driven by the list, is the only writer.
 
     // Find the saved entry's new index (list is sorted alphabetically)
     const auto radios = RadioSettings::instance()->radios();
@@ -494,7 +528,6 @@ void RadioManagerDialog::onSelectionChanged() {
             m_portEdit->setText(QString::number(K4Protocol::TLS_PORT));
             m_passwordEdit->clear();
             m_tlsCheckbox->setChecked(true);
-            m_startupCheckbox->setChecked(false); // a discovered radio is not saved yet
             m_identityEdit->clear();
             m_identityLabel->setVisible(true);
             m_identityEdit->setVisible(true);
@@ -551,7 +584,6 @@ void RadioManagerDialog::clearFields() {
     m_portEdit->clear();
     m_passwordEdit->clear();
     m_tlsCheckbox->setChecked(false);
-    m_startupCheckbox->setChecked(false);
     m_identityEdit->clear();
     m_identityLabel->setVisible(false);
     m_identityEdit->setVisible(false);
@@ -567,7 +599,6 @@ void RadioManagerDialog::populateFieldsFromSelection() {
         m_portEdit->setText(QString::number(radio.port));
         m_passwordEdit->setText(radio.password);
         m_tlsCheckbox->setChecked(radio.useTls);
-        m_startupCheckbox->setChecked(radio.connectAtStartup);
         m_identityEdit->setText(radio.identity);
         m_identityLabel->setVisible(radio.useTls);
         m_identityEdit->setVisible(radio.useTls);

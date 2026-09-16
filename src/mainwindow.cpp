@@ -441,15 +441,39 @@ void MainWindow::setupCatServer() {
 }
 
 void MainWindow::connectToStartupRadio() {
-    const int index = RadioSettings::instance()->connectAtStartupIndex();
-    if (index < 0) {
-        return;
-    }
     const auto radios = RadioSettings::instance()->radios();
+    int index = -1;
+
+    if (!m_startupRadioOverride.isEmpty()) {
+        index = RadioSettings::instance()->indexOfRadioNamed(m_startupRadioOverride);
+        if (index < 0) {
+            // FAIL CLOSED, and do NOT fall back to the flagged radio. The name came from a
+            // shortcut that asked for one specific K4; quietly opening a different one is worse
+            // than opening none. Said in a dialog rather than the log because the shortcut this
+            // came from was double-clicked, and on Windows there is no console to read.
+            QStringList known;
+            for (const RadioEntry &entry : radios) {
+                known << entry.name;
+            }
+            qWarning() << "No saved radio named" << m_startupRadioOverride << "- known:" << known;
+            QMessageBox::warning(
+                this, "Radio Not Found",
+                QString("No saved radio is named \"%1\".\n\nSaved radios: %2")
+                    .arg(m_startupRadioOverride, known.isEmpty() ? QStringLiteral("(none)") : known.join(", ")));
+            return;
+        }
+        qInfo() << "Connecting to" << radios[index].name << "from the command line";
+    } else {
+        index = RadioSettings::instance()->connectAtStartupIndex();
+        if (index < 0) {
+            return;
+        }
+        qInfo() << "Auto-connecting to" << radios[index].name << "at startup";
+    }
+
     if (index >= radios.size()) {
         return; // settings and list disagree; do nothing rather than connect to the wrong radio
     }
-    qInfo() << "Auto-connecting to" << radios[index].name << "at startup";
     connectToRadio(radios[index]);
 }
 

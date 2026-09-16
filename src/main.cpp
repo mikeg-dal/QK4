@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QCommandLineParser>
 #include <QDebug>
 #include <QSysInfo>
 #include <QGuiApplication>
@@ -143,7 +144,38 @@ int main(int argc, char *argv[]) {
     // Must precede MainWindow — its controllers construct the first QSslSocket
     selectTlsBackend();
 
+    // --connect <name> opens one particular saved radio, overriding the list's auto-connect tick,
+    // so one install can carry a desktop shortcut per K4.
+    //
+    // WHY parse() and not process(): process() prints an error and EXITS on an unrecognised
+    // option, and a desktop- or Finder-launched app can be handed arguments it never declared
+    // (macOS has historically passed -psn_...). Trading "the app opens when double-clicked" for a
+    // command-line flag is not a trade worth making, so anything unrecognised is warned about and
+    // ignored rather than fatal.
+    QCommandLineParser parser;
+    parser.setApplicationDescription("QK4 - Elecraft K4 remote control");
+    const QCommandLineOption helpOption = parser.addHelpOption();
+    const QCommandLineOption versionOption = parser.addVersionOption();
+    const QCommandLineOption connectOption(
+        QStringList{QStringLiteral("c"), QStringLiteral("connect")},
+        QStringLiteral("Connect at startup to the saved radio named <name>, whatever the list is set to."),
+        QStringLiteral("name"));
+    parser.addOption(connectOption);
+    if (!parser.parse(QCoreApplication::arguments())) {
+        qWarning() << "Ignoring command line:" << parser.errorText();
+    }
+    if (parser.isSet(helpOption)) {
+        parser.showHelp(0);
+    }
+    if (parser.isSet(versionOption)) {
+        parser.showVersion();
+    }
+
     MainWindow window;
+    if (parser.isSet(connectOption)) {
+        // Before exec(), because the startup connect runs on the first pass of the event loop.
+        window.setStartupRadioOverride(parser.value(connectOption));
+    }
     window.show();
 
     return app.exec();

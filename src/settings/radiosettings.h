@@ -72,6 +72,11 @@ public:
     // entry; setConnectAtStartupRadio keeps that unique, and load() repairs a file that is not.
     int connectAtStartupIndex() const;
 
+    // Index of the saved radio with this name, or -1. Case-insensitive, because the name is typed
+    // on a command line or into a desktop shortcut, where matching the stored capitalisation
+    // exactly is a needless way to fail.
+    int indexOfRadioNamed(const QString &name) const;
+
     // Flags one radio and clears every other. Pass -1 to disable auto-connect entirely.
     void setConnectAtStartupRadio(int index);
     void addRadio(const RadioEntry &radio);

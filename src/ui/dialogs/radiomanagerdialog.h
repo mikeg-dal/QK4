@@ -44,6 +44,7 @@ private slots:
     void onBackClicked();
     void onSelectionChanged();
     void onItemDoubleClicked(QListWidgetItem *item);
+    void onStartupCheckChanged(QListWidgetItem *item);
     void onTlsCheckboxToggled(bool checked);
     void refreshList();
     void onRadioFound(const K4RadioInfo &radio);
@@ -58,6 +59,14 @@ private:
     void populateFieldsFromSelection();
     void startDiscovery();
     void addDiscoveredItem(const K4RadioInfo &radio);
+
+    // The stored auto-connect flag of the entry being edited. Saving carries it through rather
+    // than editing it, so a save cannot silently disarm the radio the list armed.
+    bool startupFlagOfCurrentEntry() const;
+
+    // Set while the list is being rebuilt. Populating check states emits itemChanged, which would
+    // otherwise be read as the operator clicking every box in turn.
+    bool m_populatingList = false;
     bool isAlreadyConfigured(const K4RadioInfo &radio) const;
 
     QListWidget *m_radioList;
@@ -66,7 +75,6 @@ private:
     QLineEdit *m_portEdit;
     QLineEdit *m_passwordEdit;
     QCheckBox *m_tlsCheckbox;
-    QCheckBox *m_startupCheckbox;
     QLineEdit *m_identityEdit;
     QLabel *m_identityLabel;
     QComboBox *m_encodeModeCombo;

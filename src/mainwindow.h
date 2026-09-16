@@ -58,6 +58,11 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    // Names a radio to open instead of the one ticked in the list - the --connect command-line
+    // option, so a desktop shortcut can target a particular K4. Must be set before the event loop
+    // runs, because the startup connect fires on its first pass.
+    void setStartupRadioOverride(const QString &name) { m_startupRadioOverride = name; }
+
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
@@ -77,6 +82,7 @@ private slots:
     // Connects to the radio flagged connectAtStartup, if any. Deferred to the event loop rather
     // than run in the constructor - see the call site.
     void connectToStartupRadio();
+
     void toggleDisplayPopup();
     void toggleBandPopup();
     void toggleFnPopup();
@@ -86,6 +92,8 @@ private slots:
     void closeAllPopups();
 
 private:
+    QString m_startupRadioOverride;
+
     void setupMenuBar();
     void setupUi();
     void setupVfoSection(QWidget *parent);

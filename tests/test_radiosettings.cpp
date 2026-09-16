@@ -156,6 +156,33 @@ private slots:
         QCOMPARE(spy.count(), 1);
     }
 
+    void aRadioIsFoundByNameWhateverTheCase() {
+        // The name comes off a command line or out of a desktop shortcut's properties, where
+        // matching the stored capitalisation exactly is a needless way to fail.
+        RadioSettings *s = RadioSettings::instance();
+        s->addRadio(makeRadio(QStringLiteral("Shack K4"), QStringLiteral("10.0.0.1")));
+        s->addRadio(makeRadio(QStringLiteral("Remote K4"), QStringLiteral("10.0.0.2")));
+
+        const int shack = s->indexOfRadioNamed(QStringLiteral("Shack K4"));
+        QVERIFY(shack >= 0);
+        QCOMPARE(s->radios()[shack].name, QStringLiteral("Shack K4"));
+        QCOMPARE(s->indexOfRadioNamed(QStringLiteral("shack k4")), shack);
+        QCOMPARE(s->indexOfRadioNamed(QStringLiteral("SHACK K4")), shack);
+    }
+
+    void anUnknownNameFindsNothingRatherThanSomething() {
+        // The caller opens NO radio on -1. A near miss returning the wrong index would have a
+        // shortcut silently key up a different K4 than the one it names - the failure this lookup
+        // exists to prevent.
+        RadioSettings *s = RadioSettings::instance();
+        s->addRadio(makeRadio(QStringLiteral("Shack K4"), QStringLiteral("10.0.0.1")));
+
+        QCOMPARE(s->indexOfRadioNamed(QStringLiteral("Shack")), -1);     // prefix is not a match
+        QCOMPARE(s->indexOfRadioNamed(QStringLiteral("Shack K4 ")), -1); // nor is trailing space
+        QCOMPARE(s->indexOfRadioNamed(QStringLiteral("nope")), -1);
+        QCOMPARE(s->indexOfRadioNamed(QString()), -1);
+    }
+
     void anOutOfRangeIndexClearsRatherThanCrashes() {
         RadioSettings *s = RadioSettings::instance();
         s->addRadio(makeRadio(QStringLiteral("A"), QStringLiteral("10.0.0.1")));

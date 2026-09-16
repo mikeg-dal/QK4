@@ -52,6 +52,18 @@ int RadioSettings::connectAtStartupIndex() const {
     return -1;
 }
 
+int RadioSettings::indexOfRadioNamed(const QString &name) const {
+    if (name.isEmpty()) {
+        return -1;
+    }
+    for (int i = 0; i < m_radios.size(); ++i) {
+        if (m_radios[i].name.compare(name, Qt::CaseInsensitive) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 void RadioSettings::setConnectAtStartupRadio(int index) {
     // Clearing every other entry is the whole point: the flag means "the radio QK4 opens with",
     // which only has meaning for one. Enforcing it here rather than in the dialog covers a
