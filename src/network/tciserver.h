@@ -99,6 +99,14 @@ signals:
     // A client asked to turn the Sub RX (receiver 1) on or off.
     void setSubReceiverRequested(bool enabled);
 
+    // Generic SETs, normalised. The server validates arity, receiver and range; the controller
+    // maps the name to a CatFrames builder. Kept as three typed signals rather than one variant
+    // carrier so a wrong-typed value cannot reach the radio, and so the TCI layer still never
+    // spells a K4 command - see docs/tci-server-design.md.
+    void setBoolRequested(int receiver, const QString &name, bool value);
+    void setIntRequested(int receiver, const QString &name, int value);
+    void setFilterBandRequested(int receiver, int lowHz, int highHz);
+
 private slots:
     void onClientConnected(int clientId, const QString &peerAddress);
     void onClientDisconnected(int clientId);
@@ -112,6 +120,9 @@ private:
     // recognised and answered. Read-only by design - the matching SETs move the radio and are
     // deferred until they can be bench-tested. See docs/tci-server-design.md, phase 8.
     bool answerReadOnly(int clientId, const TciProtocol::Command &command);
+
+    // Acts on a SET inside the per-receiver group, when QK4 has a way to send it.
+    void applySet(int receiver, const QString &name, const TciProtocol::Command &command, int valueIndex);
 
     // The per-receiver half of the init burst, so the burst builder stays readable with two.
     QStringList receiverBurst(int receiver) const;

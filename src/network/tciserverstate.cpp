@@ -245,6 +245,68 @@ QStringList TciServer::initBurst() const {
     return burst;
 }
 
+void TciServer::applySet(int receiver, const QString &name, const TciProtocol::Command &command, int valueIndex) {
+    // Only the values QK4 can actually send are acted on. Everything else in the group is still
+    // answered from the snapshot, so a client is never left waiting - it simply does not move the
+    // radio. See docs/tci-command-coverage.md section 8 for what is still missing a builder.
+    //
+    // SETs address the MAIN receiver only for now: the K4's sub-receiver forms are $-suffixed
+    // (RT$, GT$, NB$, NR$, BW$) and CatFrames has no builders for them yet. Refusing is better
+    // than silently moving the main receiver when a client asked for the sub.
+    if (receiver != MAIN_RECEIVER) {
+        return;
+    }
+
+    static const QSet<QString> boolSets{
+        QStringLiteral("rit_enable"),
+        QStringLiteral("xit_enable"),
+        QStringLiteral("rx_nb_enable"),
+        QStringLiteral("rx_nr_enable"),
+    };
+    static const QSet<QString> intSets{
+        QStringLiteral("rit_offset"),
+        QStringLiteral("xit_offset"),
+        QStringLiteral("drive"),
+        QStringLiteral("tune_drive"),
+    };
+
+    if (boolSets.contains(name)) {
+        bool value = false;
+        if (command.argAsBool(valueIndex, &value)) {
+            emit setBoolRequested(receiver, name, value);
+        }
+        return;
+    }
+    if (intSets.contains(name)) {
+        int value = 0;
+        if (command.argAsInt(valueIndex, &value)) {
+            emit setIntRequested(receiver, name, value);
+        }
+        return;
+    }
+    if (name == QLatin1String("agc_mode")) {
+        // A string value, and only the three the spec defines. An unknown one is refused rather
+        // than coerced - coercing is how a radio ends up in a mode nobody asked for.
+        const QString mode = command.arg(valueIndex).toLower();
+        if (mode == QLatin1String("normal") || mode == QLatin1String("fast") || mode == QLatin1String("off")) {
+            emit setIntRequested(receiver, name,
+                                 mode == QLatin1String("off")    ? 0
+                                 : mode == QLatin1String("fast") ? 2
+                                                                 : 1);
+        }
+        return;
+    }
+    if (name == QLatin1String("rx_filter_band")) {
+        // rx_filter_band:<trx>,<low>,<high> - both edges required, and low must be below high.
+        int low = 0;
+        int high = 0;
+        if (command.argAsInt(valueIndex, &low) && command.argAsInt(valueIndex + 1, &high) && high > low) {
+            emit setFilterBandRequested(receiver, low, high);
+        }
+        return;
+    }
+}
+
 bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command) {
     // Answers a query from the snapshot without touching the radio.
     //
@@ -285,6 +347,21 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
         }
         const QString trx = QString::number(receiver);
         const TciReceiverState &r = s.rx[receiver];
+
+        // Where the VALUE sits, if the client sent one. Normally arg 1, after the receiver index;
+        // in the global form (`rit_enable:true;`) arg 0 is the value and there is no index.
+        int valueIndex = -1;
+        if (command.argCount() >= 2) {
+            valueIndex = 1;
+        } else if (command.argCount() == 1) {
+            int probe = 0;
+            if (!command.argAsInt(0, &probe)) {
+                valueIndex = 0; // not an index, so it is a value
+            }
+        }
+        if (valueIndex >= 0) {
+            applySet(receiver, name, command, valueIndex);
+        }
 
         QString reply;
         if (name == QLatin1String("rit_enable")) {

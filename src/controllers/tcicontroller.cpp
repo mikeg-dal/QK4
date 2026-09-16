@@ -243,6 +243,44 @@ TciController::TciController(AudioController *audioController, ConnectionControl
                 [this](bool enabled) { applyCat(CatFrames::split(enabled)); });
         connect(m_server, &TciServer::setSubReceiverRequested, this,
                 [this](bool enabled) { applyCat(CatFrames::subReceiver(enabled)); });
+
+        // The normalised SETs. This is the ONLY place a TCI name becomes a K4 command, which is
+        // the rule the design doc states: CatFrames owns K4 spelling and the TCI layer never
+        // writes one. TciServer has already validated arity, receiver and vocabulary.
+        connect(m_server, &TciServer::setBoolRequested, this, [this](int, const QString &name, bool value) {
+            if (name == QLatin1String("rit_enable")) {
+                applyCat(CatFrames::ritEnabled(value));
+            } else if (name == QLatin1String("xit_enable")) {
+                applyCat(CatFrames::xitEnabled(value));
+            } else if (name == QLatin1String("rx_nb_enable")) {
+                applyCat(CatFrames::noiseBlanker(value));
+            } else if (name == QLatin1String("rx_nr_enable")) {
+                applyCat(CatFrames::noiseReduction(value));
+            }
+        });
+
+        connect(m_server, &TciServer::setIntRequested, this, [this](int, const QString &name, int value) {
+            if (name == QLatin1String("rit_offset") || name == QLatin1String("xit_offset")) {
+                // ONE register on the radio, so either TCI name writes the same RO. Setting the
+                // "XIT offset" necessarily moves RIT's too - see docs/tci-command-coverage.md 4.1.
+                applyCat(CatFrames::ritOffset(value));
+            } else if (name == QLatin1String("agc_mode")) {
+                applyCat(CatFrames::agcSpeed(value));
+            } else if (name == QLatin1String("drive") || name == QLatin1String("tune_drive")) {
+                // The extended form carries the power RANGE, which the plain PC does not. QRP and
+                // QRO are different scales on the K4 and sending a bare number would land in
+                // whichever range the radio happens to be in.
+                const int watts = qBound(0, value, 110);
+                applyCat(CatFrames::rfPowerExtended(watts, m_radioState && m_radioState->isQrpMode()));
+            }
+        });
+
+        connect(m_server, &TciServer::setFilterBandRequested, this, [this](int, int lowHz, int highHz) {
+            // TCI gives two edges; the K4 takes a WIDTH. The conversion is lossy in one direction
+            // and that is unavoidable - the centre is set by the mode and the IF shift, not by
+            // this command, so only the width survives.
+            applyCat(CatFrames::filterBandwidth(highHz - lowHz));
+        });
     }
 
     // Keep the server's snapshot in step with the radio. Without this the init burst reports the

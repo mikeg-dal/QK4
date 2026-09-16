@@ -217,34 +217,144 @@ private slots:
         server.stop();
     }
 
-    void queriesNeverMoveTheRadio() {
-        // Read-only means read-only. These commands have SET forms in the protocol, and QK4 answers
-        // them from its snapshot rather than acting on them, because none of the matching K4 sets
-        // has been bench-tested. A client sending a SET gets the truth back, not a lie about having
-        // applied it. See docs/tci-server-design.md, phase 8.
+    void aReplyReportsTheHeldValueNotTheRequestedOne() {
+        // A SET is confirmed with what the radio ACTUALLY holds, never with an optimistic echo of
+        // what was asked for. The authoritative value arrives later as a broadcast once the radio
+        // confirms. A stale optimistic confirmation is what made WSJT-X transmit out of band in
+        // the reference server.
         TciServer server;
         QVERIFY(server.start(0));
-        QSignalSpy frequency(&server, &TciServer::setFrequencyRequested);
-        QSignalSpy modulation(&server, &TciServer::setModulationRequested);
-        QSignalSpy split(&server, &TciServer::setSplitRequested);
-        QSignalSpy ptt(&server, &TciServer::pttRequested);
 
         TciTestClient client;
         QVERIFY(client.connectTo(server.port()));
         client.collectUntil("ready;");
-        client.send("drive:0,5;mic_level:99;mute:0,true;rit_offset:0,500;sql_level:0,80;device;");
+        client.send("drive:0,5;rit_offset:0,500;device;");
 
         const QStringList replies = client.collectUntil("device:QK4;");
-        QVERIFY(replies.contains(QStringLiteral("drive:0,100;")));
-        QVERIFY(replies.contains(QStringLiteral("mic_level:50;")));
-        QVERIFY(replies.contains(QStringLiteral("mute:0,false;")));
-        QVERIFY(replies.contains(QStringLiteral("rit_offset:0,0;")));
-        QVERIFY(replies.contains(QStringLiteral("sql_level:0,-140;")));
+        QVERIFY2(replies.contains(QStringLiteral("drive:0,100;")), "echoed the requested drive");
+        QVERIFY2(replies.contains(QStringLiteral("rit_offset:0,0;")), "echoed the requested offset");
 
-        QCOMPARE(frequency.count(), 0);
-        QCOMPARE(modulation.count(), 0);
-        QCOMPARE(split.count(), 0);
-        QCOMPARE(ptt.count(), 0);
+        client.close();
+        server.stop();
+    }
+
+    void commandsWithoutABuilderStillDoNotMoveTheRadio() {
+        // The group that is still report-only, because QK4 has no way to send them. They must be
+        // ANSWERED - silence leaves a client waiting - while changing nothing.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy setBool(&server, &TciServer::setBoolRequested);
+        QSignalSpy setInt(&server, &TciServer::setIntRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("mute:0,true;sql_level:0,-80;lock:0,true;device;");
+
+        const QStringList replies = client.collectUntil("device:QK4;");
+        QVERIFY(replies.contains(QStringLiteral("mute:0,false;")));
+        QVERIFY(replies.contains(QStringLiteral("sql_level:0,-140;")));
+        QVERIFY(replies.contains(QStringLiteral("lock:0,false;")));
+        QCOMPARE(setBool.count(), 0);
+        QCOMPARE(setInt.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
+    void requestsTheSetsThatHaveABuilder() {
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy setBool(&server, &TciServer::setBoolRequested);
+        QSignalSpy setInt(&server, &TciServer::setIntRequested);
+        QSignalSpy setFilter(&server, &TciServer::setFilterBandRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("rit_enable:0,true;rx_nb_enable:0,true;rit_offset:0,250;drive:0,35;"
+                    "agc_mode:0,fast;rx_filter_band:0,300,2700;device;");
+        client.collectUntil("device:QK4;");
+
+        QTRY_COMPARE(setBool.count(), 2);
+        QCOMPARE(setBool.at(0).at(1).toString(), QStringLiteral("rit_enable"));
+        QCOMPARE(setBool.at(0).at(2).toBool(), true);
+        QCOMPARE(setBool.at(1).at(1).toString(), QStringLiteral("rx_nb_enable"));
+
+        QCOMPARE(setInt.count(), 3);
+        QCOMPARE(setInt.at(0).at(1).toString(), QStringLiteral("rit_offset"));
+        QCOMPARE(setInt.at(0).at(2).toInt(), 250);
+        QCOMPARE(setInt.at(1).at(1).toString(), QStringLiteral("drive"));
+        QCOMPARE(setInt.at(1).at(2).toInt(), 35);
+        // agc_mode arrives as the K4's GT value: 0 off, 1 slow/normal, 2 fast.
+        QCOMPARE(setInt.at(2).at(1).toString(), QStringLiteral("agc_mode"));
+        QCOMPARE(setInt.at(2).at(2).toInt(), 2);
+
+        QCOMPARE(setFilter.count(), 1);
+        QCOMPARE(setFilter.at(0).at(1).toInt(), 300);
+        QCOMPARE(setFilter.at(0).at(2).toInt(), 2700);
+
+        client.close();
+        server.stop();
+    }
+
+    void refusesAnAgcModeOutsideTheSpecVocabulary() {
+        // Coercing an unknown mode is how a radio ends up in a state nobody asked for. The old
+        // value is reported back instead.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy setInt(&server, &TciServer::setIntRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("agc_mode:0,med;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("agc_mode:0,normal;"));
+        QCOMPARE(setInt.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
+    void refusesAnInvertedFilterBand() {
+        // high must be above low; a reversed pair would become a negative width at the K4.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy setFilter(&server, &TciServer::setFilterBandRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("rx_filter_band:0,2700,300;device;");
+        client.collectUntil("device:QK4;");
+        QCOMPARE(setFilter.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
+    void doesNotApplySetsToTheSubReceiver() {
+        // The K4's sub-receiver forms are $-suffixed and CatFrames has no builders for them yet.
+        // Refusing is better than silently moving the MAIN receiver when a client asked for the
+        // sub - which is the failure this guards.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy setBool(&server, &TciServer::setBoolRequested);
+        QSignalSpy setInt(&server, &TciServer::setIntRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("rit_enable:1,true;rit_offset:1,250;device;");
+
+        const QStringList replies = client.collectUntil("device:QK4;");
+        // Still answered, just not acted on.
+        QVERIFY(replies.contains(QStringLiteral("rit_enable:1,false;")));
+        QCOMPARE(setBool.count(), 0);
+        QCOMPARE(setInt.count(), 0);
 
         client.close();
         server.stop();
