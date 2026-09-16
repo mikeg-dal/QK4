@@ -14,14 +14,17 @@ struct TciClientInfo {
     int id = 0;
     QString address;
 
-    // Time and text of the last message RECEIVED from this client.
+    // Time and text of the last message exchanged with this client, in EITHER direction, and which
+    // way it went. The page renders the direction as an arrow.
     //
-    // WHY inbound only: what goes OUT is the same broadcast to every client, and at rest it is
-    // dominated by the sensor timer - so an "exchanged" column that counted it would show the same
-    // sensor command on every row, timestamped now, whether the client was alive or wedged. Inbound
-    // is the half that actually distinguishes one client from another.
+    // Text messages only. The audio stream is deliberately not in here: RX audio leaves at ~47
+    // frames a second and would pin the cell to "sending audio" forever, burying every command.
+    // Inbound TX audio IS counted, as a single "(tx audio)" - a WSJT-X client sends no text at all
+    // for the length of a 15-second transmission, and reporting it silent at the one moment it is
+    // busiest is the failure this column exists to avoid.
     QDateTime lastMessageTime;
     QString lastMessage;
+    bool lastMessageOutbound = false;
 };
 
 Q_DECLARE_METATYPE(TciClientInfo)

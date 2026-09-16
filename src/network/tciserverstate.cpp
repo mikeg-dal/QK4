@@ -45,80 +45,76 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
         const QString trx = QString::number(r);
 
         if (now.vfoHz != was.vfoHz) {
-            m_socketServer->broadcastText(
-                message(QStringLiteral("vfo"), trx, QString::number(CHANNEL_A), QString::number(now.vfoHz)));
+            broadcast(message(QStringLiteral("vfo"), trx, QString::number(CHANNEL_A), QString::number(now.vfoHz)));
             // dds is an alias for the receive VFO and carries no channel.
-            m_socketServer->broadcastText(message(QStringLiteral("dds"), trx, QString::number(now.vfoHz)));
+            broadcast(message(QStringLiteral("dds"), trx, QString::number(now.vfoHz)));
         }
         if (now.modulation != was.modulation) {
-            m_socketServer->broadcastText(message(QStringLiteral("modulation"), trx, now.modulation));
+            broadcast(message(QStringLiteral("modulation"), trx, now.modulation));
         }
         if (now.enabled != was.enabled) {
-            m_socketServer->broadcastText(message(QStringLiteral("rx_enable"), trx, boolText(now.enabled)));
+            broadcast(message(QStringLiteral("rx_enable"), trx, boolText(now.enabled)));
             // The sub receiver is also a channel of the main one, for clients that model it that
             // way; see tciradiostate.h.
             if (r == SUB_RECEIVER) {
-                m_socketServer->broadcastText(message(QStringLiteral("rx_channel_enable"),
-                                                      QString::number(MAIN_RECEIVER), QString::number(CHANNEL_B),
-                                                      boolText(now.enabled)));
+                broadcast(message(QStringLiteral("rx_channel_enable"), QString::number(MAIN_RECEIVER),
+                                  QString::number(CHANNEL_B), boolText(now.enabled)));
             }
         }
         if (now.rit != was.rit) {
-            m_socketServer->broadcastText(message(QStringLiteral("rit_enable"), trx, boolText(now.rit)));
+            broadcast(message(QStringLiteral("rit_enable"), trx, boolText(now.rit)));
         }
         if (now.xit != was.xit) {
-            m_socketServer->broadcastText(message(QStringLiteral("xit_enable"), trx, boolText(now.xit)));
+            broadcast(message(QStringLiteral("xit_enable"), trx, boolText(now.xit)));
         }
         if (now.ritXitOffsetHz != was.ritXitOffsetHz) {
             // One register, reported under both names - see TciReceiverState.
             const QString offset = QString::number(now.ritXitOffsetHz);
-            m_socketServer->broadcastText(message(QStringLiteral("rit_offset"), trx, offset));
-            m_socketServer->broadcastText(message(QStringLiteral("xit_offset"), trx, offset));
+            broadcast(message(QStringLiteral("rit_offset"), trx, offset));
+            broadcast(message(QStringLiteral("xit_offset"), trx, offset));
         }
         if (now.noiseBlankerLevel != was.noiseBlankerLevel ||
             now.noiseBlankerFilterWidth != was.noiseBlankerFilterWidth) {
-            m_socketServer->broadcastText(message(QStringLiteral("rx_nb_param"), trx,
-                                                  QString::number(now.noiseBlankerLevel),
-                                                  QString::number(now.noiseBlankerFilterWidth)));
+            broadcast(message(QStringLiteral("rx_nb_param"), trx, QString::number(now.noiseBlankerLevel),
+                              QString::number(now.noiseBlankerFilterWidth)));
         }
         if (now.lock != was.lock) {
-            m_socketServer->broadcastText(
-                message(QStringLiteral("vfo_lock"), trx, QString::number(CHANNEL_A), boolText(now.lock)));
+            broadcast(message(QStringLiteral("vfo_lock"), trx, QString::number(CHANNEL_A), boolText(now.lock)));
         }
         if (now.noiseBlanker != was.noiseBlanker) {
-            m_socketServer->broadcastText(message(QStringLiteral("rx_nb_enable"), trx, boolText(now.noiseBlanker)));
+            broadcast(message(QStringLiteral("rx_nb_enable"), trx, boolText(now.noiseBlanker)));
         }
         if (now.noiseReduction != was.noiseReduction) {
-            m_socketServer->broadcastText(message(QStringLiteral("rx_nr_enable"), trx, boolText(now.noiseReduction)));
+            broadcast(message(QStringLiteral("rx_nr_enable"), trx, boolText(now.noiseReduction)));
         }
         if (now.autoNotch != was.autoNotch) {
-            m_socketServer->broadcastText(message(QStringLiteral("rx_anf_enable"), trx, boolText(now.autoNotch)));
+            broadcast(message(QStringLiteral("rx_anf_enable"), trx, boolText(now.autoNotch)));
         }
         if (now.apf != was.apf) {
-            m_socketServer->broadcastText(message(QStringLiteral("rx_apf_enable"), trx, boolText(now.apf)));
+            broadcast(message(QStringLiteral("rx_apf_enable"), trx, boolText(now.apf)));
         }
         if (now.volumeDb != was.volumeDb) {
-            m_socketServer->broadcastText(
+            broadcast(
                 message(QStringLiteral("rx_volume"), trx, QString::number(CHANNEL_A), QString::number(now.volumeDb)));
         }
         if (now.notchFilter != was.notchFilter) {
-            m_socketServer->broadcastText(message(QStringLiteral("rx_nf_enable"), trx, boolText(now.notchFilter)));
+            broadcast(message(QStringLiteral("rx_nf_enable"), trx, boolText(now.notchFilter)));
         }
         if (now.lock != was.lock) {
-            m_socketServer->broadcastText(message(QStringLiteral("lock"), trx, boolText(now.lock)));
+            broadcast(message(QStringLiteral("lock"), trx, boolText(now.lock)));
         }
         if (now.sqlEnabled != was.sqlEnabled) {
-            m_socketServer->broadcastText(message(QStringLiteral("sql_enable"), trx, boolText(now.sqlEnabled)));
+            broadcast(message(QStringLiteral("sql_enable"), trx, boolText(now.sqlEnabled)));
         }
         if (now.agcMode != was.agcMode) {
-            m_socketServer->broadcastText(message(QStringLiteral("agc_mode"), trx, now.agcMode));
+            broadcast(message(QStringLiteral("agc_mode"), trx, now.agcMode));
         }
         if (now.agcGain != was.agcGain) {
-            m_socketServer->broadcastText(message(QStringLiteral("agc_gain"), trx, QString::number(now.agcGain)));
+            broadcast(message(QStringLiteral("agc_gain"), trx, QString::number(now.agcGain)));
         }
         if (now.filterLowHz != was.filterLowHz || now.filterHighHz != was.filterHighHz) {
-            m_socketServer->broadcastText(message(QStringLiteral("rx_filter_band"), trx,
-                                                  QString::number(now.filterLowHz), QString::number(now.filterHighHz)));
+            broadcast(message(QStringLiteral("rx_filter_band"), trx, QString::number(now.filterLowHz),
+                              QString::number(now.filterHighHz)));
         }
     }
 
@@ -127,42 +123,38 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
     // Channel 1 of the main receiver follows VFO B while split is on and the receive frequency
     // otherwise, so it can move when either changes.
     if (m_snapshot.txChannelHz() != previous.txChannelHz()) {
-        m_socketServer->broadcastText(message(QStringLiteral("vfo"), mainTrx, QString::number(CHANNEL_B),
-                                              QString::number(m_snapshot.txChannelHz())));
+        broadcast(message(QStringLiteral("vfo"), mainTrx, QString::number(CHANNEL_B),
+                          QString::number(m_snapshot.txChannelHz())));
         // tx_frequency is a server-to-client notification with no read form, so a client that
         // wants the transmit frequency has no way to ask for it - it only ever learns by being
         // told. Split is exactly when it matters and when it differs from the RX VFO.
-        m_socketServer->broadcastText(
-            message(QStringLiteral("tx_frequency"), QString::number(m_snapshot.txChannelHz())));
+        broadcast(message(QStringLiteral("tx_frequency"), QString::number(m_snapshot.txChannelHz())));
     }
     if (m_snapshot.split != previous.split) {
-        m_socketServer->broadcastText(message(QStringLiteral("split_enable"), mainTrx, boolText(m_snapshot.split)));
+        broadcast(message(QStringLiteral("split_enable"), mainTrx, boolText(m_snapshot.split)));
     }
 
     // Radio-driven transmit. While a client owns PTT this can never fire, because the carry-over
     // above makes the value identical; setPtt broadcasts that case instead.
     if (m_snapshot.transmitting != previous.transmitting) {
-        m_socketServer->broadcastText(message(QStringLiteral("trx"), mainTrx, boolText(m_snapshot.transmitting)));
+        broadcast(message(QStringLiteral("trx"), mainTrx, boolText(m_snapshot.transmitting)));
     }
     if (m_snapshot.drive != previous.drive) {
         // Always <trx>,<power>: a bare "drive:0;" crashes ESDR3-mode WSJT-X and JTDX, which index
         // args[1] unconditionally. That rule applies to the broadcast as much as the reply.
-        m_socketServer->broadcastText(message(QStringLiteral("drive"), mainTrx, QString::number(m_snapshot.drive)));
+        broadcast(message(QStringLiteral("drive"), mainTrx, QString::number(m_snapshot.drive)));
     }
     if (m_snapshot.micLevel != previous.micLevel) {
-        m_socketServer->broadcastText(message(QStringLiteral("mic_level"), QString::number(m_snapshot.micLevel)));
+        broadcast(message(QStringLiteral("mic_level"), QString::number(m_snapshot.micLevel)));
     }
     if (m_snapshot.cwKeyerSpeedWpm != previous.cwKeyerSpeedWpm) {
         // No receiver index: CW_KEYER_SPEED is a single-argument command.
-        m_socketServer->broadcastText(
-            message(QStringLiteral("cw_keyer_speed"), QString::number(m_snapshot.cwKeyerSpeedWpm)));
+        broadcast(message(QStringLiteral("cw_keyer_speed"), QString::number(m_snapshot.cwKeyerSpeedWpm)));
         // cw_macros_speed is the same setting under the name a contest logger looks for.
-        m_socketServer->broadcastText(
-            message(QStringLiteral("cw_macros_speed"), QString::number(m_snapshot.cwKeyerSpeedWpm)));
+        broadcast(message(QStringLiteral("cw_macros_speed"), QString::number(m_snapshot.cwKeyerSpeedWpm)));
     }
     if (m_snapshot.tuneDrive != previous.tuneDrive) {
-        m_socketServer->broadcastText(
-            message(QStringLiteral("tune_drive"), mainTrx, QString::number(m_snapshot.tuneDrive)));
+        broadcast(message(QStringLiteral("tune_drive"), mainTrx, QString::number(m_snapshot.tuneDrive)));
     }
 }
 
@@ -430,7 +422,7 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             // would be a lie a client could act on.
             reply = message(name, trx, boolText(false));
         }
-        m_socketServer->sendText(clientId, reply);
+        sendTo(clientId, reply);
         return true;
     }
 
@@ -449,9 +441,8 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             emit setNoiseBlankerParamRequested(level, width);
         }
         const TciReceiverState &r = s.rx[receiver];
-        m_socketServer->sendText(clientId,
-                                 message(name, QString::number(receiver), QString::number(r.noiseBlankerLevel),
-                                         QString::number(r.noiseBlankerFilterWidth)));
+        sendTo(clientId, message(name, QString::number(receiver), QString::number(r.noiseBlankerLevel),
+                                 QString::number(r.noiseBlankerFilterWidth)));
         return true;
     }
 
@@ -471,8 +462,8 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
         if (command.argAsBool(2, &wanted)) {
             emit setVfoLockRequested(targetReceiver, wanted);
         }
-        m_socketServer->sendText(clientId, message(name, QString::number(receiver), QString::number(channel),
-                                                   boolText(s.rx[targetReceiver].lock)));
+        sendTo(clientId,
+               message(name, QString::number(receiver), QString::number(channel), boolText(s.rx[targetReceiver].lock)));
         return true;
     }
 
@@ -491,8 +482,8 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             // main receiver's channel B, which is the transmit VFO rather than a receiver.
             return true;
         }
-        m_socketServer->sendText(clientId, message(name, QString::number(receiver), QString::number(CHANNEL_A),
-                                                   QString::number(s.rx[receiver].volumeDb)));
+        sendTo(clientId, message(name, QString::number(receiver), QString::number(CHANNEL_A),
+                                 QString::number(s.rx[receiver].volumeDb)));
         return true;
     }
 
@@ -501,61 +492,61 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
         // Both names, one setting. The spec marks CW_KEYER_SPEED as client-to-server, but a client
         // that asks is better answered than ignored, and QK4 knows the value (RadioState::
         // keyerSpeed, the K4's KS command).
-        m_socketServer->sendText(clientId, message(name, QString::number(s.cwKeyerSpeedWpm)));
+        sendTo(clientId, message(name, QString::number(s.cwKeyerSpeedWpm)));
         return true;
     }
     if (name == QLatin1String("mic_level")) {
-        m_socketServer->sendText(clientId, message(name, QString::number(s.micLevel)));
+        sendTo(clientId, message(name, QString::number(s.micLevel)));
         return true;
     }
     if (name == QLatin1String("volume")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("0")));
+        sendTo(clientId, message(name, QStringLiteral("0")));
         return true;
     }
     if (name == QLatin1String("trx_count")) {
         // Must agree with the burst, or a client that re-reads it concludes the sub receiver
         // vanished. answersQueriesConsistentlyWithTheInitBurst exists to catch exactly this.
-        m_socketServer->sendText(clientId, message(name, QString::number(RECEIVER_COUNT)));
+        sendTo(clientId, message(name, QString::number(RECEIVER_COUNT)));
         return true;
     }
     if (name == QLatin1String("channels_count")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("2")));
+        sendTo(clientId, message(name, QStringLiteral("2")));
         return true;
     }
     if (name == QLatin1String("device")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("QK4")));
+        sendTo(clientId, message(name, QStringLiteral("QK4")));
         return true;
     }
     if (name == QLatin1String("receive_only")) {
-        m_socketServer->sendText(clientId, message(name, boolText(false)));
+        sendTo(clientId, message(name, boolText(false)));
         return true;
     }
     if (name == QLatin1String("protocol")) {
-        m_socketServer->sendText(clientId, messageFreeText(name, QLatin1String(kProtocolIdentity)));
+        sendTo(clientId, messageFreeText(name, QLatin1String(kProtocolIdentity)));
         return true;
     }
     if (name == QLatin1String("modulations_list")) {
-        m_socketServer->sendText(clientId, messageFreeText(name, QLatin1String(kModulationsList)));
+        sendTo(clientId, messageFreeText(name, QLatin1String(kModulationsList)));
         return true;
     }
     if (name == QLatin1String("audio_samplerate") || name == QLatin1String("iq_samplerate")) {
-        m_socketServer->sendText(clientId, message(name, QString::number(kAudioSampleRate)));
+        sendTo(clientId, message(name, QString::number(kAudioSampleRate)));
         return true;
     }
     if (name == QLatin1String("audio_stream_samples")) {
-        m_socketServer->sendText(clientId, message(name, QString::number(kAudioStreamSamples)));
+        sendTo(clientId, message(name, QString::number(kAudioStreamSamples)));
         return true;
     }
     if (name == QLatin1String("tx_stream_audio_buffering")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("50")));
+        sendTo(clientId, message(name, QStringLiteral("50")));
         return true;
     }
     if (name == QLatin1String("audio_stream_channels")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("2")));
+        sendTo(clientId, message(name, QStringLiteral("2")));
         return true;
     }
     if (name == QLatin1String("audio_stream_sample_type")) {
-        m_socketServer->sendText(clientId, message(name, QStringLiteral("float32")));
+        sendTo(clientId, message(name, QStringLiteral("float32")));
         return true;
     }
     return false;

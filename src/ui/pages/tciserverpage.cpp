@@ -14,6 +14,12 @@ namespace {
 // Columns of the client table.
 enum ClientColumn { ColAddress = 0, ColLastSeen = 1, ColLastMessage = 2, ColCount = 3 };
 
+// Direction markers for the last-message cell. The arrow points the way the message travelled,
+// with the client at the far end: right means QK4 sent it, left means the client did. Which is
+// exactly the ambiguity an arrow alone leaves, so the column carries a tooltip saying so.
+constexpr QChar kToClient = QChar(0x2192);   // right arrow
+constexpr QChar kFromClient = QChar(0x2190); // left arrow
+
 // Room for a handful of clients without the table growing into the settings below it. TCI caps
 // connections at WebSocketServer::MAX_CLIENTS (8); beyond four rows the table scrolls rather than
 // pushing the page around.
@@ -101,6 +107,8 @@ TciServerPage::TciServerPage(TciController *tciController, QWidget *parent)
     // (wrong port, wrong protocol) visible as such.
     m_clientsTable = new QTableWidget(0, ColCount, this);
     m_clientsTable->setHorizontalHeaderLabels({"Address", "Last seen", "Last message"});
+    m_clientsTable->horizontalHeaderItem(ColLastMessage)
+        ->setToolTip(QString("%1 sent to the client    %2 received from the client").arg(kToClient).arg(kFromClient));
     m_clientsTable->verticalHeader()->setVisible(false);
     m_clientsTable->verticalHeader()->setDefaultSectionSize(kRowHeight);
     m_clientsTable->horizontalHeader()->setStretchLastSection(true);
@@ -268,6 +276,13 @@ void TciServerPage::updateClients(const QVector<TciClientInfo> &clients) {
                                 new QTableWidgetItem(c.lastMessageTime.isValid()
                                                          ? c.lastMessageTime.toString(QStringLiteral("HH:mm:ss"))
                                                          : QString()));
-        m_clientsTable->setItem(row, ColLastMessage, new QTableWidgetItem(c.lastMessage));
+        auto *messageItem =
+            new QTableWidgetItem(QString("%1 %2").arg(c.lastMessageOutbound ? kToClient : kFromClient, c.lastMessage));
+        // The arrow is the only thing distinguishing an echo from the command that caused it, and a
+        // truncated message hides the rest, so the full text is one hover away.
+        messageItem->setToolTip(QString("%1 %2").arg(
+            c.lastMessageOutbound ? QStringLiteral("Sent to the client:") : QStringLiteral("Received from the client:"),
+            c.lastMessage));
+        m_clientsTable->setItem(row, ColLastMessage, messageItem);
     }
 }

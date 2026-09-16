@@ -53,7 +53,7 @@ void TciServer::stop() {
         m_snapshot.transmitting = false;
         // Say so before the listener goes away: a client that is about to be disconnected should
         // not be left holding an ON indicator.
-        m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
+        broadcast(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
         emit pttRequested(false);
     }
     m_socketServer->stop();
@@ -69,7 +69,7 @@ void TciServer::stop() {
     const bool hadClients = !m_clients.isEmpty();
     m_clients.clear();
     if (hadClients) {
-        emit clientsChanged(clients());
+        announceClients(/*force=*/true);
     }
 }
 
@@ -85,19 +85,43 @@ QVector<TciClientInfo> TciServer::clients() const {
     return out;
 }
 
-void TciServer::noteClientActivity(int clientId, const QString &message, bool force) {
+void TciServer::recordClientMessage(int clientId, const QString &message, bool outbound) {
     auto it = m_clients.find(clientId);
     if (it == m_clients.end()) {
         return;
     }
     it->lastMessage = message;
+    it->lastMessageOutbound = outbound;
     it->lastMessageTime = QDateTime::currentDateTime();
+}
 
+void TciServer::announceClients(bool force) {
     if (!force && m_clientsAnnounceClock.isValid() && m_clientsAnnounceClock.elapsed() < kClientAnnounceMinMs) {
         return;
     }
     m_clientsAnnounceClock.restart();
     emit clientsChanged(clients());
+}
+
+void TciServer::sendTo(int clientId, const QString &text) {
+    m_socketServer->sendText(clientId, text);
+    recordClientMessage(clientId, elideForDisplay(text.trimmed()), /*outbound=*/true);
+    announceClients(/*force=*/false);
+}
+
+void TciServer::broadcast(const QString &text) {
+    m_socketServer->broadcastText(text);
+
+    // Recorded against every row, then announced ONCE. Routing this through the per-client path
+    // would emit the roster once per client for a message they all got at the same instant.
+    const QString shown = elideForDisplay(text.trimmed());
+    const QDateTime now = QDateTime::currentDateTime();
+    for (auto it = m_clients.begin(); it != m_clients.end(); ++it) {
+        it->lastMessage = shown;
+        it->lastMessageOutbound = true;
+        it->lastMessageTime = now;
+    }
+    announceClients(/*force=*/false);
 }
 
 bool TciServer::isListening() const {
@@ -118,26 +142,29 @@ void TciServer::onClientConnected(int clientId, const QString &peerAddress) {
     TciClientInfo info;
     info.id = clientId;
     info.address = peerAddress;
+    // Seeded so the cell is never blank, which would read as a bug. The init burst below overwrites
+    // it within microseconds; this shows only if a burst were ever empty.
+    info.lastMessage = QStringLiteral("(connected)");
+    info.lastMessageTime = QDateTime::currentDateTime();
     m_clients.insert(clientId, info);
-    // Nothing has been said yet, so the cell reads as the connection itself rather than as empty:
-    // "connected at 10:14:02" is a fact, a blank cell looks like a bug.
-    noteClientActivity(clientId, QStringLiteral("(connected)"), /*force=*/true);
 
     qCInfo(netTci) << "client" << clientId << "connected from" << peerAddress << "- sending init burst";
 
     // One command per frame, matching what the reference server puts on the wire.
     const QStringList burst = initBurst();
     for (const QString &command : burst) {
-        m_socketServer->sendText(clientId, command);
+        sendTo(clientId, command);
     }
+    // After the burst, so the new row shows what was actually last sent. Forced, because the burst's
+    // own announcements are throttled and a client arriving must not wait half a second to appear.
+    announceClients(/*force=*/true);
     emit clientCountChanged(clientCount());
 }
 
 void TciServer::onClientDisconnected(int clientId) {
     m_parsers.remove(clientId);
     if (m_clients.remove(clientId) > 0) {
-        m_clientsAnnounceClock.restart();
-        emit clientsChanged(clients());
+        announceClients(/*force=*/true);
     }
 
     // Fail closed: losing the client that keyed the transmitter must unkey it. A stuck PTT after a
@@ -171,7 +198,8 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
     // Recorded BEFORE dispatch: a command that drops the client (or unkeys and disconnects) would
     // otherwise never reach the roster, and the last thing a client said before it went away is
     // exactly what the table is for.
-    noteClientActivity(clientId, elideForDisplay(text.trimmed()), /*force=*/false);
+    recordClientMessage(clientId, elideForDisplay(text.trimmed()), /*outbound=*/false);
+    announceClients(/*force=*/false);
 
     const QVector<Command> commands = it->feed(text);
     for (const Command &raw : commands) {
@@ -184,7 +212,7 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             const bool first = m_audioClients.isEmpty();
             m_audioClients.insert(clientId);
             // Echo the request back, as the reference server does; WSJT-X waits for it.
-            m_socketServer->sendText(clientId, message(name, QString::number(receiver)));
+            sendTo(clientId, message(name, QString::number(receiver)));
             qCInfo(netTci) << "client" << clientId << "requested audio on receiver" << receiver;
             if (first) {
                 emit audioStartRequested(receiver);
@@ -193,7 +221,7 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             int receiver = MAIN_RECEIVER;
             command.argAsInt(0, &receiver);
             const bool had = m_audioClients.remove(clientId);
-            m_socketServer->sendText(clientId, message(name, QString::number(receiver)));
+            sendTo(clientId, message(name, QString::number(receiver)));
             if (had && m_audioClients.isEmpty()) {
                 emit audioStopRequested();
             }
@@ -221,7 +249,7 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             }
             updateSensorTimer();
             // Echo, as before - the client waits for it.
-            m_socketServer->sendText(clientId, message(name, command.args));
+            sendTo(clientId, message(name, command.args));
             qCInfo(netTci) << "client" << clientId << (isRx ? "RX" : "TX") << "sensors" << (wanted ? "on" : "off")
                            << "every" << m_sensorIntervalMs << "ms";
         } else if (name == QLatin1String("vfo") || name == QLatin1String("dds")) {
@@ -254,8 +282,8 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             // change comes back as a broadcast from setSnapshot, which is the authoritative echo -
             // a stale confirmation is what made WSJT-X transmit out of band in the reference
             // server.
-            m_socketServer->sendText(clientId, message(QStringLiteral("vfo"), QString::number(receiver),
-                                                       QString::number(channel), QString::number(current)));
+            sendTo(clientId, message(QStringLiteral("vfo"), QString::number(receiver), QString::number(channel),
+                                     QString::number(current)));
         } else if (name == QLatin1String("modulation") || name == QLatin1String("mode")) {
             // Per RECEIVER, with no channel argument - which is exactly why the Sub RX is modelled
             // as receiver 1. As channel 1 of receiver 0 its mode had nowhere to live at all.
@@ -273,8 +301,8 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
                     emit setModulationRequested(receiver, wanted);
                 }
             }
-            m_socketServer->sendText(clientId, message(QStringLiteral("modulation"), QString::number(receiver),
-                                                       m_snapshot.rx[receiver].modulation));
+            sendTo(clientId, message(QStringLiteral("modulation"), QString::number(receiver),
+                                     m_snapshot.rx[receiver].modulation));
         } else if (name == QLatin1String("trx")) {
             int receiver = MAIN_RECEIVER;
             bool keyed = false;
@@ -284,14 +312,13 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             // A GET, or a malformed argument: report, never guess. Coercing a non-boolean is how
             // the reference server turns "trx:0,yes" into a silent unkey.
             if (!haveReceiver || !haveState) {
-                m_socketServer->sendText(
-                    clientId, message(name, QString::number(MAIN_RECEIVER), boolText(m_snapshot.transmitting)));
+                sendTo(clientId, message(name, QString::number(MAIN_RECEIVER), boolText(m_snapshot.transmitting)));
             } else if (receiver != MAIN_RECEIVER) {
                 // ONLY THE MAIN RECEIVER TRANSMITS. The K4 has one transmitter, and the sub
                 // receiver is receive-only however it is addressed. Decline explicitly - silence
                 // surfaces in WSJT-X as "TCI failed to set ptt" with no cause, and PTT must never
                 // fall back to another receiver.
-                m_socketServer->sendText(clientId, message(name, QString::number(receiver), boolText(false)));
+                sendTo(clientId, message(name, QString::number(receiver), boolText(false)));
             } else {
                 setPtt(clientId, keyed);
             }
@@ -331,10 +358,10 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
                 // a client that believed it had turned the main receiver off would stop asking
                 // for audio.
                 if (byChannel) {
-                    m_socketServer->sendText(clientId, message(name, QString::number(MAIN_RECEIVER),
-                                                               QString::number(CHANNEL_A), boolText(true)));
+                    sendTo(clientId,
+                           message(name, QString::number(MAIN_RECEIVER), QString::number(CHANNEL_A), boolText(true)));
                 } else {
-                    m_socketServer->sendText(clientId, message(name, QString::number(MAIN_RECEIVER), boolText(true)));
+                    sendTo(clientId, message(name, QString::number(MAIN_RECEIVER), boolText(true)));
                 }
                 continue;
             }
@@ -347,10 +374,10 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             // Confirm with what the model holds; the radio's own change arrives as a broadcast.
             const bool held = m_snapshot.rx[SUB_RECEIVER].enabled;
             if (byChannel) {
-                m_socketServer->sendText(clientId, message(name, QString::number(MAIN_RECEIVER),
-                                                           QString::number(CHANNEL_B), boolText(held)));
+                sendTo(clientId,
+                       message(name, QString::number(MAIN_RECEIVER), QString::number(CHANNEL_B), boolText(held)));
             } else {
-                m_socketServer->sendText(clientId, message(name, QString::number(SUB_RECEIVER), boolText(held)));
+                sendTo(clientId, message(name, QString::number(SUB_RECEIVER), boolText(held)));
             }
         } else if (name == QLatin1String("split_enable")) {
             int receiver = MAIN_RECEIVER;
@@ -366,8 +393,7 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
                     emit setSplitRequested(wanted);
                 }
             }
-            m_socketServer->sendText(clientId,
-                                     message(name, QString::number(MAIN_RECEIVER), boolText(m_snapshot.split)));
+            sendTo(clientId, message(name, QString::number(MAIN_RECEIVER), boolText(m_snapshot.split)));
         }
         // Everything else: silence. That is what the protocol specifies for an unknown or refused
         // command, and WSJT-X sends nothing else during a receive session.
@@ -427,7 +453,7 @@ void TciServer::onSensorTick() {
                 continue; // dropped while we were sending to an earlier client
             }
             for (const QString &line : readings) {
-                m_socketServer->sendText(id, line);
+                sendTo(id, line);
             }
         }
     }
@@ -445,7 +471,7 @@ void TciServer::onSensorTick() {
             if (!m_txSensorClients.contains(id)) {
                 continue;
             }
-            m_socketServer->sendText(id, reading);
+            sendTo(id, reading);
         }
     }
 }
@@ -455,8 +481,7 @@ void TciServer::setPtt(int clientId, bool active) {
         // One owner at a time. A second client keying while another holds the transmitter is
         // refused rather than silently stealing it.
         if (m_pttOwner != -1 && m_pttOwner != clientId) {
-            m_socketServer->sendText(clientId,
-                                     message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
+            sendTo(clientId, message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
             return;
         }
         m_pttOwner = clientId;
@@ -468,7 +493,7 @@ void TciServer::setPtt(int clientId, bool active) {
         // asked for it. The requester is included, so this is still the echo it waits for -
         // and WSJT-X drops the link if a PTT request is not reflected quickly, so it goes out
         // before the chrono clock starts.
-        m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(true)));
+        broadcast(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(true)));
         emit pttRequested(true);
         startChrono(clientId);
         return;
@@ -477,8 +502,8 @@ void TciServer::setPtt(int clientId, bool active) {
     // An unkey from a client that does not hold PTT is a status report, not a command. Acting on it
     // would let any client unkey the operator.
     if (m_pttOwner != clientId) {
-        m_socketServer->sendText(clientId, message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER),
-                                                   boolText(m_snapshot.transmitting)));
+        sendTo(clientId,
+               message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(m_snapshot.transmitting)));
         return;
     }
 
@@ -487,7 +512,7 @@ void TciServer::setPtt(int clientId, bool active) {
     m_pttOwner = -1;
     m_snapshot.transmitting = false;
     // Broadcast for the same reason as the key: every client tracks the transmitter.
-    m_socketServer->broadcastText(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
+    broadcast(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
     emit pttRequested(false);
 }
 
@@ -539,7 +564,8 @@ void TciServer::onBinaryMessageReceived(int clientId, const QByteArray &payload)
     // WSJT-X transmission sends no text at all, and a roster that showed it last heard from half a
     // minute ago would be reporting it as stale at the one moment it is busiest. Throttled, so the
     // ~47 frames a second cost one announcement every half second.
-    noteClientActivity(clientId, QStringLiteral("(tx audio)"), /*force=*/false);
+    recordClientMessage(clientId, QStringLiteral("(tx audio)"), /*outbound=*/false);
+    announceClients(/*force=*/false);
 
     // Only the client holding PTT may put audio on the transmitter.
     if (clientId != m_pttOwner) {

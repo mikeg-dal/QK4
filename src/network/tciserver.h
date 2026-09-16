@@ -142,11 +142,20 @@ private:
     // Starts or stops the sensor timer to match the current subscriptions.
     void updateSensorTimer();
 
-    // Records what a client last said and when, and announces the roster if it is time to.
-    //
-    // `force` skips the throttle, for the changes that alter the ROW SET rather than a cell: a
-    // client connecting or disconnecting must show up at once.
-    void noteClientActivity(int clientId, const QString &message, bool force);
+    // Every text message OUT goes through these two, so the roster sees it. Calling
+    // m_socketServer->sendText directly would still reach the client and silently skip the record -
+    // which is the whole reason the wrappers exist rather than a note at each of the ~75 call
+    // sites. Binary audio is NOT routed through them; see TciClientInfo.
+    void sendTo(int clientId, const QString &text);
+    void broadcast(const QString &text);
+
+    // Records what passed between QK4 and one client, and which way. No signal: announcing is
+    // separate so a broadcast can update every row and announce once.
+    void recordClientMessage(int clientId, const QString &message, bool outbound);
+
+    // Emits clientsChanged, subject to the throttle. `force` skips it, for the changes that alter
+    // the ROW SET rather than a cell: a client connecting or disconnecting must show up at once.
+    void announceClients(bool force);
 
     void setPtt(int clientId, bool active);
     void startChrono(int clientId);
