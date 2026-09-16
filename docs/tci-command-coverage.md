@@ -83,6 +83,10 @@ Phase 8a. A SET-shaped command gets the current value back, never a false acknow
 `AGC_MODE`, `LOCK`, `SQL_ENABLE`, `SQL_LEVEL`, `MUTE`, `VOLUME`, `RX_NB_ENABLE`, `RX_NR_ENABLE`,
 `RX_ANF_ENABLE`, `RX_APF_ENABLE`
 
+Of these, `RIT_ENABLE`, `XIT_ENABLE`, `RIT_OFFSET`, `XIT_OFFSET`, `AGC_MODE`, `DRIVE` and
+`TUNE_DRIVE` now report the **actual radio** and broadcast when it changes. The rest still report
+constants.
+
 **Most of these report a hardcoded constant, not the radio.** The snapshot carries only
 frequency, mode and split from `RadioState`; everything else is a struct default. So
 `rx_nb_enable:0,false;` is QK4 saying "I don't model this", not "the K4's noise blanker is off" —
@@ -93,7 +97,7 @@ not new protocol work.
 
 | TCI SET | Existing builder | K4 cmd | Blocker |
 |---|---|---|---|
-| `DRIVE` / `TUNE_DRIVE` | `rfPower` / `rfPowerExtended` | `PC` | Units: TCI is 0–100 %, K4 is watts. Needs a mapping decision |
+| `DRIVE` / `TUNE_DRIVE` | `rfPower` / `rfPowerExtended` | `PC` | **Reporting done** (§4.4). The SET is still not wired |
 | `RIT_ENABLE` | `ritEnabled` | `RT` | None — ready to wire |
 | `XIT_ENABLE` | `xitEnabled` | `XT` | None — ready to wire |
 | `RIT_OFFSET` | `ritOffset` | `RO` | **Shared with XIT — see §4.1** |
@@ -172,13 +176,42 @@ on the main VFO for now"), not a hardware limit. `RX_CHANNEL_ENABLE`, `RX_CHANNE
 
 | TCI | Range/vocabulary | K4 | Mismatch |
 |---|---|---|---|
-| `DRIVE` | 0–100 (%) | `PC` in watts | Needs a percent↔watt mapping; K4 also has a QRP range |
+| `DRIVE` | 0–100 | `PC` in watts/mW by range | **Resolved — reported as-is, §4.4** |
 | `VOLUME`, `RX_VOLUME` | −60…0 dB | QK4 audio stack, linear | Not CAT at all |
 | `SQL_LEVEL` | −140…0 dBm | K4 squelch 0–29 | Scale conversion required |
 | `AGC_MODE` | `normal`/`fast`/`off` | `GT` numeric | Enum mapping required |
 | `AGC_GAIN` | −20…120 dB | K4 AGC controls | No direct equivalent |
 
-### 4.4 Commands with no K4 concept
+### 4.4 `DRIVE`: report the power QK4 already displays
+
+Found by reducing power on the radio and watching a client sit at `100` — `drive` was never
+populated from `RadioState` and never broadcast, so it reported the struct default forever.
+
+`RadioState::rfPower()` is the value, and it is **already in the units the operator sees**: watts
+in QRP and QRO, mW in XVTR, with `powerRange()` saying which. `SideControlPanel::setPower()` does
+nothing but choose the unit label and the decimal places — there is no normalisation anywhere in
+QK4 to reuse, and none worth inventing.
+
+So `DRIVE` reports that value directly, clamped to the protocol's 0–100. The K4 front panel, QK4's
+own PWR button and a TCI client then all show **the same number**.
+
+An earlier attempt scaled it to a percentage of the active range (QRO against nominal 100 W, QRP
+against 10 W, XVTR against 10 mW). That is arguably the tidier reading of a field the spec
+documents as "output power value from 0 to 100", and in QRP it is genuinely more informative — 10 W
+there is *full* power and reports as `10` under the simple rule. It was dropped anyway, because it
+made a client read `82` while the radio said 90 W. **Agreement with the radio in front of the
+operator beats theoretical tidiness**, and it means no conversion table has to be kept in step with
+the K4's ranges.
+
+The one place the simple rule loses: QRO runs to 110 W while the protocol field stops at 100, so
+101–110 W all report `100`. Nothing fixes that without normalising.
+
+`TUNE_DRIVE` tracks `DRIVE`. The K4 has no separate tune-power setting, and reporting an
+independent value would invent a control the radio does not have.
+
+**Reporting only.** A client sending `drive:0,50;` still does not change power — that SET is in §8.
+
+### 4.5 Commands with no K4 concept
 
 `RX_BIN_ENABLE` (binaural), `RX_ANC_ENABLE` (adaptive noise cancellation), `RX_DSE_ENABLE`
 (digital surround for CW), `LINE_OUT_RECORDER_*` (server-side recording), `APP_FOCUS` /
@@ -392,7 +425,8 @@ which is what makes the radio-touching items benchable at all.
    *capability* gap, and the one that makes QK4 usable to a CW client at all.
 3. **The ready-to-wire SETs** (`RIT_ENABLE`, `XIT_ENABLE`, `RX_NB_ENABLE`, `RX_NR_ENABLE`,
    `CW_KEYER_SPEED`) — builders exist; bench one at a time.
-4. **`DRIVE`/`TUNE_DRIVE`** — needs the percent↔watt decision first.
+4. **`DRIVE`/`TUNE_DRIVE` SET** — reporting is done (§4.4); what remains is accepting a
+   client's value and sending `PC` in the right range form.
 
 ### Phase 2
 
@@ -586,6 +620,7 @@ because it also seeds current state, which is what real servers do.
 | `trx` | ✅ | **Fixed — see §11.4** |
 | `rit_enable`, `xit_enable`, `rit_offset`, `xit_offset` | ✅ | |
 | `agc_mode` | ✅ | |
+| `drive`, `tune_drive` | ✅ | **Fixed** — see §4.4 |
 | Everything else in §3.2 | n/a | Reported from constants, so nothing ever changes. **When those are wired to `RadioState` they must gain a broadcast in the same commit** — a value that can change and is not broadcast is this same bug again. |
 
 ### 11.4 The `trx` defect — FIXED

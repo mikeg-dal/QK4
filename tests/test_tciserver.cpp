@@ -558,6 +558,62 @@ private slots:
         server.stop();
     }
 
+    void broadcastsAPowerChange() {
+        // REGRESSION, found by reducing power on the radio and watching a client sit at 100.
+        // DRIVE is a bidirectional control command, and the spec makes the server a synchroniser:
+        // a parameter the radio changes must reach every client. drive was never populated from
+        // RadioState and never diffed, so it reported the struct default forever.
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        TciRadioSnapshot snapshot;
+        snapshot.drive = 45;
+        snapshot.tuneDrive = 45;
+        server.setSnapshot(snapshot);
+
+        const QStringList replies = client.collectUntil("tune_drive:0,45;");
+        QVERIFY2(replies.contains(QStringLiteral("drive:0,45;")), "a power change was never announced");
+        QVERIFY(replies.contains(QStringLiteral("tune_drive:0,45;")));
+
+        client.close();
+        server.stop();
+    }
+
+    void powerBroadcastsAlwaysCarryReceiverAndPower() {
+        // The same arity rule as the burst and the query reply: a bare "drive:45;" crashes
+        // ESDR3-mode WSJT-X and JTDX, which index args[1] unconditionally.
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        TciRadioSnapshot snapshot;
+        snapshot.drive = 12;
+        snapshot.tuneDrive = 12;
+        server.setSnapshot(snapshot);
+
+        const QStringList replies = client.collectUntil("tune_drive:0,12;");
+        int checked = 0;
+        for (const QString &line : replies) {
+            if (!line.startsWith(QStringLiteral("drive:")) && !line.startsWith(QStringLiteral("tune_drive:"))) {
+                continue;
+            }
+            ++checked;
+            const TciProtocol::Command c = TciProtocol::parseOne(line.chopped(1));
+            QVERIFY2(c.argCount() == 2, qPrintable(line));
+        }
+        QVERIFY(checked > 0);
+
+        client.close();
+        server.stop();
+    }
+
     void broadcastsAModeChange() {
         TciServer server;
         TciRadioSnapshot s;

@@ -47,7 +47,14 @@ struct TciRadioSnapshot {
 
     int filterLowHz = 100;
     int filterHighHz = 2800;
+    // The power QK4 displays, reported as-is: watts in QRP and QRO, mW in XVTR. Not rescaled to a
+    // percentage, so the K4 front panel, QK4's PWR button and a TCI client all show the same
+    // number. Clamped to the protocol's 0..100, which only bites in the 101-110 W QRO headroom.
+    // See docs/tci-command-coverage.md.
     int drive = 100;
+
+    // The K4 has no separate tune-power setting, so this tracks drive. Reporting an independent
+    // value would invent a control the radio does not have.
     int tuneDrive = 100;
     int micLevel = 50;
 

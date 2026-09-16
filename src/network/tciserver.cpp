@@ -180,6 +180,14 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
     if (snapshot.agcMode != previous.agcMode) {
         m_socketServer->broadcastText(message(QStringLiteral("agc_mode"), trx, snapshot.agcMode));
     }
+    if (snapshot.drive != previous.drive) {
+        // Always <trx>,<power>: a bare "drive:0;" crashes ESDR3-mode WSJT-X and JTDX, which index
+        // args[1] unconditionally. That rule applies to the broadcast as much as the reply.
+        m_socketServer->broadcastText(message(QStringLiteral("drive"), trx, QString::number(snapshot.drive)));
+    }
+    if (snapshot.tuneDrive != previous.tuneDrive) {
+        m_socketServer->broadcastText(message(QStringLiteral("tune_drive"), trx, QString::number(snapshot.tuneDrive)));
+    }
 }
 
 QStringList TciServer::initBurst() const {

@@ -77,6 +77,29 @@ QString tciAgcModeFor(RadioState::AGCSpeed speed) {
     return QStringLiteral("normal");
 }
 
+// K4 power -> TCI DRIVE.
+//
+// RadioState::rfPower() is ALREADY the number QK4 shows the operator: watts in QRP and QRO, mW in
+// XVTR, with powerRange() saying which. SideControlPanel::setPower does nothing but pick the unit
+// label and the decimal places, so there is no normalisation anywhere in QK4 to reuse - and none
+// to invent either.
+//
+// Reporting that value directly is what keeps the three displays agreeing: the K4 front panel,
+// QK4's own PWR button, and a TCI client all show the same number. An earlier version of this
+// scaled to a percentage of the range, which is arguably the tidier reading of a protocol field
+// documented as "0 to 100" - and it made a client read 82 while the radio said 90 W. Agreement
+// with the radio in front of the operator wins.
+//
+// The one place this loses: QRO runs to 110 W and the protocol field stops at 100, so 101-110 W
+// all report 100. Nothing can be done about that without normalising, which costs more than it
+// saves. See docs/tci-command-coverage.md.
+int tciDriveFor(double power) {
+    if (power < 0.0) {
+        return 0; // RadioState's sentinel, before the first PC echo
+    }
+    return qBound(0, static_cast<int>(power + 0.5), 100);
+}
+
 } // namespace
 
 TciController::TciController(AudioController *audioController, ConnectionController *connectionController,
@@ -172,6 +195,8 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         // Without this a transmit started anywhere other than a TCI client - the mic, a
         // footswitch, another CAT client - never reaches TCI clients at all.
         connect(m_radioState, &RadioState::transmitStateChanged, this, [this](bool) { publishSnapshot(); });
+        connect(m_radioState, &RadioState::rfPowerChanged, this,
+                [this](double, LevelsState::PowerRange) { publishSnapshot(); });
 
         // Meters. Frequent by nature: the server stores these and emits on its own timer at the
         // interval the client asked for, so a fast radio cannot flood the link.
@@ -271,6 +296,11 @@ void TciController::publishSnapshot() {
     // The radio's own transmit state. TciServer decides whether this or a TCI client's assertion
     // wins - see setSnapshot - but it can only do that if the value actually arrives.
     snapshot.transmitting = m_radioState->isTransmitting();
+
+    // The value QK4 already displays - see tciDriveFor. The K4 has no separate tune power, so
+    // tune_drive tracks it rather than claiming a control the radio does not have.
+    snapshot.drive = tciDriveFor(m_radioState->rfPower());
+    snapshot.tuneDrive = snapshot.drive;
     snapshot.modulationB = tciModulationFor(m_radioState->modeB());
 
     // Queued: the server reads this from its own thread, so it must be handed over by value
