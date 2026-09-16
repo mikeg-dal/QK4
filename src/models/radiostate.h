@@ -103,11 +103,6 @@ public:
     int micGain() const { return m_levelsState.micGain; }
     int compression() const { return m_levelsState.compression; }
     int rfGain() const { return m_levelsState.rfGain; }
-    // The RADIO's AF gain, 0-60 (K4 AG / AG$). Distinct from QK4's own playback volume, which is
-    // local gain on the decoded stream. -1 until the radio reports.
-    int afGain() const { return m_levelsState.afGain; }
-    int afGainB() const { return m_levelsState.afGainB; }
-
     int squelchLevel() const { return m_levelsState.squelchLevel; }
     int rfGainB() const { return m_levelsState.rfGainB; }
     int squelchLevelB() const { return m_levelsState.squelchLevelB; }
@@ -589,7 +584,6 @@ signals:
     void keyerPaddleChanged(QChar iambic, QChar paddle, int weight); // KP keyer paddle settings
     void qskDelayChanged(int delay);                                 // QSK/VOX delay in 10ms increments
     void rfGainChanged(int gain);                                    // RF gain
-    void afGainChanged(int main, int sub);                           // AG / AG$: radio AF gain
     void squelchChanged(int level);                                  // Squelch level
     void rfGainBChanged(int gain);                                   // RF gain Sub RX
     void squelchBChanged(int level);                                 // Squelch Sub RX

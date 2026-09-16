@@ -104,34 +104,6 @@ void handleRGSub(LevelsState &state, RadioState &owner, const QString &cmd) {
     }
 }
 
-void handleAG(LevelsState &state, RadioState &owner, const QString &cmd) {
-    // AGnnn; where nnn is 000-060.
-    if (cmd.length() <= 2)
-        return;
-    bool ok;
-    const int ag = cmd.mid(2).toInt(&ok);
-    if (ok && state.afGain != ag) {
-        state.afGain = ag;
-        emit owner.afGainChanged(state.afGain, state.afGainB);
-    }
-}
-
-void handleAGSub(LevelsState &state, RadioState &owner, const QString &cmd) {
-    // AG$nnn; where nnn is 000-060.
-    //
-    // NOTE from the K4 reference: when the SUB AF knob is assigned to balance control via BL, this
-    // returns the SAME value as AG. Sub volume mirroring main is therefore expected in that mode,
-    // not a bug - see RadioState::balanceMode().
-    if (cmd.length() <= 3)
-        return;
-    bool ok;
-    const int ag = cmd.mid(3).toInt(&ok);
-    if (ok && state.afGainB != ag) {
-        state.afGainB = ag;
-        emit owner.afGainChanged(state.afGain, state.afGainB);
-    }
-}
-
 void handleSQ(LevelsState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() <= 2)
         return;

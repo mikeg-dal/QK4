@@ -276,7 +276,6 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         connect(m_radioState, &RadioState::filterBandwidthBChanged, this, [this](int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::keyerSpeedChanged, this, [this](int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::micGainChanged, this, [this](int) { publishSnapshot(); });
-        connect(m_radioState, &RadioState::afGainChanged, this, [this](int, int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::subRxEnabledChanged, this, [this](bool enabled) {
             // The bridge decides what goes in the right audio channel, and it lives on the TCI
             // thread, so this has to be marshalled rather than written from here.

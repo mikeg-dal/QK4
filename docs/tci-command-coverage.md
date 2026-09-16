@@ -262,10 +262,14 @@ It reads the **applied gain**, not the slider position, because the two disagree
 sub slider drives the L/R balance offset and leaves sub volume alone. The gain is what the
 listener hears.
 
-`RadioState` does now parse the radio's `AG`/`AG$` (0–60) as a read-only value, because it is the
-prerequisite for fixing a separate pre-existing bug: `catserver.cpp` answers an `AG;` query with a
-hardcoded `AG000;`, telling every CAT client on port 9299 that the audio is muted whatever the
-radio is doing. `SQ;` has the same shape. Both are left as-is here and raised with the maintainer.
+QK4 deliberately does **not** parse the radio's `AG`/`AG$` at all. It was written and then removed:
+nothing consumes it once `rx_volume` reports QK4's mix, and carrying a CAT parser with no consumer
+on the chance a future change might want it is how a codebase accumulates weight.
+
+Separately, and untouched: `catserver.cpp` answers an `AG;` query with a hardcoded `AG000;`,
+telling every CAT client on port 9299 that the audio is muted whatever the radio is doing. `SQ;`
+has the same shape. Both are pre-existing, unrelated to TCI, and raised with the maintainer rather
+than fixed here.
 
 ### 4.6 Commands with no K4 concept
 
@@ -821,8 +825,6 @@ point of the ownership rule in §11.4.
 - **Every SET except `vfo`, `dds`, `modulation`, `trx`, `split_enable` and `rx_channel_enable`.**
   Reporting is broad; writing is deliberately narrow. Nothing in §8's "Next" list has moved a
   radio yet.
-- **`AG`/`AG$` parsing.** Added but never exercised — the K4 pushed `NB`, `NR` and `PC` during the
-  session and no `AG`, so nothing has driven that handler with real data.
 
 ### 12.7 How to repeat it
 

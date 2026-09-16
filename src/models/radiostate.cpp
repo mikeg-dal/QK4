@@ -565,8 +565,6 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append(
         {"RG$", [this](const QString &c) { LevelsHandlers::handleRGSub(m_levelsState, *this, c); }});
     m_commandHandlers.append(
-        {"AG$", [this](const QString &c) { LevelsHandlers::handleAGSub(m_levelsState, *this, c); }});
-    m_commandHandlers.append(
         {"SQ$", [this](const QString &c) { LevelsHandlers::handleSQSub(m_levelsState, *this, c); }});
     m_commandHandlers.append({"SM$", [this](const QString &c) { handleSMSub(c); }});
     m_commandHandlers.append({"NB$", [this](const QString &c) { handleNBSub(c); }});
@@ -629,7 +627,6 @@ void RadioState::registerCommandHandlers() {
                                                 &RadioState::ifShiftChanged);
                               }});
     m_commandHandlers.append({"CW", [this](const QString &c) { handleCW(c); }});
-    m_commandHandlers.append({"AG", [this](const QString &c) { LevelsHandlers::handleAG(m_levelsState, *this, c); }});
     m_commandHandlers.append({"RG", [this](const QString &c) { LevelsHandlers::handleRG(m_levelsState, *this, c); }});
     m_commandHandlers.append({"SQ", [this](const QString &c) { LevelsHandlers::handleSQ(m_levelsState, *this, c); }});
     m_commandHandlers.append({"MG", [this](const QString &c) { handleMG(c); }});

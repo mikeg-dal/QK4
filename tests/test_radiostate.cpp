@@ -6,54 +6,6 @@ class TestRadioState : public QObject {
     Q_OBJECT
 
 private slots:
-    void afGainParsesMainAndSub() {
-        // CONVENTIONS rule 6: a parser change needs a case here. AG/AG$ are the K4's AF gain,
-        // 000-060, and were not parsed at all before - CatServer answered a hardcoded AG000;,
-        // telling every CAT client the audio was muted whatever the radio was doing.
-        RadioState state;
-        QCOMPARE(state.afGain(), -1); // sentinel until the radio reports
-        QCOMPARE(state.afGainB(), -1);
-
-        QSignalSpy spy(&state, &RadioState::afGainChanged);
-
-        state.parseCATCommand(QStringLiteral("AG042;"));
-        QCOMPARE(state.afGain(), 42);
-        QCOMPARE(spy.count(), 1);
-
-        state.parseCATCommand(QStringLiteral("AG$017;"));
-        QCOMPARE(state.afGainB(), 17);
-        QCOMPARE(state.afGain(), 42); // sub must not disturb main
-        QCOMPARE(spy.count(), 2);
-    }
-
-    void afGainHandlesTheRangeEnds() {
-        RadioState state;
-        state.parseCATCommand(QStringLiteral("AG000;"));
-        QCOMPARE(state.afGain(), 0); // silent
-        state.parseCATCommand(QStringLiteral("AG060;"));
-        QCOMPARE(state.afGain(), 60); // maximum
-    }
-
-    void afGainIgnoresMalformedCommands() {
-        RadioState state;
-        state.parseCATCommand(QStringLiteral("AG030;"));
-        QSignalSpy spy(&state, &RadioState::afGainChanged);
-
-        state.parseCATCommand(QStringLiteral("AG;"));    // no value
-        state.parseCATCommand(QStringLiteral("AG$;"));   // no value, sub
-        state.parseCATCommand(QStringLiteral("AGxyz;")); // not a number
-        QCOMPARE(state.afGain(), 30);                    // unchanged
-        QCOMPARE(spy.count(), 0);
-    }
-
-    void afGainDoesNotReEmitForAnUnchangedValue() {
-        RadioState state;
-        state.parseCATCommand(QStringLiteral("AG025;"));
-        QSignalSpy spy(&state, &RadioState::afGainChanged);
-        state.parseCATCommand(QStringLiteral("AG025;"));
-        QCOMPARE(spy.count(), 0);
-    }
-
     // Frequency parsing
     void testFrequencyA() {
         RadioState rs;
