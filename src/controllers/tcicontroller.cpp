@@ -270,11 +270,10 @@ TciController::TciController(AudioController *audioController, ConnectionControl
             } else if (name == QLatin1String("agc_mode")) {
                 applyCat(CatFrames::agcSpeed(value));
             } else if (name == QLatin1String("drive") || name == QLatin1String("tune_drive")) {
-                // The extended form carries the power RANGE, which the plain PC does not. QRP and
-                // QRO are different scales on the K4 and sending a bare number would land in
-                // whichever range the radio happens to be in.
-                const int watts = qBound(0, value, 110);
-                applyCat(CatFrames::rfPowerExtended(watts, m_radioState && m_radioState->isQrpMode()));
+                // PCnnnr, with the range letter - the same form QK4's UI sends. The PCX variant
+                // is the extended QUERY and the radio ignores it as a set, which is why drive
+                // failed on the bench until this changed.
+                applyCat(CatFrames::setRfPower(value, m_radioState && m_radioState->isQrpMode()));
             }
         });
 

@@ -71,12 +71,25 @@ private slots:
         QCOMPARE(CatFrames::setNoiseBlanker(15, true), QByteArray("NB151;"));
     }
 
+    void setRfPowerUsesThePcFormNotPcx() {
+        // REGRESSION, found on a live K4. PCX is the extended QUERY; the radio ignores it as a
+        // set, so drive silently did nothing. The set form is PCnnnr, which is what QK4's own UI
+        // sends and what the radio echoes back (PC045H).
+        QCOMPARE(CatFrames::setRfPower(45, false), QByteArray("PC045H;"));
+        QCOMPARE(CatFrames::setRfPower(100, false), QByteArray("PC100H;"));
+        // QRP is reported in tenths of a watt, so a request in watts is scaled: 5 W is PC050L.
+        QCOMPARE(CatFrames::setRfPower(5, true), QByteArray("PC050L;"));
+        QCOMPARE(CatFrames::setRfPower(10, true), QByteArray("PC100L;"));
+    }
+
     void setBuildersClampRatherThanEmitNonsense() {
         // A malformed frame reaches the radio; refusing to overflow the field is cheaper than
         // finding out what an out-of-range one does.
         QCOMPARE(CatFrames::setNoiseBlanker(99, true), QByteArray("NB151;"));
         QCOMPARE(CatFrames::setNoiseBlanker(-3, true), QByteArray("NB001;"));
         QCOMPARE(CatFrames::setFilterBandwidth(-100), QByteArray("BW0000;"));
+        QCOMPARE(CatFrames::setRfPower(999, false), QByteArray("PC110H;"));
+        QCOMPARE(CatFrames::setRfPower(99, true), QByteArray("PC100L;"));
     }
 
     // =========================================================================

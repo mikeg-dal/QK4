@@ -48,6 +48,10 @@ QByteArray setNoiseBlanker(int level, bool on);
 // BWnnnn in 10-Hz units, which is the inverse of what RadioState's handleBW parses.
 QByteArray setFilterBandwidth(int bwHz);
 
+// PCnnnr: nnn is watts in QRO and watts*10 in QRP (PC100L is 10.0 W), r is the range letter.
+// NOT the PCX form below - that one is the extended QUERY, and the radio ignores it as a set.
+QByteArray setRfPower(int value, bool qrp);
+
 QByteArray noiseBlanker(bool on);
 QByteArray noiseReduction(bool on);
 QByteArray agcSpeed(int agc);

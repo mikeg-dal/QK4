@@ -76,6 +76,13 @@ QByteArray setNoiseBlanker(int level, bool on) {
     return QString("NB%1%2;").arg(qBound(0, level, 15), 2, 10, QChar('0')).arg(on ? 1 : 0).toUtf8();
 }
 
+QByteArray setRfPower(int value, bool qrp) {
+    // Matches what QK4's own UI sends (sidecontrolscrollcontroller.cpp) and what the radio echoes
+    // back, PC045H. The QRP range is reported in tenths, so a request in watts is scaled.
+    const int raw = qrp ? qBound(0, value * 10, 100) : qBound(0, value, 110);
+    return QString("PC%1%2;").arg(raw, 3, 10, QChar('0')).arg(qrp ? "L" : "H").toUtf8();
+}
+
 QByteArray setFilterBandwidth(int bwHz) {
     // The K4 takes 10-Hz units: BW0280 is 2800 Hz. Sending Hz directly asks for ten times the
     // width, which the radio ignores as out of range.
