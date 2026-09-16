@@ -149,6 +149,16 @@ private:
     void sendTo(int clientId, const QString &text);
     void broadcast(const QString &text);
 
+    // Sends WITHOUT touching the roster. For the periodic telemetry only.
+    //
+    // WHY it is excluded where every other message is counted: sensors go out five times a second
+    // to every subscriber, so recording them pins the options page's "last message" column to a
+    // meter reading and hides the commands the column exists to show - observed on the bench with
+    // two clients, where only the one NOT subscribed to sensors showed anything useful. This is a
+    // periodic stream QK4 started, not an exchange; the subscribe that turned it on IS recorded,
+    // once, through sendTo.
+    void sendTelemetry(int clientId, const QString &text);
+
     // Records what passed between QK4 and one client, and which way. No signal: announcing is
     // separate so a broadcast can update every row and announce once.
     void recordClientMessage(int clientId, const QString &message, bool outbound);

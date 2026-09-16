@@ -157,6 +157,35 @@ private slots:
                  qPrintable(QStringLiteral("announced %1 times for %2 messages").arg(spy.count()).arg(kMessages)));
     }
 
+    void theSensorStreamDoesNotTouchTheRoster() {
+        // Observed on the bench: with sensors counted, the options page's last-message column just
+        // streamed rx_sensors at five a second, and the only row showing anything useful was the
+        // client that had NOT subscribed. Sensors are continuous output QK4 started, not an
+        // exchange - so the SUBSCRIBE is recorded once and the readings that follow are not.
+        TciServer server;
+        const quint16 port = startServer(&server);
+        QVERIFY(port != 0);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(port));
+        drainBurst(&client);
+
+        // Fastest interval the spec allows, so a tick is certain to land inside the wait below.
+        client.send("rx_sensors_enable:true,30;");
+        QTRY_VERIFY(server.clients()[0].lastMessage.contains(QLatin1String("rx_sensors_enable")));
+
+        // A marker that a sensor tick must not displace.
+        client.send("not_a_tci_command:1;");
+        QTRY_VERIFY(server.clients()[0].lastMessage.contains(QLatin1String("not_a_tci_command")));
+
+        // Long enough for many ticks at 30 ms. Readings are genuinely going out - the client is
+        // still subscribed - they just must not reach the roster.
+        QTest::qWait(400);
+        QCOMPARE(server.clients()[0].lastMessage.contains(QLatin1String("sensors")), false);
+        QVERIFY2(server.clients()[0].lastMessage.contains(QLatin1String("not_a_tci_command")),
+                 qPrintable(server.clients()[0].lastMessage));
+    }
+
     void aTxAudioFrameCountsAsActivity() {
         // A WSJT-X client sends no text for the length of a 15-second transmission. If binary
         // frames did not count, the roster would report it as stale at the one moment it is

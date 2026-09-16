@@ -109,6 +109,10 @@ void TciServer::sendTo(int clientId, const QString &text) {
     announceClients(/*force=*/false);
 }
 
+void TciServer::sendTelemetry(int clientId, const QString &text) {
+    m_socketServer->sendText(clientId, text);
+}
+
 void TciServer::broadcast(const QString &text) {
     m_socketServer->broadcastText(text);
 
@@ -453,7 +457,7 @@ void TciServer::onSensorTick() {
                 continue; // dropped while we were sending to an earlier client
             }
             for (const QString &line : readings) {
-                sendTo(id, line);
+                sendTelemetry(id, line);
             }
         }
     }
@@ -471,7 +475,7 @@ void TciServer::onSensorTick() {
             if (!m_txSensorClients.contains(id)) {
                 continue;
             }
-            sendTo(id, reading);
+            sendTelemetry(id, reading);
         }
     }
 }

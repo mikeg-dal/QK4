@@ -17,8 +17,10 @@ struct TciClientInfo {
     // Time and text of the last message exchanged with this client, in EITHER direction, and which
     // way it went. The page renders the direction as an arrow.
     //
-    // Text messages only. The audio stream is deliberately not in here: RX audio leaves at ~47
-    // frames a second and would pin the cell to "sending audio" forever, burying every command.
+    // Text messages only, and not the periodic sensor stream. Both are continuous output QK4
+    // started rather than an exchange, and both would pin the cell forever: RX audio leaves at ~47
+    // frames a second, sensors at five, against commands that arrive now and then. The subscribe
+    // that turns sensors on is recorded, once; the readings that follow are not.
     // Inbound TX audio IS counted, as a single "(tx audio)" - a WSJT-X client sends no text at all
     // for the length of a 15-second transmission, and reporting it silent at the one moment it is
     // busiest is the failure this column exists to avoid.
