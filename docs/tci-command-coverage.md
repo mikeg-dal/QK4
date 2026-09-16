@@ -829,8 +829,9 @@ the server to **broadcast** the change, restore the original. The broadcast is t
 proves nothing, because the server answers with the value it holds either way, so a SET that never
 reached the radio replies identically to one that did.
 
-**8 of 8 pass:** `rit_enable`, `xit_enable`, `rit_offset`, `rx_nb_enable`, `rx_nr_enable`,
-`agc_mode`, `rx_filter_band`, `drive`.
+**All pass:** `rit_enable`, `xit_enable`, `rit_offset`, `xit_offset`, `rx_nb_enable`,
+`rx_nr_enable`, `agc_mode`, `rx_filter_band`, `vfo`, `dds`, `modulation`, `split_enable`,
+`rx_channel_enable`, `drive`, `tune_drive`.
 
 Getting there took three rounds and found three bugs of one kind, none of which any unit test
 could have caught, because all three were about the **bytes on the wire**:
@@ -840,6 +841,7 @@ could have caught, because all three were about the **bytes on the wire**:
 | `rx_nb_enable` | `NB1;` | `NBnnm` — nn level, m on/off |
 | `rx_filter_band` | width in Hz | `BWnnnn` in **10-Hz units** |
 | `drive` | `PCX045H;` | `PC045H;` — `PCX` is the extended *query* |
+| `tune_drive` | `PC…` — the operating power | `ME0069.nnnn` — a menu item, not a command |
 
 All three came from `CatFrames` builders that had **never sent anything to a radio**. Their only
 callers were `catserver.cpp` and `catpushbroadcaster.cpp`, both formatting *replies to a CAT
@@ -850,6 +852,21 @@ sent these correctly by hand.
 The fix added separate `setNoiseBlanker`, `setFilterBandwidth` and `setRfPower` builders rather
 than changing the existing ones, so nothing a port-9299 client sees has changed. The reply-side
 bugs are real and are reported to the maintainer — see §4.5.
+
+**`tune_drive` took a fourth round and is the most instructive.** It first shared `drive`'s
+handler, so asking for *tune* power sent `PC` and changed the **operating** power — the wrong
+control entirely, found by watching the radio. The K4 has no tune-power command: it is **menu item
+69, "TUNE LP", 1–50 W**, set with the absolute form `ME0069.0020`.
+
+It was then briefly made report-only, reporting a remembered value. That was worse than stale: the
+tester's read-change-restore cycle would have written back a number the radio never had, silently
+clobbering a front-panel setting. It now reads menu 69 from `MenuModel`, which costs no extra
+traffic — the radio pushes the `MEDF` definitions at connect and individual `ME` updates
+afterwards.
+
+Confirmed **in both directions**: a TCI client can set it, and a change made on the radio's front
+panel appears in `tcimonitor.py` within a second. That is the first menu-backed control to work
+over TCI, and the pattern generalises to anything else the K4 keeps in its menu.
 
 A fourth "failure" was the tester itself: it compared the last argument of `rx_filter_band`, but
 only the **width** survives a round trip, so a correct result looked wrong. Recorded because a
