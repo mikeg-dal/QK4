@@ -68,6 +68,15 @@ struct TciReceiverState {
     // client matching the documented vocabulary.
     QString agcMode = QStringLiteral("normal");
 
+    // AGC threshold, reported RAW as the K4's 2-8 rather than rescaled into the protocol's
+    // -20..120 dB. The two scales do not correspond, so any conversion would encode a guess about
+    // what threshold 6 means in dB - the same trap as sql_level. Reporting the number the operator
+    // sees keeps the radio, QK4 and the client in agreement, which is the precedent drive set.
+    //
+    // TCI calls it agc_gain but it is a THRESHOLD: AetherSDR's cmdAgcGain reads and writes
+    // AgcThreshold, which is what identifies it among the K4's eight AGC menu items.
+    int agcGain = 6; // K4 menu 10 default
+
     bool sqlEnabled = false;
     // TCI squelch is an ABSOLUTE threshold in dBm, range -140..0. QK4 does not know the K4's
     // squelch threshold in dBm - the radio reports SQ as an arbitrary integer scale - so no

@@ -166,6 +166,13 @@ constexpr int kTuneDriveMenuId = 69;
 constexpr int kTuneDriveMinW = 1;
 constexpr int kTuneDriveMaxW = 50;
 
+// TCI's agc_gain is the AGC THRESHOLD - AetherSDR's cmdAgcGain reads and writes AgcThreshold -
+// which on a K4 is menu item 10 of eight AGC entries. From the radio's own MEDF dump:
+//   MEDF0010,AGC Threshold,RX AGC,DEC,1,2,8,6,6,1;
+constexpr int kAgcGainMenuId = 10;
+constexpr int kAgcGainMin = 2;
+constexpr int kAgcGainMax = 8;
+
 } // namespace
 
 TciController::TciController(AudioController *audioController, ConnectionController *connectionController,
@@ -278,6 +285,10 @@ TciController::TciController(AudioController *audioController, ConnectionControl
                 applyCat(CatFrames::ritOffset(value));
             } else if (name == QLatin1String("agc_mode")) {
                 applyCat(CatFrames::agcSpeed(value));
+            } else if (name == QLatin1String("agc_gain")) {
+                // Menu item 10, raw 2-8. One control on the radio, so a write from either
+                // receiver moves both - the same shape as the shared RIT/XIT offset.
+                applyCat(CatFrames::setMenuValue(kAgcGainMenuId, qBound(kAgcGainMin, value, kAgcGainMax)));
             } else if (name == QLatin1String("tune_drive")) {
                 // MENU ITEM 69, "TUNE LP (Low power TUNE)", 1-50 W - NOT PC. Sending PC here is
                 // the bug this branch exists to prevent: it changes the operating power.
@@ -312,7 +323,7 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     if (m_menuController) {
         // Covers the front panel as well as our own writes: the radio echoes an ME for both.
         connect(m_menuController, &MenuController::menuValueChanged, this, [this](int menuId, int) {
-            if (menuId == kTuneDriveMenuId) {
+            if (menuId == kTuneDriveMenuId || menuId == kAgcGainMenuId) {
                 publishSnapshot();
             }
         });
@@ -472,6 +483,13 @@ void TciController::publishSnapshot() {
     // Reporting a remembered value instead would have been actively harmful: a client that reads,
     // changes and restores would write back a number the radio never had, silently clobbering a
     // TUNE LP set on the front panel.
+    // AGC threshold is a single radio-wide menu item, so both receivers report the same number.
+    int agcThreshold = 0;
+    if (m_menuController && m_menuController->menuValue(kAgcGainMenuId, &agcThreshold) && agcThreshold > 0) {
+        main.agcGain = agcThreshold;
+        sub.agcGain = agcThreshold;
+    }
+
     int tuneWatts = 0;
     if (m_menuController && m_menuController->menuValue(kTuneDriveMenuId, &tuneWatts) && tuneWatts > 0) {
         snapshot.tuneDrive = tuneWatts;

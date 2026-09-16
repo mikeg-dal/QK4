@@ -103,6 +103,9 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
         if (now.agcMode != was.agcMode) {
             m_socketServer->broadcastText(message(QStringLiteral("agc_mode"), trx, now.agcMode));
         }
+        if (now.agcGain != was.agcGain) {
+            m_socketServer->broadcastText(message(QStringLiteral("agc_gain"), trx, QString::number(now.agcGain)));
+        }
         if (now.filterLowHz != was.filterLowHz || now.filterHighHz != was.filterHighHz) {
             m_socketServer->broadcastText(message(QStringLiteral("rx_filter_band"), trx,
                                                   QString::number(now.filterLowHz), QString::number(now.filterHighHz)));
@@ -172,6 +175,7 @@ QStringList TciServer::receiverBurst(int receiver) const {
           << message(QStringLiteral("sql_enable"), trx, boolText(r.sqlEnabled))
           << message(QStringLiteral("sql_level"), trx, QString::number(r.sqlLevelDbm))
           << message(QStringLiteral("agc_mode"), trx, r.agcMode)
+          << message(QStringLiteral("agc_gain"), trx, QString::number(r.agcGain))
           << message(QStringLiteral("rx_nb_enable"), trx, boolText(r.noiseBlanker))
           << message(QStringLiteral("rx_nr_enable"), trx, boolText(r.noiseReduction))
           << message(QStringLiteral("rx_anf_enable"), trx, boolText(r.autoNotch))
@@ -267,10 +271,8 @@ void TciServer::applySet(int receiver, const QString &name, const TciProtocol::C
     // drive's handler and therefore sent PC - the OPERATING power - so asking for tune power
     // changed the wrong control. Found on the bench, and the reason these are separate now.
     static const QSet<QString> intSets{
-        QStringLiteral("rit_offset"),
-        QStringLiteral("xit_offset"),
-        QStringLiteral("drive"),
-        QStringLiteral("tune_drive"),
+        QStringLiteral("rit_offset"), QStringLiteral("xit_offset"), QStringLiteral("drive"),
+        QStringLiteral("tune_drive"), QStringLiteral("agc_gain"),
     };
 
     if (boolSets.contains(name)) {
@@ -334,7 +336,7 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
         QStringLiteral("tx_enable"),    QStringLiteral("lock"),           QStringLiteral("sql_enable"),
         QStringLiteral("sql_level"),    QStringLiteral("mute"),           QStringLiteral("rx_nb_enable"),
         QStringLiteral("rx_nr_enable"), QStringLiteral("rx_anf_enable"),  QStringLiteral("rx_apf_enable"),
-        QStringLiteral("rx_nf_enable"),
+        QStringLiteral("rx_nf_enable"), QStringLiteral("agc_gain"),
     };
     if (perReceiver.contains(name)) {
         // A first argument that PARSES AS AN INTEGER is the receiver index - that is the TCI
@@ -387,6 +389,8 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             reply = message(name, trx, QString::number(name == QLatin1String("drive") ? s.drive : s.tuneDrive));
         } else if (name == QLatin1String("agc_mode")) {
             reply = message(name, trx, r.agcMode);
+        } else if (name == QLatin1String("agc_gain")) {
+            reply = message(name, trx, QString::number(r.agcGain));
         } else if (name == QLatin1String("rx_enable")) {
             reply = message(name, trx, boolText(r.enabled));
         } else if (name == QLatin1String("tx_enable")) {

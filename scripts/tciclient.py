@@ -337,7 +337,23 @@ def audit(conn, include_trx=True, quiet=False):
             results.append((section, name, "skipped", "", "--no-trx"))
             continue
         conn.send(read)
-        reply = conn.recv_text(timeout=0.4)
+        # The reply MUST carry the name we asked about. Taking whatever arrives next counts a
+        # straggler from the previous command as an answer to this one - which is exactly how
+        # vfo_lock, which is genuinely silent, was reported as implemented once enough other
+        # commands started answering and the traffic increased.
+        #
+        # dds is the one legitimate exception: the server answers it with a vfo reply, because
+        # dds is an alias for the receive VFO.
+        accepted = {name, "vfo"} if name == "dds" else {name}
+        reply = None
+        deadline = time.time() + 0.5
+        while time.time() < deadline:
+            candidate = conn.recv_text(timeout=0.25)
+            if candidate is None:
+                break
+            if candidate.split(":", 1)[0].rstrip(";") in accepted:
+                reply = candidate
+                break
         if reply is None:
             status = "SILENT"
             value = ""

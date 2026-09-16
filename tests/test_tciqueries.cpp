@@ -298,6 +298,39 @@ private slots:
         server.stop();
     }
 
+    void agcGainIsReportedRawAndSetsAsAnInteger() {
+        // TCI calls it agc_gain but it is the AGC THRESHOLD - AetherSDR's cmdAgcGain reads and
+        // writes AgcThreshold - which on a K4 is menu item 10, range 2-8.
+        //
+        // Reported RAW rather than rescaled into the protocol's -20..120 dB. The scales do not
+        // correspond, so a conversion would encode a guess about what threshold 6 means in dB,
+        // which is the mistake sql_level is still carrying.
+        TciRadioSnapshot snapshot;
+        snapshot.rx[TciRadio::MAIN_RECEIVER].agcGain = 4;
+        snapshot.rx[TciRadio::SUB_RECEIVER].agcGain = 4;
+
+        TciServer server;
+        server.setSnapshot(snapshot);
+        const QStringList burst = server.initBurst();
+        QVERIFY(burst.contains(QStringLiteral("agc_gain:0,4;")));
+        // One radio-wide menu item, so both receivers report the same number.
+        QVERIFY(burst.contains(QStringLiteral("agc_gain:1,4;")));
+
+        QVERIFY(server.start(0));
+        QSignalSpy setInt(&server, &TciServer::setIntRequested);
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        client.send("agc_gain:0,7;");
+        QTRY_COMPARE(setInt.count(), 1);
+        QCOMPARE(setInt.at(0).at(1).toString(), QStringLiteral("agc_gain"));
+        QCOMPARE(setInt.at(0).at(2).toInt(), 7);
+
+        client.close();
+        server.stop();
+    }
+
     void tuneDriveAndDriveAreSeparateControls() {
         // REGRESSION, found on the radio. tune_drive briefly shared drive's handler, so asking for
         // tune power sent PC and moved the OPERATING power instead. They are different controls:
