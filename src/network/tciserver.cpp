@@ -66,6 +66,8 @@ void TciServer::stop() {
     // WebSocketServer::stop() closes the sockets without emitting clientDisconnected for each, so
     // the roster has to be emptied here or the page would keep listing clients of a server that is
     // no longer running.
+    m_reportedUnhandled.clear();
+
     const bool hadClients = !m_clients.isEmpty();
     m_clients.clear();
     if (hadClients) {
@@ -398,9 +400,27 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
                 }
             }
             sendTo(clientId, message(name, QString::number(MAIN_RECEIVER), boolText(m_snapshot.split)));
+        } else {
+            // SILENT ON THE WIRE, but not invisible here.
+            //
+            // Silence is what the protocol specifies for an unknown or refused command, and that
+            // does not change. What changes is that QK4 now says so in its own log: a command it
+            // does not implement is precisely what somebody adding support for it needs to see,
+            // and there was previously no way to learn what a client actually sends short of a
+            // packet capture. CW is the open case - see docs/tci-command-coverage.md section 5.
+            //
+            // First sighting of each name at info, repeats at debug: a client may poll an
+            // unimplemented command indefinitely, and a flooded log hides the thing it was
+            // supposed to reveal.
+            if (!m_reportedUnhandled.contains(name)) {
+                m_reportedUnhandled.insert(name);
+                qCInfo(netTci) << "client" << clientId << "sent" << name << "with args" << command.args
+                               << "- NOT PROCESSED (no QK4 implementation); further occurrences at debug level";
+            } else {
+                qCDebug(netTci) << "client" << clientId << "sent" << name << "with args" << command.args
+                                << "- not processed";
+            }
         }
-        // Everything else: silence. That is what the protocol specifies for an unknown or refused
-        // command, and WSJT-X sends nothing else during a receive session.
     }
 }
 

@@ -77,6 +77,54 @@ private slots:
         QVERIFY(!server.clients()[0].lastMessageOutbound);
     }
 
+    void anUnhandledCommandIsReportedOnceThenQuietened() {
+        // A command QK4 does not implement stays SILENT ON THE WIRE - the protocol says so - but
+        // is reported in QK4's own log, because otherwise there is no way to learn what a client
+        // sends short of a packet capture. That is how the CW command set gets specified.
+        //
+        // Reported ONCE per name: a client is free to poll an unimplemented command every second
+        // forever, and a flooded log hides the thing it was meant to reveal.
+        TciServer server;
+        const quint16 port = startServer(&server);
+        QVERIFY(port != 0);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(port));
+        drainBurst(&client);
+
+        // QtTest fails a test on an unexpected message only for warnings and above, so the count
+        // is taken with a handler rather than by ignoring output.
+        static int infoCount = 0;
+        infoCount = 0;
+        QtMessageHandler previous =
+            qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &, const QString &text) {
+                if (type == QtInfoMsg && text.contains(QLatin1String("NOT PROCESSED"))) {
+                    ++infoCount;
+                }
+            });
+
+        client.send("cw_macros:0,TEST DE NY4I;");
+        QTRY_COMPARE(infoCount, 1);
+
+        // Same command again, and a third time: still not processed, but not re-reported.
+        client.send("cw_macros:0,AGAIN;");
+        client.send("cw_macros:0,AND AGAIN;");
+        QTest::qWait(150);
+        QCOMPARE(infoCount, 1);
+
+        // A DIFFERENT unimplemented command is new information, so it is reported.
+        client.send("callsign_send:0,NY4I;");
+        QTRY_COMPARE(infoCount, 2);
+
+        qInstallMessageHandler(previous);
+
+        // And nothing went back to the client - silence is still the wire behaviour. The roster
+        // records it as inbound, which is only possible if no reply displaced it.
+        QVERIFY(!server.clients()[0].lastMessageOutbound);
+        QVERIFY2(server.clients()[0].lastMessage.contains(QLatin1String("callsign_send")),
+                 qPrintable(server.clients()[0].lastMessage));
+    }
+
     void aReplyOverwritesTheCommandThatCausedIt() {
         // The ordinary case, and the consequence of counting both directions: every SET is
         // confirmed immediately, so what the roster shows a moment later is QK4's answer rather

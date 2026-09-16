@@ -178,6 +178,11 @@ private:
     // One parser per client: a command can straddle frames, so buffers must not be shared.
     QHash<int, TciProtocol::Parser> m_parsers;
 
+    // Unhandled command names already reported at info level. A client is free to poll something
+    // QK4 does not implement - every second, forever - and the first report is the one that
+    // carries the information; the rest are just noise in the log the operator is reading.
+    QSet<QString> m_reportedUnhandled;
+
     // What the options page lists. Keyed by client id, ordered on the way out.
     QHash<int, TciClientInfo> m_clients;
     // Throttles clientsChanged. TX audio arrives ~47 times a second and the table shows a time to
