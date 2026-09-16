@@ -478,17 +478,19 @@ which is what makes the radio-touching items benchable at all.
 - ~~`drive`~~ (§4.4), ~~`rx_filter_band`~~, ~~`cw_keyer_speed`~~, ~~`rx_nf_enable`~~,
   ~~`mic_level`~~, ~~`rx_volume`~~ (§4.5) — all reporting the radio instead of constants, and all
   broadcasting on change.
+- ~~**All eight SETs**~~ — rit/xit enable and offset, NB, NR, AGC, filter band and drive, each
+  confirmed on the radio as a round trip (§12.6).
 - ~~FM reported as `nfm`~~ — the K4 has one FM mode; `nfm` is no longer advertised, still accepted.
 
 ### Next
 
 1. **`CW_MACROS` + a `CatFrames::cwText`** (§5.2 layer 1) — the largest *capability* gap, and the
    one that makes QK4 usable to a CW client at all. Speed is already reported.
-2. **The ready-to-wire SETs** (`RIT_ENABLE`, `XIT_ENABLE`, `RX_NB_ENABLE`, `RX_NR_ENABLE`,
-   `CW_KEYER_SPEED`, `AGC_MODE`) — builders exist and the values already report; what is missing
-   is accepting a client's value. Bench one at a time.
-3. **`DRIVE`/`TUNE_DRIVE` SET** — reporting and the level mapping are settled (§4.4); what remains
-   is sending `PC` in the right range form.
+2. **The SETs still missing a builder** — `mute`, `sql_enable`/`sql_level`, `lock`,
+   `rx_anf_enable`, `rx_apf_enable`, `rx_nf_enable`. Each needs a `CatFrames` builder in the
+   K4 set form, which is where the last three bugs lived; bench each with `tcitester.py`.
+3. **Sub-receiver SETs** — the K4 forms are $-suffixed (RT$, GT$, NB$, NR$, BW$) and have no
+   builders. Reporting for receiver 1 already works.
 4. **`SQL_LEVEL`** — needs a decided K4-to-dBm scale before it can report anything true (§6.2).
 5. **`VFO_LOCK`** and **`tx_enable` on band change** — small, read-only, both tracked already
    (§11.6).
@@ -820,15 +822,58 @@ TR4W's ON indicator stayed dark while the radio transmitted. Confirmed fixed aga
 TR4W as the client — a transmit the client did not ask for now reaches it, which is the whole
 point of the ownership rule in §11.4.
 
-### 12.6 Still unverified
+### 12.6 Every SET, confirmed on the radio
 
-- **Every SET except `vfo`, `dds`, `modulation`, `trx`, `split_enable` and `rx_channel_enable`.**
-  Reporting is broad; writing is deliberately narrow. Nothing in §8's "Next" list has moved a
-  radio yet.
+`tcitester.py` drives each SET as a round trip — read the current value, send a new one, wait for
+the server to **broadcast** the change, restore the original. The broadcast is the point: a reply
+proves nothing, because the server answers with the value it holds either way, so a SET that never
+reached the radio replies identically to one that did.
 
-### 12.7 How to repeat it
+**8 of 8 pass:** `rit_enable`, `xit_enable`, `rit_offset`, `rx_nb_enable`, `rx_nr_enable`,
+`agc_mode`, `rx_filter_band`, `drive`.
 
-Start QK4 with the TCI server enabled, connect the radio, then run `tcimonitor.py` from
-[ny4i/utilities](https://github.com/ny4i/utilities). Every field above appears on one screen and
-updates live. If a value is not moving there, the server is not sending it — which is the check
-`--audit` structurally cannot perform (§11.7).
+Getting there took three rounds and found three bugs of one kind, none of which any unit test
+could have caught, because all three were about the **bytes on the wire**:
+
+| Command | Was sent | The K4 wants |
+|---|---|---|
+| `rx_nb_enable` | `NB1;` | `NBnnm` — nn level, m on/off |
+| `rx_filter_band` | width in Hz | `BWnnnn` in **10-Hz units** |
+| `drive` | `PCX045H;` | `PC045H;` — `PCX` is the extended *query* |
+
+All three came from `CatFrames` builders that had **never sent anything to a radio**. Their only
+callers were `catserver.cpp` and `catpushbroadcaster.cpp`, both formatting *replies to a CAT
+client*, and none of the three is in the K4's set form. The TCI SET path was the first outbound
+user of any of them, which is why this surfaced now rather than years ago. QK4's own UI has always
+sent these correctly by hand.
+
+The fix added separate `setNoiseBlanker`, `setFilterBandwidth` and `setRfPower` builders rather
+than changing the existing ones, so nothing a port-9299 client sees has changed. The reply-side
+bugs are real and are reported to the maintainer — see §4.5.
+
+A fourth "failure" was the tester itself: it compared the last argument of `rx_filter_band`, but
+only the **width** survives a round trip, so a correct result looked wrong. Recorded because a
+measurement sharing a bug with the thing it measures is the failure mode this whole section exists
+to guard against.
+
+### 12.7 Still unverified
+
+- **The report-only group** — `mute`, `sql_enable`, `sql_level`, `lock`, `rx_anf_enable`,
+  `rx_apf_enable`, `rx_nf_enable`. They answer but cannot be set, because no `CatFrames` builder
+  exists. §8.
+- **SETs addressed to the sub receiver.** Refused by design: the K4's sub forms are `$`-suffixed
+  and have no builders yet.
+
+### 12.8 How to repeat it
+
+Start QK4 with the TCI server enabled, connect the radio, then, from
+[ny4i/utilities](https://github.com/ny4i/utilities):
+
+- **`tcimonitor.py`** — every reported field on one screen, updating live. If a value is not moving
+  there, the server is not sending it, which is the check `--audit` structurally cannot perform
+  (§11.7). Read-only, so it is safe to leave running.
+- **`tcitester.py --all`** — drives every SET and restores each afterwards. Writes, so it is a
+  separate tool; that separation is what keeps the monitor provably safe.
+
+Also update §8 as things land. A coverage document that is wrong about coverage is worse than
+none, and this one had drifted twice before anyone noticed.
