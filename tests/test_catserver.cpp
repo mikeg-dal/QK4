@@ -82,6 +82,14 @@ private slots:
         QCOMPARE(CatFrames::setRfPower(10, true), QByteArray("PC100L;"));
     }
 
+    void setMenuValueUsesTheAbsoluteMeForm() {
+        // The K4's tune power is menu item 69, set with MEnnnn.vvvv - ME0069.0020 is 20 W.
+        // MenuController already sends the RELATIVE forms (ME0069.+ and .-); this is absolute.
+        QCOMPARE(CatFrames::setMenuValue(69, 20), QByteArray("ME0069.0020;"));
+        QCOMPARE(CatFrames::setMenuValue(69, 5), QByteArray("ME0069.0005;"));
+        QCOMPARE(CatFrames::setMenuValue(7, 200), QByteArray("ME0007.0200;"));
+    }
+
     void setBuildersClampRatherThanEmitNonsense() {
         // A malformed frame reaches the radio; refusing to overflow the field is cheaper than
         // finding out what an out-of-range one does.

@@ -263,16 +263,14 @@ void TciServer::applySet(int receiver, const QString &name, const TciProtocol::C
         QStringLiteral("rx_nb_enable"),
         QStringLiteral("rx_nr_enable"),
     };
-    // tune_drive is ABSENT on purpose. The K4's tune power is MENU ITEM 69 ("TUNE LP", 1-50) and
-    // QK4 has no path to set a menu value, so the only thing a tune_drive SET could send is PC,
-    // which is the OPERATING power.
-    // It was doing exactly that: asking for tune power changed the transmit power instead, found
-    // on the bench. Reporting it as a copy of drive is a harmless approximation; writing through
-    // it is not, because the client asked for a different control.
+    // tune_drive goes to the K4's MENU ITEM 69 ("TUNE LP", 1-50 W), not to PC. It briefly shared
+    // drive's handler and therefore sent PC - the OPERATING power - so asking for tune power
+    // changed the wrong control. Found on the bench, and the reason these are separate now.
     static const QSet<QString> intSets{
         QStringLiteral("rit_offset"),
         QStringLiteral("xit_offset"),
         QStringLiteral("drive"),
+        QStringLiteral("tune_drive"),
     };
 
     if (boolSets.contains(name)) {

@@ -76,6 +76,10 @@ QByteArray setNoiseBlanker(int level, bool on) {
     return QString("NB%1%2;").arg(qBound(0, level, 15), 2, 10, QChar('0')).arg(on ? 1 : 0).toUtf8();
 }
 
+QByteArray setMenuValue(int menuId, int value) {
+    return QString("ME%1.%2;").arg(menuId, 4, 10, QChar('0')).arg(value, 4, 10, QChar('0')).toUtf8();
+}
+
 QByteArray setRfPower(int value, bool qrp) {
     // Matches what QK4's own UI sends (sidecontrolscrollcontroller.cpp) and what the radio echoes
     // back, PC045H. The QRP range is reported in tenths, so a request in watts is scaled.

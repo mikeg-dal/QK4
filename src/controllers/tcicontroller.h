@@ -91,6 +91,10 @@ private:
     TciAudioBridge *m_bridge;
     QThread *m_tciThread = nullptr;
 
+    // Last tune power a TCI client set, in watts; -1 before any. Not read back from the radio -
+    // see publishSnapshot.
+    int m_tuneDriveWatts = -1;
+
     // Main-thread only. See isListening()/clientCount().
     bool m_listening = false;
     int m_clientCount = 0;

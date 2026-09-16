@@ -298,10 +298,10 @@ private slots:
         server.stop();
     }
 
-    void aTuneDriveSetNeverChangesTheOperatingPower() {
-        // REGRESSION, found on the radio: tune_drive shared drive's handler, so asking for tune
-        // power sent PC and moved the TRANSMIT power instead. The K4 has no separate tune-power
-        // command, so the only correct behaviour is to report and not act.
+    void tuneDriveAndDriveAreSeparateControls() {
+        // REGRESSION, found on the radio. tune_drive briefly shared drive's handler, so asking for
+        // tune power sent PC and moved the OPERATING power instead. They are different controls:
+        // drive is PC, tune power is MENU ITEM 69 ("TUNE LP", 1-50 W).
         TciServer server;
         QVERIFY(server.start(0));
         QSignalSpy setInt(&server, &TciServer::setIntRequested);
@@ -309,18 +309,18 @@ private slots:
         TciTestClient client;
         QVERIFY(client.connectTo(server.port()));
         client.collectUntil("ready;");
-        client.send("tune_drive:0,30;device;");
 
-        const QStringList replies = client.collectUntil("device:QK4;");
-        // Answered, so a client is not left waiting...
-        QVERIFY(replies.contains(QStringLiteral("tune_drive:0,100;")));
-        // ...but nothing is sent to the radio.
-        QCOMPARE(setInt.count(), 0);
-
-        // And drive itself still works, so this is a targeted refusal and not a broken branch.
-        client.send("drive:0,35;");
+        client.send("tune_drive:0,20;");
         QTRY_COMPARE(setInt.count(), 1);
-        QCOMPARE(setInt.at(0).at(1).toString(), QStringLiteral("drive"));
+        QCOMPARE(setInt.at(0).at(1).toString(), QStringLiteral("tune_drive"));
+        QCOMPARE(setInt.at(0).at(2).toInt(), 20);
+
+        client.send("drive:0,35;");
+        QTRY_COMPARE(setInt.count(), 2);
+        // The two must arrive under their own names, so the controller can send different
+        // commands for them. Collapsing them is precisely the bug.
+        QCOMPARE(setInt.at(1).at(1).toString(), QStringLiteral("drive"));
+        QCOMPARE(setInt.at(1).at(2).toInt(), 35);
 
         client.close();
         server.stop();

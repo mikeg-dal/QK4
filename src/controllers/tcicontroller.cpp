@@ -158,6 +158,13 @@ int tciVolumeDbForGain(float gain) {
     return qBound(-60, static_cast<int>(std::lround(db)), 0);
 }
 
+// The K4's tune power lives in the menu, not in a dedicated command: item 69, "TUNE LP (Low power
+// TUNE)", range 1-50 W. Confirmed from the radio's own MEDF dump:
+//   MEDF0069,TUNE LP (Low power TUNE),TX,DEC,1,1,50,5,20,1;
+constexpr int kTuneDriveMenuId = 69;
+constexpr int kTuneDriveMinW = 1;
+constexpr int kTuneDriveMaxW = 50;
+
 } // namespace
 
 TciController::TciController(AudioController *audioController, ConnectionController *connectionController,
@@ -269,9 +276,15 @@ TciController::TciController(AudioController *audioController, ConnectionControl
                 applyCat(CatFrames::ritOffset(value));
             } else if (name == QLatin1String("agc_mode")) {
                 applyCat(CatFrames::agcSpeed(value));
+            } else if (name == QLatin1String("tune_drive")) {
+                // MENU ITEM 69, "TUNE LP (Low power TUNE)", 1-50 W - NOT PC. Sending PC here is
+                // the bug this branch exists to prevent: it changes the operating power.
+                const int watts = qBound(kTuneDriveMinW, value, kTuneDriveMaxW);
+                m_tuneDriveWatts = watts; // optimistic, see publishSnapshot
+                applyCat(CatFrames::setMenuValue(kTuneDriveMenuId, watts));
+                publishSnapshot();
             } else if (name == QLatin1String("drive")) {
-                // drive ONLY. tune_drive must never reach here: PC is the operating power, and
-                // sending it for a tune-power request changes the wrong control.
+                // drive ONLY - tune_drive is handled above and must not fall through to PC.
                 // PCnnnr, with the range letter - the same form QK4's UI sends. The PCX variant
                 // is the extended QUERY and the radio ignores it as a set, which is why drive
                 // failed on the bench until this changed.
@@ -441,7 +454,11 @@ void TciController::publishSnapshot() {
     // The value QK4 already displays - see tciDriveFor. The K4 has no separate tune power, so
     // tune_drive tracks it rather than claiming a control the radio does not have.
     snapshot.drive = tciDriveFor(m_radioState->rfPower());
-    snapshot.tuneDrive = snapshot.drive;
+    // Tune power is not read back. QK4 parses the MEDF menu definitions that carry item 69, but
+    // wiring MenuModel through to here to re-read a value that changes rarely is not worth the
+    // coupling. So: report what a client last set, and fall back to drive before anything has.
+    // Same optimistic pattern MenuController already uses for its own menu writes.
+    snapshot.tuneDrive = (m_tuneDriveWatts > 0) ? m_tuneDriveWatts : snapshot.drive;
     // RadioState uses -1 as "not read from the radio yet", and a negative WPM is nonsense on the
     // wire. Report the K4 default until the radio says otherwise.
     const int wpm = m_radioState->keyerSpeed();
