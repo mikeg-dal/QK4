@@ -296,7 +296,10 @@ private slots:
         TciTestClient client;
         QVERIFY(client.connectTo(server.port()));
         client.collectUntil("ready;");
-        client.send("cw_macros_speed:20;");
+        // rx_bin_enable: binaural/pseudo-stereo, which the K4 has no equivalent for at all, so
+        // it will not quietly become implemented and turn this test green for the wrong reason.
+        // (It previously used cw_macros_speed, which then WAS implemented.)
+        client.send("rx_bin_enable:0,true;");
 
         WebSocketDecoder::Message m;
         QVERIFY(!client.next(m, 300));

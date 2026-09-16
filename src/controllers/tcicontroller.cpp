@@ -104,6 +104,41 @@ int tciDriveFor(double power) {
     return qBound(0, static_cast<int>(power + 0.5), 100);
 }
 
+// Filter passband edges, in Hz RELATIVE TO THE DIAL, which is what TCI's rx_filter_band wants:
+// its own examples are signed, "RX_FILTER_BAND:1,-2900,-70;" for a lower-sideband filter.
+//
+// The placement rules are lifted from what the panadapter already draws (panadapter_rhi.cpp,
+// secondary-VFO passband): the filter is centred on the dial plus or minus the IF shift, with the
+// sign following the sideband, and symmetric about the carrier for AM and FM. Using the same
+// convention means a TCI client's filter matches the passband QK4 paints, rather than being a
+// second opinion about the same radio.
+//
+// Simplification worth knowing: the panadapter additionally offsets FSK-D and AFSK-A by half the
+// RTTY shift. That is not reproduced here, so those sub-modes report the plain data placement.
+void tciFilterEdges(RadioState::Mode mode, int bandwidthHz, int shiftHz, int *lowOut, int *highOut) {
+    int centre = 0;
+    switch (mode) {
+    case RadioState::LSB:
+    case RadioState::DATA_R:
+    case RadioState::CW_R:
+        centre = -shiftHz;
+        break;
+    case RadioState::USB:
+    case RadioState::DATA:
+    case RadioState::CW:
+        centre = shiftHz;
+        break;
+    case RadioState::AM:
+    case RadioState::FM:
+    case RadioState::Unknown:
+        centre = 0; // symmetric about the carrier, no IF shift applied
+        break;
+    }
+    const int half = bandwidthHz / 2;
+    *lowOut = centre - half;
+    *highOut = centre + half;
+}
+
 } // namespace
 
 TciController::TciController(AudioController *audioController, ConnectionController *connectionController,
@@ -218,6 +253,9 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         connect(m_radioState, &RadioState::txMeterChanged, this,
                 [this](int, int, double, double) { publishSensors(); });
         connect(m_radioState, &RadioState::modeBChanged, this, [this](RadioState::Mode) { publishSnapshot(); });
+        connect(m_radioState, &RadioState::filterBandwidthChanged, this, [this](int) { publishSnapshot(); });
+        connect(m_radioState, &RadioState::filterBandwidthBChanged, this, [this](int) { publishSnapshot(); });
+        connect(m_radioState, &RadioState::keyerSpeedChanged, this, [this](int) { publishSnapshot(); });
         connect(m_radioState, &RadioState::subRxEnabledChanged, this, [this](bool enabled) {
             // The bridge decides what goes in the right audio channel, and it lives on the TCI
             // thread, so this has to be marshalled rather than written from here.
@@ -305,7 +343,10 @@ void TciController::publishSnapshot() {
     main.noiseReduction = m_radioState->noiseReductionEnabled();
     main.autoNotch = m_radioState->autoNotchEnabled();
     main.apf = m_radioState->apfEnabled();
+    main.notchFilter = m_radioState->manualNotchEnabled();
     main.lock = m_radioState->lockA();
+    tciFilterEdges(m_radioState->mode(), m_radioState->filterBandwidth(), m_radioState->shiftHz(), &main.filterLowHz,
+                   &main.filterHighHz);
 
     // SUB receiver: the K4's VFO B side. Every one of these has a *B counterpart in RadioState,
     // and none of them could be expressed at all while the Sub RX was modelled as a channel -
@@ -321,7 +362,10 @@ void TciController::publishSnapshot() {
     sub.noiseReduction = m_radioState->noiseReductionEnabledB();
     sub.autoNotch = m_radioState->autoNotchEnabledB();
     sub.apf = m_radioState->apfEnabledB();
+    sub.notchFilter = m_radioState->manualNotchEnabledB();
     sub.lock = m_radioState->lockB();
+    tciFilterEdges(m_radioState->modeB(), m_radioState->filterBandwidthB(), m_radioState->shiftBHz(), &sub.filterLowHz,
+                   &sub.filterHighHz);
 
     snapshot.split = m_radioState->splitEnabled();
     snapshot.transmitting = m_radioState->isTransmitting();
@@ -330,6 +374,10 @@ void TciController::publishSnapshot() {
     // tune_drive tracks it rather than claiming a control the radio does not have.
     snapshot.drive = tciDriveFor(m_radioState->rfPower());
     snapshot.tuneDrive = snapshot.drive;
+    // RadioState uses -1 as "not read from the radio yet", and a negative WPM is nonsense on the
+    // wire. Report the K4 default until the radio says otherwise.
+    const int wpm = m_radioState->keyerSpeed();
+    snapshot.cwKeyerSpeedWpm = (wpm > 0) ? wpm : 20;
 
     // Queued: the server reads this from its own thread, so it must be handed over by value
     // through the event loop rather than written under it.

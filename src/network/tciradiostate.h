@@ -79,6 +79,9 @@ struct TciReceiverState {
     bool noiseReduction = false;
     bool autoNotch = false;
     bool apf = false;
+    // The K4's manual notch. TCI calls the module RX_NF_ENABLE; RX_ANF_ENABLE is the automatic
+    // one, which is autoNotch above. Two different filters, so two different flags.
+    bool notchFilter = false;
     bool lock = false;
 };
 
@@ -105,6 +108,10 @@ struct TciRadioSnapshot {
     // value would invent a control the radio does not have.
     int tuneDrive = 100;
     int micLevel = 50;
+
+    // CW keyer speed in WPM. A property of the transmitter, not of a receiver, so it sits here
+    // rather than in TciReceiverState - TCI's CW_KEYER_SPEED carries no receiver index either.
+    int cwKeyerSpeedWpm = 20;
 
     bool validReceiver(int index) const { return index >= 0 && index < TciRadio::RECEIVER_COUNT; }
 

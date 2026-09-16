@@ -99,13 +99,26 @@ class State:
 
         try:
             if name == "vfo":
-                self.fields["vfo%s" % arg(1)] = int(arg(2))
+                # vfo:<trx>,<channel>,<hz>. Receiver 1 is the Sub RX; channel 1 of receiver 0 is
+                # the split transmit VFO.
+                self.fields["vfo_%s_%s" % (arg(0), arg(1))] = int(arg(2))
             elif name == "dds":
                 self.fields["dds"] = int(arg(1))
             elif name == "tx_frequency":
                 self.fields["tx_freq"] = int(arg(0))
             elif name == "modulation":
-                self.fields["mode"] = arg(1)
+                self.fields["mode_%s" % arg(0)] = arg(1)
+            elif name == "rx_filter_band":
+                self.fields["filter_%s" % arg(0)] = (int(arg(1)), int(arg(2)))
+            elif name in ("cw_keyer_speed", "cw_macros_speed"):
+                self.fields["wpm"] = int(arg(0))
+            elif name == "rx_enable":
+                self.fields["rx_enabled_%s" % arg(0)] = arg(1) == "true"
+            elif name in ("rx_nb_enable", "rx_nr_enable", "rx_anf_enable", "rx_apf_enable",
+                          "rx_nf_enable"):
+                self.fields["%s_%s" % (name, arg(0))] = arg(1) == "true"
+            elif name == "trx_count":
+                self.fields["trx_count"] = int(arg(0))
             elif name == "trx":
                 self.fields["tx"] = arg(1) == "true"
             elif name == "split_enable":
@@ -113,11 +126,11 @@ class State:
             elif name == "rx_channel_enable":
                 self.fields["chan%s" % arg(1)] = arg(2) == "true"
             elif name in ("rit_enable", "xit_enable"):
-                self.fields[name] = arg(1) == "true"
+                self.fields["%s_%s" % (name, arg(0))] = arg(1) == "true"
             elif name in ("rit_offset", "xit_offset"):
-                self.fields[name] = int(arg(1))
+                self.fields["%s_%s" % (name, arg(0))] = int(arg(1))
             elif name == "agc_mode":
-                self.fields["agc"] = arg(1)
+                self.fields["agc_%s" % arg(0)] = arg(1)
             elif name == "sql_enable":
                 self.fields["sql_on"] = arg(1) == "true"
             elif name == "sql_level":
@@ -131,7 +144,10 @@ class State:
             elif name == "rx_sensors":
                 self.rx_dbm[0] = float(arg(1))
             elif name == "rx_channel_sensors":
-                self.rx_dbm[int(arg(1))] = float(arg(2))
+                # rx_channel_sensors:<trx>,<channel>,<dbm>. The sub receiver arrives twice, once
+                # as receiver 1 and once as channel 1 of receiver 0; either is fine to show.
+                receiver, channel = int(arg(0)), int(arg(1))
+                self.rx_dbm[1 if (receiver == 1 or channel == 1) else 0] = float(arg(2))
             elif name == "tx_sensors":
                 self.tx["mic"] = float(arg(1))
                 self.tx["power"] = float(arg(2))
@@ -163,20 +179,38 @@ def render(state, host, port, raw_lines):
     out.append(" " + "─" * 72)
     out.append(" device   %-24s protocol  %s"
                % (f.get("device", "--"), f.get("protocol", "--")))
-    out.append(" state    %s split     %s"
-               % (tx_badge, "ON" if f.get("split") else "off"))
+    out.append(" state    %s" % tx_badge)
     out.append("")
-    out.append(" VFO A    %-16s %-8s  agc       %s"
-               % (hz(f.get("vfo0")), f.get("mode", "--"), f.get("agc", "--")))
-    out.append(" VFO B    %-16s %-8s  sub rx    %s"
-               % (hz(f.get("vfo1")), "", "ON" if sub_on else "off"))
-    out.append(" TX freq  %-16s"
-               % hz(f.get("tx_freq")))
+
+    def filt(r):
+        band = f.get("filter_%d" % r)
+        return "%+5d..%+5d" % band if band else "    --     "
+
+    def flags(r):
+        on = [n.split("_")[1].upper()
+              for n in ("rx_nb_enable", "rx_nr_enable", "rx_anf_enable", "rx_apf_enable",
+                        "rx_nf_enable")
+              if f.get("%s_%d" % (n, r))]
+        return " ".join(on) if on else "-"
+
+    # Receiver 0 (Main) and receiver 1 (Sub). trx_count says how many the server advertises.
+    out.append(" \x1b[1mRX0 Main\x1b[0m  %-14s %-6s  agc %-7s filter %s  %s"
+               % (hz(f.get("vfo_0_0")), f.get("mode_0", "--"), f.get("agc_0", "--"),
+                  filt(0), flags(0)))
+    if sub_on:
+        out.append(" \x1b[1mRX1 Sub \x1b[0m  %-14s %-6s  agc %-7s filter %s  %s"
+                   % (hz(f.get("vfo_1_0")), f.get("mode_1", "--"), f.get("agc_1", "--"),
+                      filt(1), flags(1)))
+    else:
+        out.append(" RX1 Sub    (off)%s" % (" " * 56))
+    out.append(" TX freq   %-14s  split %-4s  wpm %-4s  trx_count %s"
+               % (hz(f.get("tx_freq")), "ON" if f.get("split") else "off",
+                  f.get("wpm", "--"), f.get("trx_count", "--")))
     out.append("")
     out.append(" rit      %-4s %+6d Hz            xit       %-4s %+6d Hz"
-               % ("ON" if f.get("rit_enable") else "off", f.get("rit_offset", 0),
-                  "ON" if f.get("xit_enable") else "off", f.get("xit_offset", 0)))
-    out.append(" drive    %-4s %%                  sql       %-4s %s dBm"
+               % ("ON" if f.get("rit_enable_0") else "off", f.get("rit_offset_0", 0),
+                  "ON" if f.get("xit_enable_0") else "off", f.get("xit_offset_0", 0)))
+    out.append(" drive    %-4s                    sql       %-4s %s dBm"
                % (f.get("drive", "--"), "ON" if f.get("sql_on") else "off", f.get("sql", "--")))
     out.append("")
     out.append(" \x1b[1mRX signal\x1b[0m")

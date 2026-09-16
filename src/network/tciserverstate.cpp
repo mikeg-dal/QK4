@@ -75,6 +75,27 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
             m_socketServer->broadcastText(message(QStringLiteral("rit_offset"), trx, offset));
             m_socketServer->broadcastText(message(QStringLiteral("xit_offset"), trx, offset));
         }
+        if (now.noiseBlanker != was.noiseBlanker) {
+            m_socketServer->broadcastText(message(QStringLiteral("rx_nb_enable"), trx, boolText(now.noiseBlanker)));
+        }
+        if (now.noiseReduction != was.noiseReduction) {
+            m_socketServer->broadcastText(message(QStringLiteral("rx_nr_enable"), trx, boolText(now.noiseReduction)));
+        }
+        if (now.autoNotch != was.autoNotch) {
+            m_socketServer->broadcastText(message(QStringLiteral("rx_anf_enable"), trx, boolText(now.autoNotch)));
+        }
+        if (now.apf != was.apf) {
+            m_socketServer->broadcastText(message(QStringLiteral("rx_apf_enable"), trx, boolText(now.apf)));
+        }
+        if (now.notchFilter != was.notchFilter) {
+            m_socketServer->broadcastText(message(QStringLiteral("rx_nf_enable"), trx, boolText(now.notchFilter)));
+        }
+        if (now.lock != was.lock) {
+            m_socketServer->broadcastText(message(QStringLiteral("lock"), trx, boolText(now.lock)));
+        }
+        if (now.sqlEnabled != was.sqlEnabled) {
+            m_socketServer->broadcastText(message(QStringLiteral("sql_enable"), trx, boolText(now.sqlEnabled)));
+        }
         if (now.agcMode != was.agcMode) {
             m_socketServer->broadcastText(message(QStringLiteral("agc_mode"), trx, now.agcMode));
         }
@@ -111,6 +132,14 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
         // args[1] unconditionally. That rule applies to the broadcast as much as the reply.
         m_socketServer->broadcastText(message(QStringLiteral("drive"), mainTrx, QString::number(m_snapshot.drive)));
     }
+    if (m_snapshot.cwKeyerSpeedWpm != previous.cwKeyerSpeedWpm) {
+        // No receiver index: CW_KEYER_SPEED is a single-argument command.
+        m_socketServer->broadcastText(
+            message(QStringLiteral("cw_keyer_speed"), QString::number(m_snapshot.cwKeyerSpeedWpm)));
+        // cw_macros_speed is the same setting under the name a contest logger looks for.
+        m_socketServer->broadcastText(
+            message(QStringLiteral("cw_macros_speed"), QString::number(m_snapshot.cwKeyerSpeedWpm)));
+    }
     if (m_snapshot.tuneDrive != previous.tuneDrive) {
         m_socketServer->broadcastText(
             message(QStringLiteral("tune_drive"), mainTrx, QString::number(m_snapshot.tuneDrive)));
@@ -140,6 +169,7 @@ QStringList TciServer::receiverBurst(int receiver) const {
           << message(QStringLiteral("rx_nr_enable"), trx, boolText(r.noiseReduction))
           << message(QStringLiteral("rx_anf_enable"), trx, boolText(r.autoNotch))
           << message(QStringLiteral("rx_apf_enable"), trx, boolText(r.apf))
+          << message(QStringLiteral("rx_nf_enable"), trx, boolText(r.notchFilter))
           << message(QStringLiteral("mute"), trx, boolText(false))
           << message(QStringLiteral("tx_enable"), trx, boolText(receiver == MAIN_RECEIVER))
           // drive and tune_drive must always carry <trx>,<power>: a bare "drive:0;" crashes
@@ -182,6 +212,8 @@ QStringList TciServer::initBurst() const {
           << message(QStringLiteral("split_enable"), mainTrx, boolText(m_snapshot.split))
           // mic_level, trx and volume are global single-argument commands - no receiver index.
           << message(QStringLiteral("mic_level"), QString::number(m_snapshot.micLevel))
+          << message(QStringLiteral("cw_keyer_speed"), QString::number(m_snapshot.cwKeyerSpeedWpm))
+          << message(QStringLiteral("cw_macros_speed"), QString::number(m_snapshot.cwKeyerSpeedWpm))
           << message(QStringLiteral("trx"), mainTrx, boolText(m_snapshot.transmitting))
           << message(QStringLiteral("volume"), QStringLiteral("0"))
           << message(QStringLiteral("audio_samplerate"), QString::number(kAudioSampleRate))
@@ -221,6 +253,7 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
         QStringLiteral("tx_enable"),    QStringLiteral("lock"),           QStringLiteral("sql_enable"),
         QStringLiteral("sql_level"),    QStringLiteral("mute"),           QStringLiteral("rx_nb_enable"),
         QStringLiteral("rx_nr_enable"), QStringLiteral("rx_anf_enable"),  QStringLiteral("rx_apf_enable"),
+        QStringLiteral("rx_nf_enable"),
     };
     if (perReceiver.contains(name)) {
         // A first argument that PARSES AS AN INTEGER is the receiver index - that is the TCI
@@ -274,6 +307,8 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             reply = message(name, trx, boolText(r.autoNotch));
         } else if (name == QLatin1String("rx_apf_enable")) {
             reply = message(name, trx, boolText(r.apf));
+        } else if (name == QLatin1String("rx_nf_enable")) {
+            reply = message(name, trx, boolText(r.notchFilter));
         } else {
             // mute is the only one left, and QK4 does not model it for TCI. Claiming otherwise
             // would be a lie a client could act on.
@@ -284,6 +319,13 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
     }
 
     // Global values carry no receiver index.
+    if (name == QLatin1String("cw_keyer_speed") || name == QLatin1String("cw_macros_speed")) {
+        // Both names, one setting. The spec marks CW_KEYER_SPEED as client-to-server, but a client
+        // that asks is better answered than ignored, and QK4 knows the value (RadioState::
+        // keyerSpeed, the K4's KS command).
+        m_socketServer->sendText(clientId, message(name, QString::number(s.cwKeyerSpeedWpm)));
+        return true;
+    }
     if (name == QLatin1String("mic_level")) {
         m_socketServer->sendText(clientId, message(name, QString::number(s.micLevel)));
         return true;
