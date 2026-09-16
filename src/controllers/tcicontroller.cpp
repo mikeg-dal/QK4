@@ -200,6 +200,15 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     // Queued (m_server is on the TCI thread, this is not), so the cache is written on the main
     // thread and read there too. Re-emitted rather than forwarded directly so no consumer can
     // observe the signal before the cache it is expected to read.
+    // The roster crosses threads by queued connection, so the element type has to be known to the
+    // metatype system. Qt 6 registers most fully-defined types on its own; saying so explicitly
+    // costs nothing and turns a silent "cannot queue argument" warning at runtime into a
+    // compile-time requirement.
+    qRegisterMetaType<QVector<TciClientInfo>>("QVector<TciClientInfo>");
+    connect(m_server, &TciServer::clientsChanged, this, [this](const QVector<TciClientInfo> &clients) {
+        m_clients = clients;
+        emit clientsChanged(m_clients);
+    });
     connect(m_server, &TciServer::clientCountChanged, this, [this](int count) {
         m_clientCount = count;
         emit clientCountChanged(count);
@@ -576,5 +585,7 @@ void TciController::stop() {
     // page repainting on listeningChanged would show a listener that is down with clients still
     // attached to it.
     m_clientCount = 0;
+    m_clients.clear();
+    emit clientsChanged(m_clients);
     emit listeningChanged(false, 0);
 }

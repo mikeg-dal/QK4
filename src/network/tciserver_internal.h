@@ -47,6 +47,24 @@ constexpr int kSensorIntervalMaxMs = 1000;
 constexpr int kRxSummaryEveryBlocks = 200; // ~4.3 s
 constexpr int kTxSummaryEveryBlocks = 100; // ~2.1 s
 
+// Client roster (the options page table).
+//
+// Announcing the roster is a queued signal carrying a copy of up to MAX_CLIENTS entries, so it
+// cannot ride every frame: TX audio alone arrives ~47 times a second. Half a second is below what
+// a table showing whole seconds can distinguish, so the throttle costs the operator nothing.
+constexpr int kClientAnnounceMinMs = 500;
+
+// A TCI message is tens of bytes, but nothing stops a client sending a long one, and the table is
+// one line per row. Elided rather than wrapped so a row cannot push the rest of the page around.
+constexpr int kClientMessageMaxChars = 80;
+
+inline QString elideForDisplay(const QString &text) {
+    if (text.size() <= kClientMessageMaxChars) {
+        return text;
+    }
+    return text.left(kClientMessageMaxChars - 1) + QChar(0x2026); // horizontal ellipsis
+}
+
 } // namespace TciServerInternal
 
 #endif // NETWORK_TCISERVER_INTERNAL_H

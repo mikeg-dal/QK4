@@ -3,9 +3,37 @@
 #include "settings/radiosettings.h"
 #include "ui/styling/k4styles.h"
 
+#include <QColor>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QVBoxLayout>
+
+namespace {
+
+// Columns of the client table.
+enum ClientColumn { ColAddress = 0, ColLastSeen = 1, ColLastMessage = 2, ColCount = 3 };
+
+// Room for a handful of clients without the table growing into the settings below it. TCI caps
+// connections at WebSocketServer::MAX_CLIENTS (8); beyond four rows the table scrolls rather than
+// pushing the page around.
+constexpr int kVisibleRows = 4;
+constexpr int kRowHeight = 22;
+
+// Not in K4Styles: this is the only table in the app, and k4styles.cpp is at 782 of its 800-line
+// budget (CONVENTIONS.md rule 7). It moves there when a second table needs it.
+QString clientTableStyle() {
+    return QString("QTableWidget { background-color: %1; color: %2; border: 1px solid %3; "
+                   "               font-size: %4px; gridline-color: %3; }"
+                   "QTableWidget::item { padding: 2px 6px; }"
+                   "QHeaderView::section { background-color: %5; color: %6; border: 0px; "
+                   "               border-bottom: 1px solid %3; padding: 2px 6px; font-size: %4px; }")
+        .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+        .arg(K4Styles::Dimensions::FontSizeLarge)
+        .arg(K4Styles::Colors::Background, K4Styles::Colors::TextGray);
+}
+
+} // namespace
 
 TciServerPage::TciServerPage(TciController *tciController, QWidget *parent)
     : QWidget(parent), m_tciController(tciController) {
@@ -64,6 +92,30 @@ TciServerPage::TciServerPage(TciController *tciController, QWidget *parent)
     clientsLayout->addWidget(m_clientsLabel);
     clientsLayout->addStretch();
     layout->addLayout(clientsLayout);
+
+    // Who is connected, and whether they are still talking.
+    //
+    // WHY a table and not a longer count: a count cannot answer the question that actually comes up
+    // - "is WSJT-X still there, or did it wander off?" - and with two clients it cannot say which
+    // one is which. The last-message column also makes a client that connected but never spoke
+    // (wrong port, wrong protocol) visible as such.
+    m_clientsTable = new QTableWidget(0, ColCount, this);
+    m_clientsTable->setHorizontalHeaderLabels({"Address", "Last seen", "Last message"});
+    m_clientsTable->verticalHeader()->setVisible(false);
+    m_clientsTable->verticalHeader()->setDefaultSectionSize(kRowHeight);
+    m_clientsTable->horizontalHeader()->setStretchLastSection(true);
+    m_clientsTable->horizontalHeader()->setSectionResizeMode(ColAddress, QHeaderView::ResizeToContents);
+    m_clientsTable->horizontalHeader()->setSectionResizeMode(ColLastSeen, QHeaderView::ResizeToContents);
+    // Read-only, and not a selection widget: nothing acts on a row, so letting one look picked
+    // would suggest an action that does not exist.
+    m_clientsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_clientsTable->setSelectionMode(QAbstractItemView::NoSelection);
+    m_clientsTable->setFocusPolicy(Qt::NoFocus);
+    m_clientsTable->setShowGrid(false);
+    m_clientsTable->setAlternatingRowColors(false);
+    m_clientsTable->setStyleSheet(clientTableStyle());
+    m_clientsTable->setFixedHeight(kRowHeight * kVisibleRows + m_clientsTable->horizontalHeader()->height() + 4);
+    layout->addWidget(m_clientsTable);
 
     auto *line2 = new QFrame(this);
     line2->setFrameShape(QFrame::HLine);
@@ -146,6 +198,7 @@ TciServerPage::TciServerPage(TciController *tciController, QWidget *parent)
     if (m_tciController) {
         connect(m_tciController, &TciController::listeningChanged, this, &TciServerPage::updateStatus);
         connect(m_tciController, &TciController::clientCountChanged, this, &TciServerPage::updateStatus);
+        connect(m_tciController, &TciController::clientsChanged, this, &TciServerPage::updateClients);
     }
 
     updateStatus();
@@ -182,4 +235,39 @@ void TciServerPage::updateStatus() {
 
     const int clients = m_tciController ? m_tciController->clientCount() : 0;
     m_clientsLabel->setText(QString("%1 connected").arg(clients));
+
+    // The roster is redrawn here as well as on clientsChanged, because the page is built long after
+    // the server started: opening the options dialog has to show the clients that are already
+    // there, and no signal is coming to say so.
+    updateClients(m_tciController ? m_tciController->clients() : QVector<TciClientInfo>());
+}
+
+void TciServerPage::updateClients(const QVector<TciClientInfo> &clients) {
+    if (!m_clientsTable) {
+        return;
+    }
+
+    if (clients.isEmpty()) {
+        // One row saying so, rather than an empty box that reads as broken.
+        m_clientsTable->setRowCount(1);
+        auto *item = new QTableWidgetItem("No clients connected");
+        item->setForeground(QColor(K4Styles::Colors::TextGray));
+        m_clientsTable->setItem(0, ColAddress, item);
+        m_clientsTable->setItem(0, ColLastSeen, new QTableWidgetItem(QString()));
+        m_clientsTable->setItem(0, ColLastMessage, new QTableWidgetItem(QString()));
+        return;
+    }
+
+    m_clientsTable->setRowCount(clients.size());
+    for (int row = 0; row < clients.size(); ++row) {
+        const TciClientInfo &c = clients[row];
+        m_clientsTable->setItem(row, ColAddress, new QTableWidgetItem(c.address));
+        // Wall-clock time, not "12 s ago": the row is only repainted when something happens, so a
+        // relative age would freeze at whatever it read when the client last spoke and quietly lie.
+        m_clientsTable->setItem(row, ColLastSeen,
+                                new QTableWidgetItem(c.lastMessageTime.isValid()
+                                                         ? c.lastMessageTime.toString(QStringLiteral("HH:mm:ss"))
+                                                         : QString()));
+        m_clientsTable->setItem(row, ColLastMessage, new QTableWidgetItem(c.lastMessage));
+    }
 }

@@ -189,6 +189,21 @@ target_include_directories(test_tciqueries PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciqueries Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciQueriesTests COMMAND test_tciqueries)
 
+# TCI client roster: the address/last-seen/last-message table on the options page. Driven over a
+# real socket, because the peer address only exists on a real connection. Split from test_tciserver
+# to stay under the 800-line limit in CONVENTIONS.md rule 7.
+add_executable(test_tciclients test_tciclients.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tciclients PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciclients Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciClientsTests COMMAND test_tciclients)
+
 # TCI sensor reporting: subscription per direction, interval clamping, and the server-to-client
 # telemetry an --audit sweep cannot see because none of it is ever a reply to a query.
 add_executable(test_tcisensors test_tcisensors.cpp

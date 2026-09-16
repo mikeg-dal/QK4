@@ -5,6 +5,7 @@
 #include <QLoggingCategory>
 #include <QSet>
 
+#include <algorithm>
 #include <cmath>
 
 #include "network/tciaudioframe.h"
@@ -61,6 +62,42 @@ void TciServer::stop() {
     m_rxSensorClients.clear();
     m_txSensorClients.clear();
     m_sensorTimer->stop();
+
+    // WebSocketServer::stop() closes the sockets without emitting clientDisconnected for each, so
+    // the roster has to be emptied here or the page would keep listing clients of a server that is
+    // no longer running.
+    const bool hadClients = !m_clients.isEmpty();
+    m_clients.clear();
+    if (hadClients) {
+        emit clientsChanged(clients());
+    }
+}
+
+QVector<TciClientInfo> TciServer::clients() const {
+    // Oldest first. Ids are handed out in ascending order by WebSocketServer, so sorting by id
+    // sorts by arrival - a row does not jump around the table because a QHash rehashed.
+    QVector<TciClientInfo> out;
+    out.reserve(m_clients.size());
+    for (auto it = m_clients.constBegin(); it != m_clients.constEnd(); ++it) {
+        out.append(it.value());
+    }
+    std::sort(out.begin(), out.end(), [](const TciClientInfo &a, const TciClientInfo &b) { return a.id < b.id; });
+    return out;
+}
+
+void TciServer::noteClientActivity(int clientId, const QString &message, bool force) {
+    auto it = m_clients.find(clientId);
+    if (it == m_clients.end()) {
+        return;
+    }
+    it->lastMessage = message;
+    it->lastMessageTime = QDateTime::currentDateTime();
+
+    if (!force && m_clientsAnnounceClock.isValid() && m_clientsAnnounceClock.elapsed() < kClientAnnounceMinMs) {
+        return;
+    }
+    m_clientsAnnounceClock.restart();
+    emit clientsChanged(clients());
 }
 
 bool TciServer::isListening() const {
@@ -76,8 +113,16 @@ int TciServer::clientCount() const {
 }
 
 void TciServer::onClientConnected(int clientId, const QString &peerAddress) {
-    Q_UNUSED(peerAddress);
     m_parsers.insert(clientId, TciProtocol::Parser());
+
+    TciClientInfo info;
+    info.id = clientId;
+    info.address = peerAddress;
+    m_clients.insert(clientId, info);
+    // Nothing has been said yet, so the cell reads as the connection itself rather than as empty:
+    // "connected at 10:14:02" is a fact, a blank cell looks like a bug.
+    noteClientActivity(clientId, QStringLiteral("(connected)"), /*force=*/true);
+
     qCInfo(netTci) << "client" << clientId << "connected from" << peerAddress << "- sending init burst";
 
     // One command per frame, matching what the reference server puts on the wire.
@@ -90,6 +135,10 @@ void TciServer::onClientConnected(int clientId, const QString &peerAddress) {
 
 void TciServer::onClientDisconnected(int clientId) {
     m_parsers.remove(clientId);
+    if (m_clients.remove(clientId) > 0) {
+        m_clientsAnnounceClock.restart();
+        emit clientsChanged(clients());
+    }
 
     // Fail closed: losing the client that keyed the transmitter must unkey it. A stuck PTT after a
     // crashed client is the worst failure this server can have.
@@ -119,6 +168,11 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
     if (it == m_parsers.end()) {
         return;
     }
+    // Recorded BEFORE dispatch: a command that drops the client (or unkeys and disconnects) would
+    // otherwise never reach the roster, and the last thing a client said before it went away is
+    // exactly what the table is for.
+    noteClientActivity(clientId, elideForDisplay(text.trimmed()), /*force=*/false);
+
     const QVector<Command> commands = it->feed(text);
     for (const Command &raw : commands) {
         const Command command = expandGlobalForm(raw);
@@ -481,6 +535,12 @@ void TciServer::onChronoTick() {
 }
 
 void TciServer::onBinaryMessageReceived(int clientId, const QByteArray &payload) {
+    // Counted as activity even though it is not a command: a client in the middle of a 15-second
+    // WSJT-X transmission sends no text at all, and a roster that showed it last heard from half a
+    // minute ago would be reporting it as stale at the one moment it is busiest. Throttled, so the
+    // ~47 frames a second cost one announcement every half second.
+    noteClientActivity(clientId, QStringLiteral("(tx audio)"), /*force=*/false);
+
     // Only the client holding PTT may put audio on the transmitter.
     if (clientId != m_pttOwner) {
         return;

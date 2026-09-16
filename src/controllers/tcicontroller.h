@@ -3,6 +3,9 @@
 
 #include <QObject>
 #include <QString>
+#include <QVector>
+
+#include "network/tciclientinfo.h"
 
 class AudioController;
 class ConnectionController;
@@ -58,6 +61,10 @@ public:
     bool isListening() const { return m_listening; }
     int clientCount() const { return m_clientCount; }
 
+    // Same rule, same reason: a copy pushed across by clientsChanged, never a read of the server's
+    // QHash from here.
+    QVector<TciClientInfo> clients() const { return m_clients; }
+
     // Carrying audio is separable from carrying CAT. Off means no RX frames are sent and no TX
     // audio is accepted; the control half keeps working.
     // Call when QK4's own audio levels move. rx_volume reports QK4's mix, and nothing in
@@ -70,6 +77,7 @@ public:
 signals:
     void listeningChanged(bool listening, quint16 port);
     void clientCountChanged(int count);
+    void clientsChanged(const QVector<TciClientInfo> &clients);
 
 private:
     // Reads RadioState on the MAIN thread and pushes a whole snapshot across to the TCI thread.
@@ -99,6 +107,7 @@ private:
     // Main-thread only. See isListening()/clientCount().
     bool m_listening = false;
     int m_clientCount = 0;
+    QVector<TciClientInfo> m_clients;
 };
 
 #endif // TCICONTROLLER_H

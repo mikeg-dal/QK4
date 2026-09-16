@@ -4,7 +4,11 @@
 #include <QCheckBox>
 #include <QLabel>
 #include <QLineEdit>
+#include <QTableWidget>
+#include <QVector>
 #include <QWidget>
+
+#include "network/tciclientinfo.h"
 
 class TciController;
 
@@ -27,12 +31,17 @@ public:
 private:
     void updateStatus();
 
+    // Repaints the client table from a roster. Takes the roster by argument rather than pulling it
+    // from the controller so the signal path and the manual path are the same code.
+    void updateClients(const QVector<TciClientInfo> &clients);
+
     TciController *m_tciController;
     QCheckBox *m_enableCheckbox = nullptr;
     QCheckBox *m_audioCheckbox = nullptr;
     QLineEdit *m_portEdit = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_clientsLabel = nullptr;
+    QTableWidget *m_clientsTable = nullptr;
 };
 
 #endif // TCISERVERPAGE_H

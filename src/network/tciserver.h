@@ -11,6 +11,7 @@
 
 #include <vector>
 
+#include "network/tciclientinfo.h"
 #include "network/tciprotocol.h"
 #include "network/tciradiostate.h"
 
@@ -54,6 +55,11 @@ public:
     int clientCount() const;
     int audioClientCount() const { return m_audioClients.size(); }
 
+    // The connected clients, ordered oldest first. Returned by value: the caller is on another
+    // thread in the only case that matters, and a reference into a QHash the socket events are
+    // erasing from is exactly the data race clientCount() was fixed for.
+    QVector<TciClientInfo> clients() const;
+
     // Replaces the snapshot and broadcasts whatever actually moved.
     //
     // WHY diff rather than broadcast everything: a chatty radio would otherwise flood every client
@@ -79,6 +85,10 @@ signals:
     void audioStartRequested(int receiver);
     void audioStopRequested();
     void clientCountChanged(int count);
+
+    // The roster, whenever it changes - a client arriving or leaving, or one of them saying
+    // something. Throttled for traffic; see noteClientActivity.
+    void clientsChanged(const QVector<TciClientInfo> &clients);
 
     // A client asserted or released PTT via `trx:<n>,<bool>`.
     //
@@ -132,6 +142,12 @@ private:
     // Starts or stops the sensor timer to match the current subscriptions.
     void updateSensorTimer();
 
+    // Records what a client last said and when, and announces the roster if it is time to.
+    //
+    // `force` skips the throttle, for the changes that alter the ROW SET rather than a cell: a
+    // client connecting or disconnecting must show up at once.
+    void noteClientActivity(int clientId, const QString &message, bool force);
+
     void setPtt(int clientId, bool active);
     void startChrono(int clientId);
     void stopChrono();
@@ -142,6 +158,12 @@ private:
     QSet<int> m_audioClients;
     // One parser per client: a command can straddle frames, so buffers must not be shared.
     QHash<int, TciProtocol::Parser> m_parsers;
+
+    // What the options page lists. Keyed by client id, ordered on the way out.
+    QHash<int, TciClientInfo> m_clients;
+    // Throttles clientsChanged. TX audio arrives ~47 times a second and the table shows a time to
+    // the second, so announcing every frame would be work nobody can see.
+    QElapsedTimer m_clientsAnnounceClock;
 
     // PTT is owned by exactly one client at a time. -1 means nobody holds it.
     //
