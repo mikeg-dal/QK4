@@ -305,6 +305,17 @@ TciController::TciController(AudioController *audioController, ConnectionControl
             }
         });
 
+        connect(m_server, &TciServer::setNoiseBlankerParamRequested, this, [this](int level, int width) {
+            // The K4 carries level, on/off and filter width in ONE command, so the current
+            // enabled state has to be preserved - sending the level alone would switch NB off.
+            const bool on = m_radioState && m_radioState->noiseBlankerEnabled();
+            applyCat(CatFrames::setNoiseBlanker(level, on, width));
+        });
+
+        connect(m_server, &TciServer::setVfoLockRequested, this, [this](int receiver, bool locked) {
+            applyCat(CatFrames::setVfoLock(locked, receiver == TciRadio::SUB_RECEIVER));
+        });
+
         connect(m_server, &TciServer::setFilterBandRequested, this, [this](int, int lowHz, int highHz) {
             // TCI gives two edges; the K4 takes a WIDTH. The conversion is lossy in one direction
             // and that is unavoidable - the centre is set by the mode and the IF shift, not by
@@ -445,6 +456,8 @@ void TciController::publishSnapshot() {
     main.autoNotch = m_radioState->autoNotchEnabled();
     main.apf = m_radioState->apfEnabled();
     main.notchFilter = m_radioState->manualNotchEnabled();
+    main.noiseBlankerLevel = qMax(0, m_radioState->noiseBlankerLevel());
+    main.noiseBlankerFilterWidth = qMax(0, m_radioState->noiseBlankerFilterWidth());
     main.volumeDb = m_audioController ? tciVolumeDbForGain(m_audioController->mainVolume()) : 0;
     main.lock = m_radioState->lockA();
     tciFilterEdges(m_radioState->mode(), m_radioState->filterBandwidth(), m_radioState->shiftHz(), &main.filterLowHz,
@@ -465,6 +478,8 @@ void TciController::publishSnapshot() {
     sub.autoNotch = m_radioState->autoNotchEnabledB();
     sub.apf = m_radioState->apfEnabledB();
     sub.notchFilter = m_radioState->manualNotchEnabledB();
+    sub.noiseBlankerLevel = qMax(0, m_radioState->noiseBlankerLevelB());
+    sub.noiseBlankerFilterWidth = qMax(0, m_radioState->noiseBlankerFilterWidthB());
     sub.volumeDb = m_audioController ? tciVolumeDbForGain(m_audioController->subVolume()) : 0;
     sub.lock = m_radioState->lockB();
     tciFilterEdges(m_radioState->modeB(), m_radioState->filterBandwidthB(), m_radioState->shiftBHz(), &sub.filterLowHz,

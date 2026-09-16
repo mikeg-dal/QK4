@@ -75,6 +75,16 @@ void TciServer::setSnapshot(const TciRadioSnapshot &snapshot) {
             m_socketServer->broadcastText(message(QStringLiteral("rit_offset"), trx, offset));
             m_socketServer->broadcastText(message(QStringLiteral("xit_offset"), trx, offset));
         }
+        if (now.noiseBlankerLevel != was.noiseBlankerLevel ||
+            now.noiseBlankerFilterWidth != was.noiseBlankerFilterWidth) {
+            m_socketServer->broadcastText(message(QStringLiteral("rx_nb_param"), trx,
+                                                  QString::number(now.noiseBlankerLevel),
+                                                  QString::number(now.noiseBlankerFilterWidth)));
+        }
+        if (now.lock != was.lock) {
+            m_socketServer->broadcastText(
+                message(QStringLiteral("vfo_lock"), trx, QString::number(CHANNEL_A), boolText(now.lock)));
+        }
         if (now.noiseBlanker != was.noiseBlanker) {
             m_socketServer->broadcastText(message(QStringLiteral("rx_nb_enable"), trx, boolText(now.noiseBlanker)));
         }
@@ -177,6 +187,9 @@ QStringList TciServer::receiverBurst(int receiver) const {
           << message(QStringLiteral("agc_mode"), trx, r.agcMode)
           << message(QStringLiteral("agc_gain"), trx, QString::number(r.agcGain))
           << message(QStringLiteral("rx_nb_enable"), trx, boolText(r.noiseBlanker))
+          << message(QStringLiteral("rx_nb_param"), trx, QString::number(r.noiseBlankerLevel),
+                     QString::number(r.noiseBlankerFilterWidth))
+          << message(QStringLiteral("vfo_lock"), trx, QString::number(CHANNEL_A), boolText(r.lock))
           << message(QStringLiteral("rx_nr_enable"), trx, boolText(r.noiseReduction))
           << message(QStringLiteral("rx_anf_enable"), trx, boolText(r.autoNotch))
           << message(QStringLiteral("rx_apf_enable"), trx, boolText(r.apf))
@@ -418,6 +431,48 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             reply = message(name, trx, boolText(false));
         }
         m_socketServer->sendText(clientId, reply);
+        return true;
+    }
+
+    if (name == QLatin1String("rx_nb_param")) {
+        // rx_nb_param:<trx>[,<level>,<width>] - two values, so not the perReceiver shape.
+        int receiver = MAIN_RECEIVER;
+        if (command.argCount() > 0 && command.argAsInt(0, &receiver) && !s.validReceiver(receiver)) {
+            return true;
+        }
+        if (!s.validReceiver(receiver)) {
+            receiver = MAIN_RECEIVER;
+        }
+        int level = 0;
+        int width = 0;
+        if (receiver == MAIN_RECEIVER && command.argAsInt(1, &level) && command.argAsInt(2, &width)) {
+            emit setNoiseBlankerParamRequested(level, width);
+        }
+        const TciReceiverState &r = s.rx[receiver];
+        m_socketServer->sendText(clientId,
+                                 message(name, QString::number(receiver), QString::number(r.noiseBlankerLevel),
+                                         QString::number(r.noiseBlankerFilterWidth)));
+        return true;
+    }
+
+    if (name == QLatin1String("vfo_lock")) {
+        // vfo_lock:<trx>,<channel>[,<bool>] - a channel index, unlike plain lock.
+        int receiver = MAIN_RECEIVER;
+        int channel = CHANNEL_A;
+        bool wanted = false;
+        if (!command.argAsInt(0, &receiver) || !s.validReceiver(receiver) || !command.argAsInt(1, &channel)) {
+            return true;
+        }
+        if (channel != CHANNEL_A && channel != CHANNEL_B) {
+            return true;
+        }
+        // Channel B of the main receiver is VFO B, which is the sub receiver's own VFO.
+        const int targetReceiver = (receiver == MAIN_RECEIVER && channel == CHANNEL_B) ? SUB_RECEIVER : receiver;
+        if (command.argAsBool(2, &wanted)) {
+            emit setVfoLockRequested(targetReceiver, wanted);
+        }
+        m_socketServer->sendText(clientId, message(name, QString::number(receiver), QString::number(channel),
+                                                   boolText(s.rx[targetReceiver].lock)));
         return true;
     }
 

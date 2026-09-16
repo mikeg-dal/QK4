@@ -106,6 +106,8 @@ signals:
     void setBoolRequested(int receiver, const QString &name, bool value);
     void setIntRequested(int receiver, const QString &name, int value);
     void setFilterBandRequested(int receiver, int lowHz, int highHz);
+    void setNoiseBlankerParamRequested(int level, int filterWidth);
+    void setVfoLockRequested(int receiver, bool locked);
 
 private slots:
     void onClientConnected(int clientId, const QString &peerAddress);

@@ -72,8 +72,16 @@ QByteArray keyerSpeed(int wpm) {
     return QString("KS%1;").arg(wpm, 3, 10, QChar('0')).toUtf8();
 }
 
-QByteArray setNoiseBlanker(int level, bool on) {
-    return QString("NB%1%2;").arg(qBound(0, level, 15), 2, 10, QChar('0')).arg(on ? 1 : 0).toUtf8();
+QByteArray setNoiseBlanker(int level, bool on, int filterWidth) {
+    QString cmd = QString("NB%1%2").arg(qBound(0, level, 15), 2, 10, QChar('0')).arg(on ? 1 : 0);
+    if (filterWidth >= 0) {
+        cmd += QString::number(qBound(0, filterWidth, 2));
+    }
+    return (cmd + QLatin1Char(';')).toUtf8();
+}
+
+QByteArray setVfoLock(bool locked, bool subVfo) {
+    return QString("LK%1%2;").arg(subVfo ? "$" : "").arg(locked ? 1 : 0).toUtf8();
 }
 
 QByteArray setMenuValue(int menuId, int value) {

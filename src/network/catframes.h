@@ -43,7 +43,12 @@ QByteArray keyerSpeed(int wpm);
 
 // NBnnm: nn is the level 00-15, m is on/off. The level is preserved by the caller, because TCI's
 // RX_NB_ENABLE is on/off only and must not silently move the level.
-QByteArray setNoiseBlanker(int level, bool on);
+// NBnnm, or NBnnmf when filterWidth is given (0-2). Pass filterWidth < 0 to leave it off the
+// command and change only the level and the on/off flag.
+QByteArray setNoiseBlanker(int level, bool on, int filterWidth = -1);
+
+// LKn / LK$n - VFO tuning lock, per VFO.
+QByteArray setVfoLock(bool locked, bool subVfo);
 
 // BWnnnn in 10-Hz units, which is the inverse of what RadioState's handleBW parses.
 QByteArray setFilterBandwidth(int bwHz);

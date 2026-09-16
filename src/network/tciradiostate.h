@@ -93,6 +93,15 @@ struct TciReceiverState {
     int volumeDb = 0;
 
     bool noiseBlanker = false;
+    // The K4's two NB parameters, reported RAW: level 0-15 and filter width 0-2.
+    //
+    // Mapped onto rx_nb_param's (threshold, duration) by MEANING - the level is the trigger
+    // sensitivity and the filter width is about pulse handling. AetherSDR lays it out differently,
+    // reporting a hardcoded 0 for the threshold and putting its own level in the duration field;
+    // that is a deviation from the spec rather than a convention worth copying, and QK4 has two
+    // real values to report where AetherSDR has one.
+    int noiseBlankerLevel = 0;
+    int noiseBlankerFilterWidth = 0;
     bool noiseReduction = false;
     bool autoNotch = false;
     bool apf = false;
@@ -100,6 +109,11 @@ struct TciReceiverState {
     // one, which is autoNotch above. Two different filters, so two different flags.
     bool notchFilter = false;
     bool lock = false;
+
+    // Per-CHANNEL tuning lock: channel A is this receiver's own VFO, channel B the other. TCI's
+    // vfo_lock carries a channel index where lock does not, which is the only difference between
+    // them - AetherSDR aliases the two and loses that distinction.
+    bool lockChannelB = false;
 };
 
 struct TciRadioSnapshot {
