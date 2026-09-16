@@ -374,6 +374,23 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         // RadioState has no per-field AGC signal; processingChanged is the coarse one it emits from
         // handleGT, and it also covers the NB/NR fields when those get wired.
         connect(m_radioState, &RadioState::processingChanged, this, [this]() { publishSnapshot(); });
+
+        // EVERY snapshot field needs a signal, or it reports a value that can change and never
+        // announces the change. That gap is not theoretical: vfo_lock moved on the radio and in
+        // QK4's own UI while TCI kept reporting false, because nothing here listened for it.
+        //
+        // The DSP flags are spread across three state files with separate signals, which is why
+        // subscribing to processingChanged alone was not enough:
+        //   processingstate  -> processingChanged, processingChangedB, notchChanged, notchBChanged
+        //   audioeffectsstate -> apfChanged, apfBChanged
+        //   frequencyvfostate -> lockAChanged, lockBChanged
+        connect(m_radioState, &RadioState::processingChangedB, this, [this]() { publishSnapshot(); });
+        connect(m_radioState, &RadioState::notchChanged, this, [this]() { publishSnapshot(); });
+        connect(m_radioState, &RadioState::notchBChanged, this, [this]() { publishSnapshot(); });
+        connect(m_radioState, &RadioState::apfChanged, this, [this]() { publishSnapshot(); });
+        connect(m_radioState, &RadioState::apfBChanged, this, [this]() { publishSnapshot(); });
+        connect(m_radioState, &RadioState::lockAChanged, this, [this](bool) { publishSnapshot(); });
+        connect(m_radioState, &RadioState::lockBChanged, this, [this](bool) { publishSnapshot(); });
         publishSnapshot();
         publishSensors();
         // Seed the bridge too: the Sub RX may already be on when the controller is constructed,

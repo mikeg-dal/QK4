@@ -625,6 +625,90 @@ private slots:
         server.stop();
     }
 
+    void everyReportedFieldBroadcastsWhenItChanges() {
+        // A CLASS test, not a field test. Four separate bugs this session had one shape: a value
+        // that QK4 reports, that can change, and that was never announced when it did. drive sat
+        // at 100 while the power knob moved; vfo_lock stayed false while the radio and QK4's own
+        // UI showed it locked.
+        //
+        // This drives one snapshot where EVERY reported field differs from the defaults and
+        // asserts each one reaches the client. A new field added to the snapshot without a
+        // broadcast fails here rather than on someone's radio.
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        TciRadioSnapshot snapshot;
+        TciReceiverState &main = snapshot.rx[TciRadio::MAIN_RECEIVER];
+        main.vfoHz = 7074000;
+        main.modulation = QStringLiteral("cw");
+        main.rit = true;
+        main.xit = true;
+        main.ritXitOffsetHz = 120;
+        main.filterLowHz = -300;
+        main.filterHighHz = 300;
+        main.agcMode = QStringLiteral("fast");
+        main.agcGain = 4;
+        main.noiseBlanker = true;
+        main.noiseReduction = true;
+        main.autoNotch = true;
+        main.apf = true;
+        main.notchFilter = true;
+        main.noiseBlankerLevel = 9;
+        main.noiseBlankerFilterWidth = 2;
+        main.lock = true;
+        main.sqlEnabled = true;
+        main.volumeDb = -12;
+        snapshot.split = true;
+        snapshot.drive = 45;
+        snapshot.tuneDrive = 15;
+        snapshot.micLevel = 33;
+        snapshot.cwKeyerSpeedWpm = 28;
+        snapshot.rx[TciRadio::SUB_RECEIVER].enabled = true;
+
+        server.setSnapshot(snapshot);
+
+        // device is answered from a constant, so it is a reliable terminator.
+        client.send("device;");
+        const QStringList seen = client.collectUntil("device:QK4;");
+
+        const QStringList expected{
+            QStringLiteral("vfo:0,0,7074000;"),
+            QStringLiteral("modulation:0,cw;"),
+            QStringLiteral("rit_enable:0,true;"),
+            QStringLiteral("xit_enable:0,true;"),
+            QStringLiteral("rit_offset:0,120;"),
+            QStringLiteral("xit_offset:0,120;"),
+            QStringLiteral("rx_filter_band:0,-300,300;"),
+            QStringLiteral("agc_mode:0,fast;"),
+            QStringLiteral("agc_gain:0,4;"),
+            QStringLiteral("rx_nb_enable:0,true;"),
+            QStringLiteral("rx_nr_enable:0,true;"),
+            QStringLiteral("rx_anf_enable:0,true;"),
+            QStringLiteral("rx_apf_enable:0,true;"),
+            QStringLiteral("rx_nf_enable:0,true;"),
+            QStringLiteral("rx_nb_param:0,9,2;"),
+            QStringLiteral("vfo_lock:0,0,true;"),
+            QStringLiteral("sql_enable:0,true;"),
+            QStringLiteral("rx_volume:0,0,-12;"),
+            QStringLiteral("split_enable:0,true;"),
+            QStringLiteral("drive:0,45;"),
+            QStringLiteral("tune_drive:0,15;"),
+            QStringLiteral("mic_level:33;"),
+            QStringLiteral("cw_keyer_speed:28;"),
+            QStringLiteral("rx_enable:1,true;"),
+        };
+        for (const QString &want : expected) {
+            QVERIFY2(seen.contains(want), qPrintable(QStringLiteral("never broadcast: ") + want));
+        }
+
+        client.close();
+        server.stop();
+    }
+
     void broadcastsAModeChange() {
         TciServer server;
         TciRadioSnapshot s;
