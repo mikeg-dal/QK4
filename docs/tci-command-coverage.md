@@ -809,17 +809,22 @@ Subscribed at a 100 ms interval: 30 readings in 3 s of each type, silent before 
 silent again after unsubscribing. Both spellings of the sub-receiver level arrive
 (`rx_channel_sensors:1,0,…` and `rx_channel_sensors:0,1,…`) and agree.
 
-### 12.5 Still unverified
+### 12.5 Transmit state — confirmed with TR4W
 
-- **`trx` broadcast on a radio-driven transmit** (§11.4). The unit tests pin both directions, but
-  no transmit begun at the microphone or front panel has been observed reaching a client. This is
-  the one that matters most, because it is the defect a user reported.
-- **Every SET except `vfo`, `dds`, `modulation`, `trx` and `split_enable`.** Reporting is broad;
-  writing is deliberately narrow. Nothing in §8's "Next" list has moved a radio yet.
+The defect that started §11.4: a transmit begun anywhere other than a TCI client was invisible, so
+TR4W's ON indicator stayed dark while the radio transmitted. Confirmed fixed against the radio with
+TR4W as the client — a transmit the client did not ask for now reaches it, which is the whole
+point of the ownership rule in §11.4.
+
+### 12.6 Still unverified
+
+- **Every SET except `vfo`, `dds`, `modulation`, `trx`, `split_enable` and `rx_channel_enable`.**
+  Reporting is broad; writing is deliberately narrow. Nothing in §8's "Next" list has moved a
+  radio yet.
 - **`AG`/`AG$` parsing.** Added but never exercised — the K4 pushed `NB`, `NR` and `PC` during the
   session and no `AG`, so nothing has driven that handler with real data.
 
-### 12.6 How to repeat it
+### 12.7 How to repeat it
 
 Start QK4 with the TCI server enabled, connect the radio, then run `tcimonitor.py` from
 [ny4i/utilities](https://github.com/ny4i/utilities). Every field above appears on one screen and
