@@ -136,19 +136,19 @@ int TciServer::clientCount() const {
     return m_socketServer->clientCount();
 }
 
-void TciServer::onClientConnected(int clientId, const QString &peerAddress) {
+void TciServer::onClientConnected(int clientId, const QString &peerEndpoint) {
     m_parsers.insert(clientId, TciProtocol::Parser());
 
     TciClientInfo info;
     info.id = clientId;
-    info.address = peerAddress;
+    info.address = peerEndpoint;
     // Seeded so the cell is never blank, which would read as a bug. The init burst below overwrites
     // it within microseconds; this shows only if a burst were ever empty.
     info.lastMessage = QStringLiteral("(connected)");
     info.lastMessageTime = QDateTime::currentDateTime();
     m_clients.insert(clientId, info);
 
-    qCInfo(netTci) << "client" << clientId << "connected from" << peerAddress << "- sending init burst";
+    qCInfo(netTci) << "client" << clientId << "connected from" << peerEndpoint << "- sending init burst";
 
     // One command per frame, matching what the reference server puts on the wire.
     const QStringList burst = initBurst();

@@ -46,6 +46,13 @@ private slots:
         QVERIFY2(clients[0].address.contains(QLatin1String("127.0.0.1")) ||
                      clients[0].address.contains(QLatin1String("::1")),
                  qPrintable(clients[0].address));
+        // The PORT is what distinguishes two clients from the same host, which on a loopback
+        // listener is every client. Without it the table cannot tell two rows apart.
+        QVERIFY2(clients[0].address.contains(QLatin1Char(':')), qPrintable(clients[0].address));
+        bool portOk = false;
+        clients[0].address.section(QLatin1Char(':'), -1).toUShort(&portOk);
+        QVERIFY2(portOk, qPrintable(QStringLiteral("no peer port in ") + clients[0].address));
+
         QVERIFY(clients[0].lastMessageTime.isValid());
 
         // The init burst counts: a client that has only just connected has still been sent forty

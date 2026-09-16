@@ -61,7 +61,9 @@ public:
 signals:
     void started(quint16 port);
     void stopped();
-    void clientConnected(int clientId, const QString &peerAddress);
+    // peerEndpoint is "host:port" ("[host]:port" for IPv6) - the port included because it is what
+    // distinguishes two connections from the same host.
+    void clientConnected(int clientId, const QString &peerEndpoint);
     void clientDisconnected(int clientId);
     void textMessageReceived(int clientId, const QString &text);
     void binaryMessageReceived(int clientId, const QByteArray &payload);

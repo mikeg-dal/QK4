@@ -120,7 +120,7 @@ signals:
     void setVfoLockRequested(int receiver, bool locked);
 
 private slots:
-    void onClientConnected(int clientId, const QString &peerAddress);
+    void onClientConnected(int clientId, const QString &peerEndpoint);
     void onClientDisconnected(int clientId);
     void onTextMessageReceived(int clientId, const QString &text);
     void onBinaryMessageReceived(int clientId, const QByteArray &payload);

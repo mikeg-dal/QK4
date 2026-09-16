@@ -172,7 +172,15 @@ bool WebSocketServer::tryUpgrade(int clientId) {
     if (!leftover.isEmpty()) {
         it->decoder.append(leftover);
     }
-    const QString peer = socket->peerAddress().toString();
+    // host:port, not host alone. Every client on a loopback listener reports the same address, so
+    // without the port two connections are indistinguishable in anything that lists them - which is
+    // exactly what the TCI options page does. The port is what names the CONNECTION.
+    //
+    // IPv6 is bracketed, or the port separator would run into the address's own colons and produce
+    // something like ::1:54321 that cannot be read back apart.
+    const QString host = socket->peerAddress().toString();
+    const QString peer = (host.contains(QLatin1Char(':')) ? QStringLiteral("[%1]").arg(host) : host) +
+                         QLatin1Char(':') + QString::number(socket->peerPort());
 
     socket->write(response);
     socket->flush();
