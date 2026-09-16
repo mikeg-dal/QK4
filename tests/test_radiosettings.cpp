@@ -1,5 +1,7 @@
 #include <QtTest>
 
+#include <QDateTime>
+#include <QFileInfo>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -12,18 +14,34 @@
 // in the dialog, because a settings file can also be hand-edited or restored from a backup, and a
 // second flagged radio would make startup silently depend on list order.
 //
-// These tests drive a private QSettings scope so they never touch the developer's real radios.
+// ============================================================================================
+// HOW THIS SUITE IS KEPT AWAY FROM REAL DATA - read before changing initTestCase.
+//
+// RadioSettings is a singleton holding `QSettings m_settings{"QK4", "QK4"}` - the store is named in
+// its constructor, so a test CANNOT redirect it by asking RadioSettings for anything. An earlier
+// version of this file tried to redirect by calling QCoreApplication::setOrganizationName, which
+// does nothing at all against a QSettings constructed with an explicit organisation. The suite
+// therefore ran against the developer's own QK4 preferences, and init() below - which empties the
+// list before each test - DELETED EVERY SAVED RADIO on the machine that ran it.
+//
+// The redirect that does work is process-wide and must happen BEFORE the singleton is first
+// touched: set the default QSettings format to Ini and point Ini/UserScope at a temporary
+// directory. That reaches RadioSettings only because its constructor names the format explicitly -
+// Qt's two-argument QSettings(org, app) ignores setDefaultFormat() entirely and always opens the
+// native store, which is why the original attempt failed silently.
+//
+// Because a silent failure of that redirect is destructive rather than merely wrong, it is checked
+// twice: a probe proves the redirect took effect before anything writes, and cleanupTestCase
+// asserts the real preferences file is byte-for-byte as it was when the suite started.
+// ============================================================================================
 class TestRadioSettings : public QObject {
     Q_OBJECT
 
 private:
-    // RadioSettings is a singleton over QSettings, so the scope is redirected rather than the
-    // object replaced.
-    void useTemporarySettings() {
-        QCoreApplication::setOrganizationName(QStringLiteral("QK4Test"));
-        QCoreApplication::setApplicationName(
-            QStringLiteral("RadioSettingsTest-%1").arg(QDateTime::currentMSecsSinceEpoch()));
-    }
+    QTemporaryDir m_tempDir;
+    QString m_realPath;
+    qint64 m_realSize = -1;
+    QDateTime m_realModified;
 
     RadioEntry makeRadio(const QString &name, const QString &host) const {
         RadioEntry e;
@@ -34,10 +52,48 @@ private:
     }
 
 private slots:
-    void initTestCase() { useTemporarySettings(); }
+    void initTestCase() {
+        // Where the REAL preferences live, recorded before anything is redirected so the end of the
+        // suite can prove it was never written to.
+        {
+            const QSettings real(QSettings::NativeFormat, QSettings::UserScope, QStringLiteral("QK4"),
+                                 QStringLiteral("QK4"));
+            m_realPath = real.fileName();
+        }
+        const QFileInfo before(m_realPath);
+        m_realSize = before.exists() ? before.size() : -1;
+        m_realModified = before.exists() ? before.lastModified() : QDateTime();
+
+        QVERIFY2(m_tempDir.isValid(), "no temporary directory; refusing to run against real settings");
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_tempDir.path());
+
+        // Prove the redirect took, BEFORE a single write. If this ever fails the suite stops here
+        // rather than quietly deleting somebody's radios.
+        // Spelled the same way RadioSettings spells it. QSettings("QK4", "QK4") would NOT do - the
+        // two-argument constructor ignores defaultFormat() - and using it here would make this
+        // probe pass while the code under test still wrote to the real preferences.
+        const QSettings probe(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("QK4"),
+                              QStringLiteral("QK4"));
+        QVERIFY2(probe.fileName().startsWith(m_tempDir.path()),
+                 qPrintable(QStringLiteral("settings not redirected; would have written to ") + probe.fileName()));
+    }
+
+    void cleanupTestCase() {
+        // The guarantee this suite owes the machine it runs on.
+        const QFileInfo after(m_realPath);
+        if (m_realSize < 0) {
+            QVERIFY2(!after.exists(), qPrintable(QStringLiteral("suite created real settings at ") + m_realPath));
+            return;
+        }
+        QVERIFY2(after.exists(), qPrintable(QStringLiteral("suite deleted real settings at ") + m_realPath));
+        QCOMPARE(after.size(), m_realSize);
+        QCOMPARE(after.lastModified(), m_realModified);
+    }
 
     void init() {
-        // Each test starts from an empty list.
+        // Each test starts from an empty list. This is the line that did the damage when the
+        // redirect above was not working; it is safe only because initTestCase proves it.
         RadioSettings *s = RadioSettings::instance();
         while (!s->radios().isEmpty()) {
             s->removeRadio(0);
@@ -85,12 +141,6 @@ private slots:
         QCOMPARE(s->connectAtStartupIndex(), -1);
         QCOMPARE(s->radios().first().connectAtStartup, false);
     }
-
-    // NOT TESTED HERE: that the flag reaches disk. QSettings buffers writes per instance, so a
-    // second QSettings object reading the same scope sees nothing until a sync, and a test built
-    // that way would be measuring Qt's caching rather than this code. connectAtStartup is written
-    // alongside eight fields that already persist correctly, by the same save() call; the risk
-    // worth covering is the uniqueness RULE above, not one more setValue.
 
     void aChangeIsAnnounced() {
         // The dialog and anything else showing the list need to redraw.

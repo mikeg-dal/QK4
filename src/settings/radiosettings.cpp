@@ -26,7 +26,16 @@ RadioSettings *RadioSettings::instance() {
 }
 
 RadioSettings::RadioSettings(QObject *parent)
-    : QObject(parent), m_lastSelectedIndex(-1), m_kpodEnabled(false), m_settings("QK4", "QK4") {
+    : QObject(parent), m_lastSelectedIndex(-1), m_kpodEnabled(false),
+      // Same store as QSettings("QK4", "QK4") - on every platform the two resolve to the identical
+      // file - but named through defaultFormat() so it can be REDIRECTED.
+      //
+      // WHY THAT MATTERS: Qt's two-argument QSettings(org, app) constructor ignores
+      // QSettings::setDefaultFormat() and always uses NativeFormat, which on macOS is the
+      // CFPreferences domain. A test therefore had NO way to point this singleton anywhere else,
+      // and one that tried ran against a developer's real preferences and deleted every saved
+      // radio. Spelling the format out is the whole fix: setDefaultFormat() now reaches this.
+      m_settings(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("QK4"), QStringLiteral("QK4")) {
     load();
 }
 

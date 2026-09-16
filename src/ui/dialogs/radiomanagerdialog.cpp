@@ -173,7 +173,7 @@ void RadioManagerDialog::setupUi() {
     m_startupCheckbox->setStyleSheet(m_tlsCheckbox->styleSheet());
     formLayout->addWidget(m_startupCheckbox, 6, 0, 1, 2);
 
-    // Row 6: Encode Mode dropdown
+    // Row 7: Encode Mode dropdown
     auto *encodeModeLabel = new QLabel("Audio Mode", this);
     encodeModeLabel->setStyleSheet(labelStyle);
     m_encodeModeCombo = new QComboBox(this);
@@ -208,10 +208,10 @@ void RadioManagerDialog::setupUi() {
     m_encodeModeCombo->addItem("EM1 - RAW 16-bit", 1);
     m_encodeModeCombo->addItem("EM0 - RAW 32-bit", 0);
     m_encodeModeCombo->setCurrentIndex(0); // EM3 default
-    formLayout->addWidget(encodeModeLabel, 6, 0);
-    formLayout->addWidget(m_encodeModeCombo, 6, 1);
+    formLayout->addWidget(encodeModeLabel, 7, 0);
+    formLayout->addWidget(m_encodeModeCombo, 7, 1);
 
-    // Row 7: Streaming Latency dropdown
+    // Row 8: Streaming Latency dropdown
     auto *streamingLatencyLabel = new QLabel("Streaming Latency", this);
     streamingLatencyLabel->setStyleSheet(labelStyle);
     m_streamingLatencyCombo = new QComboBox(this);
@@ -220,8 +220,8 @@ void RadioManagerDialog::setupUi() {
         m_streamingLatencyCombo->addItem(QString::number(i), i);
     }
     m_streamingLatencyCombo->setCurrentIndex(3); // Default: 3
-    formLayout->addWidget(streamingLatencyLabel, 7, 0);
-    formLayout->addWidget(m_streamingLatencyCombo, 7, 1);
+    formLayout->addWidget(streamingLatencyLabel, 8, 0);
+    formLayout->addWidget(m_streamingLatencyCombo, 8, 1);
 
     // Initially hide ID field (shown when TLS is checked)
     m_identityLabel->setVisible(false);
