@@ -110,6 +110,9 @@ class State:
                 self.fields["mode_%s" % arg(0)] = arg(1)
             elif name == "rx_filter_band":
                 self.fields["filter_%s" % arg(0)] = (int(arg(1)), int(arg(2)))
+            elif name == "rx_volume":
+                # rx_volume:<trx>,<channel>,<dB>. QK4 reports its own playback mix here.
+                self.fields["vol_%s" % arg(0)] = int(arg(2))
             elif name in ("cw_keyer_speed", "cw_macros_speed"):
                 self.fields["wpm"] = int(arg(0))
             elif name == "rx_enable":
@@ -186,6 +189,10 @@ def render(state, host, port, raw_lines):
         band = f.get("filter_%d" % r)
         return "%+5d..%+5d" % band if band else "    --     "
 
+    def vol(r):
+        v = f.get("vol_%d" % r)
+        return "%+3d dB" % v if v is not None else "  -- dB"
+
     def flags(r):
         on = [n.split("_")[1].upper()
               for n in ("rx_nb_enable", "rx_nr_enable", "rx_anf_enable", "rx_apf_enable",
@@ -194,15 +201,15 @@ def render(state, host, port, raw_lines):
         return " ".join(on) if on else "-"
 
     # Receiver 0 (Main) and receiver 1 (Sub). trx_count says how many the server advertises.
-    out.append(" \x1b[1mRX0 Main\x1b[0m  %-14s %-6s  agc %-7s filter %s  %s"
+    out.append(" \x1b[1mRX0 Main\x1b[0m  %-14s %-6s agc %-7s filter %s  vol %s  %s"
                % (hz(f.get("vfo_0_0")), f.get("mode_0", "--"), f.get("agc_0", "--"),
-                  filt(0), flags(0)))
+                  filt(0), vol(0), flags(0)))
     if sub_on:
-        out.append(" \x1b[1mRX1 Sub \x1b[0m  %-14s %-6s  agc %-7s filter %s  %s"
+        out.append(" \x1b[1mRX1 Sub \x1b[0m  %-14s %-6s agc %-7s filter %s  vol %s  %s"
                    % (hz(f.get("vfo_1_0")), f.get("mode_1", "--"), f.get("agc_1", "--"),
-                      filt(1), flags(1)))
+                      filt(1), vol(1), flags(1)))
     else:
-        out.append(" RX1 Sub    (off)%s" % (" " * 56))
+        out.append(" RX1 Sub    (off)%s" % (" " * 64))
     out.append(" TX freq   %-14s  split %-4s  wpm %-4s  trx_count %s"
                % (hz(f.get("tx_freq")), "ON" if f.get("split") else "off",
                   f.get("wpm", "--"), f.get("trx_count", "--")))
@@ -226,6 +233,8 @@ def render(state, host, port, raw_lines):
     out.append("")
     out.append(" \x1b[1mTX\x1b[0m")
     t = state.tx
+    out.append("   mic level %-4s (setting)     alc/mic signal below (measured)"
+               % f.get("mic_level", "--"))
     out.append("   power %s W    peak %s W    swr %s    mic %s dBm"
                % (("%6.1f" % t["power"]) if t["power"] is not None else "    --",
                   ("%6.1f" % t["peak"]) if t["peak"] is not None else "    --",
