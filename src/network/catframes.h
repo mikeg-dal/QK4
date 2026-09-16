@@ -3,6 +3,8 @@
 #include "models/radiostate.h"
 
 #include <QByteArray>
+#include <QList>
+#include <QString>
 
 namespace CatFrames {
 
@@ -27,7 +29,28 @@ QByteArray rfPower(double watts);
 QByteArray rfPowerExtended(double watts, bool qrp);
 QByteArray filterBandwidth(int bwHz);
 QByteArray filterWidthExtended(int bwHz);
+// KSnnn. CLAMPED to the K4's documented range (manual: "from 8 to 100 WPM"), because the CW macro
+// grammar reaches this with ARITHMETIC - each '>' adds 5 WPM with no upper bound of its own - and
+// an out-of-range KS is a command the radio will not act on.
 QByteArray keyerSpeed(int wpm);
+
+// CW text as one or more KY commands.
+//
+// A LIST, unlike every other builder here, because the K4 takes at most 60 characters per KY and a
+// contest exchange is routinely longer. Splitting is the K4's constraint, so it belongs with the
+// K4's command rather than in the caller.
+//
+// `wait` selects the KYW form on the LAST chunk, which delays the radio's processing of following
+// host commands until the message has been sent. Pass it when a KS follows, which is the use the
+// manual names. Do NOT pass it otherwise: it stalls everything QK4 sends afterwards - polling
+// included - for the duration of the message.
+//
+// Prosigns arrive in TCI's |XX| form and are translated here, because their spelling is a K4 fact.
+QList<QByteArray> cwText(const QString &text, bool wait = false);
+
+// Aborts a message in progress: KY<0x04>;RX;. One frame carrying two commands, which is how the
+// radio is given it. Bench-confirmed on Elecraft hardware (TR4W's TK4Radio.StopCW).
+QByteArray cwAbort();
 // WHY THESE TWO EXIST ALONGSIDE noiseBlanker() AND filterBandwidth() BELOW.
 //
 // The pair below build REPLIES to a CAT client (catserver.cpp, catpushbroadcaster.cpp). They have

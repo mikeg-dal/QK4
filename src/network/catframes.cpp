@@ -1,12 +1,116 @@
 #include "catframes.h"
 
 #include <QChar>
+#include <QLatin1String>
 #include <QString>
+#include <QStringList>
 #include <QtGlobal>
 
 namespace {
 int k4ModeDigit(RadioState::Mode mode) {
     return (mode == RadioState::Unknown) ? 2 : static_cast<int>(mode);
+}
+
+// ---------------------------------------------------------------------------------------------
+// CW by CAT. All of this is K4 fact, taken from the manual's KY and KS entries.
+// ---------------------------------------------------------------------------------------------
+
+// "KSnnn, where nnn is the keyer speed, from 8 to 100 WPM."
+constexpr int kMinKeyerWpm = 8;
+constexpr int kMaxKeyerWpm = 100;
+
+// The manual allows 60 characters of KY text. 22 is deliberate headroom, not the limit: a short KY
+// following a keyer abort can be swallowed, and Elecraft drivers that have been through this on
+// real hardware settle on 22 with the remainder padded (TR4W's CWFrameRule(22, True)). Raising it
+// is one edit once somebody has proved the longer form on a bench.
+constexpr int kKyChunkChars = 22;
+
+// The K4 keys these as prosigns - single run-together characters. TCI writes a prosign as |XX|.
+struct KyProsign {
+    const char *name;
+    char spelling;
+};
+constexpr KyProsign kProsigns[] = {
+    {"KN", '('}, {"AR", '+'}, {"BT", '='}, {"AS", '%'}, {"SK", '*'}, {"VE", '!'},
+};
+
+// |XX| -> the K4's single character for it.
+QString applyProsigns(const QString &text) {
+    QString out;
+    out.reserve(text.size());
+    int i = 0;
+    while (i < text.size()) {
+        const int close = (text[i] == QLatin1Char('|')) ? text.indexOf(QLatin1Char('|'), i + 1) : -1;
+        if (close < 0) {
+            out.append(text[i]);
+            ++i;
+            continue;
+        }
+        const QString name = text.mid(i + 1, close - i - 1).toUpper();
+        bool matched = false;
+        for (const KyProsign &p : kProsigns) {
+            if (name == QLatin1String(p.name)) {
+                out.append(QLatin1Char(p.spelling));
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            // A prosign the K4 cannot spell. The letters are kept and the bars dropped, so it keys
+            // as separate letters - wrong, but audible and recognisable. Dropping it outright would
+            // silently delete part of the operator's message.
+            out.append(name);
+        }
+        i = close + 1;
+    }
+    return out;
+}
+
+// Removes what the K4 would ACT ON rather than key. Every one of these does something inside a KY
+// command, and none of it is what the sender meant:
+//   ';'  ends the CAT command itself - anything after it would be read as a new command
+//   '@'  terminates the CW message in CW mode, truncating the rest
+//   '<'  puts the radio into TX TEST MODE until a '>' arrives, taking it off the air
+//   '>'  returns it to TX NORM
+//   '|'  quickly terminates TX in FSK/PSK
+// The speed markers are normally consumed by CwMacro::parse long before this, but this builder is
+// public and has to be safe for a caller that has not been through the macro grammar.
+QString sanitiseForKy(const QString &text) {
+    static const QString forbidden = QStringLiteral(";@<>|");
+    QString out;
+    out.reserve(text.size());
+    for (const QChar &ch : text) {
+        if (!forbidden.contains(ch)) {
+            out.append(ch);
+        }
+    }
+    return out;
+}
+
+// Splits at kKyChunkChars, PREFERRING a word boundary, and carries the space to the START of the
+// next chunk rather than leaving it at the end of this one.
+//
+// WHY the space moves: the radio trims trailing spaces from KY text. A chunk that happens to end
+// on a real word gap would lose it, running two words together - "NY4I NY4I" keyed as "NY4INY4I".
+// Leading spaces are part of the text and survive.
+QStringList chunkForKy(const QString &text) {
+    QStringList chunks;
+    QString rest = text;
+    while (rest.size() > kKyChunkChars) {
+        int cut = rest.lastIndexOf(QLatin1Char(' '), kKyChunkChars - 1);
+        if (cut <= 0) {
+            cut = kKyChunkChars; // one unbroken run longer than a chunk; split it hard
+            chunks.append(rest.left(cut));
+            rest = rest.mid(cut);
+        } else {
+            chunks.append(rest.left(cut));
+            rest = rest.mid(cut); // the space leads the next chunk
+        }
+    }
+    if (!rest.isEmpty()) {
+        chunks.append(rest);
+    }
+    return chunks;
 }
 } // namespace
 
@@ -69,7 +173,43 @@ QByteArray filterWidthExtended(int bwHz) {
 }
 
 QByteArray keyerSpeed(int wpm) {
-    return QString("KS%1;").arg(wpm, 3, 10, QChar('0')).toUtf8();
+    return QString("KS%1;").arg(qBound(kMinKeyerWpm, wpm, kMaxKeyerWpm), 3, 10, QChar('0')).toUtf8();
+}
+
+QList<QByteArray> cwText(const QString &text, bool wait) {
+    const QString sendable = sanitiseForKy(applyProsigns(text));
+    if (sendable.isEmpty()) {
+        return {};
+    }
+
+    const QStringList chunks = chunkForKy(sendable);
+    QList<QByteArray> frames;
+    frames.reserve(chunks.size());
+    for (int i = 0; i < chunks.size(); ++i) {
+        QString chunk = chunks[i];
+        const bool last = (i + 1 == chunks.size());
+        if (last) {
+            // Pad the final chunk out. A short KY can be swallowed when it follows a keyer abort,
+            // and the fill gives it enough runway to survive that window - the radio trims trailing
+            // spaces rather than keying them. Bench-derived on Elecraft hardware (TR4W's
+            // CWFrameRule(22, True)).
+            while (chunk.size() < kKyChunkChars) {
+                chunk.append(QLatin1Char(' '));
+            }
+        }
+        // KY*[text]; - the third character is the flag: blank normally, 'W' to make the radio hold
+        // off on following commands until this has been sent.
+        const QChar flag = (last && wait) ? QLatin1Char('W') : QLatin1Char(' ');
+        frames.append((QStringLiteral("KY") + flag + chunk + QLatin1Char(';')).toUtf8());
+    }
+    return frames;
+}
+
+QByteArray cwAbort() {
+    QByteArray frame = "KY ";
+    frame.append(char(0x04)); // the K4's CW abort character
+    frame.append(";RX;");
+    return frame;
 }
 
 QByteArray setNoiseBlanker(int level, bool on, int filterWidth) {

@@ -6,6 +6,7 @@
 #include <QVector>
 
 #include "network/tciclientinfo.h"
+#include "network/cwmacro.h"
 
 class AudioController;
 class ConnectionController;
@@ -93,6 +94,10 @@ private:
     // Send one CatFrames-built command to the radio and echo it into RadioState optimistically,
     // exactly as CatServer's wiring does for an external CAT client.
     void applyCat(const QByteArray &frame);
+
+    // Turns parsed CW segments into the KS/KY sequence the K4 wants, and puts the keyer speed back
+    // afterwards if the macro moved it.
+    void sendCwMacro(const QVector<CwMacroSegment> &segments);
 
     AudioController *m_audioController;
     ConnectionController *m_connectionController;

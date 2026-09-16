@@ -321,6 +321,13 @@ TciController::TciController(AudioController *audioController, ConnectionControl
             applyCat(CatFrames::setNoiseBlanker(level, on, width));
         });
 
+        connect(m_server, &TciServer::cwMacroRequested, this,
+                [this](const QVector<CwMacroSegment> &segments) { sendCwMacro(segments); });
+        connect(m_server, &TciServer::cwAbortRequested, this, [this]() {
+            // Straight out, with no optimistic RadioState echo: there is no state to update, and
+            // the frame carries a control character plus two commands.
+            m_connectionController->sendCAT(QString::fromLatin1(CatFrames::cwAbort()));
+        });
         connect(m_server, &TciServer::setVfoLockRequested, this, [this](int receiver, bool locked) {
             applyCat(CatFrames::setVfoLock(locked, receiver == TciRadio::SUB_RECEIVER));
         });
@@ -418,6 +425,45 @@ void TciController::setAudioEnabled(bool enabled) {
     m_audioEnabled = enabled;
     // The bridge lives on the TCI thread; its flag is a plain bool read on that thread only.
     QMetaObject::invokeMethod(m_bridge, [this, enabled]() { m_bridge->setEnabled(enabled); }, Qt::QueuedConnection);
+}
+
+void TciController::sendCwMacro(const QVector<CwMacroSegment> &segments) {
+    if (!m_connectionController || segments.isEmpty()) {
+        return;
+    }
+
+    const int baseWpm = m_radioState ? m_radioState->keyerSpeed() : 0;
+    int currentWpm = baseWpm;
+    bool speedMoved = false;
+
+    for (int i = 0; i < segments.size(); ++i) {
+        const CwMacroSegment &segment = segments[i];
+        if (segment.wpm != currentWpm) {
+            applyCat(CatFrames::keyerSpeed(segment.wpm));
+            currentWpm = segment.wpm;
+            speedMoved = true;
+        }
+
+        // Does a KS follow THIS text? Only then is the wait flag warranted. It stalls everything
+        // QK4 sends afterwards - polling included - until the message has been keyed, so a macro
+        // with no speed markers, which is all of them in practice, pays nothing for this.
+        const bool anotherSegment = (i + 1 < segments.size());
+        const bool ksFollows = anotherSegment ? (segments[i + 1].wpm != currentWpm) : speedMoved;
+
+        const QList<QByteArray> frames = CatFrames::cwText(segment.text, ksFollows);
+        for (const QByteArray &frame : frames) {
+            // No optimistic echo for KY: nothing in RadioState describes text in the keyer buffer,
+            // and feeding CW text to the CAT parser could only misfire.
+            m_connectionController->sendCAT(QString::fromLatin1(frame));
+        }
+    }
+
+    // Put the operator's speed back. The markers are documented as changing speed WITHIN a text,
+    // so leaving the radio faster than it was found would be a side effect nobody asked for. Only
+    // when something actually moved - otherwise this is a command for nothing.
+    if (speedMoved && baseWpm > 0) {
+        applyCat(CatFrames::keyerSpeed(baseWpm));
+    }
 }
 
 void TciController::applyCat(const QByteArray &frame) {

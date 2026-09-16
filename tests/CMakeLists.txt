@@ -134,6 +134,7 @@ add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
 add_executable(test_tciaudiobridge test_tciaudiobridge.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudiobridge.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
@@ -149,6 +150,7 @@ add_test(NAME TciAudioBridgeTests COMMAND test_tciaudiobridge)
 # isolation, CAT sets and the read-only queries. The transmit path is a separate target below.
 add_executable(test_tciserver test_tciserver.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
@@ -164,6 +166,7 @@ add_test(NAME TciServerTests COMMAND test_tciserver)
 # the socket client in tcitestclient.h.
 add_executable(test_tciservertransmit test_tciservertransmit.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
@@ -179,6 +182,7 @@ add_test(NAME TciServerTransmitTests COMMAND test_tciservertransmit)
 # 800-line limit in CONVENTIONS.md rule 7.
 add_executable(test_tciqueries test_tciqueries.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
@@ -194,6 +198,7 @@ add_test(NAME TciQueriesTests COMMAND test_tciqueries)
 # to stay under the 800-line limit in CONVENTIONS.md rule 7.
 add_executable(test_tciclients test_tciclients.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
@@ -208,6 +213,7 @@ add_test(NAME TciClientsTests COMMAND test_tciclients)
 # telemetry an --audit sweep cannot see because none of it is ever a reply to a query.
 add_executable(test_tcisensors test_tcisensors.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
@@ -299,6 +305,31 @@ add_executable(test_protocol test_protocol.cpp
 target_include_directories(test_protocol PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_protocol Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME ProtocolTests COMMAND test_protocol)
+
+# CW by CAT: the TCI macro grammar (speed markers, prosign brackets, escaped separators) and the
+# KY/KS commands it becomes. One target because the interesting cases are at the seam, where TCI
+# and the K4 use the same characters for different things.
+add_executable(test_cwmacro test_cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/catframes.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/datacontrolstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/frequencyvfostate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/levelsstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/modefilterstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/powerstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/processingstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/qskcontrolstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/rxtxmeterstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/spectrumdisplaystate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
+)
+target_include_directories(test_cwmacro PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_cwmacro Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME CwMacroTests COMMAND test_cwmacro)
 
 # CatServer command handler tests
 add_executable(test_catserver test_catserver.cpp

@@ -385,6 +385,23 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             } else {
                 sendTo(clientId, message(name, QString::number(SUB_RECEIVER), boolText(held)));
             }
+        } else if (name == QLatin1String("cw_macros")) {
+            // Args from index 1 are REJOINED with the comma that split them. TCI escapes its own
+            // separators (',' travels as '~'), so a well-behaved client sends one argument - but a
+            // client that forgets would otherwise have its message silently truncated at the first
+            // comma, and half an exchange going out is worse than none.
+            const QString text = command.args.mid(1).join(QLatin1Char(','));
+            const QVector<CwMacroSegment> segments = CwMacro::parse(text, m_snapshot.cwKeyerSpeedWpm);
+            if (segments.isEmpty()) {
+                continue; // nothing keyable in it
+            }
+            qCInfo(netTci) << "client" << clientId << "CW:" << text << "in" << segments.size() << "speed segment(s)";
+            emit cwMacroRequested(segments);
+            // No echo. The spec defines no confirmation for CW_MACROS, and the radio's own keying
+            // is the acknowledgement.
+        } else if (name == QLatin1String("cw_macros_stop")) {
+            qCInfo(netTci) << "client" << clientId << "asked to stop CW";
+            emit cwAbortRequested();
         } else if (name == QLatin1String("split_enable")) {
             int receiver = MAIN_RECEIVER;
             bool wanted = false;

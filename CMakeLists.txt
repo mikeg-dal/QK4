@@ -119,6 +119,7 @@ set(SOURCES
     src/network/dxclusterclient.cpp
     src/network/catserver.cpp
     src/network/catframes.cpp
+    src/network/cwmacro.cpp
     src/network/catpushbroadcaster.cpp
     src/network/k4discovery.cpp
     src/network/websocketframe.cpp

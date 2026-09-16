@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "network/tciclientinfo.h"
+#include "network/cwmacro.h"
 #include "network/tciprotocol.h"
 #include "network/tciradiostate.h"
 
@@ -118,6 +119,14 @@ signals:
     void setFilterBandRequested(int receiver, int lowHz, int highHz);
     void setNoiseBlankerParamRequested(int level, int filterWidth);
     void setVfoLockRequested(int receiver, bool locked);
+
+    // A client asked for CW text, already broken into speed-homogeneous runs. Segments rather than
+    // raw text because resolving TCI's > and < markers is TCI grammar, and the > that survives into
+    // a KY command does not change speed - it takes the radio off the air. See cwmacro.h.
+    void cwMacroRequested(const QVector<CwMacroSegment> &segments);
+
+    // A client asked to abandon a message in progress.
+    void cwAbortRequested();
 
 private slots:
     void onClientConnected(int clientId, const QString &peerEndpoint);

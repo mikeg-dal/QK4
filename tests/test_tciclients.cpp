@@ -103,12 +103,15 @@ private slots:
                 }
             });
 
-        client.send("cw_macros:0,TEST DE NY4I;");
+        // NOT cw_macros: that IS implemented now, which is what this reporting was built to
+        // discover. Using a real unimplemented command keeps the test about the reporting rule
+        // rather than about which commands happen to be missing this week.
+        client.send("cw_msg:0,DE,NY4I,K;");
         QTRY_COMPARE(infoCount, 1);
 
         // Same command again, and a third time: still not processed, but not re-reported.
-        client.send("cw_macros:0,AGAIN;");
-        client.send("cw_macros:0,AND AGAIN;");
+        client.send("cw_msg:0,DE,NY4I,K;");
+        client.send("cw_msg:0,DE,NY4I,K;");
         QTest::qWait(150);
         QCOMPARE(infoCount, 1);
 
