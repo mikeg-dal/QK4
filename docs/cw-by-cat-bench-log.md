@@ -248,9 +248,29 @@ support.
 all. A macro with no speed markers — which is every macro QLog sends — carries no `KYW` and none of
 this applies.
 
+## 7. The 60-character build, through QK4 and TCI
+
+Run with `tcitester.py --cw`, so the whole path is exercised: TCI → QK4 → CAT → radio.
+
+| Sent | On the wire | Result |
+|---|---|---|
+| `TEST DE NY4I` | `KY TEST DE NY4I;` | one command, unpadded, no `KS`. Keyed correctly |
+| 55-character CQ | `KY CQ CQ CQ DE NY4I ... K;` | **one** command — three on the old 22-character build |
+| `cw_macros_stop` after 3 s | `KY <0x04>;RX;` | **"the abort happened mid message"** |
+
+The abort is the last command in the implemented set to be confirmed, and it had never been sent to
+a K4 before — only to a K3, by TR4W, whose bytes we copied.
+
+Two supporting observations from the same runs:
+
+- The TCI client received `trx:0,true;` / `trx:0,false;` alternating during keying, which is QK4
+  broadcasting the QSK transmit cycle, and a final `trx:0,false;` immediately after the abort. So
+  the radio left transmit cleanly rather than being cut off mid-carrier.
+- `KY TEST DE NY4I;` is 16 characters where the old build sent `KY TEST DE NY4I` plus six spaces of
+  pad. Nothing is padded any more.
+
 ## Still untested
 
-- `cw_macros_stop` — the abort (`KY<0x04>;RX;`) has not been sent to the radio.
 - A message long enough to exceed whatever the buffer really holds. 68 characters did not reach it,
   so the ceiling is still unknown.
 - `KY` while the radio is NOT in CW mode. The manual calls it "CW/DATA Message Text"; QK4 does not

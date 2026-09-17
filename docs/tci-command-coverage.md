@@ -289,7 +289,7 @@ QK4 to the radio; see §12.7 for what the bench confirmed.
 | Spec | Purpose | QK4 |
 |---|---|---|
 | `CW_MACROS:trx,text` | Send arbitrary CW text | ✅ |
-| `CW_MACROS_STOP` | Abort transmission | ✅ |
+| `CW_MACROS_STOP` | Abort transmission | ✅ confirmed on air — cuts mid-message |
 | `CW_MACROS_SPEED` | Speed | ✅ reported and settable (`KS`) |
 | `CW_MSG:trx,prefix,callsign,suffix` | Structured message with editable callsign | ❌ by decision, §5.3 |
 | `CW_MSG:text` | Correct a callsign mid-transmission | ❌ by decision, §5.3 |
