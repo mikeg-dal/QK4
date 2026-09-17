@@ -291,6 +291,41 @@ declined to contradict that reasoning, which is weak evidence but is the only ev
 
 ---
 
+## 6a. Identifying the server — and the trap in `protocol:`
+
+A client that gates behaviour on which server it is talking to needs the handshake. QK4's, captured
+verbatim from a live connect:
+
+```
+device:QK4;
+protocol:ExpertSDR3,1.5;
+receive_only:false;
+trx_count:2;
+channels_count:2;
+vfo_limits:100000,54000000;
+if_limits:-48000,48000;
+ready;                        (76 commands in the burst overall)
+```
+
+**Do not identify QK4 by `protocol:`.** It says `ExpertSDR3,1.5` — deliberately, and it is not
+going to change: WSJT-X matches on that string and a different one makes it halve transmit
+amplitude (`tciserver_internal.h:20`). So `protocol:` identifies the dialect QK4 speaks, not the
+program. Match on it and you will both misidentify QK4 as ExpertSDR3 *and* misidentify a real
+ExpertSDR3 as whatever you decided `ExpertSDR3,1.5` meant.
+
+**`device:` is the discriminator.** `device:QK4;` — one token, no version.
+
+**There is no version in the handshake**, which matters for a client gating on a *capability* rather
+than a program. QK4 has a version (`QK4_VERSION`, set by CI) but does not put it on the wire, so a
+client cannot currently distinguish a QK4 that supports something from an older one that does not.
+Matching the `QK4` prefix is the forward-compatible choice: if a version is ever appended, a prefix
+match keeps working where an equality match breaks.
+
+**Unknown, and stated as unknown:** what ExpertSDR2 and Thetis put in these fields. QK4's
+`protocol:` string was chosen to satisfy WSJT-X's expectation of ExpertSDR3, which *implies* the
+real thing sends something of that shape — but that is inference from one client's behaviour, not
+something anyone here has seen on a wire.
+
 ## 7. Commands worth supporting, in the order they earn their place
 
 | TCI | What it does | Notes |
