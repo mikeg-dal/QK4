@@ -256,12 +256,37 @@ private slots:
         QTRY_VERIFY(txAudio.count() >= 1);
         const int acceptedWhileOwning = txAudio.count();
 
+        // TX_CHRONO is running while the client owns PTT - that is how the server ASKS for audio.
+        // Count what has arrived so the check below is about what comes NEXT.
+        // BOUNDED. The chrono clock emits a frame every ~21 ms while the client owns PTT, so an
+        // unbounded drain here never returns.
+        int chronoBefore = 0;
+        for (int i = 0; i < 20 && client.next(m, 100); ++i) {
+            if (m.opcode == WebSocketFrame::OpBinary) {
+                ++chronoBefore;
+            }
+        }
+        QVERIFY2(chronoBefore > 0, "the chrono clock was not running while the client held PTT");
+
         server.releaseLocalPtt();
 
         // After the local unkey the same client's audio is ignored.
         client.sendBinary(txAudioFrame());
         QTest::qWait(200);
         QCOMPARE(txAudio.count(), acceptedWhileOwning);
+
+        // AND THE CHRONO CLOCK HAS STOPPED. Ignoring the audio is only half of it: a server that
+        // kept asking would have the client still filling a pipe nothing reads, and WSJT-X answers
+        // one block per request, so it would go on transmitting into the void.
+        // Bounded the same way, though this one should drain immediately: with the clock stopped
+        // there is nothing left to read and next() simply times out.
+        int chronoAfter = 0;
+        for (int i = 0; i < 10 && client.next(m, 150); ++i) {
+            if (m.opcode == WebSocketFrame::OpBinary) {
+                ++chronoAfter;
+            }
+        }
+        QCOMPARE(chronoAfter, 0);
     }
 
     void aLocalUnkeyWithNobodyKeyedSaysNothing() {
