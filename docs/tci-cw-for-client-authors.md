@@ -73,6 +73,34 @@ becomes `;`, which cannot appear inside a CAT command and is then stripped: `A*B
 `>` raises the sending speed by 5 WPM, `<` lowers it, **cumulatively**, relative to the radio's
 current keyer speed. `>TU >599` means the second run is 10 WPM above where it started.
 
+### 2.2a Using the speed markers deliberately
+
+All measured against QK4 with the radio at 20 WPM.
+
+**The step is a fixed 5 WPM.** `kSpeedStepWpm = 5` in `cwmacro.h`, straight from the spec
+("The speed step is 5 wpm"). Not a percentage, and not the K4's own KEYER SPEED step setting. A
+client can ask for "one step", never for a particular WPM — and since this is one server's
+reading of the spec, another server could size it differently.
+
+**Markers accumulate, and reverse.** `A<B>C` from 20 gave
+`KYWA; KS015; KYWB; KS020; KY C;` — A at 20, B at 15, C back at 20. Note the last command is a
+plain `KY `: the macro ended where it started, so nothing follows it and no wait flag is needed.
+
+**QK4 restores the speed, the radio does not.** `A<B` ended at 15 and produced a trailing
+`KS020;`. That is the server putting the operator's keyer back, because the markers are documented
+as changing speed WITHIN a text. It is QK4's behaviour, not the protocol's — a client should not
+assume another server does it.
+
+**The speed changes are broadcast.** During the macro the client received `cw_keyer_speed:15;`
+and `cw_macros_speed:15;`, then the same pair at 20 on restore. A client tracking the radio's
+keyer speed will see the excursion, not just the endpoints.
+
+**But `cw_macros_speed` is READ-ONLY on QK4 today.** Sending `cw_macros_speed:35;` was answered
+`cw_macros_speed:20;` — the current value, the 35 ignored. So on QK4 the markers are currently the
+*only* way a TCI client can change sending speed. A client whose speed increment is configurable
+and not 5 cannot express it over TCI at all: not by marker, because the step is fixed, and not by
+command, because the command does not set. Worth knowing before designing around either.
+
 ### 2.3 Prosigns — send `|XX|`, never a single-character token
 
 Letters between vertical bars are run together: `TEXT |SK| TEXT`.
