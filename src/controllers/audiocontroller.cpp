@@ -48,7 +48,13 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
             m_audioEngine->enqueueAudio(pcmData);
             // Fan-out for TCI listeners. Deliberately after enqueueAudio so the speaker path is
             // never delayed by a consumer, and deliberately not downstream of it so a listener does
-            // not inherit the jitter buffer's drop-oldest policy. Free when nobody is connected.
+            // not inherit the jitter buffer's drop-oldest policy.
+            //
+            // NOT free when nobody is connected, which this comment used to claim. The signal is
+            // emitted for every received packet whatever the TCI server is doing, so a queued
+            // cross-thread event is posted to TciAudioBridge::onRxAudio, which then returns early.
+            // Small, but paid by everyone including people who never enable TCI. Connecting this in
+            // TciController::start and disconnecting it in stop would remove it.
             emit rxAudioAvailable(pcmData);
         }
     });
