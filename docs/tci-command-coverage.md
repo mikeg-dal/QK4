@@ -27,14 +27,15 @@ reply alone, which is why column 3 exists.
 | Unidirectional control (4.3) | 21 | 8 | Audio stream config + start/stop |
 | Notification (4.4) | 11 | 5 | Sensors implemented — §7.2 |
 | New in 2.0 (4.5) | 2 | 1 | `RX_CHANNEL_SENSORS` done; `VFO_LOCK` absent |
-| CW (3.2) | 9 | 1 | Speed only. **The largest gap — see §5** |
+| CW (3.2) | 9 | 3 | `CW_MACROS`, `CW_MACROS_STOP`, speed. **Verified on air — see §5** |
 
 A fourth defect — **no transmit-status message was ever sent** — was found later with TR4W as the
 client and is covered in §11, along with an audit of everything a server must send unprompted.
 
 **Headline:** QK4 is complete for a *digital-mode* client (WSJT-X works end to end — receive,
-decode, transmit, and a full FT8 QSO), and now reports **two receivers** with independent mode,
-filter, AGC, RIT, volume and S-meter. It is still not usable by a **CW** client.
+decode, transmit, and a full FT8 QSO), reports **two receivers** with independent mode, filter,
+AGC, RIT, volume and S-meter, and now **keys CW** for a logger — QLog sends its macros through
+QK4 to the radio and they key correctly, chunking and prosigns included (§5, §12.7).
 
 **Everything below the protocol tables has been verified against a live K4**, not just unit-tested
 — see §12 for what the radio actually confirmed.
@@ -280,25 +281,93 @@ protocol's defined response.
 
 ---
 
-## 5. CW — the largest gap, and the case for CAT passthrough
+## 5. CW — implemented for the commands a logger uses
 
-**QK4 implements none of the TCI CW command set.** Verified: no `KY`, no CW-text path, nothing
-matching `cwText`/`sendCW`/`cwMessage` anywhere in `src/`.
+**`CW_MACROS` and `CW_MACROS_STOP` are implemented and verified on air.** QLog drives them through
+QK4 to the radio; see §12.7 for what the bench confirmed.
 
 | Spec | Purpose | QK4 |
 |---|---|---|
-| `CW_MACROS:trx,text` | Send arbitrary CW text | ❌ |
-| `CW_MSG:trx,prefix,callsign,suffix` | Structured message with editable callsign | ❌ |
-| `CW_MSG:text` | Correct a callsign mid-transmission | ❌ |
+| `CW_MACROS:trx,text` | Send arbitrary CW text | ✅ |
+| `CW_MACROS_STOP` | Abort transmission | ✅ |
+| `CW_MACROS_SPEED` | Speed | ✅ reported and settable (`KS`) |
+| `CW_MSG:trx,prefix,callsign,suffix` | Structured message with editable callsign | ❌ by decision, §5.3 |
+| `CW_MSG:text` | Correct a callsign mid-transmission | ❌ by decision, §5.3 |
 | `CW_TERMINAL:bool` | Stay in TX between macros | ❌ |
-| `CW_MACROS_STOP` | Abort transmission | ❌ |
 | `CW_MACROS_EMPTY` | Server→client: queue drained | ❌ |
-| `CALLSIGN_SEND:call` | Server→client: final callsign as sent | ❌ |
-| `CW_MACROS_SPEED` / `_UP` / `_DOWN` / `_DELAY` | Speed and timing | ❌ (builder exists: `keyerSpeed`) |
-| `KEYER:trx,state,ms` | Straight-key state with element timing | ❌ |
+| `CALLSIGN_SEND:call` | Server→client: final callsign as sent | ❌ by decision, §5.3 |
+| `CW_MACROS_SPEED_UP` / `_DOWN` / `_DELAY` | Speed stepping and timing | ❌ |
+| `KEYER:trx,state,ms` | Straight-key state with element timing | ❌ by decision, §5.3 |
 
-The K4 sends CW by CAT with its **`KY` command**. QK4 has no builder for it — `CatFrames` has 24
-builders and CW text is not among them. `keyerSpeed` (`KS`) is the only CW-adjacent one.
+### 5.0 What a real client actually sends
+
+Captured from QLog on the bench, once QK4 started logging commands it does not process:
+
+```
+cw_macros:0,CQ CQ CQ DE NY4I NY4I NY4I K
+cw_macros:0,QRZ?
+cw_macros:0,DE NY4I GE OM TNX FER CALL UR RST 599 599 NAME TOM TOM QTH CLEARWATER ...
+```
+
+Six `cw_macros` and **nothing else** — no `trx` to key first, no `cw_msg`, no `keyer`,
+no `cw_terminal`. The server is expected to do the whole job: key, send, unkey. That single
+observation is what set the scope of this section.
+
+Note the name is misleading: `CW_MACROS` does **not** invoke a stored macro on the radio. It
+carries the already-expanded text. The macro is the logger's concept, resolved before it reaches
+the wire.
+
+### 5.1 The character collisions — the reason this is not a passthrough
+
+TCI's macro grammar and the K4's `KY` command use the same characters for different things, and two
+of the K4's meanings are destructive:
+
+| Char | TCI means | K4 `KY` means |
+|---|---|---|
+| `>` `<` | raise / lower speed by 5 WPM | **`<` enters TX TEST mode** until `>` returns to TX NORM |
+| `\|` | prosign bracket, `\|SK\|` | **terminates TX** in FSK/PSK |
+| `*` | escaped `;` (TCI reserves `:` `,` `;` and carries them as `^` `~` `*`) | **the SK prosign** |
+| `@` | — | **terminates the CW message**, truncating it |
+
+Forwarding TCI macro text into `KY` unprocessed would take the transmitter off the air on any
+message containing a speed marker. All of it is consumed or stripped.
+
+`*` is the trap: it means opposite things at the two ends. Unescaping (`*`→`;`) MUST happen before
+prosign translation (`|SK|`→`*`), or a genuine SK would become a semicolon and truncate the CAT
+command carrying it. Pinned by `tests/test_cwmacro.cpp`.
+
+### 5.2 How it is built
+
+Two units, keeping the rule the design doc states — *the TCI layer never spells a K4 command*:
+
+- **`src/network/cwmacro.{h,cpp}`** knows TCI's grammar. Undoes the escaping, resolves `>` and `<`
+  into speed-homogeneous segments, leaves prosigns in `|XX|` form.
+- **`CatFrames::cwText()`** knows the K4. Spells the prosigns from the manual's table
+  (`(`=KN, `+`=AR, `=`=BT, `%`=AS, `*`=SK, `!`=VE), strips what the radio would act on, chunks,
+  and frames as `KY*[text];`.
+
+**Chunking**: 22 characters, splitting on a word boundary, carrying the space to the **start** of
+the next chunk — the radio trims trailing spaces, so a chunk ending on a real word gap would lose
+it and key `NY4I NY4I` as `NY4INY4I`. The manual allows 60; 22 is headroom, because a short `KY`
+following a keyer abort can be swallowed, and the Elecraft drivers that have met this on hardware
+settle on 22 with the remainder padded.
+
+**`KYW`** (the wait flag) only where a `KS` follows, which is the use the manual names. It stalls
+every later command QK4 sends — polling included — until the message has been keyed, so a macro
+with no speed markers pays nothing for it. Speed is restored afterwards only if the macro moved it.
+
+**`CatFrames::keyerSpeed` clamps to 8..100**, the documented `KS` range. It was unreachable with
+bad input before this, but `>` arithmetic has no upper bound of its own.
+
+**Layer 2: an explicit CAT passthrough — STILL DEFERRED TO PHASE 2.** For K4 features with no TCI
+equivalent at all (§10.2). Held back because it is the one change that hands an external program
+unmediated control of the radio. When built it should be *deliberate*, not a default-forward:
+
+- **Do not** copy CatServer's fall-through. On a CAT server the client is *already* speaking K4 and
+  a raw forward is honest. A TCI client is speaking TCI; forwarding an unrecognised TCI command
+  name as a K4 string would forward garbage.
+- **Do** expose it under a distinct command name, and require the client to spell a real K4 command.
+- Gate it behind a setting, default **off**.
 
 ### 5.1 Why passthrough is the right shape here
 
@@ -344,6 +413,10 @@ the mid-flight callsign-correction semantics over a `KY` buffer is likely to pro
 "drunken sailor" timing the spec describes trying to avoid. **Recommendation: implement
 `CW_MACROS` and the speed commands; leave `CW_MSG`, `KEYER` and `CALLSIGN_SEND` unimplemented**
 and document why. Partial CW support that keys correctly beats full coverage that stutters.
+
+**This held.** QLog asked for none of them, and the implemented subset keys a full CQ and exchange
+correctly. If a client does want them it now says so: an unimplemented command is reported in
+QK4's log rather than dropped in silence (§5.0).
 
 ---
 
@@ -484,8 +557,7 @@ which is what makes the radio-touching items benchable at all.
 
 ### Next
 
-1. **`CW_MACROS` + a `CatFrames::cwText`** (§5.2 layer 1) — the largest *capability* gap, and the
-   one that makes QK4 usable to a CW client at all. Speed is already reported.
+1. ~~**`CW_MACROS` + a `CatFrames::cwText`**~~ — done and verified on air (§5, §12.7).
 2. **The SETs still missing a builder** — `mute`, `sql_enable`/`sql_level`, `lock`,
    `rx_anf_enable`, `rx_apf_enable`, `rx_nf_enable`. Each needs a `CatFrames` builder in the
    K4 set form, which is where the last three bugs lived; bench each with `tcitester.py`.
@@ -873,7 +945,48 @@ only the **width** survives a round trip, so a correct result looked wrong. Reco
 measurement sharing a bug with the thing it measures is the failure mode this whole section exists
 to guard against.
 
-### 12.7 Still unverified
+### 12.7 CW, confirmed on the radio
+
+**Raw evidence: [cw-by-cat-bench-log.md](cw-by-cat-bench-log.md)** — the commands, the wire traces
+and the full 36-second transmit timeline, kept verbatim. What follows is the summary.
+
+Every claim in §5 was checked on air, not just unit-tested. QLog drove the TCI path; `k4kytest.py`
+(utilities repo) drove the radio directly on port 9200, with no QK4 or TCI in between, to separate
+"the radio does this" from "QK4 does this".
+
+| What | Result |
+|---|---|
+| `cw_macros` from QLog, plain text | Keys correctly. QLog sends ONE command; QK4 does the chunking |
+| `>TU >599 004 \|SK\|` | `KS026` → `KYW TU` → `KS031` → `KYW 599 004 *` → `KS021`. Speed stepped audibly, SK clean, speed restored |
+| `\|SK\|` → `*` | Keyed as the SK prosign, not as an asterisk |
+| 28-char macro, 2 chunks | No run-together at the seam — the leading-space trick works |
+| 60 characters in one `KY` | Keyed in full |
+| 68 characters in one `KY` | Keyed in full — 8 PAST the documented limit. Undefined behaviour that happens to work on this firmware; not something to build on |
+| 4 chunks back-to-back, no `KYW` | **Keyed as one continuous message, no interruption, nothing dropped** |
+
+**The last row is the one that decided a design question.** The worry was that consecutive `KY`
+commands might overflow the radio's buffer and silently drop text — the `KY;` → `KY1;` (buffer
+full) query exists precisely because that is possible — and the proposed guard was `KYW` on every
+chunk but the last, making the sends self-throttling. The radio settles it: four 22-character
+commands sent back-to-back with no flag keyed seamlessly. So `KYW` stays reserved for the case the
+manual names, a following `KS`, and ordinary macros pay nothing for it. This is also what TR4W does,
+which is the corroboration rather than the reason.
+
+The timeline supplied a second argument against the guard that nobody had thought of. That message
+**transmitted for 35.9 seconds**. `KYW` delays the radio's processing of every following host
+command until the current one has been keyed, so the proposed throttle would have blocked QK4's
+polling, meter reads and any operator-triggered CAT for the whole 36 seconds — a long blackout
+bought to prevent a failure the radio had just demonstrated it does not have.
+
+Also visible in that run, and worth knowing before it is mistaken for a defect: `TQ` toggles
+between 0 and 1 around fourteen times during the message, roughly 110-130 ms each. That is QSK
+dropping to receive between words, not the message breaking up.
+
+**22 characters is kept**, though the radio clearly tolerates far more. Nothing is gained by
+raising it: four chunks already key as one unbroken message, so a larger chunk would fix a problem
+that does not exist, at the cost of moving away from the one value proven on Elecraft hardware.
+
+### 12.8 Still unverified
 
 - **The report-only group** — `mute`, `sql_enable`, `sql_level`, `lock`, `rx_anf_enable`,
   `rx_apf_enable`, `rx_nf_enable`. They answer but cannot be set, because no `CatFrames` builder
@@ -881,7 +994,7 @@ to guard against.
 - **SETs addressed to the sub receiver.** Refused by design: the K4's sub forms are `$`-suffixed
   and have no builders yet.
 
-### 12.8 How to repeat it
+### 12.9 How to repeat it
 
 Start QK4 with the TCI server enabled, connect the radio, then, from
 [ny4i/utilities](https://github.com/ny4i/utilities):
