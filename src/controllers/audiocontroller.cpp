@@ -171,6 +171,22 @@ void AudioController::setTxSource(TxSource source) {
     m_audioEngine->setTxSource(static_cast<AudioEngine::TxSource>(source));
 }
 
+void AudioController::setTxSourceAfterPtt(TxSource source) {
+    if (!m_audioEngine)
+        return;
+    // Queued, and that is the whole point of this method existing next to setTxSource().
+    //
+    // Qt delivers queued calls to one thread in posting order, so this lands after the
+    // setPttActive() posted immediately before it. Writing the source directly on an unkey instead
+    // opened a window - one audio block wide - in which the audio thread saw PTT still asserted
+    // and the source already back to Microphone, and duly encoded the room and sent it while the
+    // radio was still transmitting the TCI transmission.
+    QMetaObject::invokeMethod(
+        m_audioEngine,
+        [engine = m_audioEngine, source]() { engine->setTxSource(static_cast<AudioEngine::TxSource>(source)); },
+        Qt::QueuedConnection);
+}
+
 void AudioController::feedTciTxAudio(const QByteArray &f32Mono48k) {
     if (!m_audioEngine)
         return;

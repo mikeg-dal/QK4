@@ -47,6 +47,15 @@ public:
     enum class TxSource { Microphone = 0, Tci = 1 };
     void setTxSource(TxSource source);
 
+    // The source to hand the transmitter back to once the PTT change queued just before this one
+    // has taken effect. Queued behind it, where setTxSource() lands immediately.
+    //
+    // WHY BOTH EXIST, and why a caller cannot just pick one: the two edges need opposite ordering.
+    // Keying needs the source in place BEFORE the PTT, so setTxSource() is direct. Unkeying needs
+    // it changed AFTER, or the microphone is reopened onto a transmitter the radio has not
+    // released yet.
+    void setTxSourceAfterPtt(TxSource source);
+
     // One block of TCI transmit audio, 48 kHz mono Float32. Ignored unless the source is Tci.
     void feedTciTxAudio(const QByteArray &f32Mono48k);
     bool isPttActive() const;

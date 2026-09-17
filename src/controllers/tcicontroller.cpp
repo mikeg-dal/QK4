@@ -276,7 +276,9 @@ void TciController::wireTransmit() {
     // TX. Order matters on both edges and is the reason these are not one connection:
     //  - keying:   select the TCI source BEFORE asserting PTT, or the first frames out are the
     //              microphone picking up the room.
-    //  - unkeying: release PTT first, then hand the transmitter back to the microphone.
+    //  - unkeying: release PTT first, then hand the transmitter back to the microphone - and the
+    //              handback has to reach the audio thread AFTER the release, not merely be asked
+    //              for afterwards. setTxSourceAfterPtt is queued behind the PTT for that reason.
     if (m_audioController) {
         connect(m_server, &TciServer::pttRequested, this, [this](bool active) {
             // Guarded: setPttActive emits pttActiveChanged, and the handler below would otherwise
@@ -287,7 +289,7 @@ void TciController::wireTransmit() {
                 m_audioController->setPttActive(true);
             } else {
                 m_audioController->setPttActive(false);
-                m_audioController->setTxSource(AudioController::TxSource::Microphone);
+                m_audioController->setTxSourceAfterPtt(AudioController::TxSource::Microphone);
             }
             m_drivingPtt = false;
             emit transmittingChanged(active);
