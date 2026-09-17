@@ -124,6 +124,26 @@ transmission is not a rendering problem, and nothing anywhere reports it.
 one of two traps: `*` is TCI's escape for `;` and will be decoded then stripped, and `<` is a speed
 marker (§2.2) that the server consumes. Neither reaches the radio as a prosign.
 
+#### A literal `<` or `>` is not representable either
+
+Three ways of asking, all measured:
+
+| Sent | Reached the radio as | Reading |
+|---|---|---|
+| `A>B` | `KYWA;` `KS025;` `KYWB;` `KS020;` | `>` is symmetric with `<` — same split, same re-timing, upward |
+| `A<<B` | `KYWA;` `KS010;` `KYWB;` `KS020;` | doubling does **not** escape; two markers is simply −10 |
+| `A\|LT\|B` | `KY ALTB;` | no token spelling; unknown tokens key their letters |
+
+So there is no escape, no doubling convention, and no `|XX|` form. And even if one existed at the
+grammar layer, the builder strips `<` and `>` from `KY` text independently, because the K4 uses them
+for TX TEST mode — an escape would need adding in two places, not one.
+
+**Unlike the half space, nothing is actually lost.** `<` is not a CW character; on the K4 it is a
+mode control. There is no message an operator could legitimately want keyed that contains one. The
+right client behaviour is to treat `<` and `>` as grammar everywhere and never let operator-typed
+text carry them into a payload — which is a stricter rule than escaping would have been, and
+simpler.
+
 ### 2.4 The `^` collision: half space is not representable
 
 `^` is TCI's escape for `:` and QK4 decodes it **unconditionally, before any prosign handling**.
