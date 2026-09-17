@@ -736,12 +736,22 @@ const QString &lineEdit() {
 }
 
 const QString &checkBox() {
+    // THE INDICATOR IS DRAWN, NOT LEFT TO THE PLATFORM. Sizing it and nothing else leaves the
+    // unchecked box rendering near-black on these near-black dialogs - present, clickable and
+    // invisible. An operator reported being unable to find a checkbox that was under the cursor.
+    // Grey outline for off, amber fill for on, matching the accent used everywhere else.
     static const QString s = QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
-                                     "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                     "QCheckBox::indicator { width: %4px; height: %4px;"
+                                     "  border: 1px solid %5; border-radius: 3px;"
+                                     "  background-color: %6; }"
+                                     "QCheckBox::indicator:checked { background-color: %7;"
+                                     "  border-color: %7; }"
+                                     "QCheckBox::indicator:hover { border-color: %7; }")
                                  .arg(Colors::TextWhite)
                                  .arg(Dimensions::FontSizePopup)
                                  .arg(Dimensions::BorderRadiusLarge)
-                                 .arg(Dimensions::CheckboxSize);
+                                 .arg(Dimensions::CheckboxSize)
+                                 .arg(Colors::TextGray, Colors::DarkBackground, Colors::AccentAmber);
     return s;
 }
 
