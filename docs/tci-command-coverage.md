@@ -346,11 +346,15 @@ Two units, keeping the rule the design doc states — *the TCI layer never spell
   (`(`=KN, `+`=AR, `=`=BT, `%`=AS, `*`=SK, `!`=VE), strips what the radio would act on, chunks,
   and frames as `KY*[text];`.
 
-**Chunking**: 22 characters, splitting on a word boundary, carrying the space to the **start** of
-the next chunk — the radio trims trailing spaces, so a chunk ending on a real word gap would lose
-it and key `NY4I NY4I` as `NY4INY4I`. The manual allows 60; 22 is headroom, because a short `KY`
-following a keyer abort can be swallowed, and the Elecraft drivers that have met this on hardware
-settle on 22 with the remainder padded.
+**Chunking**: 60 characters — the manual's documented maximum, bench-confirmed — splitting on a
+word boundary and carrying the space to the **start** of the next chunk, because the radio trims
+trailing spaces and a chunk ending on a real word gap would lose it, keying `NY4I NY4I` as
+`NY4INY4I`. **Not padded.**
+
+An earlier version chunked at 22 and padded to 22, having read TR4W's `CWFrameRule(22, True)` as a
+maximum. Its 22 is a MINIMUM — padding short commands so they are not swallowed after the keyer
+abort TR4W sends before every message — and QK4 sends no such abort, so neither the length nor the
+padding ever applied here. Read as a maximum it made QK4 send five commands where two would do.
 
 **`KYW`** (the wait flag) only where a `KS` follows, which is the use the manual names. It stalls
 every later command QK4 sends — polling included — until the message has been keyed, so a macro
@@ -988,9 +992,15 @@ changed" — every `KS` was processed on arrival, so the whole message keyed at 
 set. It follows that the appealing simplification of always ending with a plain `KY ` is wrong: when
 a macro ends away from base, the restore is a following `KS` and would land early. See the bench log.
 
-**22 characters is kept**, though the radio clearly tolerates far more. Nothing is gained by
-raising it: four chunks already key as one unbroken message, so a larger chunk would fix a problem
-that does not exist, at the cost of moving away from the one value proven on Elecraft hardware.
+**The chunk length is 60 — the documented maximum — and unpadded.** It was 22 with padding, on the
+strength of TR4W's `CWFrameRule(22, True)`; that 22 is a MINIMUM guarding a keyer-abort flow QK4
+does not have, and taking it for a maximum made QK4 send five commands where two would do. Any
+value below 60 needs a reason and there is not one: the manual says "0 to 60 characters", 60 keyed
+in full here, and so did 68.
+
+QLog's 28-character CQ is now one command instead of two; its 99-character exchange two instead of
+five. If a macro sent immediately after `cw_macros_stop` is ever heard to vanish, padding short
+commands is the known remedy — that is the one flow where the swallow hazard could still exist.
 
 ### 12.8 Still unverified
 

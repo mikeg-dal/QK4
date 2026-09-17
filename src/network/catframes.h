@@ -38,7 +38,8 @@ QByteArray keyerSpeed(int wpm);
 //
 // A LIST, unlike every other builder here, because the K4 takes at most 60 characters per KY and a
 // contest exchange is routinely longer. Splitting is the K4's constraint, so it belongs with the
-// K4's command rather than in the caller.
+// K4's command rather than in the caller. Not padded: the padding other Elecraft drivers use
+// guards against a short KY following a keyer abort, which is a flow QK4 does not have.
 //
 // `wait` selects the KYW form on the LAST chunk, which delays the radio's processing of following
 // host commands until the message has been sent. Pass it when a KS follows, which is the use the

@@ -19,11 +19,21 @@ int k4ModeDigit(RadioState::Mode mode) {
 constexpr int kMinKeyerWpm = 8;
 constexpr int kMaxKeyerWpm = 100;
 
-// The manual allows 60 characters of KY text. 22 is deliberate headroom, not the limit: a short KY
-// following a keyer abort can be swallowed, and Elecraft drivers that have been through this on
-// real hardware settle on 22 with the remainder padded (TR4W's CWFrameRule(22, True)). Raising it
-// is one edit once somebody has proved the longer form on a bench.
-constexpr int kKyChunkChars = 22;
+// How much text one KY may carry: THE DOCUMENTED MAXIMUM, not a number chosen for comfort.
+// The manual says "0 to 60 characters", and the bench confirmed it - 60 keyed in full, and so did
+// 68, which is past the limit and therefore not something to rely on, but it shows 60 is a soft
+// boundary rather than a cliff. Any value below 60 would need a reason, and there is not one.
+//
+// THIS WAS 22, AND 22 WAS THE WRONG NUMBER FOR THE WRONG REASON. It came from TR4W's
+// CWFrameRule(22, True), whose 22 is not a maximum at all - it is a MINIMUM, padding short
+// commands so they are not swallowed when they follow the keyer abort TR4W sends before every
+// message. Read as a maximum it made QK4 send five commands where two would do. QK4 sends no such
+// abort, so neither the minimum nor the padding that enforced it applies here, and both are gone:
+// bench runs at 60 and 68 characters were unpadded and keyed correctly.
+//
+// If a macro sent immediately after cw_macros_stop is ever heard to vanish, padding short commands
+// is the known remedy - that is the one flow where the hazard could still exist.
+constexpr int kKyMaxChars = 60;
 
 // The K4 keys these as prosigns - single run-together characters. TCI writes a prosign as |XX|.
 struct KyProsign {
@@ -96,10 +106,10 @@ QString sanitiseForKy(const QString &text) {
 QStringList chunkForKy(const QString &text) {
     QStringList chunks;
     QString rest = text;
-    while (rest.size() > kKyChunkChars) {
-        int cut = rest.lastIndexOf(QLatin1Char(' '), kKyChunkChars - 1);
+    while (rest.size() > kKyMaxChars) {
+        int cut = rest.lastIndexOf(QLatin1Char(' '), kKyMaxChars - 1);
         if (cut <= 0) {
-            cut = kKyChunkChars; // one unbroken run longer than a chunk; split it hard
+            cut = kKyMaxChars; // one unbroken run longer than a chunk; split it hard
             chunks.append(rest.left(cut));
             rest = rest.mid(cut);
         } else {
@@ -186,17 +196,8 @@ QList<QByteArray> cwText(const QString &text, bool wait) {
     QList<QByteArray> frames;
     frames.reserve(chunks.size());
     for (int i = 0; i < chunks.size(); ++i) {
-        QString chunk = chunks[i];
+        const QString &chunk = chunks[i];
         const bool last = (i + 1 == chunks.size());
-        if (last) {
-            // Pad the final chunk out. A short KY can be swallowed when it follows a keyer abort,
-            // and the fill gives it enough runway to survive that window - the radio trims trailing
-            // spaces rather than keying them. Bench-derived on Elecraft hardware (TR4W's
-            // CWFrameRule(22, True)).
-            while (chunk.size() < kKyChunkChars) {
-                chunk.append(QLatin1Char(' '));
-            }
-        }
         // KY*[text]; - the third character is the flag: blank normally, 'W' to make the radio hold
         // off on following commands until this has been sent.
         const QChar flag = (last && wait) ? QLatin1Char('W') : QLatin1Char(' ');

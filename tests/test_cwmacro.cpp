@@ -136,13 +136,23 @@ private slots:
 
     // ------------------------------------------------------------------ K4 commands
 
-    void shortTextIsOneKyCommandPaddedOut() {
+    void shortTextIsOneKyCommandWithNoPadding() {
+        // NOT padded. The padding other Elecraft drivers apply guards a short KY following a keyer
+        // abort - a flow QK4 does not have - and bench runs at 60 and 68 characters were unpadded
+        // and keyed correctly.
         const QList<QByteArray> frames = CatFrames::cwText(QStringLiteral("QRZ?"), false);
         QCOMPARE(frames.size(), 1);
-        // KY, a blank flag, the text padded to the chunk length, then the terminator.
-        QVERIFY2(frames[0].startsWith("KY QRZ?"), frames[0].constData());
-        QVERIFY(frames[0].endsWith(";"));
-        QCOMPARE(frames[0].size(), 2 + 1 + 22 + 1);
+        QCOMPARE(frames[0], QByteArray("KY QRZ?;"));
+    }
+
+    void aSixtyCharacterMessageIsOneCommand() {
+        // Exactly the documented maximum, and exactly the text the bench keyed in a single KY.
+        // Reading TR4W's minimum-length 22 as a MAXIMUM used to split this into three.
+        const QString sixty = QStringLiteral("CQ TEST NY4I NY4I CQ TEST NY4I NY4I CQ TEST NY4I NY4I CQ TES");
+        QCOMPARE(sixty.size(), 60);
+        const QList<QByteArray> frames = CatFrames::cwText(sixty, false);
+        QCOMPARE(frames.size(), 1);
+        QCOMPARE(frames[0], QByteArray("KY ") + sixty.toUtf8() + ";");
     }
 
     void theWaitFlagIsOnlyUsedWhenAsked() {
@@ -153,7 +163,8 @@ private slots:
     }
 
     void longTextIsSplitOnWordBoundaries() {
-        const QString message = QStringLiteral("DE NY4I GE OM TNX FER CALL UR RST 599 599 NAME TOM");
+        const QString message =
+            QStringLiteral("DE NY4I GE OM TNX FER CALL UR RST 599 599 NAME TOM TOM QTH CLEARWATER CLEARWATER");
         const QList<QByteArray> frames = CatFrames::cwText(message, false);
         QVERIFY(frames.size() > 1);
 
@@ -177,10 +188,10 @@ private slots:
 
     void aSingleUnbrokenRunIsSplitAnyway() {
         // No space to break on, so the hard split has to happen or the command is over-length.
-        const QList<QByteArray> frames = CatFrames::cwText(QString(50, QLatin1Char('X')), false);
+        const QList<QByteArray> frames = CatFrames::cwText(QString(140, QLatin1Char('X')), false);
         QVERIFY(frames.size() >= 3);
         for (const QByteArray &f : frames) {
-            QVERIFY2(f.size() <= 2 + 1 + 22 + 1, f.constData());
+            QVERIFY2(f.size() <= 2 + 1 + 60 + 1, f.constData());
         }
     }
 
