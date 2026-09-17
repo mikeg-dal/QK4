@@ -227,6 +227,9 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     //  - unkeying: release PTT first, then hand the transmitter back to the microphone.
     if (m_audioController) {
         connect(m_server, &TciServer::pttRequested, this, [this](bool active) {
+            // Guarded: setPttActive emits pttActiveChanged, and the handler below would otherwise
+            // read this controller's own request as the operator taking the transmitter.
+            m_drivingPtt = true;
             if (active) {
                 m_audioController->setTxSource(AudioController::TxSource::Tci);
                 m_audioController->setPttActive(true);
@@ -234,6 +237,32 @@ TciController::TciController(AudioController *audioController, ConnectionControl
                 m_audioController->setPttActive(false);
                 m_audioController->setTxSource(AudioController::TxSource::Microphone);
             }
+            m_drivingPtt = false;
+            emit transmittingChanged(active);
+        });
+
+        // QK4 ITSELF KEYED OR UNKEYED - Esc, the PTT button, the HaliKey PTT line, the side panel,
+        // CatServer. All of them funnel through AudioController::setPttActive.
+        //
+        // Before this, none of them told the TCI side, so the server went on believing the client
+        // held the transmitter until the client's own transmit period ended - up to ~15 s for FT8.
+        // Pressing QK4's PTT inside that window sent the client's tones instead of the operator's
+        // microphone, because AudioEngine discards mic audio unless the source is Microphone.
+        //
+        // WHY TAKE OVER RATHER THAN REFUSE, for a local PRESS while a client holds PTT: the
+        // operator is at the radio and the client is not. Refusing would repeat the defect being
+        // fixed here in the other direction - the operator acts, nothing happens, and nothing
+        // anywhere says why. Taking over is also the only option that leaves the audio path
+        // matching what the operator can hear.
+        connect(m_audioController, &AudioController::pttActiveChanged, this, [this](bool active) {
+            if (m_drivingPtt) {
+                return; // this controller asked for it, not the operator
+            }
+            QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+            // Either way the microphone is the source now: on a release because transmit is over,
+            // on a press because it is the operator transmitting.
+            m_audioController->setTxSource(AudioController::TxSource::Microphone);
+            emit transmittingChanged(active);
         });
 
         // Queued: decoding lands on the TCI thread, the encode pipeline lives on the audio thread.
@@ -250,6 +279,17 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     // spelling lives (src/network/README.md), and a literal here would be a second place to get it
     // wrong. The TCI layer never spells a K4 command.
     if (m_connectionController) {
+        // LOSING THE RADIO MID-TRANSMIT is a local unkey too. The transmitter is not keyed any more
+        // whatever the server believes, so holding ownership would leave the next connection
+        // starting with a client still nominally in charge of a transmitter it cannot reach.
+        connect(m_connectionController, &ConnectionController::connectionStateChanged, this,
+                [this](TcpClient::ConnectionState state) {
+                    if (state == TcpClient::Disconnected) {
+                        QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+                        emit transmittingChanged(false);
+                    }
+                });
+
         connect(m_server, &TciServer::setFrequencyRequested, this, [this](int receiver, int channel, qint64 hz) {
             if (hz <= 0) {
                 return;

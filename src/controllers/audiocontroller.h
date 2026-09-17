@@ -76,6 +76,12 @@ public:
     void setMicGain(float gain); // 0.0 to 1.0
 
 signals:
+    // PTT changed by SOMEBODY - this says nothing about who. Every local unkey in QK4 (the Esc
+    // shortcut, the PTT button, the HaliKey PTT line, the side panel, CatServer) funnels through
+    // setPttActive, so one signal here reaches all of them; the TCI side needs to know because it
+    // otherwise goes on believing a client still holds the transmitter.
+    void pttActiveChanged(bool active);
+
     // Decoded K4 receive audio: 12 kHz stereo Float32, L = Main, R = Sub.
     //
     // WHY here and not downstream of AudioEngine::enqueueAudio: this is the raw per-receiver audio,

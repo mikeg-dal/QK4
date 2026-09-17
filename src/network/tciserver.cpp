@@ -142,6 +142,18 @@ int TciServer::clientCount() const {
     return m_socketServer->clientCount();
 }
 
+void TciServer::releaseLocalPtt() {
+    if (m_pttOwner == -1) {
+        return; // nobody was holding it; also the base case that stops a client unkey recursing
+    }
+    qCInfo(netTci) << "local unkey - releasing PTT held by client" << m_pttOwner;
+    stopChrono();
+    m_pttOwner = -1;
+    m_snapshot.transmitting = false;
+    // Every client tracks the transmitter, not just the one that was keying.
+    broadcast(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
+}
+
 void TciServer::onClientConnected(int clientId, const QString &peerEndpoint) {
     m_parsers.insert(clientId, TciProtocol::Parser());
 

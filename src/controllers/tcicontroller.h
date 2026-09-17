@@ -80,6 +80,10 @@ signals:
     void clientCountChanged(int count);
     void clientsChanged(const QVector<TciClientInfo> &clients);
 
+    // A TCI client keyed or unkeyed the transmitter, so the UI can follow it the way it already
+    // follows CatServer::pttRequested.
+    void transmittingChanged(bool transmitting);
+
 private:
     // Reads RadioState on the MAIN thread and pushes a whole snapshot across to the TCI thread.
     // RadioState is main-thread-only and CI-enforced with no locking on its getters, so the TCI
@@ -110,6 +114,11 @@ private:
     MenuController *m_menuController;
 
     // Main-thread only. See isListening()/clientCount().
+    // Set while THIS controller is driving PTT, so the pttActiveChanged that comes back is not
+    // mistaken for the operator acting. Without it a client's own key would be read as a local
+    // takeover and cancel itself immediately.
+    bool m_drivingPtt = false;
+
     bool m_listening = false;
     int m_clientCount = 0;
     QVector<TciClientInfo> m_clients;

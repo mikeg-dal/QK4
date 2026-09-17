@@ -414,6 +414,11 @@ void MainWindow::setupCatServer() {
     m_tciController =
         new TciController(m_audioController, m_connectionController, m_radioState, m_menuController, this);
 
+    // The PTT button follows a TCI client keying, exactly as it already follows CatServer above.
+    // Without it the transmitter can be live with the button dark.
+    connect(m_tciController, &TciController::transmittingChanged, this,
+            [this](bool transmitting) { m_bottomMenuBar->setPttActive(transmitting); });
+
     connect(RadioSettings::instance(), &RadioSettings::tciServerEnabledChanged, this, [this](bool enabled) {
         if (enabled) {
             m_tciController->start(RadioSettings::instance()->tciServerPort());

@@ -51,6 +51,18 @@ public:
     Q_INVOKABLE bool start(quint16 port = DEFAULT_PORT, bool loopbackOnly = true);
     Q_INVOKABLE void stop();
 
+    // Give up PTT ownership because QK4 ITSELF unkeyed - the Esc shortcut, the PTT button, the
+    // HaliKey line. Stops the chrono clock and tells every client the transmitter dropped.
+    //
+    // Deliberately does NOT emit pttRequested: the radio has already been unkeyed by whichever
+    // local path called this, and asking for it again would drive setPttActive a second time and
+    // come straight back here.
+    //
+    // A no-op when no client holds PTT, which is what keeps a client's own unkey from recursing:
+    // setPtt clears the owner before it emits, so by the time this is reached there is nothing to
+    // release.
+    Q_INVOKABLE void releaseLocalPtt();
+
     bool isListening() const;
     quint16 port() const;
     int clientCount() const;

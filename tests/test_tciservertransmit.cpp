@@ -13,6 +13,31 @@
 
 using namespace WebSocketFrame;
 
+namespace {
+// A minimal but well-formed TX_AUDIO frame. Built here rather than inline so a test about PTT
+// OWNERSHIP is not also a test of frame construction.
+QByteArray txAudioFrame(int pairCount = 8) {
+    const std::vector<float> samples(static_cast<size_t>(pairCount) * 2, 0.1f);
+    QByteArray frame;
+    auto put = [&frame](quint32 v) {
+        char le[4];
+        qToLittleEndian<quint32>(v, le);
+        frame.append(le, 4);
+    };
+    put(0);                                    // receiver
+    put(48000);                                // sample rate
+    put(3);                                    // format: float32
+    put(0);                                    // codec
+    put(0);                                    // crc
+    put(static_cast<quint32>(samples.size())); // length, in floats
+    put(TciAudioFrame::TypeTxAudio);           // type
+    put(2);                                    // channels
+    frame.append(32, '\0');                    // reserved
+    frame.append(reinterpret_cast<const char *>(samples.data()), static_cast<int>(samples.size() * sizeof(float)));
+    return frame;
+}
+} // namespace
+
 // The TCI server's transmit path: PTT ownership, TX_CHRONO pacing and TX audio admission.
 //
 // Split out of test_tciserver.cpp, which covers the protocol surface. These are the tests that
@@ -172,6 +197,89 @@ private slots:
 
         client.close();
         server.stop();
+    }
+
+    void aLocalUnkeyReleasesTheClientHoldingTheTransmitter() {
+        // THE DEFECT: every QK4-side unkey (Esc, the PTT button, the HaliKey PTT line, the side
+        // panel, CatServer) went through AudioController::setPttActive and told the TCI side
+        // nothing. The radio dropped to receive, but the server went on believing the client held
+        // the transmitter until its own transmit period ended - up to ~15 s for FT8. Keying QK4's
+        // PTT inside that window sent the client's tones instead of the operator's microphone.
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("trx:0,true;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("trx:0,true;"));
+
+        // QK4 unkeys locally. The radio is already back in receive by this point.
+        server.releaseLocalPtt();
+
+        // The client is told, rather than being left to discover it when its period ends. Skip the
+        // TX_CHRONO frames: the clock is running, so binary is interleaved with the text.
+        bool sawUnkey = false;
+        for (int i = 0; i < 12 && !sawUnkey; ++i) {
+            if (!client.next(m, 500)) {
+                break;
+            }
+            sawUnkey =
+                (m.opcode == WebSocketFrame::OpText && QString::fromUtf8(m.payload) == QStringLiteral("trx:0,false;"));
+        }
+        QVERIFY2(sawUnkey, "the client was never told the transmitter dropped");
+        QVERIFY2(!server.snapshot().transmitting, "the server still thinks it is transmitting");
+    }
+
+    void aLocalUnkeyStopsTheClientsAudioBeingAccepted() {
+        // Ownership is what gates TX audio: onBinaryMessageReceived drops a frame from anyone who
+        // is not the owner. So releasing ownership has to actually stop the audio, not just change
+        // what the server reports - otherwise the client's tones are still queued and go out the
+        // moment PTT is asserted again.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy txAudio(&server, &TciServer::txAudioReceived);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("trx:0,true;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+
+        // While it owns PTT its audio is taken.
+        client.sendBinary(txAudioFrame());
+        QTRY_VERIFY(txAudio.count() >= 1);
+        const int acceptedWhileOwning = txAudio.count();
+
+        server.releaseLocalPtt();
+
+        // After the local unkey the same client's audio is ignored.
+        client.sendBinary(txAudioFrame());
+        QTest::qWait(200);
+        QCOMPARE(txAudio.count(), acceptedWhileOwning);
+    }
+
+    void aLocalUnkeyWithNobodyKeyedSaysNothing() {
+        // The no-op case is what stops a CLIENT's own unkey recursing: setPtt clears the owner
+        // before it emits pttRequested, so by the time the controller's PTT handler reaches back
+        // into the server there is nothing left to release. If this broadcast anyway, every client
+        // unkey would produce a second, spurious trx:0,false.
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        server.releaseLocalPtt();
+
+        WebSocketDecoder::Message m;
+        QVERIFY2(!client.next(m, 300), "released PTT nobody was holding");
     }
 
     void aRadioStateUpdateStillDoesNotUnkeyTheOwningClient() {

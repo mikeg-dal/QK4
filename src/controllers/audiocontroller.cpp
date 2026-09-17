@@ -147,6 +147,10 @@ void AudioController::setPttActive(bool active) {
     // gates the encode pipeline, opens the mic on rising edge if needed, and
     // resets the txSequence counter + flushes the partial-frame tail.
     QMetaObject::invokeMethod(m_audioEngine, "setPttActive", Qt::QueuedConnection, Q_ARG(bool, active));
+
+    // Emitted AFTER the early return above, so a PTT-on that was refused for being disconnected
+    // does not announce a transmit that is not happening.
+    emit pttActiveChanged(active);
 }
 
 void AudioController::setTxSource(TxSource source) {
