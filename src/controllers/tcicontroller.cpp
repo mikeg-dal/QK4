@@ -724,6 +724,28 @@ TciController::~TciController() {
     // Rule 11: drop queued signals before partial destruction, then stop producers before consumers.
     disconnect(this);
 
+    // UNKEY FROM HERE, because the unkey the server is about to ask for cannot arrive.
+    //
+    // TciServer::stop releases a held PTT and emits pttRequested(false) - but that signal is
+    // queued to this controller on the main thread, and the disconnect above has just severed it.
+    // Below it is worse still: stop is called with a BlockingQueuedConnection, so the main thread
+    // is sitting inside that call and the queue it would be delivered to is never drained again.
+    // Either way, a client holding the transmitter when QK4 quit left the radio keyed with the
+    // audio path still gated to the TCI source.
+    //
+    // Done HERE, ahead of both teardown paths, because the no-thread path has the same hole: it
+    // deletes the server outright, and ~TciServer calls the same stop() into the same severed
+    // signal. It is also safe to unkey this early precisely BECAUSE disconnect has run - nothing
+    // can key again between here and the end of this destructor.
+    //
+    // Calling AudioController directly is fine from here: it lives on this thread, and both calls
+    // marshal to the audio thread themselves. setTxSourceAfterPtt, not setTxSource, for the same
+    // ordering reason as the unkey in wireTransmit.
+    if (m_audioController) {
+        m_audioController->setPttActive(false);
+        m_audioController->setTxSourceAfterPtt(AudioController::TxSource::Microphone);
+    }
+
     if (!m_tciThread) {
         delete m_bridge;
         delete m_server;
