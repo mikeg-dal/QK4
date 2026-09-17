@@ -432,37 +432,18 @@ void TciController::sendCwMacro(const QVector<CwMacroSegment> &segments) {
         return;
     }
 
+    // What to send is decided in CwMacro::plan, which is tested; this only carries it out.
     const int baseWpm = m_radioState ? m_radioState->keyerSpeed() : 0;
-    int currentWpm = baseWpm;
-    bool speedMoved = false;
 
-    for (int i = 0; i < segments.size(); ++i) {
-        const CwMacroSegment &segment = segments[i];
-        if (segment.wpm != currentWpm) {
-            applyCat(CatFrames::keyerSpeed(segment.wpm));
-            currentWpm = segment.wpm;
-            speedMoved = true;
+    for (const CwMacroStep &step : CwMacro::plan(segments, baseWpm)) {
+        if (step.setWpm >= 0) {
+            applyCat(CatFrames::keyerSpeed(step.setWpm));
         }
-
-        // Does a KS follow THIS text? Only then is the wait flag warranted. It stalls everything
-        // QK4 sends afterwards - polling included - until the message has been keyed, so a macro
-        // with no speed markers, which is all of them in practice, pays nothing for this.
-        const bool anotherSegment = (i + 1 < segments.size());
-        const bool ksFollows = anotherSegment ? (segments[i + 1].wpm != currentWpm) : speedMoved;
-
-        const QList<QByteArray> frames = CatFrames::cwText(segment.text, ksFollows);
-        for (const QByteArray &frame : frames) {
+        for (const QByteArray &frame : CatFrames::cwText(step.text, step.wait)) {
             // No optimistic echo for KY: nothing in RadioState describes text in the keyer buffer,
             // and feeding CW text to the CAT parser could only misfire.
             m_connectionController->sendCAT(QString::fromLatin1(frame));
         }
-    }
-
-    // Put the operator's speed back. The markers are documented as changing speed WITHIN a text,
-    // so leaving the radio faster than it was found would be a side effect nobody asked for. Only
-    // when something actually moved - otherwise this is a command for nothing.
-    if (speedMoved && baseWpm > 0) {
-        applyCat(CatFrames::keyerSpeed(baseWpm));
     }
 }
 

@@ -16,6 +16,13 @@ struct CwMacroSegment {
 };
 Q_DECLARE_METATYPE(CwMacroSegment)
 
+// One thing to do: optionally set the speed, then optionally key some text.
+struct CwMacroStep {
+    int setWpm = -1;   // emit a speed command first when >= 0
+    QString text;      // empty on a step that only restores the speed
+    bool wait = false; // hold the radio off following commands until this text has been sent
+};
+
 // The grammar of a TCI CW_MACROS payload (TCI 2.0, "CW macro").
 //
 // Three things are embedded in what looks like plain text, and ALL THREE MUST BE CONSUMED HERE
@@ -45,6 +52,15 @@ constexpr int kMaxWpm = 100;
 // Splits a CW_MACROS payload into speed-homogeneous segments, resolving > and < against baseWpm.
 // Returns empty for text that carries nothing to key.
 QVector<CwMacroSegment> parse(const QString &tciText, int baseWpm);
+
+// Turns segments into the ordered steps that actually go out, including putting the speed back at
+// the end.
+//
+// SEPARATE FROM THE SENDING, and tested, because the decisions here are subtle enough to have been
+// wrong once already: `wait` was set whenever the speed had moved AT ALL, so a macro that ended
+// back at its starting speed still stalled every later command for the length of the message -
+// protecting a speed command that was a no-op. Tracing found that; a test would have.
+QVector<CwMacroStep> plan(const QVector<CwMacroSegment> &segments, int baseWpm);
 
 // The escapes alone, without the speed parsing. Exposed for the tests and for any caller that has
 // a TCI text field rather than a macro.

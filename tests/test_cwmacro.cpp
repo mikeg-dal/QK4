@@ -77,6 +77,63 @@ private slots:
         QVERIFY(CwMacro::parse(QStringLiteral(">><<"), 25).isEmpty());
     }
 
+    // ------------------------------------------------------------------ the send plan
+
+    void aPlainMacroSetsNoSpeedAndWaitsForNothing() {
+        const auto steps = CwMacro::plan(CwMacro::parse(QStringLiteral("CQ DE NY4I K"), 20), 20);
+        QCOMPARE(steps.size(), 1);
+        QCOMPARE(steps[0].setWpm, -1);
+        QVERIFY2(!steps[0].wait, "nothing follows, so nothing to hold the radio off for");
+    }
+
+    void aRisingMacroEndsAwayFromBaseAndIsPutBack() {
+        // ">TU >599" from 21: 26, then 31, then back to 21.
+        const auto steps = CwMacro::plan(CwMacro::parse(QStringLiteral(">TU >599"), 21), 21);
+        QCOMPARE(steps.size(), 3);
+        QCOMPARE(steps[0].setWpm, 26);
+        QVERIFY(steps[0].wait); // a KS follows
+        QCOMPARE(steps[1].setWpm, 31);
+        QVERIFY(steps[1].wait); // the restore follows
+        QCOMPARE(steps[2].setWpm, 21);
+        QVERIFY2(steps[2].text.isEmpty(), "the restore carries no text");
+    }
+
+    void aMacroThatComesBackToBaseNeitherRestoresNorStalls() {
+        // REGRESSION. "TEST >FAST <AGAIN" ends at the speed it started at. The first version asked
+        // "has the speed moved at all?" rather than "is a speed command coming next?", so it set
+        // the wait flag on the last text AND emitted a restore to the speed already in force -
+        // stalling every later command for the length of the message to protect a no-op. A 68
+        // character message was measured at 35.9 seconds.
+        const auto steps = CwMacro::plan(CwMacro::parse(QStringLiteral("TEST >FAST <AGAIN"), 20), 20);
+        QCOMPARE(steps.size(), 3);
+
+        QCOMPARE(steps[0].setWpm, -1); // already at 20
+        QVERIFY(steps[0].wait);        // KS025 follows
+        QCOMPARE(steps[1].setWpm, 25);
+        QVERIFY(steps[1].wait); // KS020 follows
+        QCOMPARE(steps[2].setWpm, 20);
+
+        QVERIFY2(!steps[2].wait, "back at base: nothing follows, so no stall");
+        QCOMPARE(steps[2].text, QStringLiteral("AGAIN"));
+    }
+
+    void theSpeedGoesDownAndBackUpToo() {
+        const auto steps = CwMacro::plan(CwMacro::parse(QStringLiteral("A <SLOW >B"), 25), 25);
+        QCOMPARE(steps.size(), 3);
+        QCOMPARE(steps[0].setWpm, -1);
+        QCOMPARE(steps[1].setWpm, 20); // down 5
+        QCOMPARE(steps[2].setWpm, 25); // back up, which is base, so no restore step after it
+        QVERIFY(!steps[2].wait);
+    }
+
+    void withNoKnownBaseSpeedNothingIsRestored() {
+        // RadioState holds -1 until the radio reports. Restoring to a speed nobody knows would be
+        // inventing one.
+        const auto steps = CwMacro::plan(CwMacro::parse(QStringLiteral(">FAST"), -1), -1);
+        QCOMPARE(steps.size(), 1);
+        QVERIFY(!steps[0].wait);
+    }
+
     // ------------------------------------------------------------------ K4 commands
 
     void shortTextIsOneKyCommandPaddedOut() {

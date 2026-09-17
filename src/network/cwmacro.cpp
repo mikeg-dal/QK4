@@ -47,4 +47,44 @@ QVector<CwMacroSegment> parse(const QString &tciText, int baseWpm) {
     return segments;
 }
 
+QVector<CwMacroStep> plan(const QVector<CwMacroSegment> &segments, int baseWpm) {
+    QVector<CwMacroStep> steps;
+    if (segments.isEmpty()) {
+        return steps;
+    }
+
+    int current = baseWpm;
+    for (int i = 0; i < segments.size(); ++i) {
+        CwMacroStep step;
+        if (segments[i].wpm != current) {
+            step.setWpm = segments[i].wpm;
+            current = segments[i].wpm;
+        }
+        step.text = segments[i].text;
+
+        // Does a speed command actually follow THIS text? Only then is the wait flag earned. It
+        // stalls every later command until the message has been keyed - measured at 35.9 seconds
+        // for a 68-character message - so it is not something to set defensively.
+        if (i + 1 < segments.size()) {
+            step.wait = (segments[i + 1].wpm != current);
+        } else {
+            // The last one. A restore only follows if the macro did not already end where it
+            // started - THE CASE THAT WAS WRONG: "the speed moved at some point" is not the same
+            // question as "a speed command is coming next".
+            step.wait = (baseWpm > 0 && current != baseWpm);
+        }
+        steps.append(step);
+    }
+
+    // Put the operator's speed back. The markers change speed WITHIN a text, so leaving the radio
+    // faster than it was found is a side effect nobody asked for - but restoring a speed that is
+    // already set is a command for nothing.
+    if (baseWpm > 0 && current != baseWpm) {
+        CwMacroStep restore;
+        restore.setWpm = baseWpm;
+        steps.append(restore);
+    }
+    return steps;
+}
+
 } // namespace CwMacro
