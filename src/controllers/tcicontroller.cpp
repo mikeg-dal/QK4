@@ -17,6 +17,11 @@
 
 namespace {
 
+// How long to wait for the TCI thread to finish at shutdown. Long enough for an audio callback in
+// flight; short enough that a wedged thread does not hold up quitting. Exceeding it is handled
+// rather than ignored - see the destructor.
+constexpr int kThreadShutdownMs = 2000;
+
 // K4 mode -> TCI modulation name. Only the modes in modulations_list are legal on the wire; an
 // unknown one is reported as usb rather than invented, because a client that cannot parse the
 // modulation aborts rather than ignoring the field.
@@ -608,13 +613,43 @@ void TciController::publishSnapshot() {
 TciController::~TciController() {
     // Rule 11: drop queued signals before partial destruction, then stop producers before consumers.
     disconnect(this);
-    if (m_tciThread) {
-        QMetaObject::invokeMethod(m_server, "stop", Qt::BlockingQueuedConnection);
-        m_tciThread->quit();
-        m_tciThread->wait(2000);
+
+    if (!m_tciThread) {
+        delete m_bridge;
+        delete m_server;
+        return;
     }
-    delete m_bridge;
-    delete m_server;
+
+    QMetaObject::invokeMethod(m_server, "stop", Qt::BlockingQueuedConnection);
+
+    // DESTROYED ON THEIR OWN THREAD, not from here.
+    //
+    // Both objects live on m_tciThread. Deleting one from another thread is undefined - it may be
+    // inside a slot at the time - and this destructor used to do exactly that whenever the join
+    // below timed out, because it deleted them regardless of the result. A deferred delete posted
+    // to a thread is run when that thread's event loop finishes (Qt guarantees it even for a thread
+    // with no loop left running), so these are gone before the thread exits, and nothing here
+    // touches the pointers again either way.
+    m_bridge->deleteLater();
+    m_server->deleteLater();
+    m_bridge = nullptr;
+    m_server = nullptr;
+
+    m_tciThread->quit();
+    if (m_tciThread->wait(kThreadShutdownMs)) {
+        return;
+    }
+
+    // THE TIMEOUT PATH, which is the one that crashed.
+    //
+    // m_tciThread is a child of this controller, so simply returning would have ~QObject destroy a
+    // QThread that is still running - which aborts. Disown it instead. The thread, and whatever it
+    // still holds, is leaked; at application exit that costs nothing, where the abort cost the user
+    // a crash on every quit slow enough to reach this line.
+    qWarning() << "TCI thread did not stop within" << kThreadShutdownMs
+               << "ms - leaving it running rather than destroying it underneath itself";
+    m_tciThread->setParent(nullptr);
+    m_tciThread = nullptr;
 }
 
 void TciController::start(quint16 port, bool loopbackOnly) {
