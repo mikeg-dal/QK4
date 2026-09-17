@@ -198,6 +198,43 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     wireTransmit();
     wireCatSets();
     wireSnapshot();
+
+    // LAST, because it can START THE LISTENER. Every handler above must already be connected or a
+    // client arriving in that window would have its commands dropped. MainWindow had the same
+    // ordering for the same reason.
+    wireSettings();
+}
+
+// The enable/port/audio settings, which this controller owns rather than the main window.
+//
+// MOVED OUT OF MainWindow: new feature wiring there is banned shape #1 in
+// src/controllers/README.md, and there is nothing about a TCI listen port that a window needs to
+// know. Order is preserved exactly as MainWindow had it - the audio flag is applied BEFORE the
+// listener starts, so a server that comes up at construction is never briefly running with the
+// wrong audio setting.
+void TciController::wireSettings() {
+    RadioSettings *settings = RadioSettings::instance();
+
+    connect(settings, &RadioSettings::tciServerEnabledChanged, this, [this, settings](bool enabled) {
+        if (enabled) {
+            start(settings->tciServerPort());
+        } else {
+            stop();
+        }
+    });
+    connect(settings, &RadioSettings::tciServerPortChanged, this, [this, settings](quint16 port) {
+        if (settings->tciServerEnabled()) {
+            stop();
+            start(port);
+        }
+    });
+
+    connect(settings, &RadioSettings::tciAudioEnabledChanged, this, [this](bool enabled) { setAudioEnabled(enabled); });
+    setAudioEnabled(settings->tciAudioEnabled());
+
+    if (settings->tciServerEnabled()) {
+        start(settings->tciServerPort());
+    }
 }
 
 // RX audio into the server, and the client roster back out. Split from the constructor,

@@ -88,6 +88,7 @@ private:
     // Constructor wiring, in four groups rather than one 287-line block with 46 connect() calls
     // (banned shape #3, src/controllers/README.md). Called in this order; each is independent.
     void wireAudioAndClients();
+    void wireSettings();
     void wireTransmit();
     void wireCatSets();
     void wireSnapshot();

@@ -419,27 +419,9 @@ void MainWindow::setupCatServer() {
     connect(m_tciController, &TciController::transmittingChanged, this,
             [this](bool transmitting) { m_bottomMenuBar->setPttActive(transmitting); });
 
-    connect(RadioSettings::instance(), &RadioSettings::tciServerEnabledChanged, this, [this](bool enabled) {
-        if (enabled) {
-            m_tciController->start(RadioSettings::instance()->tciServerPort());
-        } else {
-            m_tciController->stop();
-        }
-    });
-    connect(RadioSettings::instance(), &RadioSettings::tciServerPortChanged, this, [this](quint16 port) {
-        if (RadioSettings::instance()->tciServerEnabled()) {
-            m_tciController->stop();
-            m_tciController->start(port);
-        }
-    });
-
-    connect(RadioSettings::instance(), &RadioSettings::tciAudioEnabledChanged, this,
-            [this](bool enabled) { m_tciController->setAudioEnabled(enabled); });
-    m_tciController->setAudioEnabled(RadioSettings::instance()->tciAudioEnabled());
-
-    if (RadioSettings::instance()->tciServerEnabled()) {
-        m_tciController->start(RadioSettings::instance()->tciServerPort());
-    }
+    // The enable/port/audio settings are TciController's own business and it listens to
+    // RadioSettings itself - see TciController::wireSettings. Nothing about which port the TCI
+    // listener uses belongs in the main window.
 
     // Auto-connect, if a radio is flagged for it.
     //
