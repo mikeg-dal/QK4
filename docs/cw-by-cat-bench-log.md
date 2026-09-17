@@ -197,11 +197,55 @@ uninterrupted message.
 
 ---
 
+## 6. Does `KS` reach text already in the buffer? — yes, and it settles `KYW`
+
+The question behind the whole `KYW` policy: if a speed command cannot affect text the radio has
+already accepted, then `KYW` is unnecessary everywhere and could come out — taking its costs with
+it. Tested by sending the identical command sequence twice, once with the wait flags and once
+without (`--kyw none` overrides the plan).
+
+```
+python k4kytest.py --wait 2 --qk4            "TEST >FAST <AGAIN"    5 commands, KYW where a KS follows
+python k4kytest.py --wait 2 --qk4 --kyw none "TEST >FAST <AGAIN"    the same 5, no W anywhere
+```
+
+| Run | Heard |
+|---|---|
+| with `KYW` | **"worked perfectly"** — 20, then FAST at 25, then AGAIN back at 20 |
+| `--kyw none` | **"the speed never changed"** — all three segments at one speed |
+
+**`KS` DOES reach buffered text.** Without the wait flag every speed command was processed the
+moment it arrived, so by the time any text was keyed the final `KS020;` had already landed and the
+whole message came out at 20 WPM. The markers silently did nothing.
+
+So `KYW` is load-bearing and the rule stands: **wait flag exactly when a `KS` follows this text,
+never otherwise.** It also disposes of an appealing simplification — making the LAST text always a
+plain `KY ` — because when a macro ends away from base, the restore is a following `KS` and would
+land early, keying the final segment at base speed.
+
+### The cost, measured
+
+`KYW` holds *every* following host command, including the `TQ;`/`TB;` polls used to watch the
+radio. The blind window is visible as a gap at the start of each timeline:
+
+| Macro | Commands held for | Effect |
+|---|---|---|
+| `TEST >FAST <AGAIN` | 1.74 s | last segment is plain `KY `, so polling resumes for it |
+| `>TU >599 004 \|SK\|` | 6.67 s | both texts carry `KYW`, so nothing was visible until the end |
+
+In the second run the tool saw a single `TQ1;` right at the end and reported **"transmitted for
+0.2s"** for a transmission of about 6.8 seconds. That is the instrument being blinded, not the
+radio misbehaving — and it is why `k4kytest.py` now says so instead of printing a number it cannot
+support.
+
+**This is a third argument for using `KYW` as sparingly as possible**, alongside the stall and the
+36-second measurement in §5: while it is in force, the radio's transmit state is not observable at
+all. A macro with no speed markers — which is every macro QLog sends — carries no `KYW` and none of
+this applies.
+
 ## Still untested
 
 - `cw_macros_stop` — the abort (`KY<0x04>;RX;`) has not been sent to the radio.
-- `--kyw all` on a multi-chunk message. It is no longer needed to decide anything, but it would show
-  what the stall actually costs.
 - A message long enough to exceed whatever the buffer really holds. 68 characters did not reach it,
   so the ceiling is still unknown.
 - `KY` while the radio is NOT in CW mode. The manual calls it "CW/DATA Message Text"; QK4 does not

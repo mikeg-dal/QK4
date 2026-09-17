@@ -982,6 +982,12 @@ Also visible in that run, and worth knowing before it is mistaken for a defect: 
 between 0 and 1 around fourteen times during the message, roughly 110-130 ms each. That is QSK
 dropping to receive between words, not the message breaking up.
 
+**`KYW` is load-bearing**, and that was established by trying to do without it. The same command
+sequence sent with the wait flags stepped the speed correctly; sent without them, "the speed never
+changed" — every `KS` was processed on arrival, so the whole message keyed at whatever the last one
+set. It follows that the appealing simplification of always ending with a plain `KY ` is wrong: when
+a macro ends away from base, the restore is a following `KS` and would land early. See the bench log.
+
 **22 characters is kept**, though the radio clearly tolerates far more. Nothing is gained by
 raising it: four chunks already key as one unbroken message, so a larger chunk would fix a problem
 that does not exist, at the cost of moving away from the one value proven on Elecraft hardware.
