@@ -83,7 +83,10 @@ public:
                 continue;
             }
             out << QString::fromUtf8(m.payload);
-            if (m.payload == terminator) {
+            // PREFIX, not equality. The sentinel is a reply whose value can legitimately
+            // change - device: carries a version now - and a test that pins the whole string
+            // is asserting the version rather than waiting for the reply it meant to wait for.
+            if (m.payload.startsWith(terminator)) {
                 break;
             }
         }

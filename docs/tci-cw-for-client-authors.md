@@ -297,7 +297,7 @@ A client that gates behaviour on which server it is talking to needs the handsha
 verbatim from a live connect:
 
 ```
-device:QK4;
+device:QK4 0.7.0;
 protocol:ExpertSDR3,1.5;
 receive_only:false;
 trx_count:2;
@@ -313,13 +313,14 @@ amplitude (`tciserver_internal.h:20`). So `protocol:` identifies the dialect QK4
 program. Match on it and you will both misidentify QK4 as ExpertSDR3 *and* misidentify a real
 ExpertSDR3 as whatever you decided `ExpertSDR3,1.5` meant.
 
-**`device:` is the discriminator.** `device:QK4;` — one token, no version.
+**`device:` is the discriminator, and it carries the version.** `device:QK4 0.7.0;` — the program
+name, a space, then the version, added 2026-09-17 so a client can gate on a *capability* rather than
+just a program.
 
-**There is no version in the handshake**, which matters for a client gating on a *capability* rather
-than a program. QK4 has a version (`QK4_VERSION`, set by CI) but does not put it on the wire, so a
-client cannot currently distinguish a QK4 that supports something from an older one that does not.
-Matching the `QK4` prefix is the forward-compatible choice: if a version is ever appended, a prefix
-match keeps working where an equality match breaks.
+**Match the `QK4` prefix, never the whole token.** The version moves; the name does not. An equality
+match was going to break on the first release regardless. (Seven of QK4's own tests used the bare
+`device:QK4;` as a sentinel and all seven broke when the version landed — the same mistake, caught
+at home.)
 
 **Unknown, and stated as unknown:** what ExpertSDR2 and Thetis put in these fields. QK4's
 `protocol:` string was chosen to satisfy WSJT-X's expectation of ExpertSDR3, which *implies* the

@@ -673,7 +673,7 @@ private slots:
 
         // device is answered from a constant, so it is a reliable terminator.
         client.send("device;");
-        const QStringList seen = client.collectUntil("device:QK4;");
+        const QStringList seen = client.collectUntil("device:QK4");
 
         const QStringList expected{
             QStringLiteral("vfo:0,0,7074000;"),

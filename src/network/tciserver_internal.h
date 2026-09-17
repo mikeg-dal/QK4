@@ -20,6 +20,27 @@ const char kModulationsList[] = "usb,lsb,cw,cwr,am,sam,fm,digu,digl,rtty";
 // WSJT-X matches on this string; a mangled one makes it halve transmit amplitude.
 const char kProtocolIdentity[] = "ExpertSDR3,1.5";
 
+// What `device:` reports: the program name, a space, then the version.
+//
+// WHY THE VERSION IS THERE. `protocol:` cannot identify QK4 - it deliberately says ExpertSDR3 so
+// WSJT-X is happy - so `device:` is the only field naming the program, and without a version a
+// client cannot tell a QK4 that supports something from an older one that does not. TR4W asked for
+// exactly that, to gate a capability on the server it is talking to.
+//
+// SPACE-SEPARATED SO THE NAME IS STILL A PREFIX. A client matching "QK4" at the start keeps working
+// whatever the version becomes; an equality match was always going to break on the first release
+// anyway. No client observed here reads this field at all - TR4W logs it and discards it - so the
+// compatibility risk is in what WSJT-X does, and WSJT-X matches on `protocol:`, which is untouched.
+//
+// QK4_VERSION is defined for the application target only (CMakeLists.txt:409). The test targets
+// compile this file without it, hence the fallback rather than a build break.
+#ifndef QK4_VERSION
+#define QK4_VERSION "dev"
+#endif
+inline QString deviceIdentity() {
+    return QStringLiteral("QK4 ") + QLatin1String(QK4_VERSION);
+}
+
 // The K4's tuning range.
 constexpr qint64 kVfoLowHz = 100000;
 constexpr qint64 kVfoHighHz = 54000000;

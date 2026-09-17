@@ -215,7 +215,7 @@ QStringList TciServer::initBurst() const {
           << message(QStringLiteral("trx_count"), QString::number(RECEIVER_COUNT))
           // Plural. The published PDF says CHANNEL_COUNT and the reference parser aborts on it.
           << message(QStringLiteral("channels_count"), QStringLiteral("2"))
-          << message(QStringLiteral("device"), QStringLiteral("QK4"))
+          << message(QStringLiteral("device"), deviceIdentity())
           << message(QStringLiteral("receive_only"), boolText(false))
           << messageFreeText(QStringLiteral("modulations_list"), QLatin1String(kModulationsList))
           << messageFreeText(QStringLiteral("protocol"), QLatin1String(kProtocolIdentity));
@@ -514,7 +514,9 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
         return true;
     }
     if (name == QLatin1String("device")) {
-        sendTo(clientId, message(name, QStringLiteral("QK4")));
+        // The same string the burst carried. One source, because a query answering something other
+        // than the greeting is the kind of drift nobody notices until a client trusts one of them.
+        sendTo(clientId, message(name, deviceIdentity()));
         return true;
     }
     if (name == QLatin1String("receive_only")) {

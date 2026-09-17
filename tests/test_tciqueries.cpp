@@ -116,6 +116,28 @@ private slots:
         QCOMPARE(QString::fromUtf8(reply.payload), QStringLiteral("cw_macros_speed:20;"));
     }
 
+    void theDeviceFieldNamesTheProgramAsAPrefix() {
+        // device: is the ONLY field naming the program - protocol: deliberately says ExpertSDR3 so
+        // WSJT-X is happy - so a client gating on which server it is talking to has nothing else.
+        // The name must stay a PREFIX so a match keeps working when the version moves.
+        const QStringList burst = TciServer().initBurst();
+        QString device;
+        for (const QString &command : burst) {
+            if (command.startsWith(QStringLiteral("device:"))) {
+                device = command;
+            }
+        }
+        QVERIFY2(!device.isEmpty(), "the burst must name the device");
+        QVERIFY2(device.startsWith(QStringLiteral("device:QK4")), qPrintable(device));
+
+        // A version is present, not just the bare name.
+        const QString value = device.mid(7).chopped(1);
+        QVERIFY2(value.size() > 3, qPrintable(value));
+
+        // And the query answers the SAME string the greeting did.
+        QVERIFY2(!value.contains(QLatin1Char(',')), "a comma would split the argument");
+    }
+
     void squelchLevelStaysInsideTheSpecRange() {
         // REGRESSION. QK4 answered 20; TCI defines the squelch threshold as dBm over -140..0, so
         // any positive value is outside the range in either direction of interpretation.
@@ -178,8 +200,12 @@ private slots:
         QVERIFY(queries.size() > 20);
         client.send((queries.join(QLatin1Char(';')) + QStringLiteral(";device;")).toUtf8());
 
-        const QStringList replies = client.collectUntil("device:QK4;");
-        QVERIFY2(replies.contains(QStringLiteral("device:QK4;")), "the terminating query went unanswered");
+        const QStringList replies = client.collectUntil("device:QK4");
+        bool sawDevice = false;
+        for (const QString &reply : replies) {
+            sawDevice = sawDevice || reply.startsWith(QStringLiteral("device:QK4"));
+        }
+        QVERIFY2(sawDevice, "the terminating query went unanswered");
         for (const QString &reply : replies) {
             QVERIFY2(advertised.contains(reply), qPrintable(QStringLiteral("not advertised: ") + reply));
         }
@@ -297,7 +323,7 @@ private slots:
         client.collectUntil("ready;");
         client.send("drive:0,5;rit_offset:0,500;device;");
 
-        const QStringList replies = client.collectUntil("device:QK4;");
+        const QStringList replies = client.collectUntil("device:QK4");
         QVERIFY2(replies.contains(QStringLiteral("drive:0,100;")), "echoed the requested drive");
         QVERIFY2(replies.contains(QStringLiteral("rit_offset:0,0;")), "echoed the requested offset");
 
@@ -318,7 +344,7 @@ private slots:
         client.collectUntil("ready;");
         client.send("mute:0,true;sql_level:0,-80;lock:0,true;device;");
 
-        const QStringList replies = client.collectUntil("device:QK4;");
+        const QStringList replies = client.collectUntil("device:QK4");
         QVERIFY(replies.contains(QStringLiteral("mute:0,false;")));
         QVERIFY(replies.contains(QStringLiteral("sql_level:0,-140;")));
         QVERIFY(replies.contains(QStringLiteral("lock:0,false;")));
@@ -341,7 +367,7 @@ private slots:
         client.collectUntil("ready;");
         client.send("rit_enable:0,true;rx_nb_enable:0,true;rit_offset:0,250;drive:0,35;"
                     "agc_mode:0,fast;rx_filter_band:0,300,2700;device;");
-        client.collectUntil("device:QK4;");
+        client.collectUntil("device:QK4");
 
         QTRY_COMPARE(setBool.count(), 2);
         QCOMPARE(setBool.at(0).at(1).toString(), QStringLiteral("rit_enable"));
@@ -457,7 +483,7 @@ private slots:
         QVERIFY(client.connectTo(server.port()));
         client.collectUntil("ready;");
         client.send("rx_filter_band:0,2700,300;device;");
-        client.collectUntil("device:QK4;");
+        client.collectUntil("device:QK4");
         QCOMPARE(setFilter.count(), 0);
 
         client.close();
@@ -478,7 +504,7 @@ private slots:
         client.collectUntil("ready;");
         client.send("rit_enable:1,true;rit_offset:1,250;device;");
 
-        const QStringList replies = client.collectUntil("device:QK4;");
+        const QStringList replies = client.collectUntil("device:QK4");
         // Still answered, just not acted on.
         QVERIFY(replies.contains(QStringLiteral("rit_enable:1,false;")));
         QCOMPARE(setBool.count(), 0);
