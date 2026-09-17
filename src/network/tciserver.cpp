@@ -386,14 +386,26 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
                 sendTo(clientId, message(name, QString::number(SUB_RECEIVER), boolText(held)));
             }
         } else if (name == QLatin1String("cw_macros")) {
+            // TWO DIALECTS, both accepted.
+            //
+            // The spec is `cw_macros:<trx>,<text>;`. But TR4W sends `cw_macros:<text>;` with no
+            // receiver index, and its own source notes that AetherSDR takes the raw text and that
+            // the receiver-index form was never verified. Reading the spec strictly makes a whole
+            // logger's CW silently do nothing against QK4 - which is exactly the failure this
+            // server keeps being bitten by - so a lone argument is taken as the text.
+            //
             // Args from index 1 are REJOINED with the comma that split them. TCI escapes its own
             // separators (',' travels as '~'), so a well-behaved client sends one argument - but a
-            // client that forgets would otherwise have its message silently truncated at the first
-            // comma, and half an exchange going out is worse than none.
-            const QString text = command.args.mid(1).join(QLatin1Char(','));
+            // client that forgets would otherwise have its message truncated at the first comma,
+            // and half an exchange going out is worse than none.
+            const QString text =
+                (command.args.size() == 1) ? command.args.first() : command.args.mid(1).join(QLatin1Char(','));
             const QVector<CwMacroSegment> segments = CwMacro::parse(text, m_snapshot.cwKeyerSpeedWpm);
             if (segments.isEmpty()) {
-                continue; // nothing keyable in it
+                // Say so. A macro that carries nothing keyable used to be dropped in silence, which
+                // gives an operator hearing no CW nothing anywhere to look at.
+                qCInfo(netTci) << "client" << clientId << "sent cw_macros with nothing keyable in it:" << command.args;
+                continue;
             }
             qCInfo(netTci) << "client" << clientId << "CW:" << text << "in" << segments.size() << "speed segment(s)";
             emit cwMacroRequested(segments);

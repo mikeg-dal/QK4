@@ -128,6 +128,28 @@ private slots:
                  qPrintable(server.clients()[0].lastMessage));
     }
 
+    void cwMacrosIsAcceptedWithOrWithoutAReceiverIndex() {
+        // The spec says cw_macros:<trx>,<text>; and TR4W sends cw_macros:<text>;. Reading the spec
+        // strictly made a whole logger's CW silently do nothing - no command, no log, no reply.
+        TciServer server;
+        const quint16 port = startServer(&server);
+        QVERIFY(port != 0);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(port));
+        drainBurst(&client);
+
+        QSignalSpy spy(&server, &TciServer::cwMacroRequested);
+
+        client.send("cw_macros:0,WITH INDEX;");
+        QTRY_COMPARE(spy.count(), 1);
+        QCOMPARE(qvariant_cast<QVector<CwMacroSegment>>(spy.at(0).at(0))[0].text, QStringLiteral("WITH INDEX"));
+
+        client.send("cw_macros:NO INDEX;");
+        QTRY_COMPARE(spy.count(), 2);
+        QCOMPARE(qvariant_cast<QVector<CwMacroSegment>>(spy.at(1).at(0))[0].text, QStringLiteral("NO INDEX"));
+    }
+
     void aReplyOverwritesTheCommandThatCausedIt() {
         // The ordinary case, and the consequence of counting both directions: every SET is
         // confirmed immediately, so what the roster shows a moment later is QK4's answer rather
