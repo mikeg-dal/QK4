@@ -11,7 +11,8 @@
  *
  * Features:
  * - Custom-painted frequency with dot separators (XX.XXX.XXX)
- * - Click to enter edit mode; cursor starts at the leftmost digit
+ * - Click a digit from 1 Hz to 10 kHz to make it the tuning rate (tuningDigitClicked)
+ * - beginEntry() (the FREQ ENT button) enters edit mode; cursor starts at the leftmost digit
  * - In edit mode all 8 digits are shown (incl. a leading zero) so any
  *   position is reachable — required to go from <10 MHz to >=10 MHz
  * - All digits change to edit color (VFO theme: cyan for A, green for B)
@@ -24,6 +25,7 @@
  *   freq->setEditModeColor(QColor(K4Styles::Colors::VfoACyan));
  *   freq->setFrequency("7.024.980");
  *   connect(freq, &FrequencyDisplayWidget::frequencyEntered, ...);
+ *   connect(freq, &FrequencyDisplayWidget::tuningDigitClicked, ...);
  */
 class FrequencyDisplayWidget : public QWidget {
     Q_OBJECT
@@ -60,6 +62,11 @@ public:
     // Check if currently in edit mode
     bool isEditing() const;
 
+    // Open direct frequency entry with the cursor on the leftmost digit, or back out of it without
+    // sending. Driven by the FREQ ENT button.
+    void beginEntry();
+    void cancelEntry();
+
 signals:
     // Emitted when user presses Enter to confirm frequency entry
     // digits is the frequency as plain digits (e.g., "7024980")
@@ -68,9 +75,14 @@ signals:
     // Emitted when user scrolls mouse wheel over frequency (not in edit mode)
     void frequencyScrolled(int steps);
 
+    // Emitted when user clicks a digit that can be a tuning rate (not in edit mode).
+    // digitFromRight: 0=1Hz ... 4=10kHz. Higher digits emit nothing.
+    void tuningDigitClicked(int digitFromRight);
+
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
@@ -84,6 +96,10 @@ private:
 
     // Convert mouse X coordinate to digit position (0-7), or -1 if not on a digit
     int digitPositionFromX(int x) const;
+
+    // Tuning-rate digit under x, counted from the right, or -1 when x is not on a digit that can be a
+    // tuning rate. Strict: unlike digitPositionFromX, a click on a dot or past the end is no digit.
+    int tuningDigitAtX(int x) const;
 
     // Get the bounding rectangle for a character at the given index
     QRect charRectAt(int charIndex) const;

@@ -52,8 +52,13 @@ public:
     // shift, centered filter position, empty mode, no data sub-mode.
     void resetToDefaults();
 
+signals:
+    // Left-click: MainWindow routes this to RightSideController::cycleFilterPreset for this VFO.
+    void clicked();
+
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
     void drawBandwidthShape(QPainter &painter, int lineY, int lineWidth);

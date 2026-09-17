@@ -26,6 +26,11 @@ constexpr int SPAN_THRESHOLD_DOWN = 140000;
 /// Returns 1000 Hz for out-of-range values.
 int tuningStepToHz(int step);
 
+/// VT tuning step for a frequency-display digit, counted from the right (0 = 1 Hz digit).
+/// Digits 0-4 (1 Hz to 10 kHz) map to VT0-VT4; any other digit returns -1 because the K4 has no
+/// tuning step above 10 kHz (VT5 wraps back to 100 Hz).
+int tuningStepForDigit(int digitFromRight);
+
 /// Convert frequency (Hz) to K4 band number (0=160m ... 10=6m, 16=XVTR).
 /// Returns -1 for out-of-band frequencies.
 int getBandFromFrequency(quint64 freq);
@@ -37,6 +42,14 @@ int getNextSpanUp(int currentSpan);
 /// Get next span step down (zoom in) from current span in Hz.
 /// Clamps at SPAN_MIN.
 int getNextSpanDown(int currentSpan);
+
+/// Span after one zoom step: zooming in narrows the span (getNextSpanDown), zooming out widens it
+/// (getNextSpanUp). The one place that decides which way a + or - span control goes.
+int spanAfterZoom(int currentSpan, bool zoomIn);
+
+/// Next K4 filter preset when cycling like the front panel: 1 -> 3 -> 2 -> 1.
+/// Returns -1 for anything outside 1-3 (preset not known yet).
+int nextFilterPreset(int currentPreset);
 
 /// Build an 8-band EQ CAT command string (e.g., "RE+00-02+04..." or "TE+00...").
 /// prefix is "RE" (RX) or "TE" (TX), bands must have exactly 8 values in [-16, +16].

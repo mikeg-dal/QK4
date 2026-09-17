@@ -138,18 +138,26 @@ void HaliKeyMidiWorker::handleMidiMessage(double deltaTime, const std::vector<un
         return;
     }
 
+    // WHY the worker holds all three lines: MIDI gives one note per message, so unlike the serial
+    // variant there is no joint hardware sample to forward. Carrying the last-known value of the
+    // lines that did not change still hands the keyer a coherent pair on every event, and keeps one
+    // interface for both transports. It cannot make two genuinely separate messages simultaneous —
+    // that limitation is the transport's, not ours.
     switch (data1) {
     case NOTE_LEFT_PADDLE:
         qCDebug(hwMidi) << "HaliKeyMidiWorker: dit (note 20)" << (pressed ? "down" : "up");
-        emit ditStateChanged(pressed);
+        m_ditState = pressed;
+        emit lineStateChanged(m_ditState, m_dahState, m_pttState);
         break;
     case NOTE_RIGHT_PADDLE:
         qCDebug(hwMidi) << "HaliKeyMidiWorker: dah (note 21)" << (pressed ? "down" : "up");
-        emit dahStateChanged(pressed);
+        m_dahState = pressed;
+        emit lineStateChanged(m_ditState, m_dahState, m_pttState);
         break;
     case NOTE_PTT:
         qCDebug(hwMidi) << "HaliKeyMidiWorker: ptt (note 31)" << (pressed ? "down" : "up");
-        emit pttStateChanged(pressed);
+        m_pttState = pressed;
+        emit lineStateChanged(m_ditState, m_dahState, m_pttState);
         break;
     default:
         // Log unrecognized notes so a HaliKey MIDI firmware using different note numbers

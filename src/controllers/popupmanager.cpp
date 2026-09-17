@@ -417,13 +417,12 @@ void PopupManager::wireDisplayPopup() {
     connect(m_displayPopup, &DisplayPopupWidget::waterfallHeightDecrementRequested, this,
             [adjustWaterfallHeight]() { adjustWaterfallHeight(-1); });
 
-    // Span +/- (per-VFO selection).
-    auto adjustSpan = [this](bool increment) {
+    // Span +/- (per-VFO selection). + zooms in, - zooms out.
+    auto adjustSpan = [this](bool zoomIn) {
         const bool vfoA = m_displayPopup->isVfoAEnabled();
         const bool vfoB = m_displayPopup->isVfoBEnabled();
         const int currentSpan = (vfoB && !vfoA) ? m_radioState->spanHzB() : m_radioState->spanHz();
-        const int newSpan =
-            increment ? RadioUtils::getNextSpanUp(currentSpan) : RadioUtils::getNextSpanDown(currentSpan);
+        const int newSpan = RadioUtils::spanAfterZoom(currentSpan, zoomIn);
         if (newSpan == currentSpan)
             return;
         if (vfoA) {
@@ -435,8 +434,8 @@ void PopupManager::wireDisplayPopup() {
             m_connection->sendCAT(QString("#SPN$%1;").arg(newSpan));
         }
     };
-    connect(m_displayPopup, &DisplayPopupWidget::spanIncrementRequested, this, [adjustSpan]() { adjustSpan(true); });
-    connect(m_displayPopup, &DisplayPopupWidget::spanDecrementRequested, this, [adjustSpan]() { adjustSpan(false); });
+    connect(m_displayPopup, &DisplayPopupWidget::spanZoomInRequested, this, [adjustSpan]() { adjustSpan(true); });
+    connect(m_displayPopup, &DisplayPopupWidget::spanZoomOutRequested, this, [adjustSpan]() { adjustSpan(false); });
 
     // Scale +/- (global — no A/B variants).
     auto adjustScale = [this](int delta) {

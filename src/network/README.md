@@ -12,7 +12,8 @@ TCP / TLS / PSK transport to the K4, binary protocol framing, CAT server for thi
 - `catframes.{h}` — `CatFrames::` namespace of small builders returning the exact `QByteArray` for a CAT command (`frequencyA`, `modeA`, …). Keeps command spelling in one place instead of scattered string literals.
 - `catpushbroadcaster.{cpp,h}` — auto-information push for CAT clients. Tracks per-client AI level, subscribes to `RadioState` changes, and pushes updates to subscribers while polling clients receive nothing. Covered by `test_catpushbroadcaster`.
 - `dxclusterclient.{cpp,h}` — TCP client to a single DX cluster node. Used by `DxClusterController` — one instance per configured cluster. Receive buffer capped at 64KB; overflow disconnects.
-- `kpa1500client.{cpp,h}` — TCP client to the KPA1500 amplifier. Receive buffer capped at 64KB; overflow disconnects.
+- `kpa1500client.{cpp,h}` — TCP client to the KPA1500 amplifier. Receive buffer capped at 64KB; overflow disconnects. Reads the per-band antenna enable map (`^AEbbALL;`) and steps antennas with `^AN+;`; never enables or configures antennas.
+- `kpa1500antennas.{cpp,h}` — `Kpa1500Antennas::` namespace. KPA1500 firmware 3.x antenna numbering (1-32, sub-antennas routed through ANT1/ANT2): enable-map parsing and the `ANT1` / `ANT1:5` label. Pure; covered by `test_kpa1500antennas`. Syntax source: KPA1500 Programming Reference V3.
 
 ## Threading
 

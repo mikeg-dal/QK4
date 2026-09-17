@@ -76,11 +76,11 @@ private:
     PanadapterRhiWidget *m_panadapterB = nullptr;
     QWidget *m_spectrumContainer = nullptr;
     QFrame *m_spectrumSeparator = nullptr;
-    QPushButton *m_spanUpBtn = nullptr;
-    QPushButton *m_spanDownBtn = nullptr;
+    QPushButton *m_zoomInBtn = nullptr;
+    QPushButton *m_zoomOutBtn = nullptr;
     QPushButton *m_centerBtn = nullptr;
-    QPushButton *m_spanUpBtnB = nullptr;
-    QPushButton *m_spanDownBtnB = nullptr;
+    QPushButton *m_zoomInBtnB = nullptr;
+    QPushButton *m_zoomOutBtnB = nullptr;
     QPushButton *m_centerBtnB = nullptr;
     QLabel *m_vfoIndicatorA = nullptr;
     QLabel *m_vfoIndicatorB = nullptr;

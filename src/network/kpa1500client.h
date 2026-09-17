@@ -5,6 +5,7 @@
 #include <QTcpSocket>
 #include <QTimer>
 #include <QMap>
+#include <QVector>
 
 /**
  * @brief TCP client for a KPA1500 linear amplifier's remote head server. Polls the amp with
@@ -36,11 +37,16 @@ public:
     ConnectionState connectionState() const;
 
     void sendCommand(const QString &command);
+
+    // Step to the next antenna enabled on the current band (^AN+;), exactly like the amp's own
+    // ANTENNA button, then read back the result. Never enables or configures an antenna.
+    void selectNextAntenna();
     void startPolling(int intervalMs);
     void stopPolling();
 
     // State getters
     QString bandName() const { return m_bandName; }
+    int bandNumber() const { return m_bandNumber; } // ^BN: 0-10, -1 until known
     double forwardPower() const { return m_forwardPower; }
     double reflectedPower() const { return m_reflectedPower; }
     double drivePower() const { return m_drivePower; }
@@ -53,6 +59,9 @@ public:
     bool atuModeInline() const { return m_atuModeInline; } // ^AM: ATU mode (enabled/disabled)
     bool atuInline() const { return m_atuInline; }         // ^AI: ATU relay state (in-circuit/bypassed)
     int antenna() const { return m_antenna; }
+    // Connector (1 = ANT1, 2 = ANT2) an antenna is routed through on the current band, from the
+    // amp's ^AEbbALL enable map. 0 when disabled or the map has not been read yet.
+    int antennaConnector(int antenna) const;
     QString serialNumber() const { return m_serialNumber; }
     QString firmwareVersion() const { return m_firmwareVersion; }
 
@@ -71,6 +80,8 @@ signals:
     void atuModeChanged(bool inline_);   // ^AM: ATU mode toggled
     void atuInlineChanged(bool inline_); // ^AI: ATU relay state changed
     void antennaChanged(int antenna);
+    void antennaConnectorChanged(int connector); // connector of the active antenna became known/changed
+    void bandNumberChanged(int bandNumber);
 
 private slots:
     void onSocketConnected();
@@ -83,6 +94,8 @@ private:
     void setState(ConnectionState state);
     void parseResponse(const QString &response);
     void parseSingleResponse(const QString &response);
+    void requestEnableMap();
+    void resetAntennaState();
 
     QTcpSocket *m_socket;
     QTimer *m_pollTimer;
@@ -97,6 +110,8 @@ private:
 
     // Cached state values
     QString m_bandName;
+    int m_bandNumber = -1;
+    QVector<int> m_enableMap; // connector per antenna 1-32 for m_bandNumber; empty until read
     double m_forwardPower = 0.0;
     double m_reflectedPower = 0.0;
     double m_drivePower = 0.0;

@@ -124,14 +124,15 @@ constexpr const char *ChartSeriesRtt = VfoACyan;        // RTT trace (cyan)
 constexpr const char *ChartSeriesJitter = AccentAmber;  // jitter trace (amber)
 constexpr const char *ChartSeriesBuffer = MeterIdLight; // buffer trace (soft sage green)
 
-// Band-plan overlay colors. Mode-segment fills (rendered translucent over the spectrum)
-// plus the band-name header row.
-constexpr const char *BandPlanCw = "#CB3B45";     // CW / Morse (crimson red)
-constexpr const char *BandPlanData = "#E0852F";   // Digital / data (RTTY, PSK, FT8...) orange
-constexpr const char *BandPlanPhone = "#6E83A6";  // SSB / phone (voice) slate blue
-constexpr const char *BandPlanBeacon = "#AB47BC"; // Beacons (exclusive) purple
-constexpr const char *BandPlanAll = "#90A4AE";    // All modes share (CW/data/phone) blue-grey
-constexpr const char *BandPlanBand = "#4E9A52";   // Band-name header row (green)
+// Band-plan overlay colors. Mode-segment fills (rendered translucent over the spectrum), the
+// out-of-band fill under its hatching, and the band-name tag.
+constexpr const char *BandPlanCw = "#CB3B45";        // CW / Morse (crimson red)
+constexpr const char *BandPlanData = "#E0852F";      // Digital / data (RTTY, PSK, FT8...) orange
+constexpr const char *BandPlanPhone = "#6E83A6";     // SSB / phone (voice) slate blue
+constexpr const char *BandPlanBeacon = "#AB47BC";    // Beacons (exclusive) purple
+constexpr const char *BandPlanAll = "#90A4AE";       // All modes share (CW/data/phone) blue-grey
+constexpr const char *BandPlanOutOfBand = "#3A3A3A"; // Past the band edge (under the hatch)
+constexpr const char *BandPlanTag = "#0F0F0F";       // Band-name tag ("20m")
 } // namespace Colors
 
 namespace Dimensions {

@@ -24,19 +24,20 @@ HalikeyDevice::~HalikeyDevice() {
     closePort();
 }
 
-void HalikeyDevice::onRawDit(bool pressed) {
-    if (acceptEdge(pressed, m_confirmedDitState))
-        emit ditStateChanged(pressed);
-}
+void HalikeyDevice::onRawLines(bool dit, bool dah, bool ptt) {
+    // Per-line same-direction dedupe is kept exactly as it was — it is the regression gate for the
+    // Windows MIDI stuck-paddle bug (see docs/halikey-midi-windows-debounce-bug.md). What changed
+    // is only that the confirmed lines leave here as ONE sample: a dedupe that drops a redundant
+    // edge on one line must not also drop the other lines' fresh values.
+    const bool ditNew = acceptEdge(dit, m_confirmedDitState);
+    const bool dahNew = acceptEdge(dah, m_confirmedDahState);
+    const bool pttNew = acceptEdge(ptt, m_confirmedPttState);
+    if (!ditNew && !dahNew && !pttNew)
+        return;
 
-void HalikeyDevice::onRawDah(bool pressed) {
-    if (acceptEdge(pressed, m_confirmedDahState))
-        emit dahStateChanged(pressed);
-}
-
-void HalikeyDevice::onRawPtt(bool pressed) {
-    if (acceptEdge(pressed, m_confirmedPttState))
-        emit pttStateChanged(pressed);
+    emit lineStateChanged(m_confirmedDitState.load(std::memory_order_acquire),
+                          m_confirmedDahState.load(std::memory_order_acquire),
+                          m_confirmedPttState.load(std::memory_order_acquire));
 }
 
 bool HalikeyDevice::openPort(const QString &portName) {
@@ -59,13 +60,11 @@ bool HalikeyDevice::openPort(const QString &portName) {
     m_workerThread = new QThread(this);
     m_worker->moveToThread(m_workerThread);
 
-    // DirectConnection: onRaw* runs on whatever worker thread delivered the event (RtMidi
-    // callback for MIDI, monitor thread for V1.4). Both update the same atomics + emit
-    // ditStateChanged from that thread. Downstream connections are independently safe
-    // (HardwareController's dit/dah handlers only touch atomics and queue to the keyer thread).
-    connect(m_worker, &HaliKeyWorkerBase::ditStateChanged, this, &HalikeyDevice::onRawDit, Qt::DirectConnection);
-    connect(m_worker, &HaliKeyWorkerBase::dahStateChanged, this, &HalikeyDevice::onRawDah, Qt::DirectConnection);
-    connect(m_worker, &HaliKeyWorkerBase::pttStateChanged, this, &HalikeyDevice::onRawPtt, Qt::DirectConnection);
+    // DirectConnection: onRawLines runs on whatever worker thread delivered the event (RtMidi
+    // callback for MIDI, monitor thread for V1.4). It updates the confirmed atomics and re-emits
+    // from that thread. Downstream connections are independently safe (CwController's handler only
+    // touches atomics and queues to the keyer thread).
+    connect(m_worker, &HaliKeyWorkerBase::lineStateChanged, this, &HalikeyDevice::onRawLines, Qt::DirectConnection);
     connect(m_worker, &HaliKeyWorkerBase::portOpened, this, [this]() {
         m_connected = true;
         emit connected();

@@ -15,6 +15,22 @@ private slots:
     void testTuningStep_outOfRange_negative() { QCOMPARE(RadioUtils::tuningStepToHz(-1), 1000); }
     void testTuningStep_outOfRange_high() { QCOMPARE(RadioUtils::tuningStepToHz(6), 1000); }
 
+    // tuningStepForDigit
+    void testDigitStep_1HzTo10kHz() {
+        for (int digit = 0; digit <= 4; ++digit)
+            QCOMPARE(RadioUtils::tuningStepForDigit(digit), digit);
+    }
+    void testDigitStep_eachDigitMatchesItsStepSize() {
+        int hz = 1;
+        for (int digit = 0; digit <= 4; ++digit, hz *= 10)
+            QCOMPARE(RadioUtils::tuningStepToHz(RadioUtils::tuningStepForDigit(digit)), hz);
+    }
+    void testDigitStep_100kHzAndAboveHaveNoStep() {
+        for (int digit = 5; digit <= 9; ++digit)
+            QCOMPARE(RadioUtils::tuningStepForDigit(digit), -1);
+    }
+    void testDigitStep_negativeHasNoStep() { QCOMPARE(RadioUtils::tuningStepForDigit(-1), -1); }
+
     // getBandFromFrequency
     void testBand_160m() { QCOMPARE(RadioUtils::getBandFromFrequency(1900000), 0); }
     void testBand_80m() { QCOMPARE(RadioUtils::getBandFromFrequency(3573000), 1); }
@@ -49,6 +65,40 @@ private slots:
     void testSpanDown_aboveThreshold() { QCOMPARE(RadioUtils::getNextSpanDown(200000), 196000); }
     void testSpanDown_atThreshold() { QCOMPARE(RadioUtils::getNextSpanDown(140000), 139000); }
     void testSpanDown_justAboveThreshold() { QCOMPARE(RadioUtils::getNextSpanDown(141000), 137000); }
+
+    // spanAfterZoom
+    void testZoomIn_narrowsTheSpan() { QCOMPARE(RadioUtils::spanAfterZoom(100000, true), 99000); }
+    void testZoomOut_widensTheSpan() { QCOMPARE(RadioUtils::spanAfterZoom(100000, false), 101000); }
+    void testZoomIn_stopsAtMinimum() {
+        QCOMPARE(RadioUtils::spanAfterZoom(RadioUtils::SPAN_MIN, true), RadioUtils::SPAN_MIN);
+    }
+    void testZoomOut_stopsAtMaximum() {
+        QCOMPARE(RadioUtils::spanAfterZoom(RadioUtils::SPAN_MAX, false), RadioUtils::SPAN_MAX);
+    }
+    void testZoom_followsTheK4StepsAcrossTheTierThreshold() {
+        for (int span : {139000, 140000, 141000, 144000, 148000}) {
+            QCOMPARE(RadioUtils::spanAfterZoom(span, true), RadioUtils::getNextSpanDown(span));
+            QCOMPARE(RadioUtils::spanAfterZoom(span, false), RadioUtils::getNextSpanUp(span));
+        }
+    }
+
+    // nextFilterPreset
+    void testFilterPreset_1GoesTo3() { QCOMPARE(RadioUtils::nextFilterPreset(1), 3); }
+    void testFilterPreset_3GoesTo2() { QCOMPARE(RadioUtils::nextFilterPreset(3), 2); }
+    void testFilterPreset_2GoesTo1() { QCOMPARE(RadioUtils::nextFilterPreset(2), 1); }
+    void testFilterPreset_threeClicksComeBackToTheStart() {
+        for (int start = 1; start <= 3; ++start) {
+            int preset = start;
+            for (int click = 0; click < 3; ++click)
+                preset = RadioUtils::nextFilterPreset(preset);
+            QCOMPARE(preset, start);
+        }
+    }
+    void testFilterPreset_unknownHasNoNext() {
+        QCOMPARE(RadioUtils::nextFilterPreset(-1), -1);
+        QCOMPARE(RadioUtils::nextFilterPreset(0), -1);
+        QCOMPARE(RadioUtils::nextFilterPreset(4), -1);
+    }
 
     // buildEqCommand
     void testBuildEqCommand_flat() {

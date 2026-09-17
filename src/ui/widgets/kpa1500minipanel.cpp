@@ -1,13 +1,15 @@
 #include "ui/widgets/kpa1500minipanel.h"
+#include "network/kpa1500antennas.h"
 #include "ui/styling/k4styles.h"
 #include <QGridLayout>
 #include <QPainter>
+#include <QStringList>
 #include <QVBoxLayout>
 
 Kpa1500MiniPanel::Kpa1500MiniPanel(QWidget *parent) : QWidget(parent) {
-    // Main layout: top margin reserves space for painted meters + LED indicator grid, buttons below
+    // Main layout: top margin reserves space for painted meters + LCD, buttons below
     // Side/bottom padding makes the panel background visible around button edges
-    int metersHeight = METER_START_Y + (METER_SPACING * 4) + LED_GRID_HEIGHT;
+    int metersHeight = METER_START_Y + (METER_SPACING * 4) + LCD_HEIGHT;
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(PANEL_PAD, metersHeight, PANEL_PAD, PANEL_PAD);
     layout->setSpacing(4);
@@ -44,10 +46,9 @@ Kpa1500MiniPanel::Kpa1500MiniPanel(QWidget *parent) : QWidget(parent) {
 
     connect(m_atuBtn, &QPushButton::clicked, this, [this]() { emit atuModeToggled(!m_atuModeInline); });
 
-    connect(m_antBtn, &QPushButton::clicked, this, [this]() {
-        int next = (m_antenna == 1) ? 2 : 1;
-        emit antennaChanged(next);
-    });
+    // WHY no local next-antenna choice: which antennas exist is the amp's per-band configuration
+    // (sub-antennas 3-32), so the amp picks the next one, exactly as its own ANTENNA button does.
+    connect(m_antBtn, &QPushButton::clicked, this, &Kpa1500MiniPanel::nextAntennaRequested);
 
     connect(m_tuneBtn, &QPushButton::clicked, this, [this]() { emit atuTuneRequested(); });
 
@@ -104,9 +105,15 @@ void Kpa1500MiniPanel::setAtuInline(bool relayInline) {
     update();
 }
 
-void Kpa1500MiniPanel::setAntenna(int ant) {
-    m_antenna = qBound(1, ant, 3);
-    updateButtonLabels();
+void Kpa1500MiniPanel::setAntenna(int antenna, int connector) {
+    m_antenna = antenna;
+    m_antennaConnector = connector;
+    update();
+}
+
+void Kpa1500MiniPanel::setBand(const QString &bandLabel) {
+    m_band = bandLabel;
+    update();
 }
 
 void Kpa1500MiniPanel::setFault(bool fault) {
@@ -295,74 +302,53 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
         p.drawText(valX, y, VALUE_WIDTH - 1, BAR_HEIGHT, Qt::AlignRight | Qt::AlignVCenter, valStr);
     }
 
-    // --- LED Indicator Cards (3 mini-cards, each with a paired indicator) ---
+    // --- LCD: operate/fault state, active antenna, band, ATU state ---
     if (m_connected) {
-        int gridY = METER_START_Y + (METER_SPACING * 4) + LED_GRID_TOP_PAD;
-        QFont ledFont = K4Styles::Fonts::paintFont(8);
-        p.setFont(ledFont);
+        const int lcdY = METER_START_Y + (METER_SPACING * 4) + LCD_TOP_PAD;
+        const int lcdH = LCD_ROW_HEIGHT * 2 + 4;
 
-        QColor dimColor(K4Styles::Colors::InactiveGray);
-        QColor green(K4Styles::Colors::StatusGreen);
-        QColor amber(K4Styles::Colors::AccentAmber);
-        QColor red(K4Styles::Colors::TxRed);
+        // Alpha-channel overlays matching the panel's card style. Alpha, not palette.
+        constexpr int kLcdBorderAlpha = 20; // White border at low alpha
+        constexpr int kLcdShadeAlpha = 40;  // Black shade fill
+        p.setPen(QColor(255, 255, 255, kLcdBorderAlpha));
+        p.setBrush(QColor(0, 0, 0, kLcdShadeAlpha));
+        p.drawRoundedRect(cx, lcdY, cw, lcdH, 3, 3);
 
-        int cardGap = 2;
-        int totalGaps = cardGap * 2; // 3 cards = 2 gaps
-        int cardW = (cw - totalGaps) / 3;
-        int cardH = LED_ROW_HEIGHT * 2 + 4; // 2 rows + vertical padding
-        int cardPad = 3;                    // Internal padding
+        p.setFont(K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeSmall, QFont::Bold));
+        const int textX = cx + LCD_TEXT_PAD;
+        const int textW = cw - LCD_TEXT_PAD * 2;
+        const int line1Y = lcdY + 2;
+        const int line2Y = line1Y + LCD_ROW_HEIGHT;
 
-        // Alpha-channel overlays for mini-card visual style. Alpha, not palette.
-        constexpr int kCardBorderAlpha = 20; // White border at low alpha
-        constexpr int kCardShadeAlpha = 40;  // Black shade fill
-
-        // Helper: draw a mini-card background
-        auto drawCard = [&](int cardIdx) -> int {
-            int x = cx + cardIdx * (cardW + cardGap);
-            p.setPen(QColor(255, 255, 255, kCardBorderAlpha));
-            p.setBrush(QColor(0, 0, 0, kCardShadeAlpha));
-            p.drawRoundedRect(x, gridY, cardW, cardH, 3, 3);
-            return x;
-        };
-
-        // Helper: draw an LED dot + label inside a card
-        auto drawLed = [&](int cardX, int row, const char *label, QColor color, bool lit) {
-            int x = cardX + cardPad;
-            int y = gridY + 2 + row * LED_ROW_HEIGHT;
-            int dotY = y + LED_ROW_HEIGHT / 2;
-
-            p.setPen(Qt::NoPen);
-            p.setBrush(lit ? color : dimColor);
-            p.drawEllipse(QPoint(x + LED_RADIUS, dotY), LED_RADIUS, LED_RADIUS);
-
-            p.setPen(lit ? color : dimColor);
-            p.setBrush(Qt::NoBrush);
-            int textX = x + LED_RADIUS * 2 + LED_TEXT_GAP;
-            int textW = cardW - cardPad * 2 - LED_RADIUS * 2 - LED_TEXT_GAP;
-            p.drawText(textX, y, textW, LED_ROW_HEIGHT, Qt::AlignLeft | Qt::AlignVCenter, label);
-        };
-
-        // Card 1: OPER / STBY
-        int c1 = drawCard(0);
+        // Line 1: state (left), antenna (centre), band (right)
+        QString state;
+        QColor stateColor;
         if (m_fault) {
-            drawLed(c1, 0, "FAULT", red, true);
-            drawLed(c1, 1, "STBY", dimColor, false);
+            state = QStringLiteral("FAULT");
+            stateColor = QColor(K4Styles::Colors::TxRed);
+        } else if (m_operate) {
+            state = QStringLiteral("OPER");
+            stateColor = QColor(K4Styles::Colors::StatusGreen);
         } else {
-            drawLed(c1, 0, "OPER", green, m_operate);
-            drawLed(c1, 1, "STBY", amber, !m_operate);
+            state = QStringLiteral("STBY");
+            stateColor = QColor(K4Styles::Colors::AccentAmber);
         }
+        p.setPen(stateColor);
+        p.drawText(textX, line1Y, textW, LCD_ROW_HEIGHT, Qt::AlignLeft | Qt::AlignVCenter, state);
 
-        // Card 2: ANT1 / ANT2
-        int c2 = drawCard(1);
-        drawLed(c2, 0, "ANT1", green, m_antenna == 1);
-        drawLed(c2, 1, "ANT2", green, m_antenna == 2);
+        p.setPen(QColor(K4Styles::Colors::TextWhite));
+        p.drawText(textX, line1Y, textW, LCD_ROW_HEIGHT, Qt::AlignHCenter | Qt::AlignVCenter,
+                   Kpa1500Antennas::label(m_antenna, m_antennaConnector));
+        p.drawText(textX, line1Y, textW, LCD_ROW_HEIGHT, Qt::AlignRight | Qt::AlignVCenter, m_band);
 
-        // Card 3: IN / BYP — ATU relay state
-        // Both green when ATU mode inline but relays bypassed (watching/armed)
-        int c3 = drawCard(2);
-        bool inLit = m_atuModeInline;    // IN lit whenever mode is inline
-        bool bypLit = !m_atuRelayInline; // BYP lit when relays are bypassed
-        drawLed(c3, 0, "IN", green, inLit);
-        drawLed(c3, 1, "BYP", green, bypLit);
+        // Line 2: ATU. IN whenever the ATU mode is inline, BYP whenever the relays are bypassed, so
+        // "mode inline but relays bypassed" reads "ATU IN BYP" - the same two facts the IN and BYP
+        // indicators showed when both were lit.
+        QStringList atu{QStringLiteral("ATU")};
+        if (m_atuModeInline)
+            atu << QStringLiteral("IN");
+        if (!m_atuRelayInline)
+            atu << QStringLiteral("BYP");
+        p.drawText(textX, line2Y, textW, LCD_ROW_HEIGHT, Qt::AlignLeft | Qt::AlignVCenter, atu.join(QLatin1Char(' ')));
     }
 }

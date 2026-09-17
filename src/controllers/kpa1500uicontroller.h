@@ -12,7 +12,8 @@ class StatusBarController;
 // panel + top-status-bar KPA1500 indicator in sync with the amplifier's
 // telemetry and connection state. Also owns the RadioSettings observer
 // that reacts to enable/host/port changes and the mini-panel button
-// handlers that dispatch KPA control commands (^OS, ^FT, ^AM, ^AN).
+// handlers that dispatch KPA control commands (^OS, ^FT, ^AM, and ^AN+ via
+// KPA1500Client::selectNextAntenna).
 //
 // MainWindow retains only: (1) a getter to hand the KPA1500Client to
 // OptionsDialog for the KPA tab, and (2) two task-level calls —

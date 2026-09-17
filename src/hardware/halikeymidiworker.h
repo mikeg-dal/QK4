@@ -33,6 +33,12 @@ private:
 
     std::unique_ptr<RtMidiIn> m_midiIn;
 
+    // Last-known state of each line. MIDI reports one line per message, so these carry the other
+    // two forward when a note arrives — see the switch in handleMidiMessage().
+    bool m_ditState = false;
+    bool m_dahState = false;
+    bool m_pttState = false;
+
     // MoMIDI protocol state
     bool m_momidiDetected = false;
     int m_pendingTimeMsb = 0;

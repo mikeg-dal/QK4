@@ -164,10 +164,8 @@ QWidget *DisplayPopupWidget::createSpanControlPage() {
 
     m_spanControlGroup = new ControlGroupWidget("SPAN", page);
     m_spanControlGroup->setValue("100.0");
-    connect(m_spanControlGroup, &ControlGroupWidget::decrementClicked, this,
-            &DisplayPopupWidget::spanDecrementRequested);
-    connect(m_spanControlGroup, &ControlGroupWidget::incrementClicked, this,
-            &DisplayPopupWidget::spanIncrementRequested);
+    connect(m_spanControlGroup, &ControlGroupWidget::decrementClicked, this, &DisplayPopupWidget::spanZoomOutRequested);
+    connect(m_spanControlGroup, &ControlGroupWidget::incrementClicked, this, &DisplayPopupWidget::spanZoomInRequested);
     layout->addWidget(m_spanControlGroup);
 
     return page;

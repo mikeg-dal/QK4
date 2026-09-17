@@ -59,9 +59,9 @@ public slots:
     void setWaterfallHeightExt(int percent); // EXT: #HWFHxx;
 
 signals:
-    // Span control signals
-    void spanIncrementRequested();
-    void spanDecrementRequested();
+    // Span control signals: + and wheel-up zoom in (narrower span), - and wheel-down zoom out
+    void spanZoomInRequested();
+    void spanZoomOutRequested();
 
     // Ref level control signals
     void refLevelIncrementRequested();

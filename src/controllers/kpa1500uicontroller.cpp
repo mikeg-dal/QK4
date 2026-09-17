@@ -43,7 +43,12 @@ KPA1500UiController::KPA1500UiController(StatusBarController *statusBar, RightSi
             [this](bool modeInline) { m_miniPanel->setAtuMode(modeInline); });
     connect(m_client, &KPA1500Client::atuInlineChanged, this,
             [this](bool relayInline) { m_miniPanel->setAtuInline(relayInline); });
-    connect(m_client, &KPA1500Client::antennaChanged, this, [this](int antenna) { m_miniPanel->setAntenna(antenna); });
+    connect(m_client, &KPA1500Client::antennaChanged, this,
+            [this](int antenna) { m_miniPanel->setAntenna(antenna, m_client->antennaConnector(antenna)); });
+    connect(m_client, &KPA1500Client::antennaConnectorChanged, this,
+            [this](int connector) { m_miniPanel->setAntenna(m_client->antenna(), connector); });
+    connect(m_client, &KPA1500Client::bandNumberChanged, this,
+            [this](int) { m_miniPanel->setBand(m_client->bandName()); });
     connect(m_client, &KPA1500Client::faultStatusChanged, this,
             [this](KPA1500Client::FaultStatus status, const QString &) {
                 m_miniPanel->setFault(status == KPA1500Client::FaultActive);
@@ -63,8 +68,7 @@ KPA1500UiController::KPA1500UiController(StatusBarController *statusBar, RightSi
     connect(m_miniPanel, &Kpa1500MiniPanel::atuTuneRequested, this, [this]() { m_client->sendCommand("^FT;"); });
     connect(m_miniPanel, &Kpa1500MiniPanel::atuModeToggled, this,
             [this](bool in) { m_client->sendCommand(in ? "^AMI;" : "^AMB;"); });
-    connect(m_miniPanel, &Kpa1500MiniPanel::antennaChanged, this,
-            [this](int ant) { m_client->sendCommand(QString("^AN%1;").arg(ant)); });
+    connect(m_miniPanel, &Kpa1500MiniPanel::nextAntennaRequested, this, [this]() { m_client->selectNextAntenna(); });
 
     // === RadioSettings observers ===
     connect(RadioSettings::instance(), &RadioSettings::kpa1500EnabledChanged, this,

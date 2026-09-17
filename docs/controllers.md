@@ -13,6 +13,7 @@ Last updated: architectural endgame refactor — RightSideController, MemoryButt
 |---|---|---|
 | "My KPA1500 amp isn't showing status" | KPA1500UiController | `src/controllers/kpa1500uicontroller.cpp` |
 | "The KPA1500 mini panel buttons don't work" | KPA1500UiController | same |
+| "KPA1500 ANT button doesn't reach sub-antennas / LCD shows the wrong antenna" | KPA1500UiController → KPA1500Client::selectNextAntenna / antennaConnector | `src/network/kpa1500client.cpp`, `src/network/kpa1500antennas.cpp` |
 | "Mode popup won't open / wrong VFO" | ModePopupController | `src/controllers/modepopupcontroller.cpp` |
 | "Mode label shows wrong text (AFSK, DATA-A, +)" | ModeLabelController | `src/controllers/modelabelcontroller.cpp` |
 | "VFO frequency display off by RIT offset" | VfoFrequencyController | `src/controllers/vfofrequencycontroller.cpp` |
@@ -30,10 +31,13 @@ Last updated: architectural endgame refactor — RightSideController, MemoryButt
 | "Antenna label text (TX / RX Main / RX Sub) wrong" | AntennaDisplayController | `src/controllers/antennadisplaycontroller.cpp` |
 | "Antenna config popup (ANT CFG button) not working" | AntennaConfigController | `src/controllers/antennaconfigcontroller.cpp` |
 | "Filter indicator shape / position wrong" | FilterIndicatorWidget (Direct Observation — no controller) | `src/ui/widgets/filterindicatorwidget.cpp` |
+| "Clicking FIL1/2/3 under a VFO doesn't change the filter preset" | RightSideController::cycleFilterPreset | `src/controllers/rightsidecontroller.cpp` |
 | "Side panel knob values (BW/SHFT, power, mic gain) wrong" | SideControlDisplayController | `src/controllers/sidecontroldisplaycontroller.cpp` |
 | "Side panel shows CW knobs (WPM/PITCH) instead of voice (MIC/CMP) or vice versa" | SideControlDisplayController | same |
 | "Side panel scroll wheels (WPM/Power/BW/HI/LO/RFGain/etc.) wrong" | SideControlScrollController | `src/controllers/sidecontrolscrollcontroller.cpp` |
 | "Right side panel button (PRE/NB/NR/NTCH/FIL/AB/REV/SPOT/MODE/PF1-4/RATE/LOCK/SUB) wrong" | RightSideController | `src/controllers/rightsidecontroller.cpp` |
+| "Clicking a frequency digit doesn't change the tuning rate (underline)" | VfoFrequencyController::setTuningRateFromDigit | `src/controllers/vfofrequencycontroller.cpp` |
+| "FREQ ENT doesn't open frequency entry / opens it on the wrong VFO" | RightSideController (frequencyEntryRequested) → VfoFrequencyController::toggleFrequencyEntry | `src/controllers/vfofrequencycontroller.cpp` |
 | "Memory buttons M1-M4 / REC / STORE / RCL left/right click wrong" | MemoryButtonsController | `src/controllers/memorybuttonscontroller.cpp` |
 | "B-SET label visibility wrong (still showing SPLIT when B-SET on)" | VfoRowIndicatorController | `src/controllers/vforowindicatorcontroller.cpp` |
 | "Side panel BW/SHFT color wrong on Sub-RX active (B-SET)" | SideControlDisplayController | `src/controllers/sidecontroldisplaycontroller.cpp` |
@@ -76,7 +80,7 @@ Grouped by concern:
 - **AudioController** — audio engine, Opus codecs, PTT, audio thread
 - **SpectrumController** — panadapters, spectrum data routing, click-tune, passband overlays
 - **HardwareController** — constructs + owns KPOD, KPOD+, HaliKey, IambicKeyer, SidetoneGenerator + their threads; KPOD tuning-knob → CAT; device-config push; signal forwarding
-- **CwController** — CW keying orchestration across the HardwareController-owned devices: IambicKeyer↔CAT/sidetone wiring, HaliKey paddle/PTT handlers, V1.4 PTT demux, KPOD+ keyer-active gate. See `cwcontroller.h` for the threading-invariant doc.
+- **CwController** — CW keying orchestration across the HardwareController-owned devices: IambicKeyer↔CAT/sidetone wiring, the single HaliKey line handler (both levers passed to the keyer as one sample), V1.4 pedal demux, KPOD+ keyer-active gate. Paddle input is gated on CW/CW_R for both levers, and both are released on any mode change. See `cwcontroller.h` for the threading-invariant doc.
 - **DxClusterController** — DX cluster client (multi-instance; spot cache)
 
 ### Popup-family

@@ -131,6 +131,7 @@ void RightSidePanel::setupUi() {
     m_layout->addLayout(bottomGrid);
 
     // Connect bottom button signals
+    connect(m_freqEntBtn, &QPushButton::clicked, this, &RightSidePanel::freqEntClicked);
     connect(m_rateBtn, &QPushButton::clicked, this, &RightSidePanel::rateClicked);
     connect(m_lockABtn, &QPushButton::clicked, this, &RightSidePanel::lockAClicked);
     connect(m_subBtn, &QPushButton::clicked, this, &RightSidePanel::subClicked);

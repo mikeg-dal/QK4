@@ -317,18 +317,15 @@ void HaliKeyV14Worker::monitorLoop() {
         if (!stable || !m_running)
             continue;
 
-        if (ditState != lastDitState) {
+        // One emit for the whole sample. These lines were read together and must stay together:
+        // see the lineStateChanged comment in halikeyworkerbase.h.
+        if (ditState != lastDitState || dahState != lastDahState || pttState != lastPttState) {
+            qCDebug(hwHalikey) << "HaliKeyV14Worker: lines dit:" << ditState << " dah:" << dahState
+                               << " ptt:" << pttState;
             lastDitState = ditState;
-            emit ditStateChanged(ditState);
-        }
-        if (dahState != lastDahState) {
             lastDahState = dahState;
-            emit dahStateChanged(dahState);
-        }
-        if (pttState != lastPttState) {
             lastPttState = pttState;
-            qCDebug(hwHalikey) << "HaliKeyV14Worker: ptt edge:" << pttState;
-            emit pttStateChanged(pttState);
+            emit lineStateChanged(ditState, dahState, pttState);
         }
     }
 
@@ -375,14 +372,17 @@ void HaliKeyV14Worker::monitorLoop() {
             return;
         }
 
+        // One emit per loop iteration covering every line that settled on this pass — the lines
+        // were sampled together by readPinState() and must reach the keyer together.
+        bool linesChanged = false;
+
         // Debounce dit (count-based; identical to the macOS branch)
         if (ditState == rawDitState) {
             if (ditDebounceCounter < DEBOUNCE_COUNT)
                 ditDebounceCounter++;
             if (ditDebounceCounter >= DEBOUNCE_COUNT && ditState != lastDitState) {
                 lastDitState = ditState;
-                qCDebug(hwHalikey) << "HaliKeyV14Worker: dit edge:" << ditState;
-                emit ditStateChanged(ditState);
+                linesChanged = true;
             }
         } else {
             rawDitState = ditState;
@@ -395,8 +395,7 @@ void HaliKeyV14Worker::monitorLoop() {
                 dahDebounceCounter++;
             if (dahDebounceCounter >= DEBOUNCE_COUNT && dahState != lastDahState) {
                 lastDahState = dahState;
-                qCDebug(hwHalikey) << "HaliKeyV14Worker: dah edge:" << dahState;
-                emit dahStateChanged(dahState);
+                linesChanged = true;
             }
         } else {
             rawDahState = dahState;
@@ -409,12 +408,17 @@ void HaliKeyV14Worker::monitorLoop() {
                 pttDebounceCounter++;
             if (pttDebounceCounter >= DEBOUNCE_COUNT && pttState != lastPttState) {
                 lastPttState = pttState;
-                qCDebug(hwHalikey) << "HaliKeyV14Worker: ptt edge:" << pttState;
-                emit pttStateChanged(pttState);
+                linesChanged = true;
             }
         } else {
             rawPttState = pttState;
             pttDebounceCounter = 1;
+        }
+
+        if (linesChanged) {
+            qCDebug(hwHalikey) << "HaliKeyV14Worker: lines dit:" << lastDitState << " dah:" << lastDahState
+                               << " ptt:" << lastPttState;
+            emit lineStateChanged(lastDitState, lastDahState, lastPttState);
         }
     }
 
@@ -436,14 +440,17 @@ void HaliKeyV14Worker::monitorLoop() {
             return;
         }
 
+        // One emit per loop iteration covering every line that settled on this pass — the lines
+        // were sampled together by readPinState() and must reach the keyer together.
+        bool linesChanged = false;
+
         // Debounce dit
         if (ditState == rawDitState) {
             if (ditDebounceCounter < DEBOUNCE_COUNT)
                 ditDebounceCounter++;
             if (ditDebounceCounter >= DEBOUNCE_COUNT && ditState != lastDitState) {
                 lastDitState = ditState;
-                qCDebug(hwHalikey) << "HaliKeyV14Worker: dit edge:" << ditState;
-                emit ditStateChanged(ditState);
+                linesChanged = true;
             }
         } else {
             rawDitState = ditState;
@@ -456,8 +463,7 @@ void HaliKeyV14Worker::monitorLoop() {
                 dahDebounceCounter++;
             if (dahDebounceCounter >= DEBOUNCE_COUNT && dahState != lastDahState) {
                 lastDahState = dahState;
-                qCDebug(hwHalikey) << "HaliKeyV14Worker: dah edge:" << dahState;
-                emit dahStateChanged(dahState);
+                linesChanged = true;
             }
         } else {
             rawDahState = dahState;
@@ -470,12 +476,17 @@ void HaliKeyV14Worker::monitorLoop() {
                 pttDebounceCounter++;
             if (pttDebounceCounter >= DEBOUNCE_COUNT && pttState != lastPttState) {
                 lastPttState = pttState;
-                qCDebug(hwHalikey) << "HaliKeyV14Worker: ptt edge:" << pttState;
-                emit pttStateChanged(pttState);
+                linesChanged = true;
             }
         } else {
             rawPttState = pttState;
             pttDebounceCounter = 1;
+        }
+
+        if (linesChanged) {
+            qCDebug(hwHalikey) << "HaliKeyV14Worker: lines dit:" << lastDitState << " dah:" << lastDahState
+                               << " ptt:" << lastPttState;
+            emit lineStateChanged(lastDitState, lastDahState, lastPttState);
         }
     }
 #endif

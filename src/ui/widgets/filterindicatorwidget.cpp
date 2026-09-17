@@ -1,12 +1,20 @@
 #include "ui/widgets/filterindicatorwidget.h"
 #include "models/radiostate.h"
 #include "ui/styling/k4constants.h"
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPolygonF>
 #include <algorithm>
 
 FilterIndicatorWidget::FilterIndicatorWidget(QWidget *parent) : QWidget(parent) {
     setFixedSize(62, 62); // 50 * 1.25 = 62
+    setCursor(Qt::PointingHandCursor);
+}
+
+void FilterIndicatorWidget::mouseReleaseEvent(QMouseEvent *event) {
+    if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()))
+        emit clicked();
+    QWidget::mouseReleaseEvent(event);
 }
 
 void FilterIndicatorWidget::observe(RadioState *state, Vfo vfo) {

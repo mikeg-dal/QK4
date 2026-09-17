@@ -12,7 +12,7 @@ Q_DECLARE_LOGGING_CATEGORY(hwHalikey)
 /**
  * @brief Base class for HaliKey paddle-input workers. Concrete workers (one per platform) live on
  *        `HalikeyDevice::m_workerThread` and translate hardware events into
- *        `ditStateChanged` / `dahStateChanged` / `pttStateChanged` signals.
+ *        one `lineStateChanged(dit, dah, ptt)` signal per sample.
  *
  * WHY three concrete subclasses instead of one:
  *   - `HaliKeyV14Worker`  — native V1.4 hardware protocol (direct serial frames).
@@ -41,9 +41,19 @@ public slots:
     void stop();              // Sets atomic flag to exit loop
 
 signals:
-    void ditStateChanged(bool pressed);
-    void dahStateChanged(bool pressed);
-    void pttStateChanged(bool pressed);
+    // All three input lines as ONE sample, emitted whenever any of them changes.
+    //
+    // WHY a single signal rather than one per line: iambic decisions are a function of the paddle
+    // PAIR, and the V1.4 worker already reads every line in one ioctl/API call. Splitting that
+    // sample into separate signals threw the "read together" fact away, and a squeeze release then
+    // reached the keyer as two events — if the element timer fired between them one lever still
+    // read down, and an element nobody keyed was appended. Emitting the sample intact keeps the
+    // pair consistent all the way to the keyer.
+    //
+    // The MIDI variant cannot produce a true joint sample (each lever is its own note message), so
+    // it carries its last-known values for the lines that did not change. That still gives the
+    // keyer a coherent pair and one uniform interface for both transports.
+    void lineStateChanged(bool dit, bool dah, bool ptt);
     void errorOccurred(const QString &error);
     void portOpened();
 

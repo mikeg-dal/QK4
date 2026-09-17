@@ -116,6 +116,7 @@ set(SOURCES
     src/network/protocol.cpp
     src/network/networkmetrics.cpp
     src/network/kpa1500client.cpp
+    src/network/kpa1500antennas.cpp
     src/network/dxclusterclient.cpp
     src/network/catserver.cpp
     src/network/catframes.cpp
@@ -136,6 +137,7 @@ set(SOURCES
     src/audio/sidetonegenerator.cpp
     src/dsp/panadapter_rhi.cpp
     src/dsp/minipan_rhi.cpp
+    src/dsp/bandplanstrip.cpp
     src/dsp/spectrumscale.cpp
     src/dsp/waterfallgeometry.cpp
     src/settings/radiosettings.cpp

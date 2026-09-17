@@ -1,4 +1,5 @@
 #include "kpa1500client.h"
+#include "kpa1500antennas.h"
 #include <QLoggingCategory>
 
 Q_LOGGING_CATEGORY(netKpa, "net.kpa")
@@ -52,6 +53,7 @@ void KPA1500Client::connectToHost(const QString &host, quint16 port) {
     m_host = host;
     m_port = port;
     m_receiveBuffer.clear();
+    resetAntennaState();
 
     setState(Connecting);
     m_socket->connectToHost(host, port);
@@ -85,6 +87,30 @@ void KPA1500Client::sendCommand(const QString &command) {
     QByteArray data = command.toLatin1();
     m_socket->write(data);
     m_socket->flush();
+}
+
+void KPA1500Client::selectNextAntenna() {
+    sendCommand(QStringLiteral("^AN+;^AN;"));
+}
+
+int KPA1500Client::antennaConnector(int antenna) const {
+    // WHY fixed for 1 and 2: the V3 reference requires antenna 1 on ANT1 and antenna 2 on ANT2, so
+    // they need no map and read correctly before it arrives.
+    if (antenna == 1 || antenna == 2)
+        return antenna;
+    if (antenna < 1 || antenna > m_enableMap.size())
+        return 0;
+    return m_enableMap[antenna - 1];
+}
+
+void KPA1500Client::requestEnableMap() {
+    if (m_bandNumber >= 0)
+        sendCommand(QStringLiteral("^AE%1ALL;").arg(m_bandNumber, 2, 10, QLatin1Char('0')));
+}
+
+void KPA1500Client::resetAntennaState() {
+    m_bandNumber = -1;
+    m_enableMap.clear();
 }
 
 void KPA1500Client::startPolling(int intervalMs) {
@@ -189,8 +215,29 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
     // ^BN - Band Number (convert to label e.g. "20m")
     if (cmd.startsWith("BN")) {
         QString band = bandNumberToLabel(cmd.mid(2));
-        // Band name is polled by Kpa1500Page via bandName() getter — no signal needed.
         m_bandName = band;
+        bool ok;
+        const int number = cmd.mid(2).toInt(&ok);
+        if (ok && number != m_bandNumber) {
+            // Enabled antennas are per band, so a new band needs its own map.
+            m_bandNumber = number;
+            m_enableMap.clear();
+            emit bandNumberChanged(number);
+            requestEnableMap();
+        }
+    }
+    // ^AEbbALL - antenna enable map for band bb: 32 chars, D / 1 / 2 per antenna 1-32
+    else if (cmd.startsWith("AE") && cmd.mid(4, 3) == QLatin1String("ALL")) {
+        bool ok;
+        const int band = cmd.mid(2, 2).toInt(&ok);
+        const QVector<int> map = Kpa1500Antennas::parseEnableMap(cmd.mid(7));
+        if (ok && band == m_bandNumber && !map.isEmpty()) {
+            const int before = antennaConnector(m_antenna);
+            m_enableMap = map;
+            const int after = antennaConnector(m_antenna);
+            if (after != before)
+                emit antennaConnectorChanged(after);
+        }
     }
     // ^SN - Serial Number
     else if (cmd.startsWith("SN")) {
@@ -279,9 +326,13 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
     else if (cmd.startsWith("AN")) {
         bool ok;
         int antenna = cmd.mid(2).toInt(&ok);
-        if (ok && antenna >= 1 && antenna <= 32 && m_antenna != antenna) {
+        if (ok && antenna >= 1 && antenna <= Kpa1500Antennas::kMaxAntenna && m_antenna != antenna) {
             m_antenna = antenna;
             emit antennaChanged(antenna);
+            // A sub-antenna the cached map doesn't route (map not read yet, or the operator changed
+            // the amp's configuration) - read the map again rather than show a wrong connector.
+            if (antennaConnector(antenna) == 0)
+                requestEnableMap();
         }
     }
     // ^AI - ATU Inline relay state (^AI1; = relays inline, ^AI0; = relays bypassed)

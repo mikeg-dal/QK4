@@ -7,8 +7,9 @@
 
 /**
  * @brief Compact KPA1500 amplifier panel docked in the right-side panel. Shows forward/reflected
- *        power + SWR + temp meters (with peak hold + decay animation), the OPERATE / ATU / ANT /
- *        TUNE buttons, and fault/disconnect state. Driven by KPA1500Client meter and state signals.
+ *        power + SWR + temp meters (with peak hold + decay animation), a two-line LCD with the
+ *        operate/fault state, active antenna, band and ATU state, and the MODE / ATU / ANT / TUNE
+ *        buttons. Driven by KPA1500Client meter and state signals.
  */
 class Kpa1500MiniPanel : public QWidget {
     Q_OBJECT
@@ -26,7 +27,9 @@ public:
     void setMode(bool operate);
     void setAtuMode(bool modeInline);    // ^AM: ATU mode (enabled/disabled)
     void setAtuInline(bool relayInline); // ^AI: ATU relay state (in-circuit/bypassed)
-    void setAntenna(int ant);
+    // Active antenna 1-32 and the connector it is routed through (1/2, or 0 while unknown).
+    void setAntenna(int antenna, int connector);
+    void setBand(const QString &bandLabel);
     void setFault(bool fault);
     void setConnected(bool connected);
 
@@ -34,7 +37,7 @@ signals:
     void modeToggled(bool operate);
     void atuTuneRequested();
     void atuModeToggled(bool in);
-    void antennaChanged(int ant);
+    void nextAntennaRequested(); // ANT button: step to the next antenna enabled on the amp
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -70,6 +73,8 @@ private:
     bool m_atuModeInline = false;  // ^AM: ATU mode enabled
     bool m_atuRelayInline = false; // ^AI: ATU relays in-circuit
     int m_antenna = 1;
+    int m_antennaConnector = 1;
+    QString m_band;
     bool m_fault = false;
     bool m_connected = false;
 
@@ -95,12 +100,11 @@ private:
     static constexpr int VALUE_WIDTH = 30;
     static constexpr int METER_START_Y = TOP_PAD + HEADER_HEIGHT + 4;
 
-    // LED indicator grid constants
-    static constexpr int LED_RADIUS = 2;       // 4px diameter dots
-    static constexpr int LED_ROW_HEIGHT = 12;  // Per row
-    static constexpr int LED_TEXT_GAP = 2;     // Gap between dot and text
-    static constexpr int LED_GRID_TOP_PAD = 5; // Space above LED grid
-    static constexpr int LED_GRID_HEIGHT = LED_GRID_TOP_PAD + (LED_ROW_HEIGHT * 2) + 6;
+    // LCD constants (occupies the space the LED indicator cards used)
+    static constexpr int LCD_ROW_HEIGHT = 12; // Per text line
+    static constexpr int LCD_TOP_PAD = 5;     // Space above the LCD
+    static constexpr int LCD_TEXT_PAD = 4;    // Horizontal inset of text inside the LCD
+    static constexpr int LCD_HEIGHT = LCD_TOP_PAD + (LCD_ROW_HEIGHT * 2) + 6;
 };
 
 #endif // KPA1500MINIPANEL_H

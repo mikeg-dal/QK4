@@ -1,4 +1,5 @@
 #include "panadapter_rhi.h"
+#include "dsp/bandplanstrip.h"
 #include "dsp/spectrumscale.h"
 #include "dsp/waterfallgeometry.h"
 #include "panadapter_constants.h"
@@ -241,18 +242,12 @@ private:
     QString m_mode = "USB";
 };
 
-// Band-plan strip across the top of the panadapter. Two rows: a band-name header
-// (green) on top, and a sub-mode segment row (CW/Data/Phone/Beacon/All, translucent,
-// left-aligned labels) with optional digital calling-frequency marker ticks (FT8/FT4/
-// WSPR...). Self-contained like FrequencyScaleOverlay; re-maps on pan/zoom.
+// Band-plan strip across the top of the panadapter: one row of mode segments with the band name
+// pinned as a tag, hatched where the screen runs past the band edge, and calling-frequency marker
+// ticks. Placement is decided by BandPlanStrip::layout; this only paints it.
 class BandPlanOverlay : public QWidget {
 public:
-    static constexpr int kBandRowH = 16;
-    static constexpr int kModeRowH = 18;
-    static constexpr int kTotalH = kBandRowH + kModeRowH;
-    // The strip spans the full width to the left edge; the dBm scale separately skips any
-    // S-unit label that would fall under the strip (setTopReserved), so no inset is needed.
-    static constexpr int kLeftInset = 0;
+    static constexpr int kStripH = 18;
 
     BandPlanOverlay(QWidget *parent = nullptr) : QWidget(parent) {
         setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -272,119 +267,88 @@ public:
     }
 
 protected:
-    // Map an absolute frequency to a pixel X using the same CW dial-offset convention as
-    // the frequency-scale overlay, so segments line up with the labels below.
-    int freqToX(qint64 freqHz, int w) const {
+    // Frequency at the left edge, using the same CW dial-offset convention as the frequency-scale
+    // overlay so segments line up with the labels below.
+    qint64 viewStartHz() const {
         qint64 effectiveCenter = m_centerFreq;
         if (m_mode == "CW")
             effectiveCenter = m_centerFreq + static_cast<qint64>(m_ifShift) * 10;
         else if (m_mode == "CW-R")
             effectiveCenter = m_centerFreq - static_cast<qint64>(m_ifShift) * 10;
-        const qint64 startFreq = effectiveCenter - m_spanHz / 2;
-        double n = static_cast<double>(freqHz - startFreq) / static_cast<double>(m_spanHz);
-        return qRound(qBound(0.0, n, 1.0) * w);
+        return effectiveCenter - m_spanHz / 2;
     }
 
     void paintEvent(QPaintEvent *) override {
         if (m_spanHz <= 0 || m_segments.isEmpty())
             return;
 
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::TextAntialiasing);
         const int w = width();
-        const int inset = kLeftInset; // leave the dBm scale column on the left clear
-        if (w <= inset)
-            return;
-
+        const int h = height();
         QFont labelFont = K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeSmall, QFont::Bold);
         QFont markerFont = K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeTiny, QFont::Bold);
-        QFontMetrics fm(labelFont);
-        QFontMetrics mfm(markerFont);
+        const QFontMetrics fm(labelFont);
+        const QFontMetrics mfm(markerFont);
 
-        // Track occupied label x-ranges so segment labels and marker labels don't overlap.
-        QVector<QPair<int, int>> occupied;
-        auto fits = [&](int left, int right) {
-            if (left < inset || right > w)
-                return false;
-            for (const auto &r : occupied)
-                if (left < r.second && right > r.first)
-                    return false;
-            return true;
-        };
+        const BandPlanStrip::Layout strip = BandPlanStrip::layout(
+            m_segments, m_markers, m_bandName, viewStartHz(), m_spanHz, w,
+            [&fm](const QString &text) { return fm.horizontalAdvance(text); },
+            [&mfm](const QString &text) { return mfm.horizontalAdvance(text); });
 
-        // --- Band-name header row (green) — spans only the band's extent, clipped to the
-        // dBm inset, so it lines up with the sub-mode segments and never bleeds outside the
-        // band (e.g. no "40m" green left of 7.000). ---
-        const int bandX1 = qMax(freqToX(m_segments.first().startHz, w), inset);
-        const int bandX2 = qMin(freqToX(m_segments.last().endHz, w), w);
-        if (bandX2 > bandX1) {
-            QColor bandFill = QColor(K4Styles::Colors::BandPlanBand);
-            bandFill.setAlpha(180);
-            painter.fillRect(QRect(bandX1, 0, bandX2 - bandX1, kBandRowH), bandFill);
-            if (!m_bandName.isEmpty()) {
-                painter.setFont(labelFont);
-                painter.setPen(Qt::white);
-                painter.drawText(QRect(bandX1 + 4, 0, bandX2 - bandX1 - 8, kBandRowH), Qt::AlignVCenter | Qt::AlignLeft,
-                                 m_bandName);
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::TextAntialiasing);
+
+        for (int i = 0; i < strip.blocks.size(); ++i) {
+            const BandPlanStrip::Block &b = strip.blocks[i];
+            const QRect rect(b.x1, 0, b.x2 - b.x1, h);
+            if (b.kind == BandPlanStrip::BlockKind::Segment) {
+                QColor fill = BandPlan::modeColor(b.mode);
+                fill.setAlpha(120); // translucent so the spectrum shows through
+                painter.fillRect(rect, fill);
+            } else {
+                QColor fill(K4Styles::Colors::BandPlanOutOfBand);
+                fill.setAlpha(200);
+                painter.fillRect(rect, fill);
+                painter.fillRect(rect, QBrush(QColor(255, 255, 255, 40), Qt::BDiagPattern));
             }
-        }
-
-        // --- Sub-mode segment row ---
-        const int modeY = kBandRowH;
-        painter.setFont(labelFont);
-        for (const BandPlan::BandSegment &s : m_segments) {
-            int x1 = qMax(freqToX(s.startHz, w), inset); // clip the left edge to the inset
-            int x2 = freqToX(s.endHz, w);
-            if (x2 <= x1)
-                continue;
-
-            QRect rect(x1, modeY, x2 - x1, kModeRowH);
-            QColor fill = BandPlan::modeColor(s.mode);
-            fill.setAlpha(150); // translucent so the spectrum shows through
-            painter.fillRect(rect, fill);
-
-            // Light divider at the section's left boundary so sub-sections read distinctly.
-            if (x1 > inset + 1) {
+            // WHY a divider as well as a colour change: the labels and these lines carry the
+            // boundaries, so the strip still reads for a red-green colour-blind operator.
+            if (i > 0) {
                 painter.setPen(QColor(255, 255, 255, 70));
-                painter.drawLine(x1, modeY, x1, modeY + kModeRowH);
-            }
-
-            const QString label = BandPlan::modeLabel(s.mode);
-            const int lw = fm.horizontalAdvance(label);
-            const int lx = x1 + 4;
-            if (x2 - x1 >= lw + 8 && fits(lx, lx + lw)) {
-                painter.setPen(Qt::white);
-                painter.drawText(QRect(lx, modeY, lw + 2, kModeRowH), Qt::AlignVCenter | Qt::AlignLeft, label);
-                occupied.append({lx, lx + lw});
+                painter.drawLine(b.x1, 0, b.x1, h);
             }
         }
 
-        // --- Digital calling-frequency markers (US region): point designators ---
-        // A bright hairline + a small downward caret marks the exact spot, so the label
-        // reads as a point, not a section.
+        painter.setFont(labelFont);
+        if (strip.tag.visible) {
+            const QRect tagRect(strip.tag.x, 0, strip.tag.width, h);
+            painter.fillRect(tagRect, QColor(K4Styles::Colors::BandPlanTag));
+            painter.setPen(Qt::white);
+            painter.drawText(tagRect, Qt::AlignCenter, m_bandName);
+        }
+
+        for (const BandPlanStrip::Label &label : strip.labels) {
+            const bool outOfBand = strip.blocks[label.block].kind == BandPlanStrip::BlockKind::OutOfBand;
+            painter.setPen(outOfBand ? QColor(K4Styles::Colors::TextGray) : QColor(Qt::white));
+            painter.drawText(QRect(label.x, 0, label.width + 2, h), Qt::AlignVCenter | Qt::AlignLeft, label.text);
+        }
+
+        // Calling-frequency markers: a hairline and a small downward caret mark the exact spot, so
+        // the label reads as a point rather than a section.
         painter.setFont(markerFont);
-        for (const BandPlan::BandMarker &m : m_markers) {
-            int x = freqToX(m.freqHz, w);
-            if (x <= inset || x >= w)
-                continue; // off-screen or under the dBm column
-
+        for (const BandPlanStrip::Marker &m : strip.markers) {
             painter.setPen(QPen(QColor(255, 255, 255, 220), 1));
-            painter.drawLine(x, modeY, x, modeY + kModeRowH);
+            painter.drawLine(m.x, 0, m.x, h);
 
-            // Downward caret at the top of the mode row, centered on the line.
             QPainterPath caret;
-            caret.moveTo(x - 3.0, modeY + 0.5);
-            caret.lineTo(x + 3.0, modeY + 0.5);
-            caret.lineTo(x, modeY + 4.5);
+            caret.moveTo(m.x - 3.0, 0.5);
+            caret.lineTo(m.x + 3.0, 0.5);
+            caret.lineTo(m.x, 4.5);
             caret.closeSubpath();
             painter.fillPath(caret, QColor(255, 255, 255, 235));
 
-            const int lw = mfm.horizontalAdvance(m.name);
-            const int lx = x + 4;
-            if (fits(lx, lx + lw)) {
+            if (m.labelVisible) {
                 painter.setPen(Qt::white);
-                painter.drawText(QRect(lx, modeY, lw + 2, kModeRowH), Qt::AlignVCenter | Qt::AlignLeft, m.name);
-                occupied.append({lx, lx + lw});
+                painter.drawText(QRect(m.labelX, 0, m.labelWidth + 2, h), Qt::AlignVCenter | Qt::AlignLeft, m.name);
             }
         }
     }
@@ -459,12 +423,12 @@ void PanadapterRhiWidget::updateBandPlanOverlay() {
         return;
     const bool active = m_bandPlanVisible && !m_bandPlanSegments.isEmpty();
     if (m_dbmScaleOverlay)
-        m_dbmScaleOverlay->setTopReserved(active ? BandPlanOverlay::kTotalH : 0);
+        m_dbmScaleOverlay->setTopReserved(active ? BandPlanOverlay::kStripH : 0);
     if (!active) {
         m_bandPlanOverlay->hide();
         return;
     }
-    m_bandPlanOverlay->setGeometry(0, 0, width(), BandPlanOverlay::kTotalH);
+    m_bandPlanOverlay->setGeometry(0, 0, width(), BandPlanOverlay::kStripH);
     m_bandPlanOverlay->setData(m_centerFreq, m_spanHz, m_ifShift, m_mode, m_bandPlanName, m_bandPlanSegments,
                                m_bandPlanMarkers);
     m_bandPlanOverlay->show();
@@ -952,14 +916,14 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     const float spectrumHeight = h * m_spectrumRatio;
     const float waterfallHeight = h - spectrumHeight;
 
-    // WHY: when the band-plan strip is shown it occupies the top kTotalH logical px of the
+    // WHY: when the band-plan strip is shown it occupies the top kStripH logical px of the
     // spectrum. Stop the per-VFO overlays (passband fills, center/TX markers, RTTY dashes) at
     // its lower edge so they read as bounded by the banner instead of bleeding under the
-    // translucent strip and looking clipped. kTotalH is logical; scale to the physical render
+    // translucent strip and looking clipped. kStripH is logical; scale to the physical render
     // surface. Banner off -> overlayTop is 0 and the overlays span the full spectrum as before.
     const bool bandPlanActive = m_bandPlanVisible && !m_bandPlanSegments.isEmpty();
     const float overlayTop =
-        bandPlanActive ? static_cast<float>(BandPlanOverlay::kTotalH) * static_cast<float>(devicePixelRatioF()) : 0.0f;
+        bandPlanActive ? static_cast<float>(BandPlanOverlay::kStripH) * static_cast<float>(devicePixelRatioF()) : 0.0f;
 
     QRhiResourceUpdateBatch *rub = m_rhi->nextResourceUpdateBatch();
 

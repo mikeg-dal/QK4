@@ -57,8 +57,8 @@ public:
     void setNotchFilter(bool enabled, int pitchHz);
     void setCursorVisible(bool visible);
 
-    // Band-plan overlay strip (top of panadapter): a band-name header row plus a sub-mode
-    // segment row with optional digital calling-frequency markers. Segments/markers are
+    // Band-plan overlay strip (top of panadapter): one row of mode segments with the band name as a
+    // tag, hatched past the band edge, plus digital calling-frequency markers. Segments/markers are
     // absolute-frequency; the strip re-maps to the freq axis on pan/zoom.
     void setBandPlan(const QString &bandName, const QVector<BandPlan::BandSegment> &segments,
                      const QVector<BandPlan::BandMarker> &markers);

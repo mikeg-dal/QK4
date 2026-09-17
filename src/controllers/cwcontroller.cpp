@@ -95,13 +95,17 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
         int dest = m_v14PttDestination.load(std::memory_order_acquire);
         if (dest != V14PttNone) {
             if (m_v14PttDestination.compare_exchange_strong(dest, V14PttNone, std::memory_order_acq_rel)) {
-                if (dest == V14PttDitPaddle) {
-                    m_keyer->setDitPaddle(false);
-                } else if (dest == V14PttPtt) {
+                if (dest == V14PttPtt)
                     emit pttRequested(false);
-                }
             }
         }
+
+        // Release both levers on any mode change. The line handler gates them on CW, so a lever
+        // held across the transition would otherwise stay set on the keyer with no further event
+        // to clear it — and would still be down on the next entry into CW.
+        const bool inCw = (mode == RadioState::CW || mode == RadioState::CW_R);
+        if (!inCw)
+            m_keyer->setPaddleState(false, false);
     });
 
     // Device-type fan-out: mirror for the V1.4 PTT demux below + the keyer's hold
@@ -181,75 +185,64 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // to stop when the keyer goes idle.
 
     // =========================================================================
-    // HaliKey paddle → keyer (ZERO-LATENCY DirectConnection)
+    // HaliKey lines → keyer (ZERO-LATENCY DirectConnection)
     // =========================================================================
-    // HaliKey MIDI sends note 20 (dit) + note 31 (PTT) together on every Tip-to-Sleeve closure.
-    // In CW mode: forward dit to keyer, ignore PTT (TX handled by KZ commands).
-    // In voice mode: forward PTT to MainWindow, suppress dit (no keying in SSB/AM/FM).
+    // One handler for all three lines, because they arrive as one sample. Feeding the keyer both
+    // levers in a single call is what stops a released squeeze from being seen half-applied — the
+    // case that appended an element the operator never keyed. See IambicKeyer::setPaddleState.
+    //
+    // Line → lever mapping differs by transport. V1.4 serial firmware cannot distinguish the foot
+    // pedal from the dit lever: both drive CTS, so in CW the CTS level IS the dit lever, and in
+    // voice it is the pedal. The MIDI variant has a distinct note for the pedal, so its dit always
+    // comes from the dit line and the pedal never keys in CW.
     connect(
-        m_halikey, &HalikeyDevice::ditStateChanged, this,
-        [this](bool pressed) {
-            // Suppress HaliKey dit when KPOD+ keyer owns the CW path
+        m_halikey, &HalikeyDevice::lineStateChanged, this,
+        [this](bool dit, bool dah, bool ptt) {
+            // KPOD+ owns the whole CW chain when present.
             if (kpodPlusActive())
                 return;
-            auto mode = static_cast<RadioState::Mode>(m_cachedMode.load(std::memory_order_acquire));
-            if (mode == RadioState::CW || mode == RadioState::CW_R) {
-                m_keyer->setDitPaddle(pressed);
-            }
-            // In voice/data modes, dit is suppressed — PTT signal handles TX
-        },
-        Qt::DirectConnection);
-    connect(
-        m_halikey, &HalikeyDevice::dahStateChanged, this,
-        [this](bool pressed) {
-            if (kpodPlusActive())
-                return;
-            m_keyer->setDahPaddle(pressed);
-        },
-        Qt::DirectConnection);
 
-    // HaliKey PTT → MainWindow (voice/data modes) or paddle dit (CW mode, V1.4 only).
-    // WHY: V1.4 serial firmware can't distinguish foot pedal from paddle dit lever — both
-    // drive CTS. We demux by mode here: in CW the CTS edge is treated as the dit-paddle
-    // press, in voice it's the foot pedal → PTT. The MIDI variant has a distinct note for
-    // the pedal so its CW behavior stays mode-gated to silence (no spurious dit injection).
-    connect(
-        m_halikey, &HalikeyDevice::pttStateChanged, this,
-        [this](bool active) {
             const bool isV14 = m_cachedIsV14.load(std::memory_order_acquire);
-            if (active) {
-                // RISING EDGE: pick a destination based on current mode and remember it,
-                // so the falling edge (or a mid-press mode change) can fire the matching
-                // up event to the SAME destination — even if the mode flipped meanwhile.
-                auto mode = static_cast<RadioState::Mode>(m_cachedMode.load(std::memory_order_acquire));
-                const bool inCw = (mode == RadioState::CW || mode == RadioState::CW_R);
-                if (inCw && isV14) {
-                    // KPOD+ owns the keyer? Drop and don't capture a destination — the
-                    // matching falling edge will see V14PttNone and also drop.
-                    if (kpodPlusActive())
-                        return;
-                    m_v14PttDestination.store(V14PttDitPaddle, std::memory_order_release);
-                    m_keyer->setDitPaddle(true);
-                } else if (!inCw) {
+            const auto mode = static_cast<RadioState::Mode>(m_cachedMode.load(std::memory_order_acquire));
+            const bool inCw = (mode == RadioState::CW || mode == RadioState::CW_R);
+
+            // Both levers are gated on CW together. Keying the radio from a paddle in SSB/AM/FM is
+            // never wanted, and letting one lever through outside CW also left its state set on the
+            // keyer going back into CW.
+            const bool ditLever = inCw && (isV14 ? ptt : dit);
+            const bool dahLever = inCw && dah;
+            m_keyer->setPaddleState(ditLever, dahLever);
+
+            // Pedal demux is edge-driven, so act only on a real PTT transition.
+            const bool pttWas = m_lastPttState.exchange(ptt, std::memory_order_acq_rel);
+            if (ptt == pttWas)
+                return;
+
+            if (ptt) {
+                // RISING EDGE: pick a destination and remember it, so the falling edge (or a
+                // mid-press mode change) fires the matching up event to the SAME destination even
+                // if the mode flipped meanwhile.
+                if (inCw) {
+                    // V1.4: the CTS edge was the dit lever and setPaddleState above already keyed
+                    // it. Record the destination so the falling edge does not also raise PTT.
+                    // MIDI: the pedal must not key in CW, so no destination is captured.
+                    if (isV14)
+                        m_v14PttDestination.store(V14PttDitPaddle, std::memory_order_release);
+                } else {
                     m_v14PttDestination.store(V14PttPtt, std::memory_order_release);
                     emit pttRequested(true);
                 }
-                // (MIDI variant in CW falls through silently — its dit comes via note 20,
-                // not via the PTT line, so a PTT rising edge here is the foot pedal which
-                // shouldn't key in CW.)
             } else {
-                // FALLING EDGE: dispatch to whatever destination captured the rising edge.
-                // CAS ensures the mode-change cleanup handler doesn't also fire — only one
-                // of (mode-change, falling-edge) wins, and the other sees V14PttNone.
+                // FALLING EDGE: dispatch to whatever destination captured the rising edge. CAS
+                // ensures the mode-change cleanup handler doesn't also fire — only one of
+                // (mode-change, falling-edge) wins, and the other sees V14PttNone. A DitPaddle
+                // destination needs nothing here: setPaddleState above already released the lever.
                 int dest = m_v14PttDestination.load(std::memory_order_acquire);
                 if (dest == V14PttNone)
                     return;
                 if (m_v14PttDestination.compare_exchange_strong(dest, V14PttNone, std::memory_order_acq_rel)) {
-                    if (dest == V14PttDitPaddle) {
-                        m_keyer->setDitPaddle(false);
-                    } else if (dest == V14PttPtt) {
+                    if (dest == V14PttPtt)
                         emit pttRequested(false);
-                    }
                 }
             }
         },
@@ -267,8 +260,13 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
 
     // Stop keyer when HaliKey disconnects (prevents runaway keying
     // if paddle was held when disconnected — Note Off never arrives)
-    connect(m_halikey, &HalikeyDevice::disconnected, this,
-            [this]() { QMetaObject::invokeMethod(m_keyer, "stop", Qt::QueuedConnection); });
+    connect(m_halikey, &HalikeyDevice::disconnected, this, [this]() {
+        // Clear the edge-detect baseline and any captured pedal destination too. A line left high
+        // at unplug would otherwise make the first sample after reconnect look like a transition.
+        m_lastPttState.store(false, std::memory_order_release);
+        m_v14PttDestination.store(V14PttNone, std::memory_order_release);
+        QMetaObject::invokeMethod(m_keyer, "stop", Qt::QueuedConnection);
+    });
 
     // =========================================================================
     // KPOD+ keyer-active gate + EP02 keyer data routing

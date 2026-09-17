@@ -90,6 +90,7 @@ signals:
     void pf4Clicked(); // XIT right-click
 
     // Bottom row signals (left click)
+    void freqEntClicked();
     void rateClicked();
     void lockAClicked();
     void subClicked();

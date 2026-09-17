@@ -33,9 +33,17 @@ public:
     Q_INVOKABLE void setReversed(bool reversed);
     Q_INVOKABLE void setSpeed(int wpm);
 
-    // Accept PHYSICAL paddle state — reversal applied internally.
-    // These write atomic bools directly (safe from any thread via DirectConnection),
-    // then post handlePaddleChange() to the keyer thread to wake from idle.
+    // Accept PHYSICAL paddle state — reversal applied internally. These write the packed
+    // paddle atomic directly (safe from any thread via DirectConnection), then post
+    // handlePaddleChange() to the keyer thread to wake from idle.
+    //
+    // PREFER setPaddleState() wherever both levers are known from one sample. A squeeze
+    // release delivered as two single-line calls leaves a window in which the element timer
+    // can observe one lever still down; the guard for "both released" then misses and the
+    // keyer emits a cross-paddle element the operator never asked for. In Iambic A that is
+    // always wrong — A must stop at the element boundary. Passing the pair closes the window
+    // because both bits land in one store.
+    void setPaddleState(bool dit, bool dah);
     void setDitPaddle(bool pressed);
     void setDahPaddle(bool pressed);
 
@@ -92,11 +100,22 @@ private:
     // transition re-anchors it, so goIdle()/stop() need no reset.
     qint64 m_nextDeadlineNs = 0;
 
-    // Physical paddle state — written from HaliKey thread via DirectConnection,
-    // read from keyer thread's timer. Atomics eliminate cross-thread queue delay
-    // so onTimerFired() always sees real-time paddle state.
-    std::atomic<bool> m_physDit{false};
-    std::atomic<bool> m_physDah{false};
+    // Physical paddle state — written from the HaliKey thread via DirectConnection, read from
+    // the keyer thread's timer. The atomic eliminates cross-thread queue delay so onTimerFired()
+    // always sees real-time paddle state.
+    //
+    // WHY both levers share ONE atomic rather than two bools: iambic decisions are a function of
+    // the PAIR, so a reader must never see one lever's new value beside the other's old one. With
+    // separate atomics every read of both (ditDown() + dahDown(), or either accessor on its own,
+    // which loads both) can tear across a concurrent update, and a squeeze release then looks like
+    // one lever still held — producing an element that was never keyed. One store, one load, no
+    // torn pair.
+    // Emits one [DIT]/[DAH] trace line. Split out so every paddle entry point logs identically.
+    void traceLine(const char *line, bool pressed, bool bounceFiltered, qint64 holdNs) const;
+
+    static constexpr quint8 kDitBit = 0x1;
+    static constexpr quint8 kDahBit = 0x2;
+    std::atomic<quint8> m_phys{0};
 
     // Paddle latches — capture any press during an active element so that
     // onTimerFired() doesn't miss a paddle-down that was released before

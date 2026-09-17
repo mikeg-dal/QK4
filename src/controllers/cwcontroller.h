@@ -62,10 +62,10 @@ class KpodPlusDevice;
 //   IambicKeyer::characterSpace          | KZ space to K4     | keyer -> I/O thread       | QueuedConnection
 //   IambicKeyer::restartAfterPause       | KZP%04d to K4      | keyer -> I/O thread       | QueuedConnection
 //   IambicKeyer::elementStarted          | sidetone dit/dah   | keyer -> sidetone thread  | AutoConnection (Queued)
-//   HalikeyDevice::ditStateChanged       | keyer setDitPaddle | HaliKey worker -> main    | DirectConnection
-//   HalikeyDevice::dahStateChanged       | keyer setDahPaddle | HaliKey worker -> main    | DirectConnection
-//   HalikeyDevice::pttStateChanged       | V1.4 demux:        | HaliKey worker -> main    | DirectConnection
-//                                        |  CW -> dit paddle  |                           |
+//   HalikeyDevice::lineStateChanged      | keyer              | HaliKey worker -> main    | DirectConnection
+//                                        |  setPaddleState    |                           |
+//                                        | + V1.4 pedal demux:|                           |
+//                                        |  CW -> dit lever   |                           |
 //                                        |  voice -> ptt      |                           |
 //   HalikeyDevice::disconnected          | stop keyer         | main -> main              | AutoConnection
 //   ConnectionController::radioReady     | keyer setEnabled t | main -> keyer thread      | invokeMethod queued
@@ -113,7 +113,7 @@ class KpodPlusDevice;
 //   enum V14PttDest { V14PttNone, V14PttDitPaddle, V14PttPtt };
 //   std::atomic<int> m_v14PttDestination
 //     V1.4 firmware multiplexes paddle-dit and foot-pedal on a single CTS
-//     line. The pttStateChanged rising-edge handler picks a destination
+//     line. The lineStateChanged handler's PTT rising edge picks a destination
 //     (dit-paddle in CW, PTT in voice) and captures it here so:
 //       - the falling edge dispatches to the SAME destination, even if
 //         the mode changed mid-press;
@@ -216,6 +216,11 @@ private:
 
     enum V14PttDest { V14PttNone = 0, V14PttDitPaddle = 1, V14PttPtt = 2 };
     std::atomic<int> m_v14PttDestination{V14PttNone};
+
+    // Previous PTT line level. lineStateChanged carries absolute levels for all three lines on
+    // every event, so the pedal demux — which is edge-driven — needs the prior level to tell a real
+    // PTT transition from a paddle event that merely reported PTT unchanged.
+    std::atomic<bool> m_lastPttState{false};
 };
 
 #endif // CWCONTROLLER_H

@@ -11,6 +11,10 @@ int tuningStepToHz(int step) {
     return (step >= 0 && step <= 5) ? table[step] : 1000;
 }
 
+int tuningStepForDigit(int digitFromRight) {
+    return (digitFromRight >= 0 && digitFromRight <= 4) ? digitFromRight : -1;
+}
+
 int getBandFromFrequency(quint64 freq) {
     if (freq >= 1800000 && freq <= 2000000)
         return 0; // 160m
@@ -45,6 +49,23 @@ int getNextSpanUp(int currentSpan) {
     int increment = (currentSpan < SPAN_THRESHOLD_UP) ? 1000 : 4000;
     int newSpan = currentSpan + increment;
     return qMin(newSpan, SPAN_MAX);
+}
+
+int spanAfterZoom(int currentSpan, bool zoomIn) {
+    return zoomIn ? getNextSpanDown(currentSpan) : getNextSpanUp(currentSpan);
+}
+
+int nextFilterPreset(int currentPreset) {
+    switch (currentPreset) {
+    case 1:
+        return 3;
+    case 3:
+        return 2;
+    case 2:
+        return 1;
+    default:
+        return -1;
+    }
 }
 
 int getNextSpanDown(int currentSpan) {

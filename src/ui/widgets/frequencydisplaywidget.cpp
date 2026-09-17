@@ -1,5 +1,6 @@
 #include "ui/widgets/frequencydisplaywidget.h"
 #include "ui/styling/k4styles.h"
+#include "utils/radioutils.h"
 #include <QPainter>
 #include <QMouseEvent>
 #include <QKeyEvent>
@@ -20,8 +21,7 @@ FrequencyDisplayWidget::FrequencyDisplayWidget(QWidget *parent)
 
     // Widget configuration
     setFocusPolicy(Qt::ClickFocus);
-    setCursor(Qt::PointingHandCursor);
-    setAttribute(Qt::WA_Hover);
+    setMouseTracking(true); // hand cursor only over digits that can be a tuning rate
 
     // Size hint based on max display width (X.XXX.XXX.XXX = 10 digits + 3 dots)
     int width = m_charWidth * kDigits + m_dotWidth * 3 + 4; // +4 for padding
@@ -65,6 +65,15 @@ void FrequencyDisplayWidget::setTuningRateDigit(int digitFromRight) {
 
 bool FrequencyDisplayWidget::isEditing() const {
     return m_cursorPosition >= 0;
+}
+
+void FrequencyDisplayWidget::beginEntry() {
+    if (m_cursorPosition < 0)
+        enterEditMode(0);
+}
+
+void FrequencyDisplayWidget::cancelEntry() {
+    exitEditMode(false);
 }
 
 void FrequencyDisplayWidget::parseFrequency(const QString &freq) {
@@ -212,6 +221,23 @@ int FrequencyDisplayWidget::digitPositionFromX(int x) const {
     return kMaxDigitIndex;
 }
 
+int FrequencyDisplayWidget::tuningDigitAtX(int x) const {
+    const QString display = formatWithDots();
+    int currentX = 0;
+    for (int i = 0; i < display.length(); ++i) {
+        const int charW = (display[i] == '.') ? m_dotWidth : m_charWidth;
+        if (x >= currentX && x < currentX + charW) {
+            const int digitIdx = digitIndexFromCharIndex(i);
+            if (digitIdx < 0)
+                return -1;
+            const int digitFromRight = kMaxDigitIndex - digitIdx;
+            return RadioUtils::tuningStepForDigit(digitFromRight) >= 0 ? digitFromRight : -1;
+        }
+        currentX += charW;
+    }
+    return -1;
+}
+
 void FrequencyDisplayWidget::enterEditMode(int digitPosition) {
     if (digitPosition < 0 || digitPosition > kMaxDigitIndex) {
         return;
@@ -325,16 +351,15 @@ void FrequencyDisplayWidget::mousePressEvent(QMouseEvent *event) {
         }
 
         if (insideWidget) {
-            int digitPos = digitPositionFromX(event->pos().x());
-            if (digitPos >= 0) {
-                if (m_cursorPosition < 0) {
-                    // Not in edit mode — enter it with the cursor at the
-                    // leftmost digit so a freshly-typed frequency fills from
-                    // the left (digitPos is only used to reposition the cursor
-                    // once already editing, below).
-                    enterEditMode(0);
-                } else {
-                    // Already in edit mode - move cursor
+            if (m_cursorPosition < 0) {
+                // Not editing: a click picks the tuning rate. Entry is opened by FREQ ENT instead.
+                const int digitFromRight = tuningDigitAtX(event->pos().x());
+                if (digitFromRight >= 0)
+                    emit tuningDigitClicked(digitFromRight);
+            } else {
+                // Already in edit mode - move cursor
+                int digitPos = digitPositionFromX(event->pos().x());
+                if (digitPos >= 0) {
                     m_cursorPosition = digitPos;
                     update();
                 }
@@ -342,6 +367,12 @@ void FrequencyDisplayWidget::mousePressEvent(QMouseEvent *event) {
         }
     }
     QWidget::mousePressEvent(event);
+}
+
+void FrequencyDisplayWidget::mouseMoveEvent(QMouseEvent *event) {
+    const bool clickable = m_cursorPosition < 0 && tuningDigitAtX(event->pos().x()) >= 0;
+    setCursor(clickable ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    QWidget::mouseMoveEvent(event);
 }
 
 void FrequencyDisplayWidget::keyPressEvent(QKeyEvent *event) {

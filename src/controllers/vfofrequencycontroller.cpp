@@ -1,7 +1,9 @@
 #include "vfofrequencycontroller.h"
 
+#include "controllers/connectioncontroller.h"
 #include "models/radiostate.h"
 #include "ui/widgets/vfowidget.h"
+#include "utils/radioutils.h"
 
 #include <QString>
 
@@ -28,11 +30,15 @@ QString formatFrequency(quint64 freq) {
 
 } // namespace
 
-VfoFrequencyController::VfoFrequencyController(RadioState *radioState, VFOWidget *vfoA, VFOWidget *vfoB,
-                                               QObject *parent)
-    : QObject(parent), m_radioState(radioState), m_vfoA(vfoA), m_vfoB(vfoB) {
+VfoFrequencyController::VfoFrequencyController(RadioState *radioState, ConnectionController *connection,
+                                               VFOWidget *vfoA, VFOWidget *vfoB, QObject *parent)
+    : QObject(parent), m_radioState(radioState), m_connection(connection), m_vfoA(vfoA), m_vfoB(vfoB) {
     connect(m_radioState, &RadioState::frequencyChanged, this, &VfoFrequencyController::onFrequencyChanged);
     connect(m_radioState, &RadioState::frequencyBChanged, this, &VfoFrequencyController::onFrequencyBChanged);
+    connect(m_vfoA, &VFOWidget::tuningDigitClicked, this,
+            [this](int digitFromRight) { setTuningRateFromDigit(false, digitFromRight); });
+    connect(m_vfoB, &VFOWidget::tuningDigitClicked, this,
+            [this](int digitFromRight) { setTuningRateFromDigit(true, digitFromRight); });
 }
 
 VfoFrequencyController::~VfoFrequencyController() {
@@ -50,6 +56,26 @@ void VfoFrequencyController::refreshVfoA() {
 
 void VfoFrequencyController::refreshVfoB() {
     onFrequencyBChanged(m_radioState->vfoB());
+}
+
+void VfoFrequencyController::setTuningRateFromDigit(bool vfoB, int digitFromRight) {
+    const int step = RadioUtils::tuningStepForDigit(digitFromRight);
+    if (step < 0 || !m_connection->isConnected())
+        return;
+    const QString cmd = QString("%1%2;").arg(vfoB ? "VT$" : "VT").arg(step);
+    m_connection->sendCAT(cmd);
+    // Optimistic, like the RATE button: the underline moves now rather than on the radio's echo.
+    m_radioState->parseCATCommand(cmd);
+}
+
+void VfoFrequencyController::toggleFrequencyEntry() {
+    for (VFOWidget *vfo : {m_vfoA, m_vfoB}) {
+        if (vfo->isFrequencyEntryActive()) {
+            vfo->cancelFrequencyEntry();
+            return;
+        }
+    }
+    (m_radioState->bSetEnabled() ? m_vfoB : m_vfoA)->beginFrequencyEntry();
 }
 
 void VfoFrequencyController::onFrequencyChanged(quint64 freq) {

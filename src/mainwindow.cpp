@@ -139,7 +139,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
 
     m_modeLabelController = new ModeLabelController(m_radioState, m_modeALabel, m_modeBLabel, this);
 
-    m_vfoFrequencyController = new VfoFrequencyController(m_radioState, m_vfoA, m_vfoB, this);
+    m_vfoFrequencyController = new VfoFrequencyController(m_radioState, m_connectionController, m_vfoA, m_vfoB, this);
+    connect(m_rightSideController, &RightSideController::frequencyEntryRequested, m_vfoFrequencyController,
+            &VfoFrequencyController::toggleFrequencyEntry);
 
     m_subDivIndicatorController = new SubDivIndicatorController(m_radioState, m_spectrumController, m_vfoB, m_subLabel,
                                                                 m_divLabel, m_modeBLabel, this);
@@ -160,6 +162,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // pure-forwarding thin shell and has been deleted.
     m_filterAWidget->observe(m_radioState, FilterIndicatorWidget::Vfo::A);
     m_filterBWidget->observe(m_radioState, FilterIndicatorWidget::Vfo::B);
+    connect(m_filterAWidget, &FilterIndicatorWidget::clicked, m_rightSideController,
+            [this]() { m_rightSideController->cycleFilterPreset(false); });
+    connect(m_filterBWidget, &FilterIndicatorWidget::clicked, m_rightSideController,
+            [this]() { m_rightSideController->cycleFilterPreset(true); });
 
     m_ritXitController = new RitXitController(m_radioState, m_connectionController, m_spectrumController, m_ritLabel,
                                               m_xitLabel, m_ritXitValueLabel, this);

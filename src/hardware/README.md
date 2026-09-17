@@ -6,8 +6,10 @@ USB / serial / MIDI device wrappers. Owned by `controllers/hardwarecontroller.cp
 
 - `kpoddevice.{cpp,h}` — KPOD tuning knob via hidapi. Main-thread (timing not critical). Device detection runs asynchronously at startup via `QTimer::singleShot(0, ...)` so the app window appears immediately; consumers observe `deviceInfoReady()` before reading `isDetected()`.
 - `kpodplusdevice.{cpp,h}` — KPOD+ tuning knob + CW keyer via libusb. Encoder/buttons/rocker polling on the main thread; keyer output read on a dedicated worker thread. Configurable keyer parameters (speed, pitch, iambic mode, paddle orientation, encode mode, stuck timeout) sent to device on change.
-- `halikeydevice.{cpp,h}` — HaliKey CW paddle. Delegates to one of 2 workers (selected by `deviceType`: 0 = V1.4 serial, 1 = MIDI); owns its own `m_workerThread`. Performs same-direction dedupe only — each worker is authoritative for its own debounce.
-- `halikeyworkerbase.{cpp,h}` — Abstract base for the workers. `prepareShutdown()` is the escape hatch for the Linux variant's blocking ioctl.
+- `halikeydevice.{cpp,h}` — HaliKey CW paddle. Delegates to one of 2 workers (selected by `deviceType`: 0 = V1.4 serial, 1 = MIDI); owns its own `m_workerThread`. Performs same-direction dedupe per line only — each worker is authoritative for its own debounce — then re-emits all three confirmed lines as one `lineStateChanged(dit, dah, ptt)` sample.
+- `halikeyworkerbase.{cpp,h}` — Abstract base for the workers. Defines the single input signal, `lineStateChanged(dit, dah, ptt)`. `prepareShutdown()` is the escape hatch for the Linux variant's blocking ioctl.
+
+  **The three lines travel together and must stay that way.** Iambic decisions are a function of the paddle *pair*, and `readPinState()` already samples every line in one call. When that sample was split into per-line signals, a released squeeze reached the keyer as two events — if the element timer fired between them one lever still read down, and the keyer appended an element the operator never sent. Do not reintroduce per-line paddle signals.
 - `kpodplususbworker.{cpp,h}` — owns the libusb context and handle for KPOD+, running all libusb I/O on its own QThread. Open/close and parameter setters are dispatched from the main thread as slots. Its pure command builders and decoders are covered by `test_kpodplususbworker`.
 - `kpodudevworker.{cpp,h}` — Linux-only udev poll loop for KPOD hotplug detection, wired to `QThread::started` and run until `stop()`.
 - `halikeyv14worker.{cpp,h}` — V1.4 hardware-protocol worker (serial). One `monitorLoop()` with three platform branches: `TIOCMIWAIT` + confirming re-read on Linux, 1 ms high-resolution-timer poll of `GetCommModemStatus` on Windows, 500 µs `usleep` poll of `TIOCMGET` on macOS. `DEBOUNCE_COUNT=2` on all three.
@@ -32,7 +34,7 @@ Live thread count is not the same as the site count: `kpodhidworker`'s udev hotp
 
 ## Keyer flow
 
-HaliKey paddle → platform worker (thread) → IambicKeyer::setDitPaddle / setDahPaddle (atomics, DirectConnection) → IambicKeyer state machine (keyer thread) → KZ CAT commands out + SidetoneGenerator enqueue.
+HaliKey paddle → platform worker (thread) → `HalikeyDevice::lineStateChanged` → CwController demux → `IambicKeyer::setPaddleState` (one packed atomic, DirectConnection) → IambicKeyer state machine (keyer thread) → KZ CAT commands out + SidetoneGenerator enqueue.
 
 When KPOD+ is active, the HaliKey → IambicKeyer → KZ/Sidetone path is suppressed. KPOD+ owns the entire CW chain: paddle → onboard keyer → sidetone → KZ output forwarded directly to K4.
 

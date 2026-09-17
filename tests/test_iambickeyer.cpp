@@ -166,11 +166,69 @@ private slots:
         QCOMPARE(delta, 1);
     }
 
+    // setPaddleState is the entry point the transports use, since a HaliKey sample yields both
+    // levers at once. It must produce exactly the behaviour the two single-lever calls do.
+    void setPaddleStateMatchesTwoCallSqueeze() {
+        QCOMPARE(squeezeReleaseExtraElements(IambicKeyer::IambicA, /*usePair=*/true), 0);
+        QCOMPARE(squeezeReleaseExtraElements(IambicKeyer::IambicB, /*usePair=*/true), 1);
+    }
+
+    // Releasing ONE lever of a squeeze must not stop keying — the held lever keeps sending. This
+    // is the case a released squeeze can be mistaken for, so it has to stay distinct: pairing the
+    // levers must not turn a partial release into a full one.
+    void partialReleaseKeepsSendingHeldLever() {
+        IambicKeyer keyer;
+        keyer.setEnabled(true);
+        keyer.setSpeed(kWpm);
+        keyer.setMode(IambicKeyer::IambicA);
+        QSignalSpy elem(&keyer, &IambicKeyer::elementStarted);
+        QSignalSpy finished(&keyer, &IambicKeyer::keyingFinished);
+
+        keyer.setPaddleState(true, true);
+        QTest::qWait(300);
+
+        // Drop dit, keep dah held: the keyer must carry on, and every further element is a dah.
+        const int afterSqueeze = elem.count();
+        keyer.setPaddleState(false, true);
+        QTest::qWait(400);
+        const int duringHold = elem.count();
+        QVERIFY2(duringHold > afterSqueeze, "held dah lever stopped producing elements");
+        for (int i = afterSqueeze; i < duringHold; ++i)
+            QCOMPARE(elem.at(i).at(0).toBool(), false); // false == dah
+
+        // Now release the held lever: the keyer idles.
+        keyer.setPaddleState(false, false);
+        if (finished.count() == 0)
+            finished.wait(2000);
+        QVERIFY(finished.count() > 0);
+    }
+
+    // A lever released and re-pressed with no overlap is two separate taps, never a squeeze —
+    // so Iambic B must not append its trailing element.
+    void sequentialTapsAreNotASqueeze() {
+        IambicKeyer keyer;
+        keyer.setEnabled(true);
+        keyer.setSpeed(kWpm);
+        keyer.setMode(IambicKeyer::IambicB);
+        QSignalSpy elem(&keyer, &IambicKeyer::elementStarted);
+        QSignalSpy finished(&keyer, &IambicKeyer::keyingFinished);
+
+        keyer.setPaddleState(true, false); // dit only
+        QTest::qWait(25);
+        keyer.setPaddleState(false, false);
+        if (finished.count() == 0)
+            finished.wait(2000);
+
+        // One dit, nothing appended: no squeeze ever existed.
+        QCOMPARE(elem.count(), 1);
+        QCOMPARE(elem.at(0).at(0).toBool(), true);
+    }
+
 private:
     // Squeeze both paddles, let the keyer alternate, then release both at once and count
     // how many NEW elements start strictly after release before the keyer idles. This is
     // the A/B discriminator: A → 0, B → 1.
-    int squeezeReleaseExtraElements(IambicKeyer::Mode mode) {
+    int squeezeReleaseExtraElements(IambicKeyer::Mode mode, bool usePair = false) {
         IambicKeyer keyer;
         keyer.setEnabled(true);
         keyer.setSpeed(kWpm);
@@ -178,16 +236,24 @@ private:
         QSignalSpy elem(&keyer, &IambicKeyer::elementStarted);
         QSignalSpy finished(&keyer, &IambicKeyer::keyingFinished);
 
-        keyer.setDitPaddle(true);
-        keyer.setDahPaddle(true);
+        if (usePair) {
+            keyer.setPaddleState(true, true);
+        } else {
+            keyer.setDitPaddle(true);
+            keyer.setDahPaddle(true);
+        }
         QTest::qWait(300); // establish the squeeze (m_squeezed) and alternate a few times
 
         // Capture the count and release synchronously: no event loop runs between these
         // two statements, so the element timer cannot fire in the gap and the in-progress
         // element is already accounted for in `before`.
         const int before = elem.count();
-        keyer.setDitPaddle(false);
-        keyer.setDahPaddle(false);
+        if (usePair) {
+            keyer.setPaddleState(false, false);
+        } else {
+            keyer.setDitPaddle(false);
+            keyer.setDahPaddle(false);
+        }
 
         // The keyer must return to idle (no paddles held).
         if (finished.count() == 0)
