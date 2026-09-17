@@ -317,6 +317,10 @@ ExpertSDR3 as whatever you decided `ExpertSDR3,1.5` meant.
 name, a space, then the version, added 2026-09-17 so a client can gate on a *capability* rather than
 just a program.
 
+**Confirmed not to disturb WSJT-X.** It connected, took the init burst and requested audio with the
+versioned field in place, and reported nothing unhandled. The compatibility that matters lives in
+`protocol:`, which was not touched.
+
 **Match the `QK4` prefix, never the whole token.** The version moves; the name does not. An equality
 match was going to break on the first release regardless. (Seven of QK4's own tests used the bare
 `device:QK4;` as a sentinel and all seven broke when the version landed — the same mistake, caught
