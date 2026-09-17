@@ -273,8 +273,15 @@ Two supporting observations from the same runs:
 
 - A message long enough to exceed whatever the buffer really holds. 68 characters did not reach it,
   so the ceiling is still unknown.
-- `KY` while the radio is NOT in CW mode. The manual calls it "CW/DATA Message Text"; QK4 does not
-  check or switch the mode, and what happens in SSB has not been established.
+- ~~`KY` while the radio is NOT in CW mode~~ — established. With the K4 in **LSB**, QLog sent
+  `cw_macros`, QK4 sent `KY CQ CQ CQ DE NY4I NY4I NY4I K;`, and the radio produced **nothing**: no
+  keying (0 `TX;` responses), no error, no reply. QLog sent no mode command of its own and showed
+  the operator nothing.
+
+  So the silence is total and unexplainable from anywhere the operator can see. QK4 now warns in
+  its log and still sends — it does not switch the mode, which would be a surprising side effect of
+  a text command, and in the DATA modes the radio sends the text as data, which refusing would
+  break. The mode is the operator's to manage.
 
 ## Repeating any of it
 

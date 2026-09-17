@@ -233,6 +233,25 @@ private slots:
         QVERIFY(CatFrames::cwText(QStringLiteral("@@@"), false).isEmpty());
     }
 
+    void onlyCwAndDataModesKeyKyText() {
+        // Confirmed on a K4: in LSB a correctly formed KY produced NOTHING - no keying, no error,
+        // no response. QK4 sends it anyway (the mode is the operator's to manage, and in the DATA
+        // modes the radio sends the text as data) but warns, because the silence is otherwise
+        // unexplainable from anywhere the operator can see.
+        QVERIFY(CatFrames::modeKeysCwText(RadioState::CW));
+        QVERIFY(CatFrames::modeKeysCwText(RadioState::CW_R));
+        QVERIFY(CatFrames::modeKeysCwText(RadioState::DATA));
+        QVERIFY(CatFrames::modeKeysCwText(RadioState::DATA_R));
+
+        QVERIFY(!CatFrames::modeKeysCwText(RadioState::LSB));
+        QVERIFY(!CatFrames::modeKeysCwText(RadioState::USB));
+        QVERIFY(!CatFrames::modeKeysCwText(RadioState::AM));
+        QVERIFY(!CatFrames::modeKeysCwText(RadioState::FM));
+
+        // Not yet reported by the radio. Warning about a mode nobody knows would be noise.
+        QVERIFY(!CatFrames::modeKeysCwText(RadioState::Unknown));
+    }
+
     void theAbortIsTheBytesTheRadioExpects() {
         // KY<0x04>;RX; - bench-confirmed on Elecraft hardware.
         QByteArray expected = "KY ";

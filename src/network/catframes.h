@@ -49,6 +49,18 @@ QByteArray keyerSpeed(int wpm);
 // Prosigns arrive in TCI's |XX| form and are translated here, because their spelling is a K4 fact.
 QList<QByteArray> cwText(const QString &text, bool wait = false);
 
+// Will a KY sent in this mode key anything?
+//
+// The manual calls KY "CW/DATA Message Text": the radio sends it as Morse in CW and CW-REVERSE, and
+// as data in the DATA modes. In SSB, AM and FM it is DISCARDED IN SILENCE - no keying, no error, no
+// response of any kind. Confirmed on a K4: with the radio in LSB, a correctly formed KY produced
+// nothing at all.
+//
+// A K4 fact, so it lives beside the command it describes. QK4 does NOT change the mode on the
+// strength of it - that would be a surprising side effect of a text command - it only says so in
+// the log, which is the only place the silence can be explained.
+bool modeKeysCwText(RadioState::Mode mode);
+
 // Aborts a message in progress: KY<0x04>;RX;. One frame carrying two commands, which is how the
 // radio is given it. Bench-confirmed on Elecraft hardware (TR4W's TK4Radio.StopCW).
 QByteArray cwAbort();

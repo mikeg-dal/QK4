@@ -1,5 +1,7 @@
 #include "controllers/tcicontroller.h"
 
+#include <QMetaEnum>
+
 #include <QThread>
 
 #include "controllers/audiocontroller.h"
@@ -430,6 +432,20 @@ void TciController::setAudioEnabled(bool enabled) {
 void TciController::sendCwMacro(const QVector<CwMacroSegment> &segments) {
     if (!m_connectionController || segments.isEmpty()) {
         return;
+    }
+
+    // SAY SO WHEN NOTHING IS GOING TO HAPPEN. The K4 keys KY in CW and the DATA modes and discards
+    // it in silence otherwise - no keying, no error - so an operator whose radio is in SSB presses
+    // a macro key and gets nothing, with no explanation available anywhere: not from the logger,
+    // not from the radio. Confirmed with QLog, which never sets the mode itself.
+    //
+    // It is STILL SENT. The mode is the operator's to manage and switching it here would be a
+    // surprising side effect of a text command; and in the DATA modes the radio sends the text as
+    // data, which is a legitimate use this must not refuse.
+    if (m_radioState && !CatFrames::modeKeysCwText(m_radioState->mode())) {
+        qWarning() << "TCI: CW text sent while the radio is in"
+                   << QMetaEnum::fromType<RadioState::Mode>().valueToKey(m_radioState->mode())
+                   << "- the K4 keys KY only in CW and DATA modes, so this will be silently ignored";
     }
 
     // What to send is decided in CwMacro::plan, which is tested; this only carries it out.

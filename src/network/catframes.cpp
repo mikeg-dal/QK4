@@ -206,6 +206,20 @@ QList<QByteArray> cwText(const QString &text, bool wait) {
     return frames;
 }
 
+bool modeKeysCwText(RadioState::Mode mode) {
+    switch (mode) {
+    case RadioState::CW:
+    case RadioState::CW_R:
+    case RadioState::DATA:
+    case RadioState::DATA_R:
+        return true;
+    default:
+        // Unknown included: the radio has not said yet, and warning about a mode nobody knows would
+        // be noise. Sending anyway costs nothing, since the radio decides.
+        return false;
+    }
+}
+
 QByteArray cwAbort() {
     QByteArray frame = "KY ";
     frame.append(char(0x04)); // the K4's CW abort character
