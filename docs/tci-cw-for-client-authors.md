@@ -95,11 +95,27 @@ assume another server does it.
 and `cw_macros_speed:15;`, then the same pair at 20 on restore. A client tracking the radio's
 keyer speed will see the excursion, not just the endpoints.
 
-**But `cw_macros_speed` is READ-ONLY on QK4 today.** Sending `cw_macros_speed:35;` was answered
-`cw_macros_speed:20;` — the current value, the 35 ignored. So on QK4 the markers are currently the
-*only* way a TCI client can change sending speed. A client whose speed increment is configurable
-and not 5 cannot express it over TCI at all: not by marker, because the step is fixed, and not by
-command, because the command does not set. Worth knowing before designing around either.
+**`cw_macros_speed` and `cw_keyer_speed` now SET as well as report.** They were read-only until
+2026-09-17, which left the markers as the only way a TCI client could change sending speed — and
+since their step is fixed at 5, a logger whose increment was configurable and not 5 could not
+express it by any route at all. Confirmed on the radio:
+
+```
+        cw_macros_speed:28;   ->   cw_macros_speed:20;    the MODEL's value, not the request
+                                   KS028;                 reaches the K4
+                                   cw_keyer_speed:28;     the radio's own change, broadcast
+```
+
+Both names drive the one setting — the spec's client-to-server `CW_KEYER_SPEED` and the contest
+logger's `CW_MACROS_SPEED` are the same thing, and the K4 has one keyer, so neither takes a
+receiver index. A bare `cw_keyer_speed;` is still a query and sets nothing.
+
+The immediate reply carries **what QK4 holds, not what was asked for**. The radio has not moved
+yet; its own change follows as a broadcast and is the authoritative echo. Confirming an unapplied
+value is the stale-confirmation bug that had the reference server telling WSJT-X it was on a
+frequency it was not.
+
+Out-of-range requests are clamped to the K4's documented 8..100 rather than sent and ignored.
 
 ### 2.3 Prosigns — send `|XX|`, never a single-character token
 
@@ -281,7 +297,8 @@ declined to contradict that reasoning, which is weak evidence but is the only ev
 |---|---|---|
 | `cw_macros:<trx>,<text>` | Send CW text | The only one QLog and RumLogNG use |
 | `cw_macros_stop` | Abort | Confirmed cutting mid-message on a K4 |
-| `cw_macros_speed:<wpm>` | Set keyer speed | **Global**, one argument, no receiver index |
+| `cw_macros_speed:<wpm>` | Set keyer speed | **Global**, one argument, no receiver index. Sets and reports |
+| `cw_keyer_speed:<wpm>` | The same setting | The spec's client-to-server name for it |
 
 ---
 

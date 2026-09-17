@@ -49,6 +49,73 @@ private slots:
         }
     }
 
+    void theKeyerSpeedCanBeSetAndNotJustRead() {
+        // It used to be read-only: cw_macros_speed:35; was answered with the CURRENT value and the
+        // 35 dropped. That left a TCI client no way to change sending speed except the macro speed
+        // markers, whose step is fixed at 5 - so a logger whose increment is configurable and not 5
+        // could not express it by any route at all.
+        TciServer server;
+        QSignalSpy spy(&server, &TciServer::setKeyerSpeedRequested);
+        const quint16 port = server.start(0, true) ? server.port() : 0;
+        QVERIFY(port != 0);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(port));
+        client.collectUntil("ready;");
+
+        client.send("cw_macros_speed:35;");
+        QTRY_COMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 35);
+
+        // Both names drive the one setting - the spec's client-to-server name and the contest
+        // logger's name for the same thing.
+        client.send("cw_keyer_speed:22;");
+        QTRY_COMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(1).at(0).toInt(), 22);
+    }
+
+    void aKeyerSpeedQueryIsStillAnsweredAndChangesNothing() {
+        // A bare name is a GET. Turning the set on must not turn the query into a set of zero.
+        TciRadioSnapshot snapshot;
+        snapshot.cwKeyerSpeedWpm = 28;
+        TciServer server;
+        server.setSnapshot(snapshot);
+        QSignalSpy spy(&server, &TciServer::setKeyerSpeedRequested);
+        const quint16 port = server.start(0, true) ? server.port() : 0;
+        QVERIFY(port != 0);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(port));
+        client.collectUntil("ready;");
+
+        client.send("cw_keyer_speed;");
+        WebSocketDecoder::Message reply;
+        QVERIFY(client.next(reply));
+        QCOMPARE(QString::fromUtf8(reply.payload), QStringLiteral("cw_keyer_speed:28;"));
+        QCOMPARE(spy.count(), 0);
+    }
+
+    void aKeyerSpeedSetIsConfirmedWithTheModelNotTheRequest() {
+        // The radio has not moved yet, so the confirmation must carry what QK4 HOLDS. Answering
+        // with the requested value is the stale-confirmation bug that made WSJT-X transmit out of
+        // band in the reference server.
+        TciRadioSnapshot snapshot;
+        snapshot.cwKeyerSpeedWpm = 20;
+        TciServer server;
+        server.setSnapshot(snapshot);
+        const quint16 port = server.start(0, true) ? server.port() : 0;
+        QVERIFY(port != 0);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(port));
+        client.collectUntil("ready;");
+
+        client.send("cw_macros_speed:35;");
+        WebSocketDecoder::Message reply;
+        QVERIFY(client.next(reply));
+        QCOMPARE(QString::fromUtf8(reply.payload), QStringLiteral("cw_macros_speed:20;"));
+    }
+
     void squelchLevelStaysInsideTheSpecRange() {
         // REGRESSION. QK4 answered 20; TCI defines the squelch threshold as dBm over -140..0, so
         // any positive value is outside the range in either direction of interpretation.

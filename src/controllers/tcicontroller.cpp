@@ -325,6 +325,12 @@ TciController::TciController(AudioController *audioController, ConnectionControl
 
         connect(m_server, &TciServer::cwMacroRequested, this,
                 [this](const QVector<CwMacroSegment> &segments) { sendCwMacro(segments); });
+        connect(m_server, &TciServer::setKeyerSpeedRequested, this, [this](int wpm) {
+            // CatFrames::keyerSpeed clamps to the K4's documented 8..100, so a client asking for
+            // something unkeyable gets the nearest speed the radio will actually do rather than a
+            // command it ignores.
+            applyCat(CatFrames::keyerSpeed(wpm));
+        });
         connect(m_server, &TciServer::cwAbortRequested, this, [this]() {
             // Straight out, with no optimistic RadioState echo: there is no state to update, and
             // the frame carries a control character plus two commands.

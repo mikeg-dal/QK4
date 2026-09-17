@@ -231,6 +231,22 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             if (had && m_audioClients.isEmpty()) {
                 emit audioStopRequested();
             }
+        } else if (name == QLatin1String("cw_keyer_speed") || name == QLatin1String("cw_macros_speed")) {
+            // BEFORE answerReadOnly, which reports this pair and would otherwise answer the query
+            // and swallow the set.
+            //
+            // Both names, one setting: the spec marks CW_KEYER_SPEED client-to-server and
+            // CW_MACROS_SPEED as the contest-logger name for the same thing. Global, one argument,
+            // no receiver index - the K4 has one keyer.
+            int wpm = 0;
+            if (command.argAsInt(0, &wpm)) {
+                emit setKeyerSpeedRequested(wpm);
+            }
+            // Confirm with what the MODEL holds, not with the value just asked for. The radio's own
+            // change arrives as a broadcast from setSnapshot and is the authoritative echo; a
+            // confirmation of an unapplied value is the lie that made WSJT-X transmit out of band
+            // in the reference server.
+            sendTo(clientId, message(name, QString::number(m_snapshot.cwKeyerSpeedWpm)));
         } else if (answerReadOnly(clientId, command)) {
             // Handled: a query answered from the snapshot. See answerReadOnly.
         } else if (name == QLatin1String("rx_sensors_enable") || name == QLatin1String("tx_sensors_enable")) {

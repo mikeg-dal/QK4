@@ -128,6 +128,9 @@ signals:
     // A client asked to abandon a message in progress.
     void cwAbortRequested();
 
+    // A client asked for a new keyer speed. Global - the K4 has one keyer - so no receiver index.
+    void setKeyerSpeedRequested(int wpm);
+
 private slots:
     void onClientConnected(int clientId, const QString &peerEndpoint);
     void onClientDisconnected(int clientId);
