@@ -214,6 +214,11 @@ python k4kytest.py --wait 2 --qk4 --kyw none "TEST >FAST <AGAIN"    the same 5, 
 | with `KYW` | **"worked perfectly"** — 20, then FAST at 25, then AGAIN back at 20 |
 | `--kyw none` | **"the speed never changed"** — all three segments at one speed |
 
+Re-run after the chunk length went to 60 and the padding was dropped, the commands became
+`KYWTEST ;` / `KS025;` / `KYWFAST ;` / `KS020;` / `KY AGAIN;` — five characters of text each,
+unpadded — and it still keyed **20 / 25 / 20**. So neither the larger chunk nor the loss of padding
+disturbs the speed handling.
+
 **`KS` DOES reach buffered text.** Without the wait flag every speed command was processed the
 moment it arrived, so by the time any text was keyed the final `KS020;` had already landed and the
 whole message came out at 20 WPM. The markers silently did nothing.
