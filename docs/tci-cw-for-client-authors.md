@@ -4,6 +4,13 @@ Written for the TR4W side of the conversation, from a bench session on 2026-09-1
 CW through TCI to a real Elecraft K4 and watched what came out. Everything here was observed, not
 inferred; the raw traces are in [cw-by-cat-bench-log.md](cw-by-cat-bench-log.md).
 
+**What will and will not move.** QK4's TCI *command handling* can change to accommodate a client —
+accepting `cw_macros` without a receiver index (§1) is exactly that, and more of it is possible.
+Its **CW handling is settled**: the prosign table, the chunking, the padding decision and the
+`KS`/`KYW` sequencing were each established on the radio and are not moving. Where this document
+records a divergence from another implementation, treat it as a fact to code against rather than an
+open negotiation. Station owner's call.
+
 **The short version: a TCI client should send TCI, not CAT.** Do no chunking, no padding, no
 prosign spelling, no `KY` framing. All of that is the server's job and the server knows the radio;
 a client that does it too will fight it.
@@ -89,7 +96,8 @@ particular never has to worry that `*` is also TCI's escape for `;`. Verified:
 **`|SN|` is not in the table.** QK4 keys unknown prosigns as their bare letters rather than deleting
 them: `A |SN| B` produced `KY A SN B;`. TR4W's Elecraft base *consumes* SN instead (keys nothing),
 on the grounds that Elecraft has no such prosign — a deliberate divergence, and arguably the better
-call. A client wanting that behaviour should simply not send `|SN|`.
+call — but QK4's CW handling is settled and will not be changed to match. A client wanting the
+consume behaviour should simply not send `|SN|`.
 
 **The danger is a client that pre-translates.** Any single-character prosign token sent raw lands in
 one of two traps: `*` is TCI's escape for `;` and will be decoded then stripped, and `<` is a speed
