@@ -499,7 +499,8 @@ void TciController::wireSnapshot() {
             // The bridge decides what goes in the right audio channel, and it lives on the TCI
             // thread, so this has to be marshalled rather than written from here.
             QMetaObject::invokeMethod(
-                m_bridge, [this, enabled]() { m_bridge->setSubReceiverEnabled(enabled); }, Qt::QueuedConnection);
+                m_bridge, [bridge = m_bridge, enabled]() { bridge->setSubReceiverEnabled(enabled); },
+                Qt::QueuedConnection);
             publishSnapshot();
         });
         // RadioState has no per-field AGC signal; processingChanged is the coarse one it emits from
@@ -528,7 +529,7 @@ void TciController::wireSnapshot() {
         // and subRxEnabledChanged only fires on a change.
         const bool subOn = m_radioState->subReceiverEnabled();
         QMetaObject::invokeMethod(
-            m_bridge, [this, subOn]() { m_bridge->setSubReceiverEnabled(subOn); }, Qt::QueuedConnection);
+            m_bridge, [bridge = m_bridge, subOn]() { bridge->setSubReceiverEnabled(subOn); }, Qt::QueuedConnection);
     }
 }
 
@@ -539,7 +540,8 @@ void TciController::audioLevelsChanged() {
 void TciController::setAudioEnabled(bool enabled) {
     m_audioEnabled = enabled;
     // The bridge lives on the TCI thread; its flag is a plain bool read on that thread only.
-    QMetaObject::invokeMethod(m_bridge, [this, enabled]() { m_bridge->setEnabled(enabled); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(
+        m_bridge, [bridge = m_bridge, enabled]() { bridge->setEnabled(enabled); }, Qt::QueuedConnection);
 }
 
 void TciController::sendCwMacro(const QVector<CwMacroSegment> &segments) {
@@ -589,8 +591,12 @@ void TciController::applyCat(const QByteArray &frame) {
     // on the main thread already, but the queue keeps that true if the signal is ever reconnected
     // from the TCI thread.
     if (m_radioState) {
+        // The CONTEXT OBJECT IS m_radioState, so the capture must be too. Capturing `this` here
+        // anchored the call's lifetime to the wrong object: RadioState outlives TciController, so
+        // a call still queued when the controller is destroyed would run and dereference a dead
+        // `this` to reach a pointer the lambda could simply have carried itself.
         QMetaObject::invokeMethod(
-            m_radioState, [this, command]() { m_radioState->parseCATCommand(command); }, Qt::QueuedConnection);
+            m_radioState, [state = m_radioState, command]() { state->parseCATCommand(command); }, Qt::QueuedConnection);
     }
 }
 
@@ -615,7 +621,8 @@ void TciController::publishSensors() {
     // micLevelDbm is deliberately left at its floor - see TciSensorReadings. The K4 reports ALC
     // deflection, which is a drive indicator, not a calibrated microphone level in dBm.
 
-    QMetaObject::invokeMethod(m_server, [this, readings]() { m_server->setSensors(readings); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(
+        m_server, [server = m_server, readings]() { server->setSensors(readings); }, Qt::QueuedConnection);
 }
 
 void TciController::publishSnapshot() {
@@ -709,7 +716,8 @@ void TciController::publishSnapshot() {
 
     // Queued: the server reads this from its own thread, so it must be handed over by value
     // through the event loop rather than written under it.
-    QMetaObject::invokeMethod(m_server, [this, snapshot]() { m_server->setSnapshot(snapshot); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(
+        m_server, [server = m_server, snapshot]() { server->setSnapshot(snapshot); }, Qt::QueuedConnection);
 }
 
 TciController::~TciController() {
