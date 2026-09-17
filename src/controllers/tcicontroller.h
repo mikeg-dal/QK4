@@ -85,6 +85,13 @@ signals:
     void transmittingChanged(bool transmitting);
 
 private:
+    // Constructor wiring, in four groups rather than one 287-line block with 46 connect() calls
+    // (banned shape #3, src/controllers/README.md). Called in this order; each is independent.
+    void wireAudioAndClients();
+    void wireTransmit();
+    void wireCatSets();
+    void wireSnapshot();
+
     // Reads RadioState on the MAIN thread and pushes a whole snapshot across to the TCI thread.
     // RadioState is main-thread-only and CI-enforced with no locking on its getters, so the TCI
     // thread must never touch it - it works from its own copy.

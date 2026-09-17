@@ -193,6 +193,17 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     m_bridge->moveToThread(m_tciThread);
     m_tciThread->start();
 
+    // The wiring lives in helpers rather than one block - see each for what it covers.
+    wireAudioAndClients();
+    wireTransmit();
+    wireCatSets();
+    wireSnapshot();
+}
+
+// RX audio into the server, and the client roster back out. Split from the constructor,
+// which had 46 connect() calls in one 287-line block - banned shape #3 in
+// src/controllers/README.md, and the shape the other controllers avoid.
+void TciController::wireAudioAndClients() {
     // RX audio: I/O thread -> TCI thread. Queued, so the resampling never runs on the I/O thread.
     if (m_audioController) {
         connect(m_audioController, &AudioController::rxAudioAvailable, m_bridge, &TciAudioBridge::onRxAudio,
@@ -220,7 +231,11 @@ TciController::TciController(AudioController *audioController, ConnectionControl
         m_clientCount = count;
         emit clientCountChanged(count);
     });
+}
 
+// Everything that keys or unkeys the transmitter, in both directions: a client asking, and
+// QK4 itself asking. Kept together because the ORDER within each edge is the subtle part.
+void TciController::wireTransmit() {
     // TX. Order matters on both edges and is the reason these are not one connection:
     //  - keying:   select the TCI source BEFORE asserting PTT, or the first frames out are the
     //              microphone picking up the room.
@@ -272,7 +287,11 @@ TciController::TciController(AudioController *audioController, ConnectionControl
             }
         });
     }
+}
 
+// Client SETs turned into K4 commands. The largest group, and the only place a TCI name
+// becomes a CatFrames builder.
+void TciController::wireCatSets() {
     // CAT sets from a client.
     //
     // WHY these go through CatFrames rather than formatted strings: CatFrames is where K4 command
@@ -408,7 +427,11 @@ TciController::TciController(AudioController *audioController, ConnectionControl
             }
         });
     }
+}
 
+// RadioState changes pushed to the server as whole snapshots. Reads RadioState on the MAIN
+// thread, which is the rule this wiring exists to keep (CONVENTIONS.md rule 4).
+void TciController::wireSnapshot() {
     if (m_radioState) {
         connect(m_radioState, &RadioState::frequencyChanged, this, [this](quint64) { publishSnapshot(); });
         connect(m_radioState, &RadioState::frequencyBChanged, this, [this](quint64) { publishSnapshot(); });
