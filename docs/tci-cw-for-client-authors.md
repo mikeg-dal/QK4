@@ -99,6 +99,27 @@ on the grounds that Elecraft has no such prosign — a deliberate divergence, an
 call — but QK4's CW handling is settled and will not be changed to match. A client wanting the
 consume behaviour should simply not send `|SN|`.
 
+#### What single-character tokens actually do
+
+Measured on the K4, sending each of TR4W's five `CWProsign` tokens raw through TCI as
+`uRadioTCI` does today:
+
+| Token | Intended | Reached the radio as | Effect |
+|---|---|---|---|
+| `^` | half space | `KY A:B;` | a literal colon |
+| `!` | SN | `KY A!B;` | **keys VE** — `!` is VE in the K4 table |
+| `+` | AR | `KY A+B;` | AR — correct, by coincidence |
+| `<` | SK | `KYWA;` `KS015;` `KYWB;` `KS020;` | **message split in two and re-timed 5 WPM slower**; prosign gone |
+| `=` | BT | `KY A=B;` | BT — correct, by coincidence |
+
+Two work by accident because the token happens to match the K4's own spelling. The other three
+fail silently and differently: one becomes punctuation, one keys **a different prosign**, and `<`
+is not a character at all to the server — it is a speed marker, so it silently slows everything
+after it and splits the message around itself.
+
+That last row is the argument for `|XX|` in one line. A prosign token that re-times the rest of the
+transmission is not a rendering problem, and nothing anywhere reports it.
+
 **The danger is a client that pre-translates.** Any single-character prosign token sent raw lands in
 one of two traps: `*` is TCI's escape for `;` and will be decoded then stripped, and `<` is a speed
 marker (§2.2) that the server consumes. Neither reaches the radio as a prosign.
