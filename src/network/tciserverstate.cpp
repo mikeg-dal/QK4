@@ -334,14 +334,23 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
     // Per-receiver values. Every one of these is answered for the receiver the client asked about,
     // which is the point of modelling the Sub RX as receiver 1: as a channel it had no way to
     // report its own mode, filter, AGC or RIT at all.
+    //
+    // rx_enable IS NOT IN THIS SET, deliberately - do not re-add it. answerReadOnly runs ahead of
+    // the rx_channel_enable/rx_enable branch in handleCommand, so listing it here consumed the
+    // command first. A set then reached applySet, which refuses anything addressed at the sub
+    // receiver, and the client got back an unchanged value with no sign its request had been
+    // dropped: `rx_enable:1,true;` was answerable but not actionable, while the
+    // `rx_channel_enable` spelling for the same K4 control worked. Left out, it falls through to
+    // that branch, which answers queries from the snapshot exactly as this block did and also
+    // emits setSubReceiverRequested.
     static const QSet<QString> perReceiver{
-        QStringLiteral("rit_enable"),   QStringLiteral("xit_enable"),     QStringLiteral("rit_offset"),
-        QStringLiteral("xit_offset"),   QStringLiteral("rx_filter_band"), QStringLiteral("drive"),
-        QStringLiteral("tune_drive"),   QStringLiteral("agc_mode"),       QStringLiteral("rx_enable"),
-        QStringLiteral("tx_enable"),    QStringLiteral("lock"),           QStringLiteral("sql_enable"),
-        QStringLiteral("sql_level"),    QStringLiteral("mute"),           QStringLiteral("rx_nb_enable"),
-        QStringLiteral("rx_nr_enable"), QStringLiteral("rx_anf_enable"),  QStringLiteral("rx_apf_enable"),
-        QStringLiteral("rx_nf_enable"), QStringLiteral("agc_gain"),
+        QStringLiteral("rit_enable"),    QStringLiteral("xit_enable"),     QStringLiteral("rit_offset"),
+        QStringLiteral("xit_offset"),    QStringLiteral("rx_filter_band"), QStringLiteral("drive"),
+        QStringLiteral("tune_drive"),    QStringLiteral("agc_mode"),       QStringLiteral("tx_enable"),
+        QStringLiteral("lock"),          QStringLiteral("sql_enable"),     QStringLiteral("sql_level"),
+        QStringLiteral("mute"),          QStringLiteral("rx_nb_enable"),   QStringLiteral("rx_nr_enable"),
+        QStringLiteral("rx_anf_enable"), QStringLiteral("rx_apf_enable"),  QStringLiteral("rx_nf_enable"),
+        QStringLiteral("agc_gain"),
     };
     if (perReceiver.contains(name)) {
         // A first argument that PARSES AS AN INTEGER is the receiver index - that is the TCI
@@ -396,8 +405,6 @@ bool TciServer::answerReadOnly(int clientId, const TciProtocol::Command &command
             reply = message(name, trx, r.agcMode);
         } else if (name == QLatin1String("agc_gain")) {
             reply = message(name, trx, QString::number(r.agcGain));
-        } else if (name == QLatin1String("rx_enable")) {
-            reply = message(name, trx, boolText(r.enabled));
         } else if (name == QLatin1String("tx_enable")) {
             // Only the main receiver has a transmitter behind it.
             reply = message(name, trx, boolText(receiver == MAIN_RECEIVER));

@@ -464,6 +464,55 @@ private slots:
         server.stop();
     }
 
+    void requestsTheSubReceiverByTheRxEnableSpelling() {
+        // The same control as the rx_channel_enable test above, in the spelling clients that
+        // address receiver 1 directly use. It used to be answered and then dropped: rx_enable was
+        // listed in answerReadOnly's perReceiver set, which runs first, so the set never reached
+        // the branch that emits. The client saw a well-formed reply carrying the old value.
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy sub(&server, &TciServer::setSubReceiverRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("rx_enable:1,true;");
+
+        QTRY_COMPARE(sub.count(), 1);
+        QCOMPARE(sub.at(0).at(0).toBool(), true);
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        // False, like the rx_channel_enable case: the radio has not confirmed yet.
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("rx_enable:1,false;"));
+
+        client.close();
+        server.stop();
+    }
+
+    void answersABareRxEnableQueryWithoutMovingAnything() {
+        // Dropping rx_enable from perReceiver must not cost the query its answer.
+        TciRadioSnapshot snapshot;
+        snapshot.rx[TciRadio::SUB_RECEIVER].enabled = true;
+        TciServer server;
+        server.setSnapshot(snapshot);
+        QVERIFY(server.start(0));
+        QSignalSpy sub(&server, &TciServer::setSubReceiverRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("rx_enable:1;");
+
+        WebSocketDecoder::Message m;
+        QVERIFY(client.next(m));
+        QCOMPARE(QString::fromUtf8(m.payload), QStringLiteral("rx_enable:1,true;"));
+        QCOMPARE(sub.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
     void aSteadySubReceiverValueIsNotAnEdge() {
         // Repeating the state the radio already holds must not generate CAT traffic, for the same
         // reason split_enable checks.
