@@ -677,7 +677,14 @@ void TciServer::sendRxAudio(const std::vector<float> &interleavedStereo, int sam
     }
     const QByteArray frame = TciAudioFrame::encodeRxAudio(MAIN_RECEIVER, sampleRate, interleavedStereo.data(),
                                                           static_cast<int>(interleavedStereo.size()));
-    for (int clientId : m_audioClients) {
+    // A SNAPSHOT of the ids, not the set itself, and membership rechecked per client. sendBinary
+    // can surface a disconnect, whose handler removes from m_audioClients - mutating the container
+    // this loop is walking. Same hazard, and the same shape, as onSensorTick.
+    const QList<int> targets = m_audioClients.values();
+    for (int clientId : targets) {
+        if (!m_audioClients.contains(clientId)) {
+            continue; // dropped while we were sending to an earlier client
+        }
         m_socketServer->sendBinary(clientId, frame);
     }
 
