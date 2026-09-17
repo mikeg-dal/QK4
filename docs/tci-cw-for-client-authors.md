@@ -55,27 +55,63 @@ TCI frames its own protocol with `:` `,` and `;`, so a macro cannot carry them l
 | `;` | `*` |
 
 A logger sending `TNX, 73` unescaped will have its message split at the comma into two arguments.
-QK4 rejoins them defensively, but that is QK4 being forgiving, not the protocol working.
+QK4 rejoins them defensively, but that is QK4 being forgiving, not the protocol working. Escaped
+properly, `cw_macros:0,TNX~ 73;` produced `KY TNX, 73;`.
+
+The escaping applies to the **whole payload**, and decoding happens before anything else. A bare `*`
+becomes `;`, which cannot appear inside a CAT command and is then stripped: `A*B` produced `KY AB;`.
 
 ### 2.2 Speed markers
 
 `>` raises the sending speed by 5 WPM, `<` lowers it, **cumulatively**, relative to the radio's
 current keyer speed. `>TU >599` means the second run is 10 WPM above where it started.
 
-### 2.3 Prosigns
+### 2.3 Prosigns — send `|XX|`, never a single-character token
 
 Letters between vertical bars are run together: `TEXT |SK| TEXT`.
 
-**Send `|SK|`, never the Elecraft spelling.** This one bites. In a K4 `KY` command the prosigns are
-`(`=KN, `+`=AR, `=`=BT, `%`=AS, `*`=SK, `!`=VE — so a client that helpfully pre-translates and
-sends a bare `*` has, per §2.1, just sent an escaped semicolon. The server will decode it to `;`
-and strip it. The prosign vanishes.
+**What QK4 accepts**, all six confirmed on the wire:
 
-`uRadioElecraftBase.pas:101` declares exactly those Elecraft spellings via `CWProsigns`. **That
-table is correct for the serial/network Elecraft radios and wrong for `TTCIRadio`** — over TCI the
-prosign grammar is `|XX|`, and the server maps it to whatever its radio wants.
-`uRadioTCI.pas:255`'s note that "nobody has established what its cw_macros does with a prosign" now
-has an answer: QK4 translates `|SK|` to `*` and the K4 keys it as SK, confirmed by ear.
+| Send | QK4 emits | Prosign |
+|---|---|---|
+| `\|KN\|` | `(` | KN |
+| `\|AR\|` | `+` | AR |
+| `\|BT\|` | `=` | BT |
+| `\|AS\|` | `%` | AS |
+| `\|SK\|` | `*` | SK |
+| `\|VE\|` | `!` | VE |
+
+Those are the K4's own `KY` spellings, from the manual. The translation happens **server-side, after
+escape decoding**, so a client sending `|SK|` never has to know that the K4 spells it `*` — and in
+particular never has to worry that `*` is also TCI's escape for `;`. Verified:
+`cw_macros:0,|KN| |AR| |BT| |AS| |SK| |VE|;` produced `KY ( + = % * !;`.
+
+**`|SN|` is not in the table.** QK4 keys unknown prosigns as their bare letters rather than deleting
+them: `A |SN| B` produced `KY A SN B;`. TR4W's Elecraft base *consumes* SN instead (keys nothing),
+on the grounds that Elecraft has no such prosign — a deliberate divergence, and arguably the better
+call. A client wanting that behaviour should simply not send `|SN|`.
+
+**The danger is a client that pre-translates.** Any single-character prosign token sent raw lands in
+one of two traps: `*` is TCI's escape for `;` and will be decoded then stripped, and `<` is a speed
+marker (§2.2) that the server consumes. Neither reaches the radio as a prosign.
+
+### 2.4 The `^` collision: half space is not representable
+
+`^` is TCI's escape for `:` and QK4 decodes it **unconditionally, before any prosign handling**.
+Confirmed: `cw_macros:0,A^B;` produced `KY A:B;`.
+
+So a client using `^` as a half-space token — as TR4W does internally,
+`TCWProsignSet.HalfSpace = '^'` — will have it silently become a colon. There is no escape for the
+escape.
+
+**Map half space to a plain space over TCI.** That is what `uRadioElecraftBase.pas:90` already does
+for the direct Elecraft radios, with the right reason attached: *"The half space is a whole space: a
+KY string has no half space."* The K4 has no half-space character either way, so nothing is lost by
+sending `' '`, and the collision disappears.
+
+(Unverified, and probably not worth verifying: whether the K4 keys a literal `:` at all. It is not
+in the prosign table and not a standard CW character, so `A:B` may key as two letters and nothing,
+or as something odd. Avoid sending one.)
 
 ---
 
