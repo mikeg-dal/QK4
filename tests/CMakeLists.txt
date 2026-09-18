@@ -458,6 +458,12 @@ target_include_directories(test_transmitowner PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_transmitowner Qt6::Core Qt6::Test)
 add_test(NAME TransmitOwnerTests COMMAND test_transmitowner)
 
+# USB device lifecycle policy — pure logic, no libusb/hidapi/Qt-device linkage needed.
+add_executable(test_usbdevicelifecycle test_usbdevicelifecycle.cpp)
+target_include_directories(test_usbdevicelifecycle PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_usbdevicelifecycle Qt6::Core Qt6::Test)
+add_test(NAME UsbDeviceLifecycleTests COMMAND test_usbdevicelifecycle)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
