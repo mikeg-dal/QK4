@@ -63,7 +63,6 @@ public:
 signals:
     void radioReady();                                             // Auth succeeded, K4 is live
     void connectionError(const QString &error);                    // Connection error
-    void authFailed();                                             // Authentication failed
     void connectionStateChanged(TcpClient::ConnectionState state); // Any state transition
     // (Observe connectionStateChanged(TcpClient::Disconnected) for the disconnect event.)
 

@@ -354,9 +354,26 @@ void TcpClient::onSocketDisconnected() {
     stopPingTimer();
     m_authTimer->stop();
 
+    // WHY this no longer says "authentication failed": the K4 sends no error codes. Nothing means
+    // "wrong password" and nothing means "accepted" — a good password produces ordinary traffic and
+    // a bad one produces silence or a closed socket. So reaching here with nothing received is
+    // equally consistent with a refused password, a blocked port, and a host that was never a K4.
+    //
+    // It used to claim the first of those. With the radio powered off, macOS reports the connect()
+    // failure while Qt emits connected() anyway, so QK4 enters Authenticating, writes the auth hash
+    // into a dead socket, lands here, and told the operator their credentials were wrong — sending
+    // them to re-type a password that was never the problem.
+    //
+    // TCP cannot rescue the distinction either, which is why this is not cleverer: the discriminator
+    // would be whether the connection truly reached ESTABLISHED, and in exactly this failure both
+    // socket signals lie the same way — connected() fires when it has not, and the error arrives as
+    // RemoteHostClosedError, which normally means it had.
     if (m_state.load(std::memory_order_acquire) == Authenticating && !m_authResponseReceived) {
-        emit authenticationFailed();
-        emit errorOccurred("Authentication failed - connection closed by radio");
+        emit errorOccurred(QString("Unable to connect to %1:%2 - it closed the connection without "
+                                   "responding. Check the radio is on, the port is right, and the "
+                                   "password matches.")
+                               .arg(m_host)
+                               .arg(m_port));
     }
 
     setState(Disconnected);
@@ -395,11 +412,39 @@ void TcpClient::onSocketError(QAbstractSocket::SocketError error) {
         return;
     }
 
-    if (stateNow == Authenticating) {
-        emit authenticationFailed();
+    // One diagnostic line carrying everything that tells the failure modes apart, because the
+    // user-visible message deliberately cannot: which phase we reached, what the socket called it,
+    // and whether the radio had ever answered. Verified against the radio: a wrong password on 9204
+    // makes the K4 send its ServerHello and then drop TCP with no TLS alert, so the socket error is
+    // indistinguishable from a host that went away.
+    qCWarning(netTcp) << "Connect attempt failed: phase=" << stateNow << "socketError=" << error << "port=" << m_port
+                      << "tls=" << m_useTls << "everAnswered=" << m_authResponseReceived << "detail=" << errorMsg;
+
+    if (stateNow == Authenticating && !m_authResponseReceived) {
+        // Reached only on the unencrypted port, where the password is a hash the radio simply does
+        // not answer if it dislikes it. Nothing here can tell that from a radio that is switched
+        // off, so say what is certain and list the causes instead of picking one.
+        emit errorOccurred(QString("Unable to connect to %1:%2 - it closed the connection without "
+                                   "responding. Check the radio is on, the port is right, and the "
+                                   "password matches.")
+                               .arg(m_host)
+                               .arg(m_port));
+        setState(Disconnected);
+        return;
     }
 
-    emit errorOccurred(errorMsg);
+    // Still failing a connection attempt, just with a socket reason worth repeating verbatim
+    // ("Connection refused", "Host not found"). Named the same way as the cases above so the status
+    // bar always leads with what went wrong rather than with a bare socket phrase.
+    if (stateNow == Connecting || stateNow == Authenticating) {
+        emit errorOccurred(QString("Unable to connect to %1:%2 - %3").arg(m_host).arg(m_port).arg(errorMsg));
+        setState(Disconnected);
+        return;
+    }
+
+    // An established session dropped. Different situation, different wording: nothing here is about
+    // reaching the radio or about credentials.
+    emit errorOccurred(QString("Connection to %1 lost - %2").arg(m_host, errorMsg));
     setState(Disconnected);
 }
 
@@ -425,7 +470,12 @@ void TcpClient::onPreSharedKeyAuthenticationRequired(QSslPreSharedKeyAuthenticat
 void TcpClient::onConnectTimeout() {
     if (m_state.load(std::memory_order_acquire) == Connecting) {
         qCDebug(netTcp) << "Connection timeout - failed to establish" << (m_useTls ? "TLS" : "TCP") << "connection";
-        emit errorOccurred("Connection timed out - radio unreachable");
+        // Verified: with nothing at the address, the socket reports neither connected() nor an
+        // error - it simply stays in ConnectingState. This timer is the only thing that speaks.
+        emit errorOccurred(QString("Unable to connect - no response from %1:%2. Check the radio is "
+                                   "powered on and on the network.")
+                               .arg(m_host)
+                               .arg(m_port));
         m_socket->abort();
         setState(Disconnected);
     }
@@ -433,9 +483,16 @@ void TcpClient::onConnectTimeout() {
 
 void TcpClient::onAuthTimeout() {
     if (m_state.load(std::memory_order_acquire) == Authenticating && !m_authResponseReceived) {
-        qCDebug(netTcp) << "Authentication timeout";
-        emit authenticationFailed();
-        emit errorOccurred("Authentication timeout - no response from radio");
+        // Distinct from the closed-socket case above: something is there and holding the connection
+        // open without answering. Still not attributable to the password - the K4 has no way to
+        // tell us it refused one - so the message names the port as well.
+        qCWarning(netTcp) << "Connect attempt failed: phase=Authenticating, socket still up, no data"
+                          << "port=" << m_port << "tls=" << m_useTls;
+        emit errorOccurred(QString("Unable to connect - %1:%2 accepted the connection but sent no "
+                                   "data. Check the password, and that the port matches the mode "
+                                   "(9204 encrypted, 9205 unencrypted).")
+                               .arg(m_host)
+                               .arg(m_port));
         disconnectFromHost();
     }
 }

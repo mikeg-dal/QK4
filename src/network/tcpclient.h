@@ -69,7 +69,6 @@ signals:
     void disconnected();
     void errorOccurred(const QString &error);
     void authenticated();
-    void authenticationFailed();
     void latencyChanged(int ms);
 
 private slots:

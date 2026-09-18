@@ -23,7 +23,6 @@ ConnectionController::ConnectionController(RadioState *radioState, QObject *pare
     connect(m_tcpClient, &TcpClient::stateChanged, this, &ConnectionController::onStateChanged);
     connect(m_tcpClient, &TcpClient::errorOccurred, this, &ConnectionController::connectionError);
     connect(m_tcpClient, &TcpClient::authenticated, this, &ConnectionController::radioReady);
-    connect(m_tcpClient, &TcpClient::authenticationFailed, this, &ConnectionController::authFailed);
 
     // Re-emit Protocol signals so callers don't need tcpClient()->protocol() chains
     auto *protocol = m_tcpClient->protocol();

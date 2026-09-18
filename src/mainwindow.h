@@ -74,7 +74,6 @@ private slots:
     void onConnectionError(const QString &error);
     void onHardwareError(const QString &error);
     void onRadioReady();
-    void onAuthFailed();
     void onCatResponse(const QString &response);
     void showRadioManager();
     void connectToRadio(const RadioEntry &radio);

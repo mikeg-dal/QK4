@@ -237,7 +237,6 @@ void MainWindow::setupConnectionWiring() {
             &MainWindow::onConnectionStateChanged);
     connect(m_connectionController, &ConnectionController::connectionError, this, &MainWindow::onConnectionError);
     connect(m_connectionController, &ConnectionController::radioReady, this, &MainWindow::onRadioReady);
-    connect(m_connectionController, &ConnectionController::authFailed, this, &MainWindow::onAuthFailed);
 
     // Protocol CAT responses -> RadioState (via ConnectionController re-emitted signal)
     connect(m_connectionController, &ConnectionController::catResponseReceived, this, &MainWindow::onCatResponse);
@@ -1288,11 +1287,6 @@ void MainWindow::onRadioReady() {
             }
         }
     }
-}
-
-void MainWindow::onAuthFailed() {
-    qCDebug(qk4Main) << "Authentication failed";
-    m_statusBarController->showAuthFailed();
 }
 
 void MainWindow::onCatResponse(const QString &response) {
