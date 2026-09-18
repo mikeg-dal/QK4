@@ -208,10 +208,14 @@ bool AudioEngine::setupAudioOutput() {
         // AT ALL from that device - not quiet audio, none. Say which device and what was asked for,
         // because the operator's next move is to pick a different one in Options and nothing else
         // in the UI tells them that.
-        qCWarning(qk4Audio) << "AudioEngine: output device" << outputDevice.description() << "does not support"
-                            << m_outputFormat.sampleRate() << "Hz" << m_outputFormat.channelCount()
-                            << "ch float - NO RX AUDIO from it."
-                            << "Choose a different output device in Options.";
+        // One formatted string rather than a chain: Homebrew's clang-format 18 and CI's apt
+        // clang-format-18 disagree about where to wrap a chain that reaches the 120-column limit,
+        // so a chain here passes locally and fails CI. See CLAUDE.md -> Lint.
+        qCWarning(qk4Audio,
+                  "AudioEngine: output device %s does not support %d Hz %d ch float - NO RX AUDIO from it. "
+                  "Choose a different output device in Options.",
+                  qUtf8Printable(outputDevice.description()), m_outputFormat.sampleRate(),
+                  m_outputFormat.channelCount());
         return false;
     }
 
