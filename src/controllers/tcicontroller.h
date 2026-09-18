@@ -132,6 +132,12 @@ private:
     // something the TCI side may cancel.
     void releaseClientTransmitter();
 
+    // The RX audio fan-out, held only while the listener is up so that operators who never enable
+    // TCI do not pay a queued cross-thread event per received audio packet.
+    void connectRxAudioFanout();
+    void disconnectRxAudioFanout();
+    QMetaObject::Connection m_rxAudioFanout;
+
     // Set once the transmitter has been handed back, so closeEvent and the destructor cannot do it
     // twice.
     bool m_shutdownDone = false;

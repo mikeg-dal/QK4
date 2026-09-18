@@ -243,11 +243,9 @@ void TciController::wireSettings() {
 // which had 46 connect() calls in one 287-line block - banned shape #3 in
 // src/controllers/README.md, and the shape the other controllers avoid.
 void TciController::wireAudioAndClients() {
-    // RX audio: I/O thread -> TCI thread. Queued, so the resampling never runs on the I/O thread.
-    if (m_audioController) {
-        connect(m_audioController, &AudioController::rxAudioAvailable, m_bridge, &TciAudioBridge::onRxAudio,
-                Qt::QueuedConnection);
-    }
+    // RX audio is NOT wired here. It is the one connection in this class that costs something per
+    // received packet whether or not TCI is in use, so it is connected in start() and dropped in
+    // stop(). See connectRxAudioFanout().
 
     // A listener arriving after an idle stretch must not hear samples from before the gap: the
     // bridge skips work entirely while nobody is subscribed, so the filter history is stale.
@@ -868,10 +866,45 @@ TciController::~TciController() {
     m_tciThread = nullptr;
 }
 
+// The RX audio fan-out, connected only while the server is up.
+//
+// WHY this one is not wired at construction like everything else: AudioController emits
+// rxAudioAvailable for EVERY received audio packet, whatever TCI is doing. Connected permanently,
+// that posts a queued cross-thread event to TciAudioBridge::onRxAudio for every packet, which then
+// returns early because nobody is subscribed - small, but paid by everyone including operators who
+// never enable TCI.
+//
+// Queued, so the resampling never runs on the I/O thread.
+void TciController::connectRxAudioFanout() {
+    if (!m_audioController || m_rxAudioFanout) {
+        return; // no audio to fan out, or already connected
+    }
+    m_rxAudioFanout = connect(m_audioController, &AudioController::rxAudioAvailable, m_bridge,
+                              &TciAudioBridge::onRxAudio, Qt::QueuedConnection);
+}
+
+void TciController::disconnectRxAudioFanout() {
+    if (m_rxAudioFanout) {
+        disconnect(m_rxAudioFanout);
+        m_rxAudioFanout = {};
+    }
+}
+
 void TciController::start(quint16 port, bool loopbackOnly) {
+    // BEFORE the listener comes up, not after. The ordering rule from f5e669a applies to this the
+    // same as to every other handler: anything a client can reach has to be connected before a
+    // client can arrive, or the first audio subscription races the wiring that serves it.
+    connectRxAudioFanout();
+
     bool ok = false;
     QMetaObject::invokeMethod(m_server, "start", Qt::BlockingQueuedConnection, Q_RETURN_ARG(bool, ok),
                               Q_ARG(quint16, port), Q_ARG(bool, loopbackOnly));
+
+    // A listener that failed to bind serves nobody, so it should not be left paying for the
+    // fan-out either.
+    if (!ok) {
+        disconnectRxAudioFanout();
+    }
     // Blocking, so the result is authoritative by the time it lands here.
     m_listening = ok;
     emit listeningChanged(ok, ok ? port : quint16(0));
@@ -879,6 +912,12 @@ void TciController::start(quint16 port, bool loopbackOnly) {
 
 void TciController::stop() {
     QMetaObject::invokeMethod(m_server, "stop", Qt::BlockingQueuedConnection);
+
+    // AFTER the server is down, mirroring the order in start(). Dropping it first would leave a
+    // still-subscribed client silent for the width of the blocking call above rather than
+    // disconnected.
+    disconnectRxAudioFanout();
+
     m_listening = false;
     // The server emits clientDisconnected for each session it tears down, so the queued
     // clientCountChanged would converge on its own - but not before this function returns, and a
