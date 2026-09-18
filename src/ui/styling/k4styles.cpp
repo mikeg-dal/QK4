@@ -736,22 +736,43 @@ const QString &lineEdit() {
 }
 
 const QString &checkBox() {
+    // THE INDICATOR IS DRAWN, NOT LEFT TO THE PLATFORM. Sizing it and nothing else leaves the
+    // unchecked box rendering near-black on these near-black dialogs - present, clickable and
+    // invisible. An operator reported being unable to find a checkbox that was under the cursor.
+    // Grey outline for off, amber fill for on, matching the accent used everywhere else.
     static const QString s = QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
-                                     "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                     "QCheckBox::indicator { width: %4px; height: %4px;"
+                                     "  border: 1px solid %5; border-radius: 3px;"
+                                     "  background-color: %6; }"
+                                     "QCheckBox::indicator:checked { background-color: %7;"
+                                     "  border-color: %7; }"
+                                     "QCheckBox::indicator:hover { border-color: %7; }")
                                  .arg(Colors::TextWhite)
                                  .arg(Dimensions::FontSizePopup)
                                  .arg(Dimensions::BorderRadiusLarge)
-                                 .arg(Dimensions::CheckboxSize);
+                                 .arg(Dimensions::CheckboxSize)
+                                 .arg(Colors::TextGray, Colors::DarkBackground, Colors::AccentAmber);
     return s;
 }
 
 const QString &checkBoxDisabled() {
+    // Same indicator problem as checkBox(), and the same fix - but deliberately NOT the same
+    // colours. A disabled control still has to READ as disabled, so the outline is InactiveGray
+    // rather than text grey, a checked box fills with DisabledBackground rather than amber, and
+    // there is no hover rule at all. The operator can see what it is set to and see that they
+    // cannot change it. Note this is NOT the dialog border grey: at #333 on a #0d0d0d dialog it
+    // would have been as invisible as the bug being fixed here.
     static const QString s = QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
-                                     "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                     "QCheckBox::indicator { width: %4px; height: %4px;"
+                                     "  border: 1px solid %5; border-radius: 3px;"
+                                     "  background-color: %6; }"
+                                     "QCheckBox::indicator:checked { background-color: %7;"
+                                     "  border-color: %7; }")
                                  .arg(Colors::TextGray)
                                  .arg(Dimensions::FontSizePopup)
                                  .arg(Dimensions::BorderRadiusLarge)
-                                 .arg(Dimensions::CheckboxSize);
+                                 .arg(Dimensions::CheckboxSize)
+                                 .arg(Colors::InactiveGray, Colors::DarkBackground, Colors::DisabledBackground);
     return s;
 }
 
