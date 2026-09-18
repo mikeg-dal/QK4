@@ -398,6 +398,53 @@ void KpodPlusUsbWorker::releaseHandle() {
     }
 }
 
+void KpodPlusUsbWorker::discardBufferedKeying() {
+    // Read EP02 dry and throw the result away, BEFORE the handle reaches the EP02 reader.
+    //
+    // The KPOD+ runs its own keyer. While QK4 has the device closed it keeps reading the paddle,
+    // keeps generating elements and keeps them in its own buffer — a USB interrupt-IN endpoint holds
+    // data until the host asks for it, and nobody was asking. Reopening then delivered the whole
+    // backlog as fast as the host could read it.
+    //
+    // Reproduced on the bench, 2026-09-18: enable, key, DISABLE, key five characters, wait 47 s,
+    // re-enable. Two frames arrived 1 ms apart, the second carrying four dahs plus a letter space
+    // and a pause, and the radio transmitted them. The live-keying signature is a 4-byte payload
+    // every ~114 ms; a near-full 28-byte frame can only be a drained backlog.
+    //
+    // WHY discard rather than pace them out: they are elements the operator keyed up to a minute
+    // ago, at a moment when QK4 was deliberately not listening to this device. Transmitting them
+    // late is wrong at any speed, and silence is the safe failure. Their sidetone already told them
+    // what they sent; the radio is the part that must not act on it.
+    //
+    // Runs on the USB worker thread, before handleOpened publishes the handle, so the EP02 reader
+    // cannot be competing for the endpoint. Bounded twice — by a short timeout and by a frame count
+    // — so a device that never returns TIMEOUT cannot stall the open.
+    if (!m_handle) {
+        return;
+    }
+    constexpr int kDrainTimeoutMs = 20; // long enough for a queued frame, short enough not to stall
+    constexpr int kMaxDrainFrames = 64; // 64 x 32 B is far more than the device can hold
+    unsigned char scratch[32];
+    int frames = 0;
+    int bytes = 0;
+    for (; frames < kMaxDrainFrames; ++frames) {
+        int transferred = 0;
+        const int rc =
+            libusb_interrupt_transfer(m_handle, 0x82, scratch, sizeof(scratch), &transferred, kDrainTimeoutMs);
+        if (rc != 0 || transferred <= 0) {
+            break; // TIMEOUT is the expected exit: nothing left to read
+        }
+        bytes += transferred;
+    }
+    if (frames > 0) {
+        // Warning, not debug. This is the operator's sending being thrown away, and if it happens
+        // when they did not expect it that is worth finding in a log without knowing to enable a
+        // category first.
+        qCWarning(hwKpodPlus) << "KPOD+ discarded" << frames << "buffered keyer frame(s)," << bytes
+                              << "bytes, queued by the device while QK4 had it closed. They are not sent.";
+    }
+}
+
 void KpodPlusUsbWorker::openDevice() {
     if (m_handle) {
         return;
@@ -409,6 +456,7 @@ void KpodPlusUsbWorker::openDevice() {
     resetDecoderState();
     queryOpenDeviceInfo(&m_info);
     emit deviceInfoReady(m_info);
+    discardBufferedKeying();
     emit handleOpened(reinterpret_cast<quintptr>(m_handle));
     if (m_pollTimer && !m_pollTimer->isActive())
         m_pollTimer->start();

@@ -107,6 +107,14 @@ private:
     bool openHandle();
     void releaseHandle();
 
+    /// Read EP02 dry and throw the result away, before the handle reaches the EP02 reader.
+    ///
+    /// The device keeps running its keyer while QK4 has it closed, and a USB interrupt-IN endpoint
+    /// holds what it produced until the host asks. Without this, reopening delivered a whole
+    /// backlog at once and the radio transmitted it — reproduced on the bench 2026-09-18. Elements
+    /// keyed while QK4 was deliberately not listening are stale; silence is the safe failure.
+    void discardBufferedKeying();
+
 public:
     // The façade wires this to the EP02 worker's transfer mutex so that
     // releaseHandle() can wait for any in-flight EP02 read to finish before
