@@ -130,6 +130,14 @@ target_include_directories(test_waterfallgeometry PRIVATE ${CMAKE_SOURCE_DIR}/sr
 target_link_libraries(test_waterfallgeometry Qt6::Core Qt6::Test)
 add_test(NAME WaterfallGeometryTests COMMAND test_waterfallgeometry)
 
+# Dashed-overlay vertex arithmetic: the buffer-sizing rule for the notch and RTTY tone lines.
+# Header-only (PanadapterConstants + RhiUtils), so no source files — but rhi_utils.h includes
+# rhi/qshader.h, which needs Qt6::GuiPrivate.
+add_executable(test_panadapterdashes test_panadapterdashes.cpp)
+target_include_directories(test_panadapterdashes PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_panadapterdashes Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Test)
+add_test(NAME PanadapterDashTests COMMAND test_panadapterdashes)
+
 # BandPlan data/lookup tests (QColor needs Qt6::Gui)
 add_executable(test_bandplan test_bandplan.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/bandplan.cpp

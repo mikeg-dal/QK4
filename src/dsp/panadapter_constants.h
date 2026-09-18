@@ -29,6 +29,27 @@ constexpr float PassbandEdgeWidth = 2.0f;
 // Dash pattern (pixels)
 constexpr float DashLengthPx = 6.0f;
 constexpr float DashGapPx = 4.0f;
+constexpr float DashStridePx = DashLengthPx + DashGapPx;
+
+// Floats a dashed vertical line needs for a span this tall, in DEVICE pixels: six vertices (two
+// triangles) x two floats per dash, one dash per stride. The +1 covers the partial dash the loop
+// always starts with and absorbs float accumulation drift in `y += stride`.
+constexpr int FloatsPerDash = 12;
+constexpr int dashFloatsFor(float spanPx) {
+    return spanPx <= 0.0f ? 0 : (static_cast<int>(spanPx / DashStridePx) + 1) * FloatsPerDash;
+}
+
+// Tallest render surface the dash buffers are sized for, in DEVICE pixels: an 8K panel at DPR 1,
+// or 4K at DPR 2. The tallest shipping panels are the 5K iMac (2880) and the Pro Display XDR
+// (3384).
+//
+// WHY a ceiling rather than the live render-target height: both RHI widgets create their resources
+// once and never on resize, and m_spectrumRatio moves without a resize at all. The dash builder
+// clamps to MaxDashFloats, so exceeding this ceiling truncates the line and warns — it cannot
+// overrun the buffer. That clamp is what makes a fixed ceiling safe; do not remove one without the
+// other. Each buffer this sizes is ~21 KB, against a 4096x2048 waterfall texture.
+constexpr float MaxDisplayHeightPx = 4320.0f;
+constexpr int MaxDashFloats = dashFloatsFor(MaxDisplayHeightPx);
 
 // Passband alpha (0–255)
 constexpr int PassbandFillAlpha = 64;

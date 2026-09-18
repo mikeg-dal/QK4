@@ -660,7 +660,8 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_markerUniformBuffer->create();
 
     // Separate buffers for notch to avoid conflicts with grid (which shares overlay buffers)
-    m_notchVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 1200 * sizeof(float)));
+    m_notchVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                      PanadapterConstants::MaxDashFloats * sizeof(float)));
     m_notchVbo->create();
 
     m_notchUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
@@ -687,23 +688,27 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_txMarkerUniformBuffer->create();
 
     // RTTY mark/space tone line buffers (primary VFO)
-    m_rttyMarkVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 1200 * sizeof(float)));
+    m_rttyMarkVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                         PanadapterConstants::MaxDashFloats * sizeof(float)));
     m_rttyMarkVbo->create();
     m_rttyMarkUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
     m_rttyMarkUniformBuffer->create();
 
-    m_rttySpaceVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 1200 * sizeof(float)));
+    m_rttySpaceVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                          PanadapterConstants::MaxDashFloats * sizeof(float)));
     m_rttySpaceVbo->create();
     m_rttySpaceUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
     m_rttySpaceUniformBuffer->create();
 
     // RTTY mark/space tone line buffers (secondary VFO)
-    m_secRttyMarkVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 1200 * sizeof(float)));
+    m_secRttyMarkVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                            PanadapterConstants::MaxDashFloats * sizeof(float)));
     m_secRttyMarkVbo->create();
     m_secRttyMarkUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
     m_secRttyMarkUniformBuffer->create();
 
-    m_secRttySpaceVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 1200 * sizeof(float)));
+    m_secRttySpaceVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                             PanadapterConstants::MaxDashFloats * sizeof(float)));
     m_secRttySpaceVbo->create();
     m_secRttySpaceUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
     m_secRttySpaceUniformBuffer->create();
@@ -1247,9 +1252,6 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
 
             // Secondary VFO RTTY mark/space dashed lines
             if ((secIsAfskA || secIsFskD) && m_fskMarkTone > 0) {
-                float dashLen = PanadapterConstants::DashLengthPx;
-                float gapLen = PanadapterConstants::DashGapPx;
-                float stride = dashLen + gapLen;
                 float lineWidth = PanadapterConstants::RttyDashLineWidth;
 
                 auto drawSecRttyLine = [&](qint64 toneFreq, QRhiBuffer *vbo, QRhiBuffer *ubo,
@@ -1259,11 +1261,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                         return;
 
                     QVector<float> verts;
-                    for (float y = overlayTop; y < spectrumHeight; y += stride) {
-                        float yEnd = qMin(y + dashLen, spectrumHeight);
-                        verts << toneX << y << toneX + lineWidth << y << toneX + lineWidth << yEnd << toneX << y
-                              << toneX + lineWidth << yEnd << toneX << yEnd;
-                    }
+                    RhiUtils::appendDashedVerticalLine(verts, toneX, lineWidth, overlayTop, spectrumHeight);
 
                     QRhiResourceUpdateBatch *rub = m_rhi->nextResourceUpdateBatch();
                     rub->updateDynamicBuffer(vbo, 0, verts.size() * sizeof(float), verts.constData());
@@ -1392,9 +1390,6 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
 
             // Draw primary VFO RTTY mark/space dashed lines
             if ((isAfskA || isFskD) && m_fskMarkTone > 0) {
-                float dashLen = PanadapterConstants::DashLengthPx;
-                float gapLen = PanadapterConstants::DashGapPx;
-                float stride = dashLen + gapLen;
                 float lineWidth = PanadapterConstants::RttyDashLineWidth;
 
                 auto drawRttyLine = [&](qint64 toneFreq, QRhiBuffer *vbo, QRhiBuffer *ubo,
@@ -1404,11 +1399,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                         return;
 
                     QVector<float> verts;
-                    for (float y = overlayTop; y < spectrumHeight; y += stride) {
-                        float yEnd = qMin(y + dashLen, spectrumHeight);
-                        verts << toneX << y << toneX + lineWidth << y << toneX + lineWidth << yEnd << toneX << y
-                              << toneX + lineWidth << yEnd << toneX << yEnd;
-                    }
+                    RhiUtils::appendDashedVerticalLine(verts, toneX, lineWidth, overlayTop, spectrumHeight);
 
                     QRhiResourceUpdateBatch *rub = m_rhi->nextResourceUpdateBatch();
                     rub->updateDynamicBuffer(vbo, 0, verts.size() * sizeof(float), verts.constData());
@@ -1564,16 +1555,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                 if (inBounds) {
                     // Draw as dotted line (dashed segments with gaps)
                     float notchWidth = PanadapterConstants::MarkerLineWidth;
-                    float dashLen = PanadapterConstants::DashLengthPx;
-                    float gapLen = PanadapterConstants::DashGapPx;
-                    float stride = dashLen + gapLen;
                     QVector<float> notchVerts;
-                    for (float y = overlayTop; y < spectrumHeight; y += stride) {
-                        float yEnd = qMin(y + dashLen, spectrumHeight);
-                        // Two triangles per dash segment
-                        notchVerts << notchX << y << notchX + notchWidth << y << notchX + notchWidth << yEnd << notchX
-                                   << y << notchX + notchWidth << yEnd << notchX << yEnd;
-                    }
+                    RhiUtils::appendDashedVerticalLine(notchVerts, notchX, notchWidth, overlayTop, spectrumHeight);
 
                     QRhiResourceUpdateBatch *notchRub = m_rhi->nextResourceUpdateBatch();
                     notchRub->updateDynamicBuffer(m_notchVbo.get(), 0, notchVerts.size() * sizeof(float),

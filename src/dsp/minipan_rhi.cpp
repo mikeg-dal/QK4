@@ -131,12 +131,12 @@ void MiniPanRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_notchVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 64 * sizeof(float)));
     m_notchVbo->create();
 
-    // Dedicated RTTY space-tone dashed-line buffers.
-    // 30 dash segments max (300 px Retina / 10 px stride) × 6 verts × 2 floats = 360; 512 adds
-    // headroom for wider canvases without reallocating at runtime.
-    constexpr int kRttyDashFloatCount = 512;
-    m_rttySpaceVbo.reset(
-        m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, kRttyDashFloatCount * sizeof(float)));
+    // Dedicated RTTY space-tone dashed-line buffer. Sized from the shared ceiling, NOT from this
+    // widget's expected height: the loop below spans the full widget in DEVICE pixels, so the old
+    // 512-float size (42 dashes = 420 px, reasoned from a 300 px Retina window) was overrun by any
+    // mini-pan taller than that. One constant for both widgets — see PanadapterConstants.
+    m_rttySpaceVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                          PanadapterConstants::MaxDashFloats * sizeof(float)));
     m_rttySpaceVbo->create();
 
     // Create uniform buffers
@@ -757,17 +757,10 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
             float spaceX = centerX - spaceOffsetPixels;
 
             if (spaceX >= 0 && spaceX < w) {
-                float dashLen = PanadapterConstants::DashLengthPx;
-                float gapLen = PanadapterConstants::DashGapPx;
-                float stride = dashLen + gapLen;
                 float lineWidth = PanadapterConstants::RttyDashLineWidth;
 
                 QVector<float> verts;
-                for (float y = 0.0f; y < h; y += stride) {
-                    float yEnd = qMin(y + dashLen, h);
-                    verts << spaceX << y << spaceX + lineWidth << y << spaceX + lineWidth << yEnd << spaceX << y
-                          << spaceX + lineWidth << yEnd << spaceX << yEnd;
-                }
+                RhiUtils::appendDashedVerticalLine(verts, spaceX, lineWidth, 0.0f, h);
 
                 QRhiResourceUpdateBatch *rtRub = m_rhi->nextResourceUpdateBatch();
                 rtRub->updateDynamicBuffer(m_rttySpaceVbo.get(), 0, verts.size() * sizeof(float), verts.constData());
