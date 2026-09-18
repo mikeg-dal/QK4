@@ -47,7 +47,12 @@ public:
     // and stays open for the lifetime of the K4 connection, so subsequent PTT presses don't
     // pay the OS audio backend renegotiation cost (200 ms – 1.5 s on PipeWire/CoreAudio/WASAPI).
     // openMic() is idempotent. closeMic() is only called from teardown paths (stop(), device
-    // swap) — never per-PTT. The TX send-gate lives in AudioController::onMicrophoneFrame.
+    // swap) — never per-PTT. The TX send-gate is the m_pttActive check in bufferAndEmitTxFrames().
+    //
+    // Both sentences above were false until AUD-001 was fixed: stop() did not call closeMic(), and
+    // the gate it named lived in an AudioController method that no longer exists. They are stated
+    // here as a contract, so if stop() stops honouring it again the comment is the thing that is
+    // wrong rather than the thing that is trusted.
     Q_INVOKABLE void openMic();
     Q_INVOKABLE void closeMic();
     Q_INVOKABLE void flushMicBuffer(); // Called on PTT-on edge so a partial-frame tail from

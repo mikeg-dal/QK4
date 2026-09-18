@@ -105,6 +105,28 @@ void AudioEngine::stop() {
         m_micPollTimer->stop();
     }
 
+    // AUD-001. Transmit state belongs to the connection and must not outlive it.
+    //
+    // This function used to clear none of the three. The consequences were not theoretical:
+    //
+    //   m_micEnabled survived as a lie — true, with m_audioSource about to be deleted below. The
+    //   next setMicDevice() reads it as `wasOpen` and calls openMic(), so changing the microphone
+    //   in Options REOPENED THE MICROPHONE WHILE DISCONNECTED and re-armed the poll timer. A
+    //   hot-plugged USB or Bluetooth device rewrites that setting by itself (AUD-002), so it did
+    //   not even need the operator to touch anything.
+    //
+    //   m_pttActive survived, so a disconnect while keyed came back up on reconnect with the
+    //   encode gate already open, streaming the room at a radio nobody had keyed.
+    //
+    //   m_txSource survived, so a connection dropped while a TCI client held the transmitter left
+    //   the engine gated to Tci, and the operator's next PTT transmitted silence.
+    //
+    // closeMic() rather than a bare store, because it also stops the poll timer and drops the
+    // partial frame — the same teardown the header has always claimed happened here.
+    m_pttActive.store(false, std::memory_order_release);
+    m_txSource.store(static_cast<int>(TxSource::Microphone), std::memory_order_release);
+    closeMic();
+
     if (m_audioSink) {
         m_audioSink->stop();
         delete m_audioSink;
