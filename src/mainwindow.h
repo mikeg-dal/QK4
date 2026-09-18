@@ -120,103 +120,103 @@ private:
     // current visibility state (toggle-close must work).
     void closeNonPopupManagerPopups();
 
-    ConnectionController *m_connectionController;
-    RadioState *m_radioState;
+    ConnectionController *m_connectionController = nullptr;
+    RadioState *m_radioState = nullptr;
 
     // Audio controller owns AudioEngine, Opus codecs, audio thread, and PTT state
-    AudioController *m_audioController;
-    TransmitController *m_transmitController;
+    AudioController *m_audioController = nullptr;
+    TransmitController *m_transmitController = nullptr;
 
     // Spectrum controller owns panadapters, span buttons, VFO indicators, and spectrum wiring
-    SpectrumController *m_spectrumController;
+    SpectrumController *m_spectrumController = nullptr;
 
     // Top status bar — owned by StatusBarController (see src/controllers/).
-    StatusBarController *m_statusBarController;
+    StatusBarController *m_statusBarController = nullptr;
 
     // VFO widgets (modular, reusable components). Each owns its own multifunction S/Po/ALC/COMP/
     // SWR/Id meter (VFOWidget::m_txMeter) so there is no standalone TX meter member here.
-    VFOWidget *m_vfoA;
-    VFOWidget *m_vfoB;
+    VFOWidget *m_vfoA = nullptr;
+    VFOWidget *m_vfoB = nullptr;
 
     // Mode labels (in center section, not in VFOWidget)
-    QLabel *m_modeALabel;
-    QLabel *m_modeBLabel;
+    QLabel *m_modeALabel = nullptr;
+    QLabel *m_modeBLabel = nullptr;
 
     // RX Antenna labels (in antenna row below VFOs)
-    QLabel *m_rxAntALabel;
-    QLabel *m_rxAntBLabel;
+    QLabel *m_rxAntALabel = nullptr;
+    QLabel *m_rxAntBLabel = nullptr;
 
     // Center section - first row with absolute positioning
-    VfoRowWidget *m_vfoRow;
+    VfoRowWidget *m_vfoRow = nullptr;
 
     // Center section labels (pointers to VfoRowWidget children)
-    QWidget *m_vfoASquare; // VfoSquareWidget - used for event filter
-    QLabel *m_txTriangle;  // Left triangle (pointing at A) - shown when split OFF
-    QLabel *m_txTriangleB; // Right triangle (pointing at B) - shown when split ON
-    QLabel *m_txIndicator;
-    QWidget *m_vfoBSquare; // VfoSquareWidget - used for event filter
-    QLabel *m_splitLabel;
-    QLabel *m_subLabel; // SUB indicator (green when sub RX enabled)
-    QLabel *m_divLabel; // DIV indicator (green when diversity enabled)
-    QLabel *m_msgBankLabel;
-    QWidget *m_ritXitBox;
-    QLabel *m_ritLabel;
-    QLabel *m_xitLabel;
-    QLabel *m_ritXitValueLabel;
-    QLabel *m_atuLabel;
-    FilterIndicatorWidget *m_filterAWidget; // VFO A filter indicator
-    FilterIndicatorWidget *m_filterBWidget; // VFO B filter indicator
+    QWidget *m_vfoASquare = nullptr; // VfoSquareWidget - used for event filter
+    QLabel *m_txTriangle = nullptr;  // Left triangle (pointing at A) - shown when split OFF
+    QLabel *m_txTriangleB = nullptr; // Right triangle (pointing at B) - shown when split ON
+    QLabel *m_txIndicator = nullptr;
+    QWidget *m_vfoBSquare = nullptr; // VfoSquareWidget - used for event filter
+    QLabel *m_splitLabel = nullptr;
+    QLabel *m_subLabel = nullptr; // SUB indicator (green when sub RX enabled)
+    QLabel *m_divLabel = nullptr; // DIV indicator (green when diversity enabled)
+    QLabel *m_msgBankLabel = nullptr;
+    QWidget *m_ritXitBox = nullptr;
+    QLabel *m_ritLabel = nullptr;
+    QLabel *m_xitLabel = nullptr;
+    QLabel *m_ritXitValueLabel = nullptr;
+    QLabel *m_atuLabel = nullptr;
+    FilterIndicatorWidget *m_filterAWidget = nullptr; // VFO A filter indicator
+    FilterIndicatorWidget *m_filterBWidget = nullptr; // VFO B filter indicator
 
     // Memory buttons (M1-M4, REC, STORE, RCL) live in
     // MemoryButtonsController — no pointers retained here.
-    QLabel *m_voxLabel;
-    QLabel *m_qskLabel;
-    QLabel *m_txAntennaLabel;
+    QLabel *m_voxLabel = nullptr;
+    QLabel *m_qskLabel = nullptr;
+    QLabel *m_txAntennaLabel = nullptr;
 
     // Server Manager (RadioManagerDialog) shown modeless + toggled by the side-panel globe icon;
     // null when closed (see showRadioManager()).
     RadioManagerDialog *m_radioManager = nullptr;
 
     // Control panels (L-shaped layout)
-    SideControlPanel *m_sideControlPanel;
-    RightSidePanel *m_rightSidePanel;
-    BottomMenuBar *m_bottomMenuBar;
+    SideControlPanel *m_sideControlPanel = nullptr;
+    RightSidePanel *m_rightSidePanel = nullptr;
+    BottomMenuBar *m_bottomMenuBar = nullptr;
 
     // Menu system — owned by MenuController (src/controllers/).
-    MenuController *m_menuController;
-    PopupManager *m_popupManager;
-    BandNavigationController *m_bandNavController;
-    ButtonRowDispatcher *m_buttonRowDispatcher;
-    MacroController *m_macroController;
-    ProcessingDisplayController *m_processingDisplayController;
-    VfoRowIndicatorController *m_vfoRowIndicatorController;
-    RitXitController *m_ritXitController;
-    ModeLabelController *m_modeLabelController;
-    VfoFrequencyController *m_vfoFrequencyController;
-    SubDivIndicatorController *m_subDivIndicatorController;
-    TxStateController *m_txStateController;
-    SideControlDisplayController *m_sideControlDisplayController;
-    SideControlScrollController *m_sideControlScrollController;
-    RightSideController *m_rightSideController;
-    MemoryButtonsController *m_memoryButtonsController;
-    TextDecodeController *m_textDecodeController;
-    AntennaConfigController *m_antennaCfgController;
-    AntennaDisplayController *m_antennaDisplayController;
-    FeatureMenuController *m_featureMenuController;
-    ModePopupController *m_modePopupController;
+    MenuController *m_menuController = nullptr;
+    PopupManager *m_popupManager = nullptr;
+    BandNavigationController *m_bandNavController = nullptr;
+    ButtonRowDispatcher *m_buttonRowDispatcher = nullptr;
+    MacroController *m_macroController = nullptr;
+    ProcessingDisplayController *m_processingDisplayController = nullptr;
+    VfoRowIndicatorController *m_vfoRowIndicatorController = nullptr;
+    RitXitController *m_ritXitController = nullptr;
+    ModeLabelController *m_modeLabelController = nullptr;
+    VfoFrequencyController *m_vfoFrequencyController = nullptr;
+    SubDivIndicatorController *m_subDivIndicatorController = nullptr;
+    TxStateController *m_txStateController = nullptr;
+    SideControlDisplayController *m_sideControlDisplayController = nullptr;
+    SideControlScrollController *m_sideControlScrollController = nullptr;
+    RightSideController *m_rightSideController = nullptr;
+    MemoryButtonsController *m_memoryButtonsController = nullptr;
+    TextDecodeController *m_textDecodeController = nullptr;
+    AntennaConfigController *m_antennaCfgController = nullptr;
+    AntennaDisplayController *m_antennaDisplayController = nullptr;
+    FeatureMenuController *m_featureMenuController = nullptr;
+    ModePopupController *m_modePopupController = nullptr;
 
     // Hardware controller (owns KPOD, HaliKey, IambicKeyer, SidetoneGenerator and their threads)
-    HardwareController *m_hardwareController;
-    CwController *m_cwController;
+    HardwareController *m_hardwareController = nullptr;
+    CwController *m_cwController = nullptr;
 
     // KPA1500 amplifier UI controller (owns the KPA1500Client)
-    KPA1500UiController *m_kpa1500UiController;
+    KPA1500UiController *m_kpa1500UiController = nullptr;
 
     // DX Cluster controller
-    DxClusterController *m_dxClusterController;
+    DxClusterController *m_dxClusterController = nullptr;
 
     // CAT server for external app integration (WSJT-X, MacLoggerDX, etc.)
-    CatServer *m_catServer;
+    CatServer *m_catServer = nullptr;
 
     // TCI server: the same job over a WebSocket, carrying audio as well as CAT. Independent of
     // CatServer - neither goes through the other.
@@ -226,7 +226,7 @@ private:
     OptionsDialog *m_optionsDialog = nullptr;
 
     // Notification popup for K4 error/status messages (ERxx:)
-    NotificationWidget *m_notificationWidget;
+    NotificationWidget *m_notificationWidget = nullptr;
 };
 
 #endif // MAINWINDOW_H
