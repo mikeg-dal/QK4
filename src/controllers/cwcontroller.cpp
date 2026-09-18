@@ -191,19 +191,24 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     connect(
         m_halikey, &HalikeyDevice::lineStateChanged, this,
         [this](bool dit, bool dah, bool ptt) {
-            // KPOD+ owns the whole CW chain when present.
-            if (kpodPlusActive())
-                return;
-
             const bool isV14 = m_cachedIsV14.load(std::memory_order_acquire);
             const auto mode = static_cast<RadioState::Mode>(m_cachedMode.load(std::memory_order_acquire));
             const bool inCw = (mode == RadioState::CW || mode == RadioState::CW_R);
 
+            // WHY the KPOD+ gate is a TERM here and not an early return at the top of the handler:
+            // the KPOD+ owns CW keying, not the foot pedal. Returning early also skipped the pedal
+            // demux below, which cost voice-mode pedal PTT entirely whenever a KPOD+ was attached
+            // and swallowed the release of a press already in flight when the gate rose. As a term
+            // it keeps the lever output a pure function of (sample, mode, transport, gate), so a
+            // lever held across a gate rise is released by the very next edge instead of staying
+            // latched on the keyer until the gate clears - and then emitting KZ nobody keyed.
+            const bool gated = kpodPlusActive();
+
             // Both levers are gated on CW together. Keying the radio from a paddle in SSB/AM/FM is
             // never wanted, and letting one lever through outside CW also left its state set on the
             // keyer going back into CW.
-            const bool ditLever = inCw && (isV14 ? ptt : dit);
-            const bool dahLever = inCw && dah;
+            const bool ditLever = !gated && inCw && (isV14 ? ptt : dit);
+            const bool dahLever = !gated && inCw && dah;
             m_keyer->setPaddleState(ditLever, dahLever);
 
             // Pedal demux is edge-driven, so act only on a real PTT transition.
@@ -272,13 +277,11 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // deviceInfoReady (KPOD+ detected) rather than deviceConnected (open
     // succeeded) so the ~10-100 ms open window doesn't leak paddle events to
     // the local sidetone path.
-    connect(m_kpodPlus, &KpodPlusDevice::deviceConnected, this,
-            [this]() { m_connection->setKpodPlusKeyerActive(true); });
-    connect(m_kpodPlus, &KpodPlusDevice::deviceDisconnected, this,
-            [this]() { m_connection->setKpodPlusKeyerActive(false); });
+    connect(m_kpodPlus, &KpodPlusDevice::deviceConnected, this, [this]() { setKpodPlusGate(true); });
+    connect(m_kpodPlus, &KpodPlusDevice::deviceDisconnected, this, [this]() { setKpodPlusGate(false); });
     connect(m_kpodPlus, &KpodPlusDevice::deviceInfoReady, this, [this]() {
         if (m_kpodPlus->isDetected())
-            m_connection->setKpodPlusKeyerActive(true);
+            setKpodPlusGate(true);
     });
 
     // EP02 keyer data → straight to the I/O thread.
@@ -295,6 +298,23 @@ CwController::~CwController() {
     // Sever all signal connections before HardwareController tears down the
     // devices these handlers reference. CONVENTIONS Rule 11.
     disconnect(this);
+}
+
+void CwController::setKpodPlusGate(bool active) {
+    // Order is load-bearing. The release store has to be visible to the HaliKey worker's acquire
+    // load BEFORE the levers are forced down, or an edge landing between the two lines recomputes
+    // them with the gate still clear and sets them straight back.
+    m_connection->setKpodPlusKeyerActive(active);
+    if (active) {
+        // A lever held when the KPOD+ takes over stays down on the keyer otherwise, and surfaces
+        // as KZ nobody keyed once the KPOD+ is unplugged again. Unconditional rather than
+        // edge-detected: the store is idempotent and cannot produce an element with the gate
+        // already set, and an edge check here is one more thing to get wrong.
+        m_keyer->setPaddleState(false, false);
+    }
+    // Deliberately NOT cleared here: m_v14PttDestination. A pedal press in progress in a voice
+    // mode keeps its capture, because the KPOD+ does not own voice PTT - dropping it would be the
+    // same defect this commit fixes, in the other direction.
 }
 
 void CwController::releaseCapturedPtt() {

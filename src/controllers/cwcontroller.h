@@ -90,9 +90,18 @@ class KpodPlusDevice;
 // iambic CAT lambdas and the HaliKey paddle handlers read with acquire
 // ordering paired with CwController's release stores.
 //
-// When the gate is on, all locally-driven CW emissions are suppressed
-// (the iambic state machine still runs; only its KZ output and sidetone
-// playback drop). KPOD+ owns the entire chain when active.
+// When the gate is on, locally-driven CW emissions are suppressed: the
+// paddle levers are withheld from the keyer, and the KZ output and sidetone
+// playback of the iambic state machine (which still runs) drop. KPOD+ owns
+// the CW chain when active.
+//
+// It does NOT own the foot pedal. Voice-mode pedal PTT keeps working with a
+// KPOD+ attached, and a pedal press already in flight when the gate rises
+// keeps its capture so the release still fires. The gate used to be an early
+// return at the top of the lineStateChanged handler, which cost both of
+// those; it is now a term of the lever expression, which also means a lever
+// held across a gate rise is released by the next edge rather than staying
+// latched on the keyer until the KPOD+ goes away.
 //
 // State moved from HardwareController
 // -----------------------------------
@@ -201,6 +210,10 @@ private:
     // makes those mutually exclusive — whichever runs first wins and the rest see V14PttNone, so
     // PTT is released exactly once (invariant 3).
     void releaseCapturedPtt();
+
+    // Set or clear the KPOD+ keyer-active gate, releasing both levers when it rises. Every writer
+    // of the gate goes through here so the store-then-release order cannot drift between them.
+    void setKpodPlusGate(bool active);
 
     // True when the KPOD+ device owns the CW path — reads the shared
     // atomic gate on ConnectionController with acquire ordering. While
