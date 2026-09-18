@@ -683,6 +683,12 @@ void KpodPlusEp02Worker::run() {
     // timeout served only to check m_running, which we'd hit at worst once per
     // timeout window — 100 ms is plenty for clean shutdown perception.
     constexpr int kEp02TimeoutMs = 100;
+    // USB-008 backoff. 5 ms is long enough to stop a spin and far shorter than one CW element, so
+    // a transient costs no keying. 20 in a row at that rate is ~100 ms of failure — comfortably a
+    // real fault rather than a blip.
+    constexpr int kErrorBackoffMs = 5;
+    constexpr int kMaxConsecutiveErrors = 20;
+    int consecutiveErrors = 0;
 
     while (m_running.load(std::memory_order_relaxed)) {
         libusb_device_handle *h = m_handle.load(std::memory_order_acquire);
@@ -700,9 +706,14 @@ void KpodPlusEp02Worker::run() {
             // the same mutex before libusb_close) waits for any in-flight transfer to
             // finish before the handle is freed. Bounded by the kEp02TimeoutMs timeout.
             std::lock_guard<std::mutex> lock(m_transferMutex);
-            // Re-check handle after acquiring the lock; releaseHandle may have just cleared
-            // it via setDeviceHandle(0). Avoids an unnecessary syscall with a stale h.
-            if (!m_handle.load(std::memory_order_acquire))
+            // USB-010. Re-read the handle under the lock and TRANSFER ON THAT, not on the copy
+            // taken before it. The old code re-checked the atomic and then passed the stale local
+            // `h` to libusb, which defeats the whole point of the re-check: a close-then-reopen in
+            // the window between the two reads left `h` pointing at a freed handle and the transfer
+            // used it. Re-checking a value you then do not use is worse than not checking, because
+            // it reads as protection.
+            h = m_handle.load(std::memory_order_acquire);
+            if (!h)
                 continue;
             rc = libusb_interrupt_transfer(h, 0x82, buffer, sizeof(buffer), &transferred, kEp02TimeoutMs);
         }
@@ -734,6 +745,26 @@ void KpodPlusEp02Worker::run() {
             // the device tried to send more than 32 bytes in a single transfer and
             // the host truncated — i.e. the smoking gun for "we dropped a KZ batch."
             qCWarning(hwKpodPlus) << "KZ EP02 unexpected rc:" << libusb_error_name(rc) << "transferred=" << transferred;
+
+            // USB-008. Back off before retrying. This branch used to fall straight back into the
+            // loop, so a persistent non-transient error (PIPE, OVERFLOW, INTERRUPTED) spun this
+            // thread at 100 % — and it runs at HighPriority precisely because CW timing depends on
+            // it, so the starvation lands on the keyer and the sidetone. A short sleep costs
+            // nothing on the transient case, which is the common one.
+            //
+            // Escalate rather than sleep forever: a run of them means the endpoint is not coming
+            // back, and pretending otherwise leaves the operator with silent paddles and a warning
+            // they have to know to look for.
+            if (++consecutiveErrors >= kMaxConsecutiveErrors) {
+                emit transferError(
+                    QStringLiteral("EP02 failed %1 times in a row; giving up on this handle").arg(consecutiveErrors));
+                m_handle.store(nullptr, std::memory_order_release);
+                consecutiveErrors = 0;
+            } else {
+                QThread::msleep(kErrorBackoffMs);
+            }
+            continue;
         }
+        consecutiveErrors = 0; // any good read clears the run
     }
 }

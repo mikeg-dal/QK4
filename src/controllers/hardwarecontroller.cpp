@@ -296,6 +296,16 @@ void HardwareController::onKpodEncoderRotated(int ticks) {
     if (!m_connectionController->isConnected()) {
         return;
     }
+    // USB-007. isConnected() goes true when the socket authenticates, which is BEFORE the RDY dump
+    // that carries the radio's actual frequencies. A knob turn in that window read vfoA() at its 0
+    // sentinel and sent FA for a near-zero frequency - the radio obeyed and jumped off band. The
+    // `newFreq > 0` guard below does not catch it, because ticks x step is itself positive.
+    //
+    // Waiting for a real frequency is the honest condition: until the K4 has told us where it is,
+    // QK4 has nothing to tune relative to.
+    if (m_radioState->vfoA() == 0) {
+        return;
+    }
     onKpodEncoderRotatedWithRocker(ticks, static_cast<int>(m_kpodDevice->rockerPosition()));
 }
 
