@@ -70,6 +70,14 @@ public:
     bool kpodEnabled() const;
     void setKpodEnabled(bool enabled);
 
+    // Icom RC-28 USB tuning knob
+    bool rc28Enabled() const;
+    void setRc28Enabled(bool enabled);
+
+    // FlexRadio FlexControl USB tuning knob
+    bool flexControlEnabled() const;
+    void setFlexControlEnabled(bool enabled);
+
     // KPA1500 Amplifier settings
     QString kpa1500Host() const;
     void setKpa1500Host(const QString &host);
@@ -165,6 +173,8 @@ public:
 signals:
     void radiosChanged();
     void kpodEnabledChanged(bool enabled);
+    void rc28EnabledChanged(bool enabled);
+    void flexControlEnabledChanged(bool enabled);
     void kpa1500EnabledChanged(bool enabled);
     void kpa1500SettingsChanged();
     void kpa1500PollIntervalChanged(int intervalMs);
@@ -194,6 +204,8 @@ private:
     QVector<RadioEntry> m_radios;
     int m_lastSelectedIndex;
     bool m_kpodEnabled;
+    bool m_rc28Enabled = false;
+    bool m_flexControlEnabled = false;
 
     // KPA1500 settings
     QString m_kpa1500Host;

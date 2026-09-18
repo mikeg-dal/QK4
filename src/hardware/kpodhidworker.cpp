@@ -1,4 +1,5 @@
 #include "kpodhidworker.h"
+#include "hidapiguard.h"
 #include <QLoggingCategory>
 #include <QString>
 #include <QThread>
@@ -94,20 +95,18 @@ KpodHidWorker::ResponseEvents KpodHidWorker::decodeResponse(const unsigned char 
 KpodHidWorker::KpodHidWorker(QObject *parent) : QObject(parent) {}
 
 KpodHidWorker::~KpodHidWorker() {
+    HidApiGuard::Lock lock;
     if (m_hidDevice || m_hidInitialized) {
         releaseHandle();
         if (m_hidInitialized) {
-            hid_exit();
+            HidApiGuard::release();
             m_hidInitialized = false;
         }
     }
 }
 
 void KpodHidWorker::start() {
-    // hid_init is reference-counted internally. Calling it from the worker thread is safe
-    // and matches KpodPlusUsbWorker's libusb_init-on-worker pattern — keeps hidapi off
-    // main entirely.
-    if (hid_init() != 0) {
+    if (!HidApiGuard::acquire()) {
         qCWarning(hwKpod) << "hid_init failed";
         return;
     }
@@ -152,6 +151,7 @@ void KpodHidWorker::start() {
 }
 
 void KpodHidWorker::shutdown() {
+    HidApiGuard::Lock lock;
     if (m_pollTimer)
         m_pollTimer->stop();
 #ifndef Q_OS_LINUX
@@ -167,7 +167,7 @@ void KpodHidWorker::shutdown() {
 #endif
     releaseHandle();
     if (m_hidInitialized) {
-        hid_exit();
+        HidApiGuard::release();
         m_hidInitialized = false;
     }
 }
@@ -177,6 +177,7 @@ void KpodHidWorker::shutdown() {
 // =============================================================================
 
 bool KpodHidWorker::openHandle() {
+    HidApiGuard::Lock lock;
     if (m_hidDevice)
         return true;
     if (m_info.devicePath.isEmpty()) {
@@ -193,6 +194,7 @@ bool KpodHidWorker::openHandle() {
 }
 
 void KpodHidWorker::releaseHandle() {
+    HidApiGuard::Lock lock;
     if (m_hidDevice) {
         hid_close(m_hidDevice);
         m_hidDevice = nullptr;
@@ -226,6 +228,7 @@ void KpodHidWorker::closeDevice() {
 // =============================================================================
 
 void KpodHidWorker::onPollTimer() {
+    HidApiGuard::Lock lock;
     if (!m_hidDevice)
         return;
 
@@ -281,6 +284,7 @@ void KpodHidWorker::onPollTimer() {
 // =============================================================================
 
 void KpodHidWorker::onPresenceTimer() {
+    HidApiGuard::Lock lock;
     // hid_enumerate reads cached USB descriptors on macOS/Windows — cheap. We use this
     // instead of IOHIDManager callbacks because hidapi already owns the IOKit run loop
     // and two managers conflict.
@@ -316,6 +320,7 @@ void KpodHidWorker::onDeviceRemovedFromHotplug() {
 // =============================================================================
 
 KpodDeviceInfo KpodHidWorker::detectDeviceInfo() {
+    HidApiGuard::Lock lock;
     KpodDeviceInfo info;
     kpodLog("detectDeviceInfo() starting");
 

@@ -84,6 +84,30 @@ void RadioSettings::setKpodEnabled(bool enabled) {
     }
 }
 
+bool RadioSettings::rc28Enabled() const {
+    return m_rc28Enabled;
+}
+
+void RadioSettings::setRc28Enabled(bool enabled) {
+    if (m_rc28Enabled != enabled) {
+        m_rc28Enabled = enabled;
+        save();
+        emit rc28EnabledChanged(enabled);
+    }
+}
+
+bool RadioSettings::flexControlEnabled() const {
+    return m_flexControlEnabled;
+}
+
+void RadioSettings::setFlexControlEnabled(bool enabled) {
+    if (m_flexControlEnabled != enabled) {
+        m_flexControlEnabled = enabled;
+        save();
+        emit flexControlEnabledChanged(enabled);
+    }
+}
+
 QString RadioSettings::kpa1500Host() const {
     return m_kpa1500Host;
 }
@@ -527,6 +551,8 @@ void RadioSettings::load() {
 
     m_lastSelectedIndex = m_settings.value("lastSelectedIndex", -1).toInt();
     m_kpodEnabled = m_settings.value("kpodEnabled", false).toBool();
+    m_rc28Enabled = m_settings.value("rc28Enabled", false).toBool();
+    m_flexControlEnabled = m_settings.value("flexControlEnabled", false).toBool();
 
     // KPA1500 settings
     m_kpa1500Host = m_settings.value("kpa1500/host", "").toString();
@@ -650,6 +676,8 @@ void RadioSettings::save() {
 
     m_settings.setValue("lastSelectedIndex", m_lastSelectedIndex);
     m_settings.setValue("kpodEnabled", m_kpodEnabled);
+    m_settings.setValue("rc28Enabled", m_rc28Enabled);
+    m_settings.setValue("flexControlEnabled", m_flexControlEnabled);
 
     // KPA1500 settings
     m_settings.setValue("kpa1500/host", m_kpa1500Host);

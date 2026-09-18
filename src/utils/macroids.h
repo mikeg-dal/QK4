@@ -46,6 +46,27 @@ const QString Kpod7H = "K-pod.7H";
 const QString Kpod8T = "K-pod.8T";
 const QString Kpod8H = "K-pod.8H";
 
+// Icom RC-28 buttons. F1-tap is reserved as the tuning-target selector (VFO A /
+// VFO B / RIT-XIT) and is not a macro; F1-hold, F2 and TX (tap/hold) are macros.
+const QString Rc28F1H = "RC-28.F1H";
+const QString Rc28F2T = "RC-28.F2T";
+const QString Rc28F2H = "RC-28.F2H";
+const QString Rc28TxT = "RC-28.TXT";
+const QString Rc28TxH = "RC-28.TXH";
+
+// Legacy FlexControl AUX macro IDs are retained so existing settings files can
+// still be read, although the AUX gestures now have built-in hardware actions.
+const QString FlexControl1C = "FlexControl.1C";
+const QString FlexControl1L = "FlexControl.1L";
+const QString FlexControl2S = "FlexControl.2S";
+const QString FlexControl2C = "FlexControl.2C";
+const QString FlexControl2L = "FlexControl.2L";
+const QString FlexControl3S = "FlexControl.3S";
+const QString FlexControl3C = "FlexControl.3C";
+const QString FlexControl3L = "FlexControl.3L";
+// The center-knob long press remains user assignable.
+const QString FlexControlKnobL = "FlexControl.KL";
+
 // Keyboard Function Keys (F1-F12)
 const QString KbdF1 = "Keyboard-F1";
 const QString KbdF2 = "Keyboard-F2";

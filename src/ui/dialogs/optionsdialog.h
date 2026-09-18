@@ -21,6 +21,7 @@ class AudioOutputPage;
 class RigControlPage;
 class CwKeyerPage;
 class KpodPage;
+class TuningKnobPage;
 class Kpa1500Page;
 class DxClusterPage;
 
@@ -41,6 +42,7 @@ public:
         PageRigControl,
         PageCwKeyer,
         PageKpod,
+        PageTuningKnob,
         PageKpa1500,
         PageDxCluster,
         PageCount
@@ -79,6 +81,7 @@ private:
     RigControlPage *m_rigControlPage = nullptr;
     CwKeyerPage *m_cwKeyerPage = nullptr;
     KpodPage *m_kpodPage = nullptr;
+    TuningKnobPage *m_tuningKnobPage = nullptr;
     Kpa1500Page *m_kpa1500Page = nullptr;
     DxClusterPage *m_dxClusterPage = nullptr;
 };

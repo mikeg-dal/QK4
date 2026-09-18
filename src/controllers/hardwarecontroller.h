@@ -6,6 +6,8 @@
 
 class KpodDevice;
 class KpodPlusDevice;
+class Rc28Device;
+class FlexControlDevice;
 class HalikeyDevice;
 class IambicKeyer;
 class SidetoneGenerator;
@@ -42,6 +44,8 @@ public:
     // dependency on the raw pointer.
     KpodDevice *kpodDevice() const { return m_kpodDevice; }
     KpodPlusDevice *kpodPlusDevice() const { return m_kpodPlusDevice; }
+    Rc28Device *rc28Device() const { return m_rc28Device; }
+    FlexControlDevice *flexControlDevice() const { return m_flexControlDevice; }
     HalikeyDevice *halikeyDevice() const { return m_halikeyDevice; }
 
     // IambicKeyer + SidetoneGenerator accessors — consumed by CwController,
@@ -56,6 +60,15 @@ public:
 signals:
     // KPOD button press → MainWindow dispatches macro
     void macroRequested(const QString &functionId);
+
+    // Transient informational notice → MainWindow notification overlay. Used to
+    // tell the user which VFO the RC-28 / FlexControl knob now tunes when its
+    // software tuning target changes.
+    void hardwareNotice(const QString &message);
+
+    // RC-28 TRANSMIT button requests momentary TX while held. MainWindow
+    // owns the audio PTT gate, so it completes the request.
+    void pttRequested(bool active);
 
     // Hardware error (port open failure, MIDI subsystem error, etc.) → MainWindow
     // shows it on the notification overlay. Currently fed by HalikeyDevice's
@@ -72,6 +85,16 @@ private slots:
 private:
     void onKpodEncoderRotatedWithRocker(int ticks, int rockerPosition);
 
+    static QString tuningTargetLabel(int rocker);
+    void selectRc28TuningTarget(int rocker);
+    void updateRc28Leds();
+    void setRc28Ptt(bool active);
+    void handleFlexControlButton(int button, int pressType);
+    void selectFlexControlTuningTarget(int rocker);
+    void updateFlexControlLeds();
+    void setFlexControlTuningStep(int stepIndex);
+    void cycleFlexControlRitXit();
+
 private:
     RadioState *m_radioState;
     ConnectionController *m_connectionController;
@@ -81,6 +104,17 @@ private:
 
     // KPOD+ USB keyer device (libusb, vendor-specific class)
     KpodPlusDevice *m_kpodPlusDevice;
+
+    // Icom RC-28 USB tuning knob (HID). F1/F2 select Main/Sub; the stored values
+    // match the K-POD rocker encoding consumed by the shared tuning dispatcher.
+    Rc28Device *m_rc28Device = nullptr;
+    int m_rc28Rocker = 2;
+    bool m_rc28PttActive = false;
+
+    // FlexRadio FlexControl USB tuning knob (serial). Same software-target model.
+    FlexControlDevice *m_flexControlDevice = nullptr;
+    int m_flexRocker = 2;
+    int m_flexLastVfoRocker = 2;
 
     // HaliKey CW paddle device
     HalikeyDevice *m_halikeyDevice;
