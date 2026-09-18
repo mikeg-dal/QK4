@@ -217,6 +217,13 @@ void HardwareController::applyKpodPlus(UsbDeviceLifecycle::Event event) {
         // a paddle event landing in that window would reach QK4's own keyer and sidetone.
         emit kpodPlusOwnsCw(true);
         m_kpodPlusDevice->startPolling();
+        // WHY the config push belongs HERE and not on deviceConnected: the old handler guarded on
+        // !isPolling(), which m_polling had already made false by the time the signal arrived, so
+        // the push never ran and the device kept whatever WPM and pitch it was last given
+        // (USB-006). It also never ran on re-enable. Pushing from the policy's open decision covers
+        // both, and is safe despite the open being asynchronous: startPolling() and every setter
+        // queue to the SAME worker thread, and Qt delivers queued events in order, so openDevice
+        // has run before the first config command is handled.
         if (m_applyKpodPlusConfig)
             m_applyKpodPlusConfig();
     }
