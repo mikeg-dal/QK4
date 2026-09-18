@@ -51,7 +51,20 @@ public:
     IambicKeyer *iambicKeyer() const { return m_iambicKeyer; }
     SidetoneGenerator *sidetoneGenerator() const { return m_sidetoneGenerator; }
 
-    void shutdownSidetone();
+    /// Stop every input producer this controller owns — HaliKey, the iambic keyer, the sidetone,
+    /// KPOD and KPOD+ — and join their threads. Idempotent; the destructor calls it too.
+    ///
+    /// WHY this is public rather than left to the destructor, which is where it used to live
+    /// entirely: CONC-001. The HaliKey worker and the sidetone thread both reach
+    /// CwController::kpodPlusActive(), which reads ConnectionController. Qt destroys children in
+    /// CONSTRUCTION order, and ConnectionController is constructed before HardwareController, so it
+    /// was already freed while these threads were still running and still dereferencing it.
+    ///
+    /// The order inside is unchanged and still load-bearing: HaliKey stops paddle events first,
+    /// then the keyer (which produces KZ), then the sidetone (which consumes them). Producers
+    /// before consumers. What changed is only that MainWindow::closeEvent can now run it while
+    /// everything it touches is still alive.
+    void shutdownDevices();
 
 signals:
     // KPOD button press → MainWindow dispatches macro
@@ -77,6 +90,10 @@ private:
     ConnectionController *m_connectionController;
 
     // KPOD USB tuning knob
+    // shutdownDevices() runs once. closeEvent calls it, and so does the destructor for the paths
+    // that never reach closeEvent — a fatal error, or a window that was never shown.
+    bool m_devicesShutDown = false;
+
     KpodDevice *m_kpodDevice;
 
     // KPOD+ USB keyer device (libusb, vendor-specific class)

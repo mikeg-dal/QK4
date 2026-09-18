@@ -253,8 +253,17 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
 }
 
 CwController::~CwController() {
-    // Sever all signal connections before HardwareController tears down the
-    // devices these handlers reference. CONVENTIONS Rule 11.
+    // CONVENTIONS Rule 11.
+    //
+    // This used to claim it ran "before HardwareController tears down the devices these handlers
+    // reference". It does not: HardwareController is constructed first, and Qt destroys children in
+    // construction order, so it is already gone by the time this runs. That belief is part of what
+    // made CONC-001 look safe.
+    //
+    // What actually protects these handlers is MainWindow::closeEvent calling
+    // HardwareController::shutdownDevices(), which stops the HaliKey worker, the keyer and the
+    // sidetone while ConnectionController - which kpodPlusActive() dereferences - is still alive.
+    // The disconnect below is the second line of defence, not the first.
     disconnect(this);
 }
 

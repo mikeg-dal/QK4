@@ -190,20 +190,19 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
             [this](const QString &error) { emit hardwareError(QStringLiteral("HaliKey: %1").arg(error)); });
 }
 
-void HardwareController::shutdownSidetone() {
-    // Synchronous sidetone sink teardown — required from MainWindow::closeEvent
-    // so QAudioSink is destroyed while the event loop is still alive, not
-    // during libc atexit (which races PipeWire's RT worker on Linux).
-    if (m_sidetoneGenerator && m_sidetoneThread && m_sidetoneThread->isRunning()) {
-        QMetaObject::invokeMethod(m_sidetoneGenerator, "stop", Qt::BlockingQueuedConnection);
+void HardwareController::shutdownDevices() {
+    if (m_devicesShutDown) {
+        return;
     }
-}
+    m_devicesShutDown = true;
 
-HardwareController::~HardwareController() {
-    disconnect(this);
     // Shutdown order: HaliKey → Keyer → Sidetone → KPOD/KPOD+
     // HaliKey stops paddle events first, then keyer (producer of KZ commands) stops
     // before sidetone (the audio consumer) is torn down.
+    //
+    // The sidetone teardown is synchronous and has to happen while the event loop is still alive:
+    // destroying a QAudioSink from libc atexit races PipeWire's RT worker on Linux and segfaults
+    // in pw_stream_dequeue_buffer.
 
     if (m_halikeyDevice) {
         m_halikeyDevice->closePort();
@@ -215,6 +214,8 @@ HardwareController::~HardwareController() {
         m_keyerThread->wait(2000);
     }
     delete m_iambicKeyer; // No parent, must delete manually
+    m_iambicKeyer = nullptr;
+    m_keyerThread = nullptr; // child of this; Qt deletes it, but never join it twice
 
     if (m_sidetoneThread) {
         QMetaObject::invokeMethod(m_sidetoneGenerator, "stop", Qt::BlockingQueuedConnection);
@@ -222,6 +223,8 @@ HardwareController::~HardwareController() {
         m_sidetoneThread->wait(2000);
     }
     delete m_sidetoneGenerator; // No parent, must delete manually
+    m_sidetoneGenerator = nullptr;
+    m_sidetoneThread = nullptr;
 
     if (m_kpodPlusDevice) {
         m_kpodPlusDevice->stopPolling();
@@ -230,6 +233,14 @@ HardwareController::~HardwareController() {
     if (m_kpodDevice) {
         m_kpodDevice->stopPolling();
     }
+}
+
+HardwareController::~HardwareController() {
+    disconnect(this);
+    // Normally a no-op: MainWindow::closeEvent has already run this, which is the whole point —
+    // doing it here for the first time is what CONC-001 was. Still called, because a fatal error
+    // or a window that was never shown reaches the destructor without a closeEvent.
+    shutdownDevices();
 }
 
 // =============================================================================

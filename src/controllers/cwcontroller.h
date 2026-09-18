@@ -170,7 +170,9 @@ class KpodPlusDevice;
 //     are mirrored to the KPOD+ by CwController, above)
 //   - Sidetone volume / output-device follow (audio device lifecycle,
 //     not CW behavior)
-//   - shutdownSidetone() public entry point used by MainWindow::closeEvent
+//   - shutdownDevices() public entry point used by MainWindow::closeEvent,
+//     which stops the HaliKey worker, the keyer and the sidetone while
+//     ConnectionController is still alive (CONC-001)
 //   - macroRequested / hardwareError signal forwarding
 //
 // Verification (mandatory before PR 17 merges)

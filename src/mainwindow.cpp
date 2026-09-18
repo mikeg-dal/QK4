@@ -190,11 +190,26 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     if (m_tciController) {
         m_tciController->shutdown();
     }
+
+    // CONC-001. Producers stop before consumers, and before anything they read is destroyed.
+    //
+    // This used to happen only in ~HardwareController, which Qt runs LATE: children are destroyed
+    // in CONSTRUCTION order, and ConnectionController is constructed first (setupControllers), so
+    // it was already freed while the HaliKey worker and the sidetone thread were still running -
+    // and both reach CwController::kpodPlusActive(), which dereferences it. Quitting with a paddle
+    // touched read freed memory: ASAN aborts, release builds read garbage.
+    //
+    // Running it here, explicitly and in order, is the fix. The destructor still calls it for the
+    // paths that never reach closeEvent, but by then it is a no-op.
+    //
+    // 8f17c0e was the same root cause in different code (~TciController reaching an
+    // already-destroyed AudioController), which is why the ordering is stated here rather than
+    // left to Qt's child order to arrange correctly by luck.
+    if (m_hardwareController) {
+        m_hardwareController->shutdownDevices();
+    }
     if (m_audioController) {
         m_audioController->shutdown();
-    }
-    if (m_hardwareController) {
-        m_hardwareController->shutdownSidetone();
     }
     QMainWindow::closeEvent(event);
 }
