@@ -12,6 +12,9 @@ const QString TextColor = K4Styles::Colors::TextWhite;            // #FFFFFF
 constexpr int Padding = 20;
 constexpr int BorderRadius = K4Styles::Dimensions::BorderRadiusLarge; // 8
 constexpr int BorderWidth = K4Styles::Dimensions::BorderWidth;        // 2
+constexpr int kMaxWidth = 560;  // beyond this the banner reads as a wall rather than a message
+constexpr int kMinWidth = 200;  // keeps a one-word message from collapsing
+constexpr int kSideMargin = 24; // clear of the window edge even when the window is narrow
 } // namespace
 
 NotificationWidget::NotificationWidget(QWidget *parent) : QWidget(parent), m_timer(new QTimer(this)) {
@@ -44,13 +47,19 @@ NotificationWidget::NotificationWidget(QWidget *parent) : QWidget(parent), m_tim
 void NotificationWidget::showMessage(const QString &message, int durationMs) {
     m_label->setText(message);
 
-    // Calculate size based on text
+    // Size to the text, but never wider than the window it sits in. A connection failure names the
+    // host and the port, which on one line is wider than the app at its default size - the banner
+    // ran off both edges and the ends of the message were unreadable. Wrapping is what makes this
+    // usable for anything longer than a device-status line.
     QFontMetrics fm(m_label->font());
-    int textWidth = fm.horizontalAdvance(message);
-    int textHeight = fm.height();
+    const int available = parentWidget() ? parentWidget()->width() - kSideMargin * 2 : kMaxWidth;
+    const int maxTextWidth = qMax(kMinWidth, qMin(kMaxWidth, available) - Padding * 2);
 
-    int width = textWidth + (Padding * 2);
-    int height = textHeight + (Padding * 2);
+    QRect textRect = fm.boundingRect(QRect(0, 0, maxTextWidth, 0), Qt::TextWordWrap | Qt::AlignCenter, message);
+    m_label->setWordWrap(textRect.height() > fm.height());
+
+    int width = textRect.width() + (Padding * 2);
+    int height = textRect.height() + (Padding * 2);
 
     // Minimum size
     width = qMax(width, 200);

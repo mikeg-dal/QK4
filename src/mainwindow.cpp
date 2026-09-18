@@ -1267,6 +1267,11 @@ void MainWindow::onConnectionStateChanged(TcpClient::ConnectionState state) {
 }
 
 void MainWindow::onConnectionError(const QString &error) {
+    // Same themed banner the device notifications use, rather than red text in the status bar.
+    // Held longer than a device message because it is usually actionable - a host, a port, or a
+    // password to go and correct.
+    if (m_notificationWidget)
+        m_notificationWidget->showMessage(error, 8000);
     m_statusBarController->showError(error);
 }
 

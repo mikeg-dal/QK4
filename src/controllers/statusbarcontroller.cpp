@@ -248,8 +248,14 @@ void StatusBarController::showConnected() {
 }
 
 void StatusBarController::showError(const QString &errorMessage) {
+    // The status bar carries the STATE, not the story. The whole failure message used to be
+    // written into this label in red, which crammed a sentence naming a host and a port into a
+    // slot sized for the word "K4" and looked nothing like the themed banner every device
+    // notification uses. MainWindow sends the text to the NotificationWidget instead; what stays
+    // here is a red "K4", which is the part that should persist after the banner times out.
+    Q_UNUSED(errorMessage)
     m_errorShown = true;
-    m_connectionStatusLabel->setText(errorMessage);
+    m_connectionStatusLabel->setText("K4");
     m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
                                                .arg(K4Styles::Colors::TxRed)
                                                .arg(K4Styles::Dimensions::FontSizeButton));
