@@ -75,19 +75,52 @@ AudioEngine::~AudioEngine() {
 }
 
 bool AudioEngine::start() {
-    bool outputOk = setupAudioOutput(); // also flushes the queue + re-arms prebuffering
-
-    if (outputOk) {
-        m_feedTimer->start();
-    }
+    m_outputRunning = true;
+    rebuildOutput();
 
     // Audio input setup deferred to the first openMic() call (first PTT press) to avoid
     // triggering the macOS mic permission dialog during connection — see ctor comment.
 
-    return outputOk;
+    return m_audioSink != nullptr;
+}
+
+// Tear the output sink down and build it again for whatever device is currently selected, then
+// put the feed timer in the matching state.
+//
+// WHY every path goes through here rather than calling setupAudioOutput() directly: recovery.
+// setOutputDevice() and onSystemDefaultOutputChanged() both used to rebuild only `if (m_audioSink)`,
+// so if the FIRST attempt failed there was no sink, and every later attempt was skipped by that
+// guard — the audio output was dead for the life of the process and no device change could revive
+// it. The feed timer made it worse: it was started only by start(), so even a sink that did get
+// built afterwards was never fed.
+//
+// That is not hypothetical. Launch with a virtual loopback device selected, have it refuse the
+// 12 kHz format below, then pick the real speakers in Options: nothing happens, and nothing says
+// why. Found on the bench, 2026-09-18.
+void AudioEngine::rebuildOutput() {
+    if (m_feedTimer) {
+        m_feedTimer->stop();
+    }
+    if (m_audioSink) {
+        m_audioSink->stop();
+        delete m_audioSink;
+        m_audioSink = nullptr;
+        m_audioSinkDevice = nullptr;
+    }
+
+    // Called during construction too, before the engine is meant to be producing anything.
+    if (!m_outputRunning) {
+        return;
+    }
+
+    if (setupAudioOutput()) { // also flushes the queue + re-arms prebuffering
+        m_feedTimer->start();
+    }
 }
 
 void AudioEngine::stop() {
+    m_outputRunning = false;
+
     // Stop feed timer and clear jitter buffer
     if (m_feedTimer) {
         m_feedTimer->stop();
@@ -170,7 +203,15 @@ bool AudioEngine::setupAudioOutput() {
     }
 
     if (!outputDevice.isFormatSupported(m_outputFormat)) {
-        qCWarning(qk4Audio) << "AudioEngine: 12kHz output format not supported by device";
+        // No fallback yet: QK4 asks for the K4's native 12 kHz and takes no for an answer. Virtual
+        // loopback drivers are commonly fixed at 44.1/48 kHz and land here, which means NO RX AUDIO
+        // AT ALL from that device - not quiet audio, none. Say which device and what was asked for,
+        // because the operator's next move is to pick a different one in Options and nothing else
+        // in the UI tells them that.
+        qCWarning(qk4Audio) << "AudioEngine: output device" << outputDevice.description() << "does not support"
+                            << m_outputFormat.sampleRate() << "Hz" << m_outputFormat.channelCount()
+                            << "ch float - NO RX AUDIO from it."
+                            << "Choose a different output device in Options.";
         return false;
     }
 
@@ -726,19 +767,15 @@ QList<QPair<QString, QString>> AudioEngine::availableInputDevices() {
 }
 
 void AudioEngine::setOutputDevice(const QString &deviceId) {
-    if (m_selectedOutputDeviceId != deviceId) {
-        m_selectedOutputDeviceId = deviceId;
-
-        // Restart audio output with the new device if currently running
-        if (m_audioSink) {
-            m_audioSink->stop();
-            delete m_audioSink;
-            m_audioSink = nullptr;
-            m_audioSinkDevice = nullptr;
-
-            setupAudioOutput();
-        }
+    if (m_selectedOutputDeviceId == deviceId) {
+        return;
     }
+    m_selectedOutputDeviceId = deviceId;
+
+    // Unconditionally, NOT `if (m_audioSink)`. Picking a working device in Options is exactly how
+    // an operator recovers from a device that could not be opened, so the one case that most needs
+    // to rebuild is the one where there is nothing to tear down.
+    rebuildOutput();
 }
 
 void AudioEngine::onSystemDefaultInputChanged() {
@@ -764,18 +801,20 @@ void AudioEngine::onSystemDefaultInputChanged() {
 
 void AudioEngine::onSystemDefaultOutputChanged() {
     if (!m_selectedOutputDeviceId.isEmpty())
-        return;
-    if (!m_audioSink)
-        return; // output not started yet — start() will resolve the current default
-    const QString newDefault = QMediaDevices::defaultAudioOutput().id();
-    if (newDefault.isEmpty() || newDefault == m_activeOutputDeviceId)
-        return;
+        return; // the operator pinned a device; the OS default is not ours to follow
+    if (!m_outputRunning)
+        return; // not producing output yet — start() will resolve the current default
 
-    m_audioSink->stop();
-    delete m_audioSink;
-    m_audioSink = nullptr;
-    m_audioSinkDevice = nullptr;
-    setupAudioOutput();
+    // With a sink up, only a real move of the effective default is worth a rebuild. With no sink,
+    // rebuild regardless: we are in the failed state, and the default having moved is precisely the
+    // chance to get out of it.
+    if (m_audioSink) {
+        const QString newDefault = QMediaDevices::defaultAudioOutput().id();
+        if (newDefault.isEmpty() || newDefault == m_activeOutputDeviceId)
+            return;
+    }
+
+    rebuildOutput();
 }
 
 QString AudioEngine::outputDeviceId() const {

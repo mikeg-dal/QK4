@@ -145,6 +145,9 @@ private slots:
 
 private:
     bool setupAudioOutput();
+    // Tear down and rebuild the output sink for the current device, and put the feed timer in
+    // the matching state. Every path that changes the output device goes through this.
+    void rebuildOutput();
     bool setupAudioInput();
 
     // Shared tail of both TX sources: take 12 kHz Float32, apply `gain`, buffer as S16, and emit
@@ -165,6 +168,11 @@ private:
 
     // Audio output format: 12kHz stereo Float32 (K4 RX audio, L=Main R=Sub)
     QAudioFormat m_outputFormat;
+
+    // True between start() and stop(): the engine is meant to be producing RX audio. Distinct from
+    // "a sink exists", because the sink can fail to open and must still be retried on the next
+    // device change. rebuildOutput() is the only thing that acts on it.
+    bool m_outputRunning = false;
 
     // Audio input format: 48kHz mono Float32 (native macOS rate, resampled to 12kHz)
     QAudioFormat m_inputFormat;
