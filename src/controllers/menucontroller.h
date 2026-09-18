@@ -36,6 +36,12 @@ public:
     void ingestMe(const QString &cmd);
     void clearModel();
 
+    // One menu item's current value. Deliberately narrower than handing out the MenuModel: the
+    // only outside consumer needs a single number, and a getter for the whole model invites
+    // reaching into it. Returns false when the menu has not been read yet (no radio) or the id
+    // is unknown.
+    bool menuValue(int menuId, int *valueOut) const;
+
     // Task-level overlay API. Positions the overlay above the spectrum
     // container (resolved internally from the injected SpectrumController).
     void toggleOverlay();
@@ -58,6 +64,10 @@ public:
     void repositionOverlay();
 
 signals:
+    // A menu item's value changed, from the radio or from us. Re-emitted from MenuModel so
+    // consumers do not need the model itself.
+    void menuValueChanged(int menuId, int newValue);
+
     // Overlay was hidden (by escape, click-outside, or a button dismiss).
     // MainWindow connects this to BottomMenuBar::setMenuActive(false).
     void overlayClosed();

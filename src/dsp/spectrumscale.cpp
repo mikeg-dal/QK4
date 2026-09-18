@@ -50,6 +50,16 @@ float sUnitDbm(int sUnit) {
     return S9_DBM - static_cast<float>(9 - s) * DB_PER_S_UNIT;
 }
 
+float dbmForSMeterReading(double sMeterReading) {
+    if (sMeterReading > 9.0) {
+        // Above S9 the fractional part carries dB over S9, in tens.
+        const double dbOverS9 = (sMeterReading - 9.0) * 10.0;
+        return static_cast<float>(S9_DBM + dbOverS9);
+    }
+    const double below = 9.0 - (sMeterReading < 0.0 ? 0.0 : sMeterReading);
+    return static_cast<float>(S9_DBM - below * DB_PER_S_UNIT);
+}
+
 float normalizedForDb(float dbm, float minDb, float maxDb) {
     const float range = maxDb - minDb;
     if (range <= 0.0f)

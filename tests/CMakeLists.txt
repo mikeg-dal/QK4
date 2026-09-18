@@ -122,6 +122,150 @@ target_include_directories(test_spectrumscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_spectrumscale Qt6::Core Qt6::Test)
 add_test(NAME SpectrumScaleTests COMMAND test_spectrumscale)
 
+# RFC 6455 framing for the TCI server: length forms, masking, fragment reassembly, size limits.
+add_executable(test_websocketframe test_websocketframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_websocketframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_websocketframe Qt6::Core Qt6::Test)
+add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
+
+# K4 receive audio -> TCI RX_AUDIO samples: rate, channel mapping, and packet-boundary continuity.
+add_executable(test_tciaudiobridge test_tciaudiobridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudiobridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/audioupsampler.cpp
+)
+target_include_directories(test_tciaudiobridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciaudiobridge Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciAudioBridgeTests COMMAND test_tciaudiobridge)
+
+# TCI server, protocol surface: init burst contents and ordering, audio subscription, per-client
+# isolation, CAT sets and the read-only queries. The transmit path is a separate target below.
+add_executable(test_tciserver test_tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tciserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciserver Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciServerTests COMMAND test_tciserver)
+
+# TCI server, transmit path: PTT ownership, TX_CHRONO pacing and TX audio admission. Split from
+# test_tciserver so neither file passes the 800-line limit in CONVENTIONS.md rule 7; both share
+# the socket client in tcitestclient.h.
+add_executable(test_tciservertransmit test_tciservertransmit.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tciservertransmit PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciservertransmit Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciServerTransmitTests COMMAND test_tciservertransmit)
+
+# TCI server, answers: the read-only query group and the spec value constraints (AGC vocabulary,
+# squelch range, the one shared RIT/XIT offset). Split from test_tciserver to stay under the
+# 800-line limit in CONVENTIONS.md rule 7.
+add_executable(test_tciqueries test_tciqueries.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tciqueries PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciqueries Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciQueriesTests COMMAND test_tciqueries)
+
+# TCI client roster: the address/last-seen/last-message table on the options page. Driven over a
+# real socket, because the peer address only exists on a real connection. Split from test_tciserver
+# to stay under the 800-line limit in CONVENTIONS.md rule 7.
+add_executable(test_tciclients test_tciclients.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tciclients PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciclients Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciClientsTests COMMAND test_tciclients)
+
+# TCI sensor reporting: subscription per direction, interval clamping, and the server-to-client
+# telemetry an --audit sweep cannot see because none of it is ever a reply to a query.
+add_executable(test_tcisensors test_tcisensors.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_tcisensors PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tcisensors Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TciSensorsTests COMMAND test_tcisensors)
+
+# RadioSettings: the connect-at-startup rule, which is enforced in the model rather than only in
+# the dialog because a settings file can also be hand-edited or restored from a backup.
+add_executable(test_radiosettings test_radiosettings.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
+)
+target_include_directories(test_radiosettings PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_radiosettings Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME RadioSettingsTests COMMAND test_radiosettings)
+
+# TCI binary audio framing: the 64-byte header, and the opposite payload rules per direction.
+add_executable(test_tciaudioframe test_tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+)
+target_include_directories(test_tciaudioframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciaudioframe Qt6::Core Qt6::Test)
+add_test(NAME TciAudioFrameTests COMMAND test_tciaudioframe)
+
+# TCI grammar: tokenising, the global one-argument form, and delimiter-safe formatting.
+add_executable(test_tciprotocol test_tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+)
+target_include_directories(test_tciprotocol PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tciprotocol Qt6::Core Qt6::Test)
+add_test(NAME TciProtocolTests COMMAND test_tciprotocol)
+
+# WebSocket transport over a real loopback socket: upgrade, session lifecycle, ping/pong, limits.
+add_executable(test_websocketserver test_websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(test_websocketserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_websocketserver Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME WebSocketServerTests COMMAND test_websocketserver)
+
+# 12kHz -> 48kHz interpolation for the TCI receive path: passband flatness and image rejection.
+add_executable(test_audioupsampler test_audioupsampler.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/audioupsampler.cpp
+)
+target_include_directories(test_audioupsampler PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_audioupsampler Qt6::Core Qt6::Test)
+add_test(NAME AudioUpsamplerTests COMMAND test_audioupsampler)
+
 # Waterfall row/pixel mapping: which stored row each screen pixel samples, mirroring the shaders.
 add_executable(test_waterfallgeometry test_waterfallgeometry.cpp
     ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
@@ -194,6 +338,31 @@ add_executable(test_protocol test_protocol.cpp
 target_include_directories(test_protocol PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_protocol Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME ProtocolTests COMMAND test_protocol)
+
+# CW by CAT: the TCI macro grammar (speed markers, prosign brackets, escaped separators) and the
+# KY/KS commands it becomes. One target because the interesting cases are at the seam, where TCI
+# and the K4 use the same characters for different things.
+add_executable(test_cwmacro test_cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/catframes.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/datacontrolstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/frequencyvfostate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/levelsstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/modefilterstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/powerstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/processingstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/qskcontrolstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/rxtxmeterstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/spectrumdisplaystate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
+)
+target_include_directories(test_cwmacro PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_cwmacro Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME CwMacroTests COMMAND test_cwmacro)
 
 # CatServer command handler tests
 add_executable(test_catserver test_catserver.cpp

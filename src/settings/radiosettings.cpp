@@ -26,12 +26,60 @@ RadioSettings *RadioSettings::instance() {
 }
 
 RadioSettings::RadioSettings(QObject *parent)
-    : QObject(parent), m_lastSelectedIndex(-1), m_kpodEnabled(false), m_settings("QK4", "QK4") {
+    : QObject(parent), m_lastSelectedIndex(-1), m_kpodEnabled(false),
+      // Same store as QSettings("QK4", "QK4") - on every platform the two resolve to the identical
+      // file - but named through defaultFormat() so it can be REDIRECTED.
+      //
+      // WHY THAT MATTERS: Qt's two-argument QSettings(org, app) constructor ignores
+      // QSettings::setDefaultFormat() and always uses NativeFormat, which on macOS is the
+      // CFPreferences domain. A test therefore had NO way to point this singleton anywhere else,
+      // and one that tried ran against a developer's real preferences and deleted every saved
+      // radio. Spelling the format out is the whole fix: setDefaultFormat() now reaches this.
+      m_settings(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("QK4"), QStringLiteral("QK4")) {
     load();
 }
 
 QVector<RadioEntry> RadioSettings::radios() const {
     return m_radios;
+}
+
+int RadioSettings::connectAtStartupIndex() const {
+    for (int i = 0; i < m_radios.size(); ++i) {
+        if (m_radios[i].connectAtStartup) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int RadioSettings::indexOfRadioNamed(const QString &name) const {
+    if (name.isEmpty()) {
+        return -1;
+    }
+    for (int i = 0; i < m_radios.size(); ++i) {
+        if (m_radios[i].name.compare(name, Qt::CaseInsensitive) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void RadioSettings::setConnectAtStartupRadio(int index) {
+    // Clearing every other entry is the whole point: the flag means "the radio QK4 opens with",
+    // which only has meaning for one. Enforcing it here rather than in the dialog covers a
+    // settings file edited by hand or restored from a backup.
+    bool changed = false;
+    for (int i = 0; i < m_radios.size(); ++i) {
+        const bool wanted = (i == index);
+        if (m_radios[i].connectAtStartup != wanted) {
+            m_radios[i].connectAtStartup = wanted;
+            changed = true;
+        }
+    }
+    if (changed) {
+        save();
+        emit radiosChanged();
+    }
 }
 
 void RadioSettings::addRadio(const RadioEntry &radio) {
@@ -295,6 +343,44 @@ void RadioSettings::setCatServerPort(quint16 port) {
     }
 }
 
+bool RadioSettings::tciServerEnabled() const {
+    return m_tciServerEnabled;
+}
+
+void RadioSettings::setTciServerEnabled(bool enabled) {
+    if (m_tciServerEnabled != enabled) {
+        m_tciServerEnabled = enabled;
+        save();
+        emit tciServerEnabledChanged(enabled);
+    }
+}
+
+quint16 RadioSettings::tciServerPort() const {
+    return m_tciServerPort;
+}
+
+void RadioSettings::setTciServerPort(quint16 port) {
+    // Clamp to valid port range (1024-65535)
+    port = qBound(quint16(1024), port, quint16(65535));
+    if (m_tciServerPort != port) {
+        m_tciServerPort = port;
+        save();
+        emit tciServerPortChanged(port);
+    }
+}
+
+bool RadioSettings::tciAudioEnabled() const {
+    return m_tciAudioEnabled;
+}
+
+void RadioSettings::setTciAudioEnabled(bool enabled) {
+    if (m_tciAudioEnabled != enabled) {
+        m_tciAudioEnabled = enabled;
+        save();
+        emit tciAudioEnabledChanged(enabled);
+    }
+}
+
 QMap<QString, MacroEntry> RadioSettings::macros() const {
     return m_macros;
 }
@@ -520,10 +606,25 @@ void RadioSettings::load() {
         entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus Float)
         entry.streamingLatency = m_settings.value("streamingLatency", 3).toInt(); // Default SL3
         entry.displayFps = m_settings.value("displayFps", 15).toInt();            // Default 15 FPS
+        entry.connectAtStartup = m_settings.value("connectAtStartup", false).toBool();
         m_radios.append(entry);
     }
     m_settings.endArray();
     sortRadios();
+
+    // Keep the "at most one" rule true even for a settings file that was not written by us - a
+    // hand edit, or a backup from before the rule existed. First flagged entry wins; the rest are
+    // cleared so startup cannot depend on list order.
+    bool seenStartupRadio = false;
+    for (RadioEntry &entry : m_radios) {
+        if (!entry.connectAtStartup) {
+            continue;
+        }
+        if (seenStartupRadio) {
+            entry.connectAtStartup = false;
+        }
+        seenStartupRadio = true;
+    }
 
     m_lastSelectedIndex = m_settings.value("lastSelectedIndex", -1).toInt();
     m_kpodEnabled = m_settings.value("kpodEnabled", false).toBool();
@@ -537,6 +638,9 @@ void RadioSettings::load() {
     // CAT Server settings (migrate from old rigctld keys if present)
     m_catServerEnabled = m_settings.value("catServer/enabled", m_settings.value("rigctld/enabled", false)).toBool();
     m_catServerPort = m_settings.value("catServer/port", m_settings.value("rigctld/port", 9299)).toUInt();
+    m_tciServerEnabled = m_settings.value("tciServer/enabled", false).toBool();
+    m_tciServerPort = m_settings.value("tciServer/port", 50001).toUInt();
+    m_tciAudioEnabled = m_settings.value("tciServer/audio", true).toBool();
 
     // DX Cluster settings
     int dxCount = m_settings.beginReadArray("dxClusters");
@@ -645,6 +749,7 @@ void RadioSettings::save() {
         m_settings.setValue("encodeMode", m_radios[i].encodeMode);
         m_settings.setValue("streamingLatency", m_radios[i].streamingLatency);
         m_settings.setValue("displayFps", m_radios[i].displayFps);
+        m_settings.setValue("connectAtStartup", m_radios[i].connectAtStartup);
     }
     m_settings.endArray();
 
@@ -660,6 +765,9 @@ void RadioSettings::save() {
     // CAT Server settings
     m_settings.setValue("catServer/enabled", m_catServerEnabled);
     m_settings.setValue("catServer/port", m_catServerPort);
+    m_settings.setValue("tciServer/enabled", m_tciServerEnabled);
+    m_settings.setValue("tciServer/port", m_tciServerPort);
+    m_settings.setValue("tciServer/audio", m_tciAudioEnabled);
 
     // HaliKey settings
     m_settings.setValue("halikey/portName", m_halikeyPortName);

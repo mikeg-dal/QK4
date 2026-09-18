@@ -12,6 +12,7 @@ class RadioState;
 class AudioController;
 class HardwareController;
 class CatServer;
+class TciController;
 class KPA1500Client;
 class DxClusterController;
 class AboutPage;
@@ -19,6 +20,7 @@ class StationPage;
 class AudioInputPage;
 class AudioOutputPage;
 class RigControlPage;
+class TciServerPage;
 class CwKeyerPage;
 class KpodPage;
 class Kpa1500Page;
@@ -39,6 +41,7 @@ public:
         PageAudioInput,
         PageAudioOutput,
         PageRigControl,
+        PageTciServer,
         PageCwKeyer,
         PageKpod,
         PageKpa1500,
@@ -47,8 +50,9 @@ public:
     };
 
     explicit OptionsDialog(RadioState *radioState, AudioController *audioController,
-                           HardwareController *hardwareController, CatServer *catServer, KPA1500Client *kpa1500Client,
-                           DxClusterController *dxClusterController, QWidget *parent = nullptr);
+                           HardwareController *hardwareController, CatServer *catServer, TciController *tciController,
+                           KPA1500Client *kpa1500Client, DxClusterController *dxClusterController,
+                           QWidget *parent = nullptr);
     ~OptionsDialog();
 
 protected:
@@ -63,6 +67,7 @@ private:
     RadioState *m_radioState;
     AudioController *m_audioController;
     HardwareController *m_hardwareController;
+    TciController *m_tciController = nullptr;
     CatServer *m_catServer;
     KPA1500Client *m_kpa1500Client;
     DxClusterController *m_dxClusterController;
@@ -76,6 +81,7 @@ private:
     StationPage *m_stationPage = nullptr;
     AudioInputPage *m_audioInputPage = nullptr;
     AudioOutputPage *m_audioOutputPage = nullptr;
+    TciServerPage *m_tciServerPage = nullptr;
     RigControlPage *m_rigControlPage = nullptr;
     CwKeyerPage *m_cwKeyerPage = nullptr;
     KpodPage *m_kpodPage = nullptr;

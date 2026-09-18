@@ -46,6 +46,7 @@ class CwController;
 class DxClusterController;
 class KPA1500UiController;
 class CatServer;
+class TciController;
 class OptionsDialog;
 class NotificationWidget;
 class VfoRowWidget;
@@ -56,6 +57,11 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+
+    // Names a radio to open instead of the one ticked in the list - the --connect command-line
+    // option, so a desktop shortcut can target a particular K4. Must be set before the event loop
+    // runs, because the startup connect fires on its first pass.
+    void setStartupRadioOverride(const QString &name) { m_startupRadioOverride = name; }
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -72,6 +78,11 @@ private slots:
     void onCatResponse(const QString &response);
     void showRadioManager();
     void connectToRadio(const RadioEntry &radio);
+
+    // Connects to the radio flagged connectAtStartup, if any. Deferred to the event loop rather
+    // than run in the constructor - see the call site.
+    void connectToStartupRadio();
+
     void toggleDisplayPopup();
     void toggleBandPopup();
     void toggleFnPopup();
@@ -81,6 +92,8 @@ private slots:
     void closeAllPopups();
 
 private:
+    QString m_startupRadioOverride;
+
     void setupMenuBar();
     void setupUi();
     void setupVfoSection(QWidget *parent);
@@ -203,6 +216,10 @@ private:
 
     // CAT server for external app integration (WSJT-X, MacLoggerDX, etc.)
     CatServer *m_catServer;
+
+    // TCI server: the same job over a WebSocket, carrying audio as well as CAT. Independent of
+    // CatServer - neither goes through the other.
+    TciController *m_tciController = nullptr;
 
     // Persistent Options dialog (lazy-created on first open)
     OptionsDialog *m_optionsDialog = nullptr;

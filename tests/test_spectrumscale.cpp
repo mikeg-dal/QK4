@@ -9,6 +9,29 @@ class TestSpectrumScale : public QObject {
     Q_OBJECT
 
 private slots:
+    void convertsSMeterReadingsToDbm() {
+        // RadioState encodes the K4's SM bars as S0..S9 directly, and anything stronger as
+        // 9.0 + dBoverS9/10 - so S9+20 arrives as 11.0. Treating that as an S-unit would clamp it
+        // to S9 and throw away every strong signal.
+        QCOMPARE(SpectrumScale::dbmForSMeterReading(9.0), -73.0f);  // S9
+        QCOMPARE(SpectrumScale::dbmForSMeterReading(8.0), -79.0f);  // S8, one 6 dB unit down
+        QCOMPARE(SpectrumScale::dbmForSMeterReading(1.0), -121.0f); // S1
+        QCOMPARE(SpectrumScale::dbmForSMeterReading(0.0), -127.0f); // S0
+        QCOMPARE(SpectrumScale::dbmForSMeterReading(11.0), -53.0f); // S9+20
+        QCOMPARE(SpectrumScale::dbmForSMeterReading(13.0), -33.0f); // S9+40
+    }
+
+    void sMeterConversionIsMonotonic() {
+        // A stronger reading must never report a weaker dBm, including across the S9 boundary
+        // where the encoding changes shape.
+        float previous = -1000.0f;
+        for (int tenths = 0; tenths <= 200; ++tenths) {
+            const float dbm = SpectrumScale::dbmForSMeterReading(tenths / 10.0);
+            QVERIFY2(dbm >= previous, qPrintable(QString::number(tenths / 10.0)));
+            previous = dbm;
+        }
+    }
+
     // ---- anchors -------------------------------------------------------------------------
 
     void sUnitDbmMatchesTheAmateurScale() {

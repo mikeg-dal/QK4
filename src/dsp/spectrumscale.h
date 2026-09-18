@@ -22,6 +22,14 @@ constexpr float DB_PER_S_UNIT = 6.0f;
 // scale at all" should test the dBm against the display window instead.
 float sUnitDbm(int sUnit);
 
+// dBm for a RadioState S-meter reading, which is NOT a plain S-unit number.
+//
+// RadioState encodes the K4's SM bars as: 0..9 is S0..S9 (bars/2), and anything above S9 is
+// 9.0 + dBoverS9/10 - so S9+20 arrives as 11.0, not 29. Converting that with sUnitDbm() would
+// clamp it to S9 and silently discard every strong signal, which is why this is its own function
+// rather than a cast at the call site.
+float dbmForSMeterReading(double sMeterReading);
+
 // Fraction of the chart height for a dBm value: 0 at minDb (bottom), 1 at maxDb (top).
 //
 // Deliberately unclamped at the top so a bin stronger than maxDb returns > 1 and the trace climbs

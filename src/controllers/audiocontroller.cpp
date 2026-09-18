@@ -46,6 +46,16 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
         QByteArray pcmData = m_opusDecoder->decodeK4Packet(payload);
         if (!pcmData.isEmpty()) {
             m_audioEngine->enqueueAudio(pcmData);
+            // Fan-out for TCI listeners. Deliberately after enqueueAudio so the speaker path is
+            // never delayed by a consumer, and deliberately not downstream of it so a listener does
+            // not inherit the jitter buffer's drop-oldest policy.
+            //
+            // NOT free when nobody is connected, which this comment used to claim. The signal is
+            // emitted for every received packet whatever the TCI server is doing, so a queued
+            // cross-thread event is posted to TciAudioBridge::onRxAudio, which then returns early.
+            // Small, but paid by everyone including people who never enable TCI. Connecting this in
+            // TciController::start and disconnecting it in stop would remove it.
+            emit rxAudioAvailable(pcmData);
         }
     });
 
@@ -143,11 +153,58 @@ void AudioController::setPttActive(bool active) {
     // gates the encode pipeline, opens the mic on rising edge if needed, and
     // resets the txSequence counter + flushes the partial-frame tail.
     QMetaObject::invokeMethod(m_audioEngine, "setPttActive", Qt::QueuedConnection, Q_ARG(bool, active));
+
+    // Emitted AFTER the early return above, so a PTT-on that was refused for being disconnected
+    // does not announce a transmit that is not happening.
+    emit pttActiveChanged(active);
+}
+
+void AudioController::setTxSource(TxSource source) {
+    if (!m_audioEngine)
+        return;
+    // Direct, and deliberately so: the source must be in effect BEFORE the PTT that follows, and
+    // setPttActive is queued. A queued pair would arrive in order, but a direct source write
+    // followed by a queued PTT cannot be reordered at all.
+    //
+    // Safe from any thread because setTxSource on the engine writes only an atomic; it queues its
+    // own buffer flush to the audio thread rather than touching audio-thread state here.
+    m_audioEngine->setTxSource(static_cast<AudioEngine::TxSource>(source));
+}
+
+void AudioController::setTxSourceAfterPtt(TxSource source) {
+    if (!m_audioEngine)
+        return;
+    // Queued, and that is the whole point of this method existing next to setTxSource().
+    //
+    // Qt delivers queued calls to one thread in posting order, so this lands after the
+    // setPttActive() posted immediately before it. Writing the source directly on an unkey instead
+    // opened a window - one audio block wide - in which the audio thread saw PTT still asserted
+    // and the source already back to Microphone, and duly encoded the room and sent it while the
+    // radio was still transmitting the TCI transmission.
+    QMetaObject::invokeMethod(
+        m_audioEngine,
+        [engine = m_audioEngine, source]() { engine->setTxSource(static_cast<AudioEngine::TxSource>(source)); },
+        Qt::QueuedConnection);
+}
+
+void AudioController::feedTciTxAudio(const QByteArray &f32Mono48k) {
+    if (!m_audioEngine)
+        return;
+    // Queued: the caller is on the TCI thread, the encode pipeline runs on the audio thread.
+    QMetaObject::invokeMethod(m_audioEngine, "feedTciTxAudio", Qt::QueuedConnection, Q_ARG(QByteArray, f32Mono48k));
 }
 
 bool AudioController::isPttActive() const {
     // Lock-free atomic read from AudioEngine — safe from any thread.
     return m_audioEngine ? m_audioEngine->isPttActive() : false;
+}
+
+float AudioController::mainVolume() const {
+    return m_audioEngine ? m_audioEngine->mainVolume() : 1.0f;
+}
+
+float AudioController::subVolume() const {
+    return m_audioEngine ? m_audioEngine->subVolume() : 1.0f;
 }
 
 void AudioController::setMainVolume(float vol) {

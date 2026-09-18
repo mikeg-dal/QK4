@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QCommandLineParser>
 #include <QDebug>
 #include <QSysInfo>
 #include <QGuiApplication>
@@ -13,6 +14,8 @@
 #include <QDir>
 #include <QFileInfo>
 #endif
+#include <QTextStream>
+#include "settings/radiosettings.h"
 #include "mainwindow.h"
 #include "ui/styling/k4styles.h"
 
@@ -143,7 +146,78 @@ int main(int argc, char *argv[]) {
     // Must precede MainWindow — its controllers construct the first QSslSocket
     selectTlsBackend();
 
+    // --connect <name> opens one particular saved radio, overriding the list's auto-connect tick,
+    // so one install can carry a desktop shortcut per K4.
+    //
+    // WHY parse() and not process(): process() prints an error and EXITS on an unrecognised
+    // option, and a desktop- or Finder-launched app can be handed arguments it never declared
+    // (macOS has historically passed -psn_...). Trading "the app opens when double-clicked" for a
+    // command-line flag is not a trade worth making, so anything unrecognised is warned about and
+    // ignored rather than fatal.
+    QCommandLineParser parser;
+    parser.setApplicationDescription("QK4 - Elecraft K4 remote control");
+    const QCommandLineOption helpOption = parser.addHelpOption();
+    const QCommandLineOption versionOption = parser.addVersionOption();
+    const QCommandLineOption connectOption(
+        QStringList{QStringLiteral("c"), QStringLiteral("connect")},
+        QStringLiteral("Connect at startup to the saved radio named <name>, whatever the list is set to."),
+        QStringLiteral("name"));
+    parser.addOption(connectOption);
+    const QStringList arguments = QCoreApplication::arguments();
+    const bool parsedCleanly = parser.parse(arguments);
+    if (parser.isSet(helpOption)) {
+        parser.showHelp(0);
+    }
+    if (parser.isSet(versionOption)) {
+        parser.showVersion();
+    }
+
+    // --connect WITH NO NAME is a usage error, not noise to ignore.
+    //
+    // An UNRECOGNISED option is ignored on purpose (see parse() above) because a desktop- or
+    // Finder-launched app can be handed arguments it never declared. This is the opposite case:
+    // our own option, used wrongly. The operator asked to open a particular radio and did not say
+    // which, so running on would either connect to a different radio or to none, having been told
+    // explicitly to connect to something.
+    //
+    // Listing the configured radios answers the question they were about to ask next. Printed
+    // rather than shown in a dialog because a bare --connect is a typed command, and a shortcut
+    // would have carried the name.
+    const bool askedToConnect =
+        arguments.contains(QStringLiteral("-c")) || arguments.contains(QStringLiteral("--connect"));
+    //
+    // Tested on the VALUE, not on isSet: after a failed parse Qt still reports the option as set,
+    // with nothing in it, so isSet answers yes to the exact case this is here to catch.
+    if (askedToConnect && parser.value(connectOption).trimmed().isEmpty()) {
+        QTextStream out(stdout);
+        out << "--connect needs the name of a saved radio.\n\n";
+        const auto radios = RadioSettings::instance()->radios();
+        if (radios.isEmpty()) {
+            out << "No radios are configured yet. Add one in QK4's Server Manager first.\n";
+        } else {
+            out << "Configured radios:\n";
+            for (const RadioEntry &radio : radios) {
+                out << "  " << (radio.name.isEmpty() ? radio.host : radio.name)
+                    << (radio.connectAtStartup ? "   (currently opens at startup)" : "") << "\n";
+            }
+            out << "\nFor example:  QK4 --connect \"" << radios.first().name << "\"\n";
+        }
+        out.flush();
+        return 2;
+    }
+
+    // Only NOW, so the usage message above is not preceded by Qt restating the same problem
+    // in its own words. Anything still unparsed at this point is an option QK4 never
+    // declared, which is ignored on purpose.
+    if (!parsedCleanly) {
+        qWarning() << "Ignoring command line:" << parser.errorText();
+    }
+
     MainWindow window;
+    if (!parser.value(connectOption).trimmed().isEmpty()) {
+        // Before exec(), because the startup connect runs on the first pass of the event loop.
+        window.setStartupRadioOverride(parser.value(connectOption).trimmed());
+    }
     window.show();
 
     return app.exec();

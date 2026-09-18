@@ -90,6 +90,7 @@ set(SOURCES
     src/controllers/textdecodecontroller.cpp
     src/controllers/statusbarcontroller.cpp
     src/controllers/menucontroller.cpp
+    src/controllers/tcicontroller.cpp
     src/controllers/antennaconfigcontroller.cpp
     src/controllers/featuremenucontroller.cpp
     src/controllers/popupmanager.cpp
@@ -119,8 +120,17 @@ set(SOURCES
     src/network/dxclusterclient.cpp
     src/network/catserver.cpp
     src/network/catframes.cpp
+    src/network/cwmacro.cpp
     src/network/catpushbroadcaster.cpp
     src/network/k4discovery.cpp
+    src/network/websocketframe.cpp
+    src/network/websocketserver.cpp
+    src/network/tciprotocol.cpp
+    src/network/tciaudioframe.cpp
+    src/network/tciserver.cpp
+    src/network/tciserverstate.cpp
+    src/network/tciaudiobridge.cpp
+    src/dsp/audioupsampler.cpp
     src/audio/audioengine.cpp
     src/audio/opusdecoder.cpp
     src/audio/opusencoder.cpp
@@ -168,6 +178,7 @@ set(SOURCES
     src/ui/pages/audioinputpage.cpp
     src/ui/pages/audiooutputpage.cpp
     src/ui/pages/rigcontrolpage.cpp
+    src/ui/pages/tciserverpage.cpp
     src/ui/pages/cwkeyerpage.cpp
     src/ui/pages/kpodpage.cpp
     src/ui/pages/kpa1500page.cpp

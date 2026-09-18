@@ -48,6 +48,13 @@ struct RadioEntry {
     int streamingLatency = 3; // Remote streaming audio latency: 0-7 (default 3)
     int displayFps = 15;      // Display FPS: 12-30 (default 15, good balance for large monitors)
 
+    // Connect to this radio automatically when QK4 starts.
+    //
+    // AT MOST ONE radio may have this set. The rule is enforced in RadioSettings rather than in
+    // the dialog, because settings can also be edited by hand or restored from a backup, and a
+    // second flagged radio would make startup depend on list order.
+    bool connectAtStartup = false;
+
     bool operator==(const RadioEntry &other) const {
         return name == other.name && host == other.host && port == other.port;
     }
@@ -60,6 +67,18 @@ public:
     static RadioSettings *instance();
 
     QVector<RadioEntry> radios() const;
+
+    // The radio to connect to at startup, or -1 if none is flagged. Returns the FIRST flagged
+    // entry; setConnectAtStartupRadio keeps that unique, and load() repairs a file that is not.
+    int connectAtStartupIndex() const;
+
+    // Index of the saved radio with this name, or -1. Case-insensitive, because the name is typed
+    // on a command line or into a desktop shortcut, where matching the stored capitalisation
+    // exactly is a needless way to fail.
+    int indexOfRadioNamed(const QString &name) const;
+
+    // Flags one radio and clears every other. Pass -1 to disable auto-connect entirely.
+    void setConnectAtStartupRadio(int index);
     void addRadio(const RadioEntry &radio);
     void removeRadio(int index);
     void updateRadio(int index, const RadioEntry &radio);
@@ -101,6 +120,18 @@ public:
     void setCatServerEnabled(bool enabled);
     quint16 catServerPort() const;
     void setCatServerPort(quint16 port);
+
+    // TCI server settings (WebSocket server carrying both CAT and audio for WSJT-X and friends).
+    // Off by default: an always-on listener would change behaviour for every user, and TCI is
+    // additive - the CAT server on 9299 keeps working untouched.
+    bool tciServerEnabled() const;
+    void setTciServerEnabled(bool enabled);
+    quint16 tciServerPort() const;
+    void setTciServerPort(quint16 port);
+    // Audio is the expensive half and CAT-only is a legitimate configuration, so it is separately
+    // switchable. Defaults on, because carrying audio is the reason the TCI server exists.
+    bool tciAudioEnabled() const;
+    void setTciAudioEnabled(bool enabled);
 
     // Macro settings
     QMap<QString, MacroEntry> macros() const;
@@ -173,6 +204,9 @@ signals:
     void speakerDeviceChanged(const QString &deviceId);
     void catServerEnabledChanged(bool enabled);
     void catServerPortChanged(quint16 port);
+    void tciServerEnabledChanged(bool enabled);
+    void tciServerPortChanged(quint16 port);
+    void tciAudioEnabledChanged(bool enabled);
     void macrosChanged();
     void halikeyEnabledChanged(bool enabled);
     void halikeyPortNameChanged(const QString &portName);
@@ -204,6 +238,11 @@ private:
     // CAT Server settings
     bool m_catServerEnabled = false;
     quint16 m_catServerPort = 9299;
+
+    // TCI server settings. 50001 is the TCI convention and what WSJT-X defaults to.
+    bool m_tciServerEnabled = false;
+    quint16 m_tciServerPort = 50001;
+    bool m_tciAudioEnabled = true;
 
     // HaliKey settings
     QString m_halikeyPortName;

@@ -1,10 +1,13 @@
 #include "mainwindow.h"
+
+#include <QTimer>
 #include "utils/radioutils.h"
 #include "ui/dialogs/radiomanagerdialog.h"
 #include "ui/widgets/sidecontrolpanel.h"
 #include "ui/widgets/rightsidepanel.h"
 #include "ui/widgets/bottommenubar.h"
 #include "controllers/featuremenucontroller.h"
+#include "controllers/tcicontroller.h"
 #include "controllers/modepopupcontroller.h"
 #include "controllers/bandnavigationcontroller.h"
 #include "controllers/buttonrowdispatcher.h"
@@ -401,6 +404,70 @@ void MainWindow::setupCatServer() {
     if (RadioSettings::instance()->catServerEnabled()) {
         m_catServer->start(RadioSettings::instance()->catServerPort());
     }
+
+    // TCI server: a second, independent route for external apps, carrying audio as well as CAT so
+    // WSJT-X needs no loopback sound card. It does NOT go through CatServer - both reach the same
+    // primitives directly. See docs/tci-server-design.md.
+    //
+    // Created unconditionally but started only when enabled, so the listener is genuinely
+    // runtime-toggleable rather than needing a restart.
+    m_tciController =
+        new TciController(m_audioController, m_connectionController, m_radioState, m_menuController, this);
+
+    // The PTT button follows a TCI client keying, exactly as it already follows CatServer above.
+    // Without it the transmitter can be live with the button dark.
+    connect(m_tciController, &TciController::transmittingChanged, this,
+            [this](bool transmitting) { m_bottomMenuBar->setPttActive(transmitting); });
+
+    // The enable/port/audio settings are TciController's own business and it listens to
+    // RadioSettings itself - see TciController::wireSettings. Nothing about which port the TCI
+    // listener uses belongs in the main window.
+
+    // Auto-connect, if a radio is flagged for it.
+    //
+    // WHY QUEUED RATHER THAN A DIRECT CALL: this is still the constructor, so the window is not
+    // shown and the controllers' signal wiring is only just complete. Connecting here would race
+    // the first connection-state change against a UI that cannot display it yet, and a failure
+    // would surface before there is a status bar to report it in. A zero-timer defers this to the
+    // first pass of the event loop, by which point the window is up.
+    QTimer::singleShot(0, this, &MainWindow::connectToStartupRadio);
+}
+
+void MainWindow::connectToStartupRadio() {
+    const auto radios = RadioSettings::instance()->radios();
+    int index = -1;
+
+    if (!m_startupRadioOverride.isEmpty()) {
+        index = RadioSettings::instance()->indexOfRadioNamed(m_startupRadioOverride);
+        if (index < 0) {
+            // FAIL CLOSED, and do NOT fall back to the flagged radio. The name came from a
+            // shortcut that asked for one specific K4; quietly opening a different one is worse
+            // than opening none. Said in a dialog rather than the log because the shortcut this
+            // came from was double-clicked, and on Windows there is no console to read.
+            QStringList known;
+            for (const RadioEntry &entry : radios) {
+                known << entry.name;
+            }
+            qWarning() << "No saved radio named" << m_startupRadioOverride << "- known:" << known;
+            QMessageBox::warning(
+                this, "Radio Not Found",
+                QString("No saved radio is named \"%1\".\n\nSaved radios: %2")
+                    .arg(m_startupRadioOverride, known.isEmpty() ? QStringLiteral("(none)") : known.join(", ")));
+            return;
+        }
+        qInfo() << "Connecting to" << radios[index].name << "from the command line";
+    } else {
+        index = RadioSettings::instance()->connectAtStartupIndex();
+        if (index < 0) {
+            return;
+        }
+        qInfo() << "Auto-connecting to" << radios[index].name << "at startup";
+    }
+
+    if (index >= radios.size()) {
+        return; // settings and list disagree; do nothing rather than connect to the wrong radio
+    }
+    connectToRadio(radios[index]);
 }
 
 void MainWindow::setupMenuBar() {
@@ -424,8 +491,9 @@ void MainWindow::setupMenuBar() {
     optionsAction->setMenuRole(QAction::PreferencesRole); // macOS: moves to app menu as Preferences
     connect(optionsAction, &QAction::triggered, this, [this]() {
         if (!m_optionsDialog) {
-            m_optionsDialog = new OptionsDialog(m_radioState, m_audioController, m_hardwareController, m_catServer,
-                                                m_kpa1500UiController->client(), m_dxClusterController, this);
+            m_optionsDialog =
+                new OptionsDialog(m_radioState, m_audioController, m_hardwareController, m_catServer, m_tciController,
+                                  m_kpa1500UiController->client(), m_dxClusterController, this);
         }
         m_optionsDialog->show();
         m_optionsDialog->raise();
@@ -534,6 +602,10 @@ void MainWindow::setupUi() {
     connect(m_sideControlPanel, &SideControlPanel::volumeChanged, this, [this](int value) {
         m_audioController->setMainVolume(value / 100.0f);
         RadioSettings::instance()->setVolume(value); // Persist setting
+        // TCI reports QK4's mix as rx_volume, and no radio state changes when a slider moves.
+        if (m_tciController) {
+            m_tciController->audioLevelsChanged();
+        }
     });
 
     // Connect sub volume slider to AudioController (Sub RX / VFO B)
@@ -553,6 +625,9 @@ void MainWindow::setupUi() {
             m_audioController->setSubVolume(value / 100.0f);
         }
         RadioSettings::instance()->setSubVolume(value); // Persist setting
+        if (m_tciController) {
+            m_tciController->audioLevelsChanged();
+        }
     });
 
     // SideControlPanel scroll signals are owned by SideControlScrollController

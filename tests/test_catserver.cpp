@@ -2,6 +2,7 @@
 #include <QTcpSocket>
 #include <QTest>
 #include "models/radiostate.h"
+#include "network/catframes.h"
 #include "network/catserver.h"
 
 class TestCatServer : public QObject {
@@ -50,6 +51,55 @@ private:
     }
 
 private slots:
+    void setFilterBandwidthUsesTenHertzUnits() {
+        // REGRESSION, found on a live K4. The radio takes BW in 10-Hz units - BW0280 is 2800 Hz,
+        // which is what RadioState::handleBW parses - so sending the width in Hz asks for ten
+        // times the filter and the radio ignores it as out of range.
+        QCOMPARE(CatFrames::setFilterBandwidth(2800), QByteArray("BW0280;"));
+        QCOMPARE(CatFrames::setFilterBandwidth(5000), QByteArray("BW0500;"));
+        QCOMPARE(CatFrames::setFilterBandwidth(400), QByteArray("BW0040;"));
+    }
+
+    void setNoiseBlankerUsesTheLevelAndFlagForm() {
+        // REGRESSION, found on a live K4. The K4 wants NBnnm - nn the level 00-15, m on/off - and
+        // a bare "NB1;" is rejected by the radio and by RadioState's own parser.
+        QCOMPARE(CatFrames::setNoiseBlanker(0, true), QByteArray("NB001;"));
+        QCOMPARE(CatFrames::setNoiseBlanker(0, false), QByteArray("NB000;"));
+        // The level is carried through, because TCI's RX_NB_ENABLE is on/off only and must not
+        // move the level as a side effect.
+        QCOMPARE(CatFrames::setNoiseBlanker(7, true), QByteArray("NB071;"));
+        QCOMPARE(CatFrames::setNoiseBlanker(15, true), QByteArray("NB151;"));
+    }
+
+    void setRfPowerUsesThePcFormNotPcx() {
+        // REGRESSION, found on a live K4. PCX is the extended QUERY; the radio ignores it as a
+        // set, so drive silently did nothing. The set form is PCnnnr, which is what QK4's own UI
+        // sends and what the radio echoes back (PC045H).
+        QCOMPARE(CatFrames::setRfPower(45, false), QByteArray("PC045H;"));
+        QCOMPARE(CatFrames::setRfPower(100, false), QByteArray("PC100H;"));
+        // QRP is reported in tenths of a watt, so a request in watts is scaled: 5 W is PC050L.
+        QCOMPARE(CatFrames::setRfPower(5, true), QByteArray("PC050L;"));
+        QCOMPARE(CatFrames::setRfPower(10, true), QByteArray("PC100L;"));
+    }
+
+    void setMenuValueUsesTheAbsoluteMeForm() {
+        // The K4's tune power is menu item 69, set with MEnnnn.vvvv - ME0069.0020 is 20 W.
+        // MenuController already sends the RELATIVE forms (ME0069.+ and .-); this is absolute.
+        QCOMPARE(CatFrames::setMenuValue(69, 20), QByteArray("ME0069.0020;"));
+        QCOMPARE(CatFrames::setMenuValue(69, 5), QByteArray("ME0069.0005;"));
+        QCOMPARE(CatFrames::setMenuValue(7, 200), QByteArray("ME0007.0200;"));
+    }
+
+    void setBuildersClampRatherThanEmitNonsense() {
+        // A malformed frame reaches the radio; refusing to overflow the field is cheaper than
+        // finding out what an out-of-range one does.
+        QCOMPARE(CatFrames::setNoiseBlanker(99, true), QByteArray("NB151;"));
+        QCOMPARE(CatFrames::setNoiseBlanker(-3, true), QByteArray("NB001;"));
+        QCOMPARE(CatFrames::setFilterBandwidth(-100), QByteArray("BW0000;"));
+        QCOMPARE(CatFrames::setRfPower(999, false), QByteArray("PC110H;"));
+        QCOMPARE(CatFrames::setRfPower(99, true), QByteArray("PC100L;"));
+    }
+
     // =========================================================================
     // GET command responses (answered from RadioState cache)
     // =========================================================================

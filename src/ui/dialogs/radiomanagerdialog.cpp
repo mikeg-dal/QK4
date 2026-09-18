@@ -159,14 +159,31 @@ void RadioManagerDialog::setupUi() {
 
     // Row 5: TLS Checkbox (below ID field)
     m_tlsCheckbox = new QCheckBox("Use TLS (Encrypted)", this);
-    m_tlsCheckbox->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; } "
-                                         "QCheckBox::indicator { width: 14px; height: 14px; }")
-                                     .arg(K4Styles::Colors::TextGray)
-                                     .arg(K4Styles::Dimensions::FontSizeButton)
-                                     .arg(K4Styles::Dimensions::BorderRadiusLarge));
+    // Same indicator treatment as K4Styles::Dialog::checkBox - see the reasoning there. The colour
+    // and size differ from the shared style deliberately, which is why this is not simply replaced
+    // by it.
+    m_tlsCheckbox->setStyleSheet(
+        QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; } "
+                "QCheckBox::indicator { width: 14px; height: 14px;"
+                "  border: 1px solid %4; border-radius: 3px;"
+                "  background-color: %5; }"
+                "QCheckBox::indicator:checked { background-color: %6;"
+                "  border-color: %6; }"
+                "QCheckBox::indicator:hover { border-color: %6; }")
+            .arg(K4Styles::Colors::TextGray)
+            .arg(K4Styles::Dimensions::FontSizeButton)
+            .arg(K4Styles::Dimensions::BorderRadiusLarge)
+            .arg(K4Styles::Colors::TextGray, K4Styles::Colors::DarkBackground, K4Styles::Colors::AccentAmber));
     formLayout->addWidget(m_tlsCheckbox, 5, 0, 1, 2);
 
-    // Row 6: Encode Mode dropdown
+    // The ONE control for this setting. The list shows WHICH radio is armed - see refreshList -
+    // but showing is not editing, and two controls for one setting is what had them disagreeing
+    // about when a change applies.
+    m_startupCheckbox = new QCheckBox("Connect to this radio at startup (only one)", this);
+    m_startupCheckbox->setStyleSheet(m_tlsCheckbox->styleSheet());
+    formLayout->addWidget(m_startupCheckbox, 6, 0, 1, 2);
+
+    // Row 7: Encode Mode dropdown
     auto *encodeModeLabel = new QLabel("Audio Mode", this);
     encodeModeLabel->setStyleSheet(labelStyle);
     m_encodeModeCombo = new QComboBox(this);
@@ -201,10 +218,10 @@ void RadioManagerDialog::setupUi() {
     m_encodeModeCombo->addItem("EM1 - RAW 16-bit", 1);
     m_encodeModeCombo->addItem("EM0 - RAW 32-bit", 0);
     m_encodeModeCombo->setCurrentIndex(0); // EM3 default
-    formLayout->addWidget(encodeModeLabel, 6, 0);
-    formLayout->addWidget(m_encodeModeCombo, 6, 1);
+    formLayout->addWidget(encodeModeLabel, 7, 0);
+    formLayout->addWidget(m_encodeModeCombo, 7, 1);
 
-    // Row 7: Streaming Latency dropdown
+    // Row 8: Streaming Latency dropdown
     auto *streamingLatencyLabel = new QLabel("Streaming Latency", this);
     streamingLatencyLabel->setStyleSheet(labelStyle);
     m_streamingLatencyCombo = new QComboBox(this);
@@ -213,8 +230,8 @@ void RadioManagerDialog::setupUi() {
         m_streamingLatencyCombo->addItem(QString::number(i), i);
     }
     m_streamingLatencyCombo->setCurrentIndex(3); // Default: 3
-    formLayout->addWidget(streamingLatencyLabel, 7, 0);
-    formLayout->addWidget(m_streamingLatencyCombo, 7, 1);
+    formLayout->addWidget(streamingLatencyLabel, 8, 0);
+    formLayout->addWidget(m_streamingLatencyCombo, 8, 1);
 
     // Initially hide ID field (shown when TLS is checked)
     m_identityLabel->setVisible(false);
@@ -284,7 +301,23 @@ void RadioManagerDialog::refreshList() {
 
     const auto radios = RadioSettings::instance()->radios();
     for (const auto &radio : radios) {
-        m_radioList->addItem(radio.name.isEmpty() ? radio.host : radio.name);
+        auto *item = new QListWidgetItem(radio.name.isEmpty() ? radio.host : radio.name);
+        // A MARKER, NOT A CONTROL. This answers "which one opens at startup" at a glance, which
+        // is what was asked for; the checkbox that SETS it is in the form beside the other fields.
+        //
+        // An earlier version put a real checkbox on every row and it was worse three ways over: the
+        // boxes dominated a list whose job is names, the setting gained a second control that
+        // applied at a different time from the first, and the indicator needed stylesheet work to
+        // be visible and clickable at all against this background - it was briefly present,
+        // functional and invisible.
+        if (radio.connectAtStartup) {
+            item->setText(QStringLiteral("\u25cf  ") + item->text());
+            QFont marked = item->font();
+            marked.setBold(true);
+            item->setFont(marked);
+            item->setToolTip(QStringLiteral("QK4 connects to this radio at startup."));
+        }
+        m_radioList->addItem(item);
     }
 
     // Re-add discovered (unconfigured) entries — prune any that were just saved
@@ -326,6 +359,7 @@ void RadioManagerDialog::onConnectClicked() {
         entry.identity = m_identityEdit->text();
         entry.encodeMode = m_encodeModeCombo->currentData().toInt();
         entry.streamingLatency = m_streamingLatencyCombo->currentData().toInt();
+        entry.connectAtStartup = m_startupCheckbox->isChecked();
 
         // Set port based on TLS mode if not specified
         if (portText.isEmpty()) {
@@ -377,6 +411,7 @@ void RadioManagerDialog::onSaveClicked() {
     entry.identity = identity;
     entry.encodeMode = m_encodeModeCombo->currentData().toInt();
     entry.streamingLatency = m_streamingLatencyCombo->currentData().toInt();
+    entry.connectAtStartup = m_startupCheckbox->isChecked();
 
     // Set port based on TLS mode if not specified
     if (portText.isEmpty()) {
@@ -396,6 +431,26 @@ void RadioManagerDialog::onSaveClicked() {
     // If connected to this radio, notify that SL changed so it can be sent live
     if (!m_connectedHost.isEmpty() && entry.host == m_connectedHost) {
         emit streamingLatencyChanged(entry.streamingLatency);
+    }
+
+    // Keep "only one radio connects at startup" true ACROSS the list. addRadio/updateRadio store
+    // what they are given, so ticking this box has to clear whichever other entry held the flag.
+    // The list is sorted alphabetically, so the saved entry is found by identity rather than by
+    // the index it went in at.
+    const auto saved = RadioSettings::instance()->radios();
+    if (entry.connectAtStartup) {
+        for (int i = 0; i < saved.size(); ++i) {
+            if (saved[i] == entry) {
+                RadioSettings::instance()->setConnectAtStartupRadio(i);
+                break;
+            }
+        }
+    } else {
+        // Unticking the box on the radio that held the flag turns auto-connect off entirely.
+        const int flagged = RadioSettings::instance()->connectAtStartupIndex();
+        if (flagged >= 0 && flagged < saved.size() && saved[flagged] == entry) {
+            RadioSettings::instance()->setConnectAtStartupRadio(-1);
+        }
     }
 
     // Find the saved entry's new index (list is sorted alphabetically)
@@ -464,6 +519,7 @@ void RadioManagerDialog::onSelectionChanged() {
             m_portEdit->setText(QString::number(K4Protocol::TLS_PORT));
             m_passwordEdit->clear();
             m_tlsCheckbox->setChecked(true);
+            m_startupCheckbox->setChecked(false); // a discovered radio is not saved yet
             m_identityEdit->clear();
             m_identityLabel->setVisible(true);
             m_identityEdit->setVisible(true);
@@ -520,6 +576,7 @@ void RadioManagerDialog::clearFields() {
     m_portEdit->clear();
     m_passwordEdit->clear();
     m_tlsCheckbox->setChecked(false);
+    m_startupCheckbox->setChecked(false);
     m_identityEdit->clear();
     m_identityLabel->setVisible(false);
     m_identityEdit->setVisible(false);
@@ -535,6 +592,7 @@ void RadioManagerDialog::populateFieldsFromSelection() {
         m_portEdit->setText(QString::number(radio.port));
         m_passwordEdit->setText(radio.password);
         m_tlsCheckbox->setChecked(radio.useTls);
+        m_startupCheckbox->setChecked(radio.connectAtStartup);
         m_identityEdit->setText(radio.identity);
         m_identityLabel->setVisible(radio.useTls);
         m_identityEdit->setVisible(radio.useTls);
