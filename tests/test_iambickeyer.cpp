@@ -287,6 +287,46 @@ private slots:
         }
     }
 
+    // A sample that repeats the levers' CURRENT levels carries no information and must change
+    // nothing. The MIDI HaliKey makes this a live concern rather than a hypothetical: it fires
+    // note 31 on every dit (111 note-31 events against 111 note-20 in a bench capture), and
+    // HalikeyDevice forwards all three line levels on any note — so setPaddleState() is called
+    // repeatedly with levels that have not moved.
+    //
+    // Regression gate: with a level-driven latch, such a sample re-armed the same-side latch that
+    // enterElement() had just cleared. In Iambic B that turned a single tap into two elements,
+    // because the boundary then saw "same lever still pressed" from a latch rather than from the
+    // lever. Serial never showed it — it has no spurious events to re-arm from.
+    void repeatedLevelsDoNotDoubleATap() {
+        for (auto mode : {IambicKeyer::IambicA, IambicKeyer::IambicB}) {
+            IambicKeyer keyer;
+            keyer.setEnabled(true);
+            keyer.setSpeed(kWpm);
+            keyer.setMode(mode);
+            keyer.setHoldGateEnabled(false); // MIDI transport
+            QSignalSpy elem(&keyer, &IambicKeyer::elementStarted);
+
+            keyer.setPaddleState(true, false); // dit down -> one dit element begins
+            QTest::qWait(20);
+            keyer.setPaddleState(true, false); // redundant: same levels, as note 31 produces
+            keyer.setPaddleState(true, false);
+            keyer.setPaddleState(true, false);
+            QTest::qWait(10);
+            keyer.setPaddleState(false, false); // released, still inside the first element
+            QTest::qWait(500);
+
+            QCOMPARE(elementsOf(elem), QStringLiteral("."));
+        }
+    }
+
+    // The same invariant stated generally: injecting redundant samples into a gesture must not
+    // change what the keyer sends, in either mode.
+    void redundantSamplesNeverChangeTheOutcome() {
+        for (auto mode : {IambicKeyer::IambicA, IambicKeyer::IambicB}) {
+            QCOMPARE(squeezeWithRepeats(mode, 4), squeezeWithRepeats(mode, 0));
+        }
+    }
+
 private:
     // Squeeze both paddles, let the keyer alternate, then release both at once and count
     // how many NEW elements start strictly after release before the keyer idles. This is
@@ -323,6 +363,31 @@ private:
             finished.wait(2000);
 
         return elem.count() - before;
+    }
+
+    // Press dit, squeeze dah inside the first element, release both — with `repeats` redundant
+    // same-level samples injected at each step, mimicking a transport that reports unchanged lines.
+    QString squeezeWithRepeats(IambicKeyer::Mode mode, int repeats) {
+        IambicKeyer keyer;
+        keyer.setEnabled(true);
+        keyer.setSpeed(kWpm);
+        keyer.setMode(mode);
+        keyer.setHoldGateEnabled(false);
+        QSignalSpy elem(&keyer, &IambicKeyer::elementStarted);
+
+        auto sample = [&](bool dit, bool dah) {
+            keyer.setPaddleState(dit, dah);
+            for (int i = 0; i < repeats; ++i)
+                keyer.setPaddleState(dit, dah);
+        };
+
+        sample(true, false);
+        QTest::qWait(15);
+        sample(true, true);
+        QTest::qWait(15);
+        sample(false, false);
+        QTest::qWait(700);
+        return elementsOf(elem);
     }
 
     // Element sequence as a string: '.' = dit, '-' = dah. Hold gate off throughout, so a

@@ -51,11 +51,30 @@ namespace {
 // Latch bookkeeping for one lever. Shared by every paddle entry point so the hold gate and the
 // press-timestamp rules cannot drift between them.
 //
-// Returns the hold duration on a release (-1 on a press) and reports whether the hold gate
-// rejected it, both purely so the caller can trace the decision.
-qint64 updateLatch(std::atomic<bool> &latch, std::atomic<qint64> &pressNs, bool pressed, qint64 now, bool holdGate,
-                   qint64 minHoldNs, bool &bounceFiltered) {
+// `isEdge` says whether this sample actually CHANGED the lever's level. Only an edge carries
+// information; a sample repeating a level the lever already had is ignored entirely.
+//
+// WHY that matters, and it is not theoretical: the MIDI HaliKey emits note 31 on every dit (111
+// note-31 events against 111 note-20 events in a bench capture), and HalikeyDevice forwards all
+// three line levels on any note. So a note the keyer has no use for still arrived as a
+// setPaddleState() call carrying the levers' CURRENT levels - and a level-driven latch re-armed
+// itself from it. That silently undid the same-side clear enterElement() had just performed, which
+// is the thing that stops a held lever repeating from memory, and made Iambic B one element
+// stickier on MIDI than on serial: sending "A" produced ".-." (R). Serial never showed it because
+// it has no spurious events to re-arm from.
+//
+// A lever already down when an element begins is covered by the seeding in enterElement(); a lever
+// that goes down DURING the element is covered here. Between them the latch means exactly "this
+// lever was down at some moment during this cycle", with no third way to set it.
+//
+// Returns the hold duration on a release (-1 otherwise) and reports whether the hold gate rejected
+// it, both purely so the caller can trace the decision.
+qint64 updateLatch(std::atomic<bool> &latch, std::atomic<qint64> &pressNs, bool pressed, bool isEdge, qint64 now,
+                   bool holdGate, qint64 minHoldNs, bool &bounceFiltered) {
     bounceFiltered = false;
+    if (!isEdge)
+        return -1; // the lever did not move; nothing to record
+
     if (pressed) {
         // Only stamp the press timestamp on a fresh transition unset→set. A bounce-press
         // arriving while the latch is already true must NOT overwrite the legitimate press time
@@ -99,13 +118,19 @@ void IambicKeyer::setPaddleState(bool dit, bool dah) {
     // still held and appended an element nobody keyed.
     const qint64 now = m_pressClock.nsecsElapsed();
     const quint8 packed = static_cast<quint8>((dit ? kDitBit : 0) | (dah ? kDahBit : 0));
-    m_phys.store(packed, std::memory_order_release);
+    // exchange, not store: the PREVIOUS levels are what tell an edge from a repeat, and one
+    // read-modify-write keeps both levers' edges derived from the same prior sample.
+    const quint8 prev = m_phys.exchange(packed, std::memory_order_acq_rel);
+    const bool ditEdge = ((prev & kDitBit) != 0) != dit;
+    const bool dahEdge = ((prev & kDahBit) != 0) != dah;
 
     const bool holdGate = m_holdGateEnabled.load(std::memory_order_acquire);
     bool ditFiltered = false;
     bool dahFiltered = false;
-    const qint64 ditHoldNs = updateLatch(m_ditLatch, m_ditPressNs, dit, now, holdGate, kMinHoldNs, ditFiltered);
-    const qint64 dahHoldNs = updateLatch(m_dahLatch, m_dahPressNs, dah, now, holdGate, kMinHoldNs, dahFiltered);
+    const qint64 ditHoldNs =
+        updateLatch(m_ditLatch, m_ditPressNs, dit, ditEdge, now, holdGate, kMinHoldNs, ditFiltered);
+    const qint64 dahHoldNs =
+        updateLatch(m_dahLatch, m_dahPressNs, dah, dahEdge, now, holdGate, kMinHoldNs, dahFiltered);
 
     traceLine("DIT", dit, ditFiltered, ditHoldNs);
     traceLine("DAH", dah, dahFiltered, dahHoldNs);
@@ -119,13 +144,12 @@ void IambicKeyer::setDitPaddle(bool pressed) {
     // Single-lever entry: only for callers that genuinely learn one lever at a time (the V1.4
     // PTT demux, and mode-change cleanup). Read-modify-write keeps the other lever's bit intact.
     const qint64 now = m_pressClock.nsecsElapsed();
-    if (pressed)
-        m_phys.fetch_or(kDitBit, std::memory_order_acq_rel);
-    else
-        m_phys.fetch_and(static_cast<quint8>(~kDitBit), std::memory_order_acq_rel);
+    const quint8 prev = pressed ? m_phys.fetch_or(kDitBit, std::memory_order_acq_rel)
+                                : m_phys.fetch_and(static_cast<quint8>(~kDitBit), std::memory_order_acq_rel);
+    const bool isEdge = ((prev & kDitBit) != 0) != pressed;
 
     bool bounceFiltered = false;
-    const qint64 holdNs = updateLatch(m_ditLatch, m_ditPressNs, pressed, now,
+    const qint64 holdNs = updateLatch(m_ditLatch, m_ditPressNs, pressed, isEdge, now,
                                       m_holdGateEnabled.load(std::memory_order_acquire), kMinHoldNs, bounceFiltered);
     traceLine("DIT", pressed, bounceFiltered, holdNs);
 
@@ -134,13 +158,12 @@ void IambicKeyer::setDitPaddle(bool pressed) {
 
 void IambicKeyer::setDahPaddle(bool pressed) {
     const qint64 now = m_pressClock.nsecsElapsed();
-    if (pressed)
-        m_phys.fetch_or(kDahBit, std::memory_order_acq_rel);
-    else
-        m_phys.fetch_and(static_cast<quint8>(~kDahBit), std::memory_order_acq_rel);
+    const quint8 prev = pressed ? m_phys.fetch_or(kDahBit, std::memory_order_acq_rel)
+                                : m_phys.fetch_and(static_cast<quint8>(~kDahBit), std::memory_order_acq_rel);
+    const bool isEdge = ((prev & kDahBit) != 0) != pressed;
 
     bool bounceFiltered = false;
-    const qint64 holdNs = updateLatch(m_dahLatch, m_dahPressNs, pressed, now,
+    const qint64 holdNs = updateLatch(m_dahLatch, m_dahPressNs, pressed, isEdge, now,
                                       m_holdGateEnabled.load(std::memory_order_acquire), kMinHoldNs, bounceFiltered);
     traceLine("DAH", pressed, bounceFiltered, holdNs);
 
