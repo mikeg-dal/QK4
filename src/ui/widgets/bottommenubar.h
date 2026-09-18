@@ -40,7 +40,13 @@ public slots:
     void setMainRxActive(bool active);  // Toggle MAIN RX button inverse colors
     void setSubRxActive(bool active);   // Toggle SUB RX button inverse colors
     void setTxActive(bool active);      // Toggle TX button inverse colors
-    void setPttActive(bool active);     // Toggle PTT button inverse colors
+    // Paint the PTT button. Driven ONLY by TransmitController::transmittingChanged - never by a
+    // click on this widget, because a click is a request and requests can be refused (APP-005).
+    void setPttActive(bool active);
+
+    // Whether the operator's right-click latch actually took. MainWindow answers this from
+    // TransmitController::engage()'s return value; the widget must not assume it did.
+    void setPttLatched(bool latched);
 
 signals:
     void menuClicked();
@@ -52,6 +58,10 @@ signals:
     void txClicked();
     void pttPressed();  // PTT button pressed (start TX audio)
     void pttReleased(); // PTT button released (stop TX audio)
+
+    // Right-click latch requested (true) or given up (false). Separate from pttPressed/pttReleased
+    // so the handler can report back whether the latch was granted.
+    void pttLatchRequested(bool latched);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

@@ -764,6 +764,20 @@ void MainWindow::setupUi() {
     connect(m_bottomMenuBar, &BottomMenuBar::pttReleased, this,
             [this]() { m_transmitController->release(TransmitOwner::Owner::PttButton); });
 
+    // The right-click latch. engage() returns whether it was granted, and that answer - not the
+    // click - is what establishes the latch. Without this the widget latched on a refused request
+    // and then "unlatched" out of a transmission it never owned, greying its own button while XMIT
+    // was still keyed.
+    connect(m_bottomMenuBar, &BottomMenuBar::pttLatchRequested, this, [this](bool wantLatched) {
+        if (wantLatched) {
+            m_bottomMenuBar->setPttLatched(
+                m_transmitController->engage(TransmitOwner::Owner::PttButton, TransmitOwner::Route::StreamedFromHere));
+        } else {
+            m_transmitController->release(TransmitOwner::Owner::PttButton);
+            m_bottomMenuBar->setPttLatched(false);
+        }
+    });
+
     // WHY: no audio flush on mode/filter change. AudioEngine runs on a dedicated thread with
     // a properly sized jitter buffer, so stale audio doesn't accumulate; a flush here would
     // cause a brief dropout on every mode/filter switch.

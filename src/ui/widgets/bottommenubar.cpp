@@ -62,8 +62,7 @@ void BottomMenuBar::setupUi() {
     connect(m_pttLockTimer, &QTimer::timeout, this, [this]() {
         if (m_pttLocked) {
             m_pttLocked = false;
-            setPttActive(false);
-            emit pttReleased();
+            emit pttLatchRequested(false);
         }
     });
     m_pttBtn->installEventFilter(this);
@@ -137,10 +136,20 @@ void BottomMenuBar::setPttActive(bool active) {
     if (active) {
         m_pttBtn->setStyleSheet(K4Styles::menuBarButtonPttPressed());
     } else {
+        // Transmission ended for whatever reason - our release, someone else's, the radio's, a
+        // disconnect. A latch cannot outlive it.
         m_pttLocked = false;
         m_pttLockTimer->stop();
         m_pttBtn->setStyleSheet(K4Styles::menuBarButton());
     }
+}
+
+void BottomMenuBar::setPttLatched(bool latched) {
+    m_pttLocked = latched;
+    if (latched)
+        m_pttLockTimer->start();
+    else
+        m_pttLockTimer->stop();
 }
 
 bool BottomMenuBar::eventFilter(QObject *watched, QEvent *event) {
@@ -148,25 +157,20 @@ bool BottomMenuBar::eventFilter(QObject *watched, QEvent *event) {
         if (event->type() == QEvent::MouseButtonPress) {
             auto *me = static_cast<QMouseEvent *>(event);
             if (me->button() == Qt::RightButton) {
-                if (!m_pttLocked) {
-                    m_pttLocked = true;
-                    m_pttLockTimer->start();
-                    setPttActive(true);
-                    emit pttPressed();
-                } else {
-                    m_pttLocked = false;
-                    m_pttLockTimer->stop();
-                    setPttActive(false);
-                    emit pttReleased();
-                }
+                // REQUEST ONLY. This used to set m_pttLocked and repaint the button itself, which
+                // made the widget lie in both directions when something else held the
+                // transmitter: right-clicking during an XMIT transmission latched and lit a button
+                // whose engage() was refused, and clicking again greyed it out while XMIT was
+                // still keyed and still streaming. Observed on the bench 2026-09-18.
+                //
+                // The colour now comes from transmittingChanged and the latch from
+                // setPttLatched(), both of which follow what actually happened.
+                emit pttLatchRequested(!m_pttLocked);
                 return true;
             }
-            // Left-click while locked: release the lock
+            // Left-click while locked: give up the lock.
             if (me->button() == Qt::LeftButton && m_pttLocked) {
-                m_pttLocked = false;
-                m_pttLockTimer->stop();
-                setPttActive(false);
-                emit pttReleased();
+                emit pttLatchRequested(false);
                 return true;
             }
         }
