@@ -13,8 +13,10 @@
  *        `characterSpace()` / `restartAfterPause(ms)` / `keyingFinished()` for MainWindow to
  *        dispatch K4 KZ commands (see `memory/kz-protocol.md`).
  *
- * Latch semantics (see `iambickeyer.cpp::enterElement`): opposite-paddle latch preserves
- * brief taps that ended before the element timer fired — required for Iambic-A correctness.
+ * Latch semantics (see `iambickeyer.cpp::enterElement`): during an element only the OPPOSITE
+ * lever is latched, capturing a tap that ended before the element timer fired. Iambic B counts
+ * that latch at the element boundary; Iambic A ignores it and reads the live levers only. That
+ * single difference IS Mode A vs Mode B — see the spec summary on `onTimerFired()`.
  */
 class IambicKeyer : public QObject {
     Q_OBJECT
@@ -83,9 +85,8 @@ private:
     State m_state = Idle;
     Mode m_mode = IambicA;
     bool m_reversed = false;
-    bool m_squeezed = false; // both paddles held during current element
-    bool m_enabled = false;  // gated by connection state
-    int m_ditMs = 60;        // 1200 / WPM
+    bool m_enabled = false; // gated by connection state
+    int m_ditMs = 60;       // 1200 / WPM
     QElapsedTimer m_idleSince;
 
     // Free-running monotonic clock used to measure paddle-press hold durations and as the
@@ -117,9 +118,10 @@ private:
     static constexpr quint8 kDahBit = 0x2;
     std::atomic<quint8> m_phys{0};
 
-    // Paddle latches — capture any press during an active element so that
-    // onTimerFired() doesn't miss a paddle-down that was released before
-    // the element timer fired.  Set on key-down, cleared at element start.
+    // Paddle latches — "this lever was down at some moment during the current element cycle".
+    // Set on key-down, and seeded from the live lever at element start (which is what makes an
+    // edge-driven latch equivalent to polling). Only the opposite lever is latched during an
+    // element; the element's own latch is cleared, or a single tap would repeat.
     std::atomic<bool> m_ditLatch{false};
     std::atomic<bool> m_dahLatch{false};
 

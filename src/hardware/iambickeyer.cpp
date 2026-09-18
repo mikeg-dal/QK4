@@ -1,5 +1,7 @@
 #include "hardware/iambickeyer.h"
 
+#include "utils/radioutils.h"
+
 #include <QLoggingCategory>
 #include <QTime>
 
@@ -38,8 +40,7 @@ void IambicKeyer::setReversed(bool reversed) {
 }
 
 void IambicKeyer::setSpeed(int wpm) {
-    if (wpm > 0)
-        m_ditMs = 1200 / wpm;
+    m_ditMs = RadioUtils::ditMsForWpm(wpm);
 }
 
 void IambicKeyer::setHoldGateEnabled(bool enabled) {
@@ -165,16 +166,6 @@ void IambicKeyer::handlePaddleChange() {
     bool dah = dahDown() ||
                (m_reversed ? m_ditLatch.load(std::memory_order_acquire) : m_dahLatch.load(std::memory_order_acquire));
 
-    // Track squeeze state during active element.
-    //
-    // WHY live levers and not the latch-inclusive `dit`/`dah` above: a squeeze is a physical fact —
-    // both levers down at once. This slot is queued, so it evaluates a snapshot taken when it runs,
-    // by which time a latch set by a later press can sit beside a stale live read and assert a
-    // squeeze that never happened. In Iambic B that fabricates the trailing element directly. This
-    // now matches enterElement(), which has always used the live pair.
-    if (m_state != Idle && ditDown() && dahDown())
-        m_squeezed = true;
-
     // Start keying if idle and any paddle is down
     if (m_state == Idle) {
         if (dit && !dah)
@@ -204,21 +195,29 @@ void IambicKeyer::enterElement(bool isDit) {
     }
 
     m_state = isDit ? PlayingDit : PlayingDah;
-    m_squeezed = false;
 
-    // WHY only the same-element latch clears here: the latch we consume represents the
-    // just-played element's paddle; leaving the opposite latch alone preserves any
-    // cross-paddle press that happened during the previous element. Without this, brief
-    // Iambic-A taps would be dropped — the paddle released before the element timer fired
-    // but the opposite-paddle latch is what lets the keyer still emit the character.
-    if (isDit != m_reversed)
-        m_ditLatch.store(false, std::memory_order_relaxed);
-    else
-        m_dahLatch.store(false, std::memory_order_relaxed);
-
-    // Re-check current paddles for squeeze detection within this element
-    if (ditDown() && dahDown())
-        m_squeezed = true;
+    // Latch bookkeeping for this cycle. Only the OPPOSITE lever is latched during an element;
+    // the element's own lever is cleared.
+    //
+    // WHY clear the same side: its latch was just consumed by starting this element. Leaving it
+    // set makes a single tap repeat — the lever was down when the cycle began, so a latch that
+    // counts it would still read "pressed" at the boundary and send a second identical element.
+    // Live state already repeats a genuinely held lever, so the same-side latch has no work to do.
+    //
+    // WHY seed the opposite side from the live lever: the latch means "this lever was down at some
+    // moment during this cycle", and a lever already down when the cycle begins qualifies. Seeding
+    // is what makes an edge-driven latch equivalent to the spec's 1 ms poll without polling — a
+    // lever can only be down during the cycle by being down at its start or going down within it,
+    // and updateLatch() covers the second case. Without the seed, a squeeze held across several
+    // elements sets no new edges, so Iambic B would lose the trailing element that defines it.
+    //
+    // Physical bits throughout: the latches are stored per physical line and mapped through
+    // m_reversed at the decision site in onTimerFired().
+    const quint8 samePhysBit = (isDit != m_reversed) ? kDitBit : kDahBit;
+    const quint8 oppPhysBit = static_cast<quint8>(samePhysBit == kDitBit ? kDahBit : kDitBit);
+    const bool oppLive = (m_phys.load(std::memory_order_acquire) & oppPhysBit) != 0;
+    (samePhysBit == kDitBit ? m_ditLatch : m_dahLatch).store(false, std::memory_order_relaxed);
+    (oppPhysBit == kDitBit ? m_ditLatch : m_dahLatch).store(oppLive, std::memory_order_relaxed);
 
     // Dit = 1 unit on + 1 unit off = 2 ditMs; Dah = 3 units on + 1 unit off = 4 ditMs
     const int intervalMs = isDit ? m_ditMs * 2 : m_ditMs * 4;
@@ -250,8 +249,7 @@ void IambicKeyer::enterElement(bool isDit) {
                                          << "] interval=" << intervalMs << "ms armed=" << armMs
                                          << "ms physD=" << ditDown() << " physA=" << dahDown()
                                          << " latchD=" << m_ditLatch.load(std::memory_order_acquire)
-                                         << " latchA=" << m_dahLatch.load(std::memory_order_acquire)
-                                         << " squeezed=" << m_squeezed;
+                                         << " latchA=" << m_dahLatch.load(std::memory_order_acquire);
 
     emit elementStarted(isDit);
 }
@@ -270,31 +268,19 @@ void IambicKeyer::onTimerFired() {
         m_reversed ? m_dahLatch.load(std::memory_order_acquire) : m_ditLatch.load(std::memory_order_acquire);
     bool latchDah =
         m_reversed ? m_ditLatch.load(std::memory_order_acquire) : m_dahLatch.load(std::memory_order_acquire);
-    bool dit = liveDit || latchDit;
-    bool dah = liveDah || latchDah;
+    // Iambic A consults the live levers only; Iambic B also counts a lever that was down at any
+    // point during the cycle. That single difference IS Mode A vs Mode B.
+    const bool useLatch = (m_mode == IambicB);
+    bool dit = liveDit || (useLatch && latchDit);
+    bool dah = liveDah || (useLatch && latchDah);
     bool wasDit = (m_state == PlayingDit);
 
     auto traceDecision = [&](const char *branch) {
         qCDebug(cwKeyer).noquote().nospace()
             << "KEYER@" << nowMs() << " [TIMER fired wasDit=" << wasDit << "] liveD=" << liveDit << " liveA=" << liveDah
-            << " latchD=" << latchDit << " latchA=" << latchDah << " squeezed=" << m_squeezed
-            << " mode=" << (m_mode == IambicB ? "B" : "A") << " → " << branch;
+            << " latchD=" << latchDit << " latchA=" << latchDah << " mode=" << (m_mode == IambicB ? "B" : "A") << " → "
+            << branch;
     };
-
-    // Squeeze release: both paddles physically released while squeeze was active.
-    // Bypass latches — use Iambic A/B mode rules instead.  Without this guard,
-    // a stale opposite-paddle latch would produce an unwanted extra element in
-    // Iambic A mode.
-    if (m_squeezed && !liveDit && !liveDah) {
-        if (m_mode == IambicB) {
-            traceDecision("squeeze-release IambicB → opposite element");
-            enterElement(!wasDit);
-        } else {
-            traceDecision("squeeze-release IambicA → idle");
-            goIdle();
-        }
-        return;
-    }
 
     if (dit && dah) {
         traceDecision("both held → alternate");
@@ -320,7 +306,6 @@ void IambicKeyer::onTimerFired() {
 void IambicKeyer::goIdle() {
     m_state = Idle;
     m_elementTimer->stop();
-    m_squeezed = false;
     m_ditLatch.store(false, std::memory_order_relaxed);
     m_dahLatch.store(false, std::memory_order_relaxed);
     m_idleSince.start();
@@ -335,7 +320,6 @@ void IambicKeyer::stop() {
     if (m_state != Idle) {
         m_state = Idle;
         m_elementTimer->stop();
-        m_squeezed = false;
         m_phys.store(0, std::memory_order_relaxed);
         m_ditLatch.store(false, std::memory_order_relaxed);
         m_dahLatch.store(false, std::memory_order_relaxed);

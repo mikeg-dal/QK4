@@ -224,6 +224,69 @@ private slots:
         QCOMPARE(elem.at(0).at(0).toBool(), true);
     }
 
+    // ---- Spec conformance: the Mode A / Mode B decision rule -------------------------------
+    //
+    // These pin the one thing that distinguishes the modes: at an element boundary, Iambic B
+    // counts a lever that was down at ANY point during the cycle, Iambic A counts only the
+    // levers held at that instant. The suite above covers the long-squeeze case; these cover
+    // the short squeeze that fits inside a single element, which is how a two-element letter
+    // is actually sent, and which behaved differently.
+
+    // Iambic B, the letter "A": press dit, squeeze dah while the first dit is still running,
+    // release both. The dah latch survives the boundary and completes the letter — and nothing
+    // more. Two elements, not three.
+    //
+    // Regression gate: this produced ".-." (the letter R) because enterElement() cleared only
+    // the just-played element's latch, so the dit latch set during element 1 survived element 2
+    // and fired a third element. iambicB_squeezeReleaseAppendsOneElement did not catch it —
+    // squeezing across several elements consumes the latches on the way, so only the short
+    // squeeze exposes it.
+    void iambicB_shortSqueezeSendsExactlyTwoElements() {
+        QCOMPARE(shortSqueeze(IambicKeyer::IambicB, /*startWithDit=*/true), QStringLiteral(".-"));
+        QCOMPARE(shortSqueeze(IambicKeyer::IambicB, /*startWithDit=*/false), QStringLiteral("-."));
+    }
+
+    // Iambic A, same gesture: the element in progress finishes and the keyer stops. Nothing is
+    // appended, because A does not consult the latch.
+    void iambicA_shortSqueezeSendsOneElement() {
+        QCOMPARE(shortSqueeze(IambicKeyer::IambicA, /*startWithDit=*/true), QStringLiteral("."));
+        QCOMPARE(shortSqueeze(IambicKeyer::IambicA, /*startWithDit=*/false), QStringLiteral("-"));
+    }
+
+    // The levers never overlap here: one is released before the other is pressed, both inside
+    // the first element. Nothing is squeezed, so only the latch can carry the second element —
+    // which means B sends it and A must not.
+    //
+    // Regression gate: both modes sent it. onTimerFired() consulted the latches unconditionally
+    // and the guard that corrected Iambic A keyed off a physical both-levers-down flag, so a
+    // non-overlapping tap bypassed it entirely and Iambic A behaved exactly like Iambic B.
+    void nonOverlappingTapDistinguishesTheModes() {
+        QCOMPARE(nonOverlappingTap(IambicKeyer::IambicB, /*startWithDit=*/true), QStringLiteral(".-"));
+        QCOMPARE(nonOverlappingTap(IambicKeyer::IambicA, /*startWithDit=*/true), QStringLiteral("."));
+        QCOMPARE(nonOverlappingTap(IambicKeyer::IambicB, /*startWithDit=*/false), QStringLiteral("-."));
+        QCOMPARE(nonOverlappingTap(IambicKeyer::IambicA, /*startWithDit=*/false), QStringLiteral("-"));
+    }
+
+    // A held lever repeats from live state alone, in both modes. Guards the same-side latch
+    // clear in enterElement(): seeding that latch instead would double every single tap.
+    void heldLeverRepeatsInBothModes() {
+        for (auto mode : {IambicKeyer::IambicA, IambicKeyer::IambicB}) {
+            IambicKeyer keyer;
+            keyer.setEnabled(true);
+            keyer.setSpeed(kWpm);
+            keyer.setMode(mode);
+            keyer.setHoldGateEnabled(false);
+            QSignalSpy elem(&keyer, &IambicKeyer::elementStarted);
+            keyer.setPaddleState(true, false);
+            QTest::qWait(300);
+            keyer.setPaddleState(false, false);
+            QTest::qWait(200);
+            QVERIFY2(elem.count() >= 3, qPrintable(QString("only %1 elements").arg(elem.count())));
+            for (int i = 0; i < elem.count(); ++i)
+                QVERIFY(elem.at(i).at(0).toBool()); // every one a dit
+        }
+    }
+
 private:
     // Squeeze both paddles, let the keyer alternate, then release both at once and count
     // how many NEW elements start strictly after release before the keyer idles. This is
@@ -242,7 +305,7 @@ private:
             keyer.setDitPaddle(true);
             keyer.setDahPaddle(true);
         }
-        QTest::qWait(300); // establish the squeeze (m_squeezed) and alternate a few times
+        QTest::qWait(300); // establish the squeeze and alternate a few times
 
         // Capture the count and release synchronously: no event loop runs between these
         // two statements, so the element timer cannot fire in the gap and the in-progress
@@ -260,6 +323,55 @@ private:
             finished.wait(2000);
 
         return elem.count() - before;
+    }
+
+    // Element sequence as a string: '.' = dit, '-' = dah. Hold gate off throughout, so a
+    // deliberately short tap is never mistaken for contact bounce.
+    static QString elementsOf(const QSignalSpy &elem) {
+        QString out;
+        for (int i = 0; i < elem.count(); ++i)
+            out += elem.at(i).at(0).toBool() ? QLatin1Char('.') : QLatin1Char('-');
+        return out;
+    }
+
+    // Press one lever, squeeze the other while the FIRST element is still running, release both.
+    // At 30 WPM the first dit cycle is 80 ms, so the whole gesture fits inside it.
+    QString shortSqueeze(IambicKeyer::Mode mode, bool startWithDit) {
+        IambicKeyer keyer;
+        keyer.setEnabled(true);
+        keyer.setSpeed(kWpm);
+        keyer.setMode(mode);
+        keyer.setHoldGateEnabled(false);
+        QSignalSpy elem(&keyer, &IambicKeyer::elementStarted);
+
+        keyer.setPaddleState(startWithDit, !startWithDit);
+        QTest::qWait(15);
+        keyer.setPaddleState(true, true); // squeeze, still inside element 1
+        QTest::qWait(15);
+        keyer.setPaddleState(false, false); // release both, still inside element 1
+        QTest::qWait(600);                  // long enough for a dah plus anything spurious
+        return elementsOf(elem);
+    }
+
+    // Tap one lever and release it, then tap the other and release it, with NO overlap — both
+    // taps inside the first element cycle.
+    QString nonOverlappingTap(IambicKeyer::Mode mode, bool startWithDit) {
+        IambicKeyer keyer;
+        keyer.setEnabled(true);
+        keyer.setSpeed(kWpm);
+        keyer.setMode(mode);
+        keyer.setHoldGateEnabled(false);
+        QSignalSpy elem(&keyer, &IambicKeyer::elementStarted);
+
+        keyer.setPaddleState(startWithDit, !startWithDit);
+        QTest::qWait(12);
+        keyer.setPaddleState(false, false); // first lever up before the second goes down
+        QTest::qWait(8);
+        keyer.setPaddleState(!startWithDit, startWithDit); // opposite lever, no overlap
+        QTest::qWait(12);
+        keyer.setPaddleState(false, false);
+        QTest::qWait(800);
+        return elementsOf(elem);
     }
 };
 
