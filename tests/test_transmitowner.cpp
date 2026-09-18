@@ -211,12 +211,59 @@ private slots:
     void radioDroppingTxClosesOurGate() {
         State s;
         engage(s, Owner::PttButton, Route::StreamedFromHere);
+        radioReports(s, true); // the K4 acknowledges the transmission
         const Effects e = radioReports(s, false);
         QVERIFY(!e.ignored);
         QVERIFY(e.setGate);
         QVERIFY(!e.gateActive);
         QVERIFY(!e.transmitting);
         QCOMPARE(s.owner, Owner::None);
+    }
+
+    // The K4 notices late that the audio keying it has stopped, and emits RX; after the operator
+    // has already re-keyed. That stale echo must not unkey the new transmission.
+    //
+    // The discriminator is order, not time: an RX; arriving before this episode's TX; can only
+    // belong to the previous one. Without this, fast keying — WSJT-X cycling, or an operator
+    // working a pileup — would drop the transmitter at random.
+    void aStaleRxFromThePreviousTransmissionIsRejected() {
+        State s;
+        engage(s, Owner::PttButton, Route::StreamedFromHere);
+        radioReports(s, true);                                // radio confirms transmission #1
+        release(s, Owner::PttButton);                         // operator lets go
+        engage(s, Owner::PttButton, Route::StreamedFromHere); // ...and immediately re-keys
+
+        const Effects stale = radioReports(s, false); // RX; belonging to transmission #1
+        QVERIFY2(stale.ignored, "a stale RX must not unkey the new transmission");
+        QVERIFY(!stale.setGate);
+        QVERIFY(stale.transmitting);
+        QCOMPARE(s.owner, Owner::PttButton);
+
+        // Once the radio acknowledges THIS transmission, a later RX is trusted again.
+        radioReports(s, true);
+        const Effects real = radioReports(s, false);
+        QVERIFY(!real.ignored);
+        QVERIFY(real.setGate);
+        QVERIFY(!real.gateActive);
+        QCOMPARE(s.owner, Owner::None);
+    }
+
+    // XMIT today sends TX; AND opens the gate. Until the bench says whether that is right, the
+    // arbiter has to reproduce it exactly — and undo both halves on release.
+    void catKeyedAndStreamedDoesBothAndUndoesBoth() {
+        State s;
+        const Effects on = engage(s, Owner::Xmit, Route::CatKeyedAndStreamed);
+        QVERIFY(on.sendTx);
+        QVERIFY(on.setGate);
+        QVERIFY(on.gateActive);
+        QVERIFY(on.setSource);
+        QCOMPARE(on.source, AudioSource::Microphone);
+
+        const Effects off = release(s, Owner::Xmit);
+        QVERIFY(off.sendRx);
+        QVERIFY(off.setGate);
+        QVERIFY(!off.gateActive);
+        QVERIFY(!off.transmitting);
     }
 
     // Our own TX; coming back must not be mistaken for the radio keying itself, or every
@@ -263,7 +310,8 @@ private slots:
     void everyTransitionIsSelfConsistent() {
         const Owner owners[] = {Owner::None,      Owner::PttButton, Owner::Xmit,
                                 Owner::CatClient, Owner::TciClient, Owner::Radio};
-        const Route routes[] = {Route::None, Route::StreamedFromHere, Route::RadioLocal, Route::Observed};
+        const Route routes[] = {Route::None, Route::StreamedFromHere, Route::RadioLocal, Route::CatKeyedAndStreamed,
+                                Route::Observed};
 
         for (Owner startOwner : owners) {
             for (Route startRoute : routes) {
@@ -272,7 +320,8 @@ private slots:
                 for (Owner who : owners) {
                     if (who == Owner::None)
                         continue;
-                    for (Route how : {Route::StreamedFromHere, Route::RadioLocal, Route::Observed}) {
+                    for (Route how :
+                         {Route::StreamedFromHere, Route::RadioLocal, Route::CatKeyedAndStreamed, Route::Observed}) {
                         State s{startOwner, startRoute};
                         const Effects e = engage(s, who, how);
                         QVERIFY2(!(e.sendTx && e.sendRx), "a single decision cannot both key and unkey");

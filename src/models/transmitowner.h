@@ -36,10 +36,18 @@ enum class Owner {
 
 enum class Route {
     None,
-    StreamedFromHere, // open the audio gate and stream; NO TX; — the tunnel header keys the K4
-    RadioLocal,       // TX; only; never open the gate — the K4 transmits from its own input
-    Observed          // the radio is already transmitting; reflect it and touch nothing
+    StreamedFromHere,    // open the audio gate and stream; NO TX; — the tunnel header keys the K4
+    RadioLocal,          // TX; only; never open the gate — the K4 transmits from its own input
+    CatKeyedAndStreamed, // TX; AND the gate: what XMIT does today. See the WHY below.
+    Observed             // the radio is already transmitting; reflect it and touch nothing
 };
+
+// WHY CatKeyedAndStreamed exists rather than XMIT being classed as one of the other two: it is
+// what XMIT does today, and whether it is correct is an open bench question. TX; may put the K4
+// into "transmit from my own input" while QK4 simultaneously streams over the tunnel, which would
+// be two mechanisms fighting. Naming the combination preserves today's behaviour exactly while
+// making the question concrete — and once the bench answers it, the fix is one word at one call
+// site instead of an archaeology exercise.
 
 // Mirrors AudioController::TxSource. Duplicated rather than included so this header — and the test
 // that links it alone — stays clear of the controller layer. transmitcontroller.cpp static_asserts
@@ -49,6 +57,17 @@ enum class AudioSource { Microphone = 0, Tci = 1 };
 struct State {
     Owner owner = Owner::None;
     Route route = Route::None;
+
+    // Has the radio echoed TX; for the transmission currently held? Cleared on every ownership
+    // change, set by the radio's own TX echo.
+    //
+    // WHY this is needed, and why it is exact rather than a timeout: on release the K4 takes a
+    // while to notice the audio stopped and only then emits RX;. If the operator re-keys inside
+    // that window, the stale RX; lands while somebody legitimately holds the transmitter, and a
+    // naive reading unkeys them. The discriminator is not time, it is whether the radio has
+    // acknowledged THIS episode: an RX; arriving before the matching TX; can only belong to the
+    // previous one. CAT echoes carry no sequence number, but they do carry order.
+    bool radioConfirmed = false;
 
     bool transmitting() const { return owner != Owner::None; }
 };
@@ -84,11 +103,11 @@ struct Effects {
 namespace detail {
 
 inline bool needsGate(Route r) {
-    return r == Route::StreamedFromHere;
+    return r == Route::StreamedFromHere || r == Route::CatKeyedAndStreamed;
 }
 
 inline bool keyedByCat(Route r) {
-    return r == Route::RadioLocal;
+    return r == Route::RadioLocal || r == Route::CatKeyedAndStreamed;
 }
 
 // A local producer is the operator, physically at this computer. Local preempts remote, because
@@ -112,6 +131,7 @@ inline Effects transition(State &s, Owner newOwner, Route newRoute) {
     Effects e;
     s.owner = newOwner;
     s.route = newRoute;
+    s.radioConfirmed = false; // a new episode; the radio has not acknowledged it yet
     e.transmitting = s.transmitting();
 
     const bool gateWas = needsGate(oldRoute);
@@ -198,25 +218,36 @@ inline Effects releaseAll(State &s) {
 /// tune timeout, the operator pressing RX at the radio. The gate has to close, or QK4 keeps
 /// encoding and sending mic frames that re-key the radio. That is INT-002.
 ///
-/// CALLER OBLIGATION: do not deliver a report that predates your own most recent transition. On a
-/// StreamedFromHere release the K4 emits its own RX; a few milliseconds later, and if the operator
-/// (or a fast client) has re-keyed in the meantime, that stale echo arrives while somebody legitimately
-/// holds the transmitter and this function will dutifully unkey them. The arbiter cannot see that —
-/// CAT echoes carry no sequence — so the freshness guard belongs in the caller, where the clock is.
+/// A stale RX; from the previous transmission is rejected on its own evidence — see
+/// State::radioConfirmed. The caller does not need to filter by time.
 inline Effects radioReports(State &s, bool transmitting) {
     if (transmitting) {
         if (s.owner != Owner::None) {
-            Effects e; // our own echo coming back; already accounted for
+            // Our own echo coming back. Acknowledges the episode, which is what lets a later RX;
+            // be trusted.
+            s.radioConfirmed = true;
+            Effects e;
             e.ignored = true;
             e.transmitting = true;
             return e;
         }
-        return detail::transition(s, Owner::Radio, Route::Observed);
+        Effects e = detail::transition(s, Owner::Radio, Route::Observed);
+        s.radioConfirmed = true; // the radio is the authority for a transmission it started
+        return e;
     }
 
     if (s.owner == Owner::None) {
         Effects e;
         e.ignored = true;
+        return e;
+    }
+    if (!s.radioConfirmed) {
+        // An RX; before the matching TX; belongs to the previous transmission — the K4 noticing,
+        // late, that the audio it was keyed by has stopped. Acting on it would unkey whoever has
+        // since taken the transmitter.
+        Effects e;
+        e.ignored = true;
+        e.transmitting = true;
         return e;
     }
     return detail::transition(s, Owner::None, Route::None);

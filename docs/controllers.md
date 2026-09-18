@@ -3,7 +3,7 @@
 > **Purpose:** if something is broken in the UI, find the owning controller here first.
 > Each entry maps a user-visible feature → the controller that owns it → the file path.
 
-Last updated: TCI server — TciController added (30 controllers).
+Last updated: TransmitController added — one owner of transmit (31 controllers).
 
 ---
 
@@ -50,8 +50,12 @@ Last updated: TCI server — TciController added (30 controllers).
 | "Connection to K4 / status indicator wrong" | ConnectionController + MainWindow::updateConnectionState | `src/controllers/connectioncontroller.cpp` + `src/mainwindow.cpp` |
 | "Top status bar label / KPA1500 badge wrong" | StatusBarController | `src/controllers/statusbarcontroller.cpp` |
 | "Audio (RX/TX, PTT) not working" | AudioController | `src/controllers/audiocontroller.cpp` |
+| "Radio stays keyed after I stop transmitting" | TransmitController | `src/controllers/transmitcontroller.cpp` (decision: `src/models/transmitowner.h`) |
+| "PTT indicator lit but nothing is transmitting (or the reverse)" | TransmitController | same |
+| "WSJT-X keyed while I was already transmitting" | TransmitController | same |
 | "KPOD knob / KPOD+ / HaliKey device not detected" | HardwareController | `src/controllers/hardwarecontroller.cpp` |
-| "CW keying / paddle / sidetone / V1.4 PTT demux wrong" | CwController | `src/controllers/cwcontroller.cpp` |
+| "CW keying / paddle / sidetone wrong" | CwController | `src/controllers/cwcontroller.cpp` |
+| "My foot pedal on the HaliKey does nothing" | Withdrawn on purpose — see the note in `src/controllers/cwcontroller.h` | n/a |
 | "Spectrum / panadapter / click-tune not working" | SpectrumController | `src/controllers/spectrumcontroller.cpp` |
 | "DX cluster spots not appearing / cluster connect fail" | DxClusterController | `src/controllers/dxclustercontroller.cpp` |
 | "WSJT-X / QLog / RumLogNG over TCI: no connect, no audio, PTT or CW wrong" | TciController | `src/controllers/tcicontroller.cpp` (server: `src/network/tciserver.cpp`) |
@@ -79,7 +83,8 @@ Grouped by concern:
 
 ### Core (exist before refactor)
 - **ConnectionController** — TCP connection state machine, network I/O thread, CAT send
-- **AudioController** — audio engine, Opus codecs, PTT, audio thread
+- **AudioController** — audio engine, Opus codecs, the PTT gate, audio thread
+- **TransmitController** — the single owner of "are we transmitting". Every producer (PTT button, XMIT, Esc, CAT client, TCI client, and the radio itself) asks it instead of writing the audio gate and the indicator directly. Records HOW each transmission was keyed so the release is the exact inverse. Decision logic is header-only in `src/models/transmitowner.h` and unit-tested standalone.
 - **SpectrumController** — panadapters, spectrum data routing, click-tune, passband overlays
 - **HardwareController** — constructs + owns KPOD, KPOD+, HaliKey, IambicKeyer, SidetoneGenerator + their threads; KPOD tuning-knob → CAT; device-config push; signal forwarding
 - **CwController** — CW keying orchestration across the HardwareController-owned devices: IambicKeyer↔CAT/sidetone wiring, the single HaliKey line handler (both levers passed to the keyer as one sample), V1.4 pedal demux, KPOD+ keyer-active gate. Paddle input is gated on CW/CW_R for both levers, and both are released on any mode change. See `cwcontroller.h` for the threading-invariant doc.

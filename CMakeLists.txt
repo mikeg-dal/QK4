@@ -112,6 +112,7 @@ set(SOURCES
     src/controllers/rightsidecontroller.cpp
     src/controllers/memorybuttonscontroller.cpp
     src/controllers/cwcontroller.cpp
+    src/controllers/transmitcontroller.cpp
     src/network/tcpclient.cpp
     src/network/protocol.cpp
     src/network/networkmetrics.cpp

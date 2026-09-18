@@ -37,6 +37,7 @@
 #include "controllers/spectrumcontroller.h"
 #include "controllers/audiocontroller.h"
 #include "controllers/cwcontroller.h"
+#include "controllers/transmitcontroller.h"
 #include "controllers/hardwarecontroller.h"
 #include "controllers/kpa1500uicontroller.h"
 #include "network/catserver.h"
@@ -109,10 +110,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // Clears both the K4 TX state (RX;) and QK4's internal PTT/audio state so the UI unlocks too.
     auto *escShortcut = new QShortcut(Qt::Key_Escape, this);
     connect(escShortcut, &QShortcut::activated, this, [this]() {
-        if (m_connectionController->isConnected())
-            m_connectionController->sendCAT("RX;");
-        m_audioController->setPttActive(false);
-        m_bottomMenuBar->setPttActive(false);
+        // Unconditional, whoever holds it. This is the operator's last resort, so it releases
+        // rather than asking, and the arbiter sends whatever unkey the engage actually needs.
+        m_transmitController->releaseAll();
     });
 
     setupNotificationWidget();
@@ -223,6 +223,13 @@ void MainWindow::setupControllers() {
 
     // Audio controller owns AudioEngine, Opus codecs, audio thread, and PTT state
     m_audioController = new AudioController(m_connectionController, m_radioState, this);
+
+    // The single owner of "are we transmitting". Constructed here, directly after the two
+    // controllers it drives, so Qt's child destruction order tears it down after them and its
+    // disconnect(this) has already run by the time anything it references is gone.
+    m_transmitController = new TransmitController(m_radioState, m_connectionController, m_audioController, this);
+    connect(m_transmitController, &TransmitController::transmittingChanged, this,
+            [this](bool transmitting) { m_bottomMenuBar->setPttActive(transmitting); });
 
     // Spectrum controller owns panadapters, span buttons, and all spectrum wiring
     m_spectrumController = new SpectrumController(m_connectionController, m_radioState, this);
@@ -375,11 +382,14 @@ void MainWindow::setupCatServer() {
     connect(m_catServer, &CatServer::errorOccurred, this,
             [this](const QString &error) { qWarning() << "CAT server:" << error; });
 
-    // TX;/RX; from external apps controls audio input gate
-    // Audio stream itself triggers K4 TX - timing-critical for FT8/FT4
+    // TX;/RX; from external apps. StreamedFromHere, not RadioLocal: CatServer deliberately does
+    // not forward TX;/RX; to the K4 because the audio stream itself keys it, which is
+    // timing-critical for FT8/FT4. The arbiter now records that rather than leaving it implied.
     connect(m_catServer, &CatServer::pttRequested, this, [this](bool on) {
-        m_audioController->setPttActive(on);
-        m_bottomMenuBar->setPttActive(on);
+        if (on)
+            m_transmitController->engage(TransmitOwner::Owner::CatClient, TransmitOwner::Route::StreamedFromHere);
+        else
+            m_transmitController->release(TransmitOwner::Owner::CatClient);
     });
 
     // Connect to settings for CAT server enable/disable
@@ -637,10 +647,18 @@ void MainWindow::setupUi() {
     connect(m_sideControlPanel, &SideControlPanel::tuneLpClicked, this,
             [this]() { m_connectionController->sendCAT("SW131;"); });
     connect(m_sideControlPanel, &SideControlPanel::xmitClicked, this, [this]() {
-        bool goTx = !m_radioState->isTransmitting();
-        m_connectionController->sendCAT(goTx ? "TX;" : "RX;");
-        m_audioController->setPttActive(goTx);
-        m_bottomMenuBar->setPttActive(goTx);
+        // CatKeyedAndStreamed reproduces exactly what XMIT has always done - TX; AND the audio
+        // gate. Whether that is right is an open bench question: TX; may put the K4 into
+        // "transmit from my own input" while QK4 streams over the tunnel. Naming the combination
+        // keeps today's behaviour while making the question a one-word change later.
+        //
+        // The toggle now reads the arbiter rather than RadioState::isTransmitting(). Same answer
+        // whenever the radio has echoed, and a better one before it has: XMIT used to be able to
+        // unkey a transmission it had just started, because the echo had not arrived yet.
+        if (m_transmitController->isTransmitting())
+            m_transmitController->release(m_transmitController->owner());
+        else
+            m_transmitController->engage(TransmitOwner::Owner::Xmit, TransmitOwner::Route::CatKeyedAndStreamed);
     });
     connect(m_sideControlPanel, &SideControlPanel::testClicked, this,
             [this]() { m_connectionController->sendCAT("SW132;"); });
@@ -721,15 +739,10 @@ void MainWindow::setupUi() {
 
     // PTT button connections
     connect(m_bottomMenuBar, &BottomMenuBar::pttPressed, this, [this]() {
-        if (m_connectionController->isConnected()) {
-            m_audioController->setPttActive(true);
-            m_bottomMenuBar->setPttActive(true);
-        }
+        m_transmitController->engage(TransmitOwner::Owner::PttButton, TransmitOwner::Route::StreamedFromHere);
     });
-    connect(m_bottomMenuBar, &BottomMenuBar::pttReleased, this, [this]() {
-        m_audioController->setPttActive(false);
-        m_bottomMenuBar->setPttActive(false);
-    });
+    connect(m_bottomMenuBar, &BottomMenuBar::pttReleased, this,
+            [this]() { m_transmitController->release(TransmitOwner::Owner::PttButton); });
 
     // WHY: no audio flush on mode/filter change. AudioEngine runs on a dedicated thread with
     // a properly sized jitter buffer, so stale audio doesn't accumulate; a flush here would

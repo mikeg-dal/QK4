@@ -14,6 +14,7 @@
 #include "ui/widgets/vfowidget.h"
 
 class AudioController;
+class TransmitController;
 class SpectrumController;
 class StatusBarController;
 class SideControlPanel;
@@ -124,6 +125,7 @@ private:
 
     // Audio controller owns AudioEngine, Opus codecs, audio thread, and PTT state
     AudioController *m_audioController;
+    TransmitController *m_transmitController;
 
     // Spectrum controller owns panadapters, span buttons, VFO indicators, and spectrum wiring
     SpectrumController *m_spectrumController;
