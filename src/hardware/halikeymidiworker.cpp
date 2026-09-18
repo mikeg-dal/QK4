@@ -82,7 +82,8 @@ void HaliKeyMidiWorker::checkPortPresence() {
     // failing read, and none of RtMidi's backends report removal — CoreMIDI's client here has a
     // null notify proc, WinMM's input callback drops MIM_CLOSE, and ALSA logs the unsubscribe and
     // carries on. So an unplug with a lever held left the keyer believing it was still down and
-    // sending forever, and an unplug with the foot pedal held left PTT asserted. The enumeration
+    // sending forever. (It also left a held footswitch asserting PTT, back when note 31 still
+    // reached PTT — that path is gone, but the held-lever case remains.) The enumeration
     // does drop the device (verified on macOS), which is what makes this poll work.
     //
     // errorOccurred is the existing route: HalikeyDevice closes the port, which emits disconnected,
@@ -229,9 +230,18 @@ void HaliKeyMidiWorker::handleMidiMessage(double deltaTime, const std::vector<un
         emit lineStateChanged(m_ditState, m_dahState, m_pttState);
         break;
     case NOTE_PTT:
-        qCDebug(hwMidi) << "HaliKeyMidiWorker: ptt (note 31)" << (pressed ? "down" : "up");
-        m_pttState = pressed;
-        emit lineStateChanged(m_ditState, m_dahState, m_pttState);
+        // WHY note 31 is read and then dropped rather than removed from the switch: the firmware
+        // still sends it, and an unhandled note falls through to the default case below, which
+        // exists to make an unrecognised note visible in the trace. Logging it there would read as
+        // a firmware mismatch. Naming it here says the note arrived and QK4 chose to ignore it.
+        //
+        // Footswitch PTT is withdrawn from BOTH HaliKey transports pending wiring information from
+        // the hardware developer: a footswitch may be wired inline with the paddles, which on V1.4
+        // is indistinguishable from the dit lever because both drive CTS. Rather than guess per
+        // transport, neither keys PTT. If it comes back it will be behind an explicit
+        // "alternate wiring" setting, off by default.
+        qCDebug(hwMidi) << "HaliKeyMidiWorker: ptt (note 31)" << (pressed ? "down" : "up")
+                        << "- ignored, footswitch PTT is withdrawn";
         break;
     default:
         // Log unrecognized notes so a HaliKey MIDI firmware using different note numbers

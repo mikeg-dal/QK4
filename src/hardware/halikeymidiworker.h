@@ -58,6 +58,9 @@ private:
     // two forward when a note arrives — see the switch in handleMidiMessage().
     bool m_ditState = false;
     bool m_dahState = false;
+    // Always false: footswitch PTT is withdrawn from both transports, so note 31 no longer sets
+    // this. Kept so the three-line signal shape stays identical to the V1.4 worker's, where CTS is
+    // a real line — a transport-shaped signature is worth more than one saved bool.
     bool m_pttState = false;
 
     // MoMIDI protocol state

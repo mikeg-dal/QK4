@@ -196,16 +196,18 @@ bool HaliKeyV14Worker::readPinState(bool &ditState, bool &dahState, bool &pttSta
     //
     // We map the three logical signals as follows:
     //
-    //   ditState = false                (V1.4 cannot uniquely identify the dit lever — both
-    //                                    pedal and dit lever drive CTS. dit-vs-pedal demux
-    //                                    happens in HardwareController based on operating
-    //                                    mode: in CW we treat CTS as dit, in voice as PTT.)
+    //   ditState = false                (V1.4 cannot report the dit lever on its own line — see
+    //                                    pttState below, which carries it.)
     //   dahState = DCD || DSR           (paddle dah lever — both pins fire together; OR collapses
     //                                    them into one stable edge.)
-    //   pttState = CTS                  (mode-routed downstream: voice → PTT, CW → setDitPaddle.)
+    //   pttState = CTS                  (the dit lever, in CW. CwController maps it.)
     //
-    // The MIDI worker is unaffected — it has true distinct sources for dit/dah/PTT (notes
-    // 20/21/31), so HardwareController's mode-routing only kicks in for the V1.4 variant.
+    // WHY the dit lever arrives on a field named pttState: a footswitch wired inline with the
+    // paddles also drives CTS, so on this firmware the two are the same signal and the name kept
+    // both readings open. Footswitch PTT is now withdrawn from both transports (see
+    // cwcontroller.h), so CTS means the dit lever and nothing else; the field name is left alone
+    // because it is the transport-level line name shared with the MIDI worker, not a claim about
+    // what QK4 does with it.
 #ifdef Q_OS_WIN
     DWORD modemStatus = 0;
     if (!GetCommModemStatus(m_handle, &modemStatus)) {
@@ -274,7 +276,7 @@ void HaliKeyV14Worker::monitorLoop() {
     // Linux: use TIOCMIWAIT for kernel-level interrupt-driven monitoring
     while (m_running) {
         // Wait for CTS, DSR, or DCD change — blocks in kernel until edge detected.
-        // DCD added so foot-pedal/PTT presses wake the loop the same way paddles do.
+        // DCD added so a dah-lever edge wakes the loop the same way a CTS edge does.
         if (ioctl(m_fd, TIOCMIWAIT, TIOCM_CTS | TIOCM_DSR | TIOCM_CD) < 0) {
             if (!m_running)
                 break;

@@ -350,14 +350,6 @@ void MainWindow::setupHardwareController() {
     connect(m_hardwareController, &HardwareController::macroRequested, m_macroController,
             &MacroController::executeMacro);
 
-    // HaliKey footswitch PTT → TX audio + UI indicator
-    connect(m_cwController, &CwController::pttRequested, this, [this](bool active) {
-        if (m_connectionController->isConnected()) {
-            m_audioController->setPttActive(active);
-            m_bottomMenuBar->setPttActive(active);
-        }
-    });
-
     // Hardware-side errors (HaliKey port-open failures today) → notification overlay
     connect(m_hardwareController, &HardwareController::hardwareError, this, &MainWindow::onHardwareError);
 }

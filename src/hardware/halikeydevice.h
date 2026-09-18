@@ -17,7 +17,8 @@ struct HaliKeyPortInfo {
 /**
  * @brief Owner of the HaliKey CW paddle device. Creates a worker (V1.4 / MIDI / Linux TIOCMIWAIT
  *        variant — see HaliKeyWorkerBase) on `m_workerThread` and exposes paddle +
- *        PTT-footswitch signals to the rest of the app.
+ *        line-state signals to the rest of the app. What each line MEANS is the caller's
+ *        business — see CwController; this class only debounces and forwards.
  *
  * Debounce responsibility lives in the worker:
  *   - V1.4 serial worker confirms each transition across ≥2 reads before emitting. The read

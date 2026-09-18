@@ -57,16 +57,12 @@ class KpodPlusDevice;
 //   RadioState::cwPitchChanged           | sidetone freq +    | main -> sidetone thread   | invokeMethod queued
 //                                        | KPOD+ setCwPitch   |                           |
 //   RadioState::modeChanged              | m_cachedMode +     | main -> main (atomic)     | AutoConnection (Direct)
-//                                        | V1.4 PTT cleanup   |                           |
 //   IambicKeyer::elementStarted          | KZ. / KZ- to K4    | keyer -> I/O thread       | QueuedConnection
 //   IambicKeyer::characterSpace          | KZ space to K4     | keyer -> I/O thread       | QueuedConnection
 //   IambicKeyer::restartAfterPause       | KZP%04d to K4      | keyer -> I/O thread       | QueuedConnection
 //   IambicKeyer::elementStarted          | sidetone dit/dah   | keyer -> sidetone thread  | AutoConnection (Queued)
 //   HalikeyDevice::lineStateChanged      | keyer              | HaliKey worker -> same    | DirectConnection
 //                                        |  setPaddleState    |  (runs ON the worker)     |
-//   HalikeyDevice::lineStateChanged      | V1.4 pedal demux:  | HaliKey worker -> main    | QueuedConnection
-//                                        |  CW -> dit lever   |                           | (invariant 8)
-//                                        |  voice -> ptt      |                           |
 //   HalikeyDevice::disconnected          | stop keyer         | main -> main              | AutoConnection
 //   ConnectionController::radioReady     | keyer setEnabled t | main -> keyer thread      | invokeMethod queued
 //   ConnectionController::connection-    | keyer setEnabled f | main -> keyer thread      | invokeMethod queued
@@ -95,11 +91,8 @@ class KpodPlusDevice;
 // playback of the iambic state machine (which still runs) drop. KPOD+ owns
 // the CW chain when active.
 //
-// It does NOT own the foot pedal. Voice-mode pedal PTT keeps working with a
-// KPOD+ attached, and a pedal press already in flight when the gate rises
-// keeps its capture so the release still fires. The gate used to be an early
-// return at the top of the lineStateChanged handler, which cost both of
-// those; it is now a term of the lever expression, which also means a lever
+// The gate used to be an early return at the top of the lineStateChanged
+// handler; it is now a term of the lever expression, which means a lever
 // held across a gate rise is released by the next edge rather than staying
 // latched on the keyer until the KPOD+ goes away.
 //
@@ -119,36 +112,30 @@ class KpodPlusDevice;
 //     worker thread by the PTT DirectConnection handler (acquire). Replaces
 //     a racy worker-thread read of the plain int on the settings singleton.
 //
-//   enum V14PttDest { V14PttNone, V14PttDitPaddle, V14PttPtt };
-//   std::atomic<int> m_v14PttDestination
-//     V1.4 firmware multiplexes paddle-dit and foot-pedal on a single CTS
-//     line. The lineStateChanged handler's PTT rising edge picks a destination
-//     (dit-paddle in CW, PTT in voice) and captures it here so:
-//       - the falling edge dispatches to the SAME destination, even if
-//         the mode changed mid-press;
-//       - a mode change while held fires the matching up event to the
-//         OLD destination so neither IambicKeyer nor MainWindow gets
-//         stuck in a half-pressed state.
-//     The cleanup path uses compare_exchange_strong so only one of
-//     (falling-edge, mode-change) wins — no double release.
+// Footswitch PTT: REMOVED, deliberately
+// -------------------------------------
+//   Neither transport keys PTT from a footswitch. On V1.4 the pedal and the
+//   dit lever both drive CTS and are indistinguishable on the wire, and a
+//   user may have wired a footswitch inline with the paddles; the MIDI
+//   variant's note 31 is read and dropped. Withdrawn pending wiring
+//   information from the hardware developer rather than guessing per
+//   transport. If it returns it will be behind an explicit "alternate
+//   wiring" setting, default off, so this code path does not exist unless
+//   the operator says their hardware has it.
+//
+//   What went with it: CwController::pttRequested, the V1.4 CTS demux,
+//   m_v14PttDestination and its CAS release, and m_lastPttState. A
+//   footswitch plugged into the physical K4 is unaffected — that keys the
+//   radio directly and QK4 sees it as a TX echo.
 //
 // Threading invariants (preserve verbatim)
 // ----------------------------------------
 //   1. The HaliKey LEVER handler MUST stay DirectConnection on the HaliKey
-//      worker thread. Anything else adds latency to CW keying. The pedal
-//      demux is a second connection on the same signal and is NOT covered
-//      by this rule — see invariant 8.
+//      worker thread. Anything else adds latency to CW keying.
 //   2. m_cachedMode store happens on the main thread (AutoConnection
 //      from RadioState::modeChanged resolves to Direct); load happens on
 //      the HaliKey worker thread with acquire ordering. m_cachedIsV14
 //      follows the same rule.
-//   3. m_v14PttDestination's CAS-based cleanup must remain so the
-//      mode-change-during-press path doesn't double-release with the
-//      falling-edge path. Since invariant 8 put every writer on the main
-//      thread the event loop already serialises them, so the CAS is now
-//      belt-and-braces rather than load-bearing — keep it anyway: it is off
-//      the hot path, and it is what makes a future re-threading fail loudly
-//      instead of silently double-releasing.
 //   4. IambicKeyer signals route to TcpClient on the I/O thread via
 //      QueuedConnection — keyer thread is high-priority, main thread is
 //      bypassed entirely. Order preservation relies on Qt's FIFO event
@@ -161,21 +148,11 @@ class KpodPlusDevice;
 //   7. Destructor MUST run disconnect(this) first per CONVENTIONS Rule 11
 //      to sever signal connections before any cross-thread devices tear
 //      down underneath the connections.
-//   8. The HaliKey PEDAL demux MUST run on the main thread (QueuedConnection
-//      from lineStateChanged). Both writers of m_v14PttDestination — the
-//      pedal edge and RadioState::modeChanged's cleanup — have to share a
-//      thread. They did not: the pedal's rising edge stored its capture on
-//      the worker and emitted pttRequested(true) QUEUED to main, while the
-//      cleanup emitted pttRequested(false) DIRECTLY on main. A mode change
-//      landing in that window delivered false-then-true, spent the capture,
-//      and left the falling edge with nothing to release. PTT stayed on.
-//      Funnelling both through the queue does not fix it: Qt's FIFO
-//      guarantee is per (source thread, dest thread) pair (invariant 4), and
-//      those would be two sources. Main is the only candidate —
-//      HaliKeyV14Worker::monitorLoop() blocks for the life of the
-//      connection, so the worker thread has no event loop to post to.
-//      This costs no pedal-to-TX latency: pttRequested already crossed to
-//      main queued, since MainWindow's receiver lives there.
+//   8. RESERVED. This slot held the rule that the HaliKey pedal demux must
+//      run on the main thread. The footswitch path was removed (see the
+//      note above the class), so there is nothing left to serialise. Kept
+//      as a numbered gap so invariant 9 does not silently renumber in
+//      commit history.
 //   9. The KPOD+ gate is a TERM of the lever expression, never an early
 //      return, so the lever output stays a pure function of (sample, mode,
 //      transport, gate) and converges on the next edge. It gates levers, KZ
@@ -194,7 +171,7 @@ class KpodPlusDevice;
 //   - Sidetone volume / output-device follow (audio device lifecycle,
 //     not CW behavior)
 //   - shutdownSidetone() public entry point used by MainWindow::closeEvent
-//   - pttRequested / macroRequested / hardwareError signal forwarding
+//   - macroRequested / hardwareError signal forwarding
 //
 // Verification (mandatory before PR 17 merges)
 // --------------------------------------------
@@ -202,10 +179,8 @@ class KpodPlusDevice;
 //   - HaliKey MIDI paddle keying works
 //   - KPOD+ keying works (paddle -> on-device keyer -> EP02 -> K4)
 //   - Sidetone audible during keying, gated correctly when KPOD+ active
-//   - V1.4 PTT demux: hold paddle in CW, switch mode mid-press to SSB;
-//     keyer cleanly stops, no stuck KZ
-//   - V1.4 PTT demux: hold pedal in SSB, switch to CW mid-press; PTT
-//     release fires when pedal released
+//   - Hold a paddle in CW, switch mode mid-press to SSB; keyer cleanly
+//     stops, no stuck KZ
 //   - WPM changes during keying: KZL syncs correctly to K4
 //   - KPOD+ presence detection gates IambicKeyer correctly (no double
 //     keying when KPOD+ plug-in event arrives mid-paddle)
@@ -224,20 +199,9 @@ public:
                  QObject *parent = nullptr);
     ~CwController() override;
 
-signals:
-    // HaliKey footswitch PTT (voice/data modes) or V1.4 mid-press
-    // mode-change cleanup → MainWindow triggers/clears TX. Moved here
-    // from HardwareController with the V1.4 demux state machine.
-    void pttRequested(bool active);
+    // No signals: pttRequested was the only one, and it went with the footswitch path.
 
 private:
-    // Fire the up event for a pedal press that was rising-edge-captured, if there is one, and
-    // clear the capture. Shared by every path that ends a press the falling edge will never
-    // reach: a mode change mid-press, and the HaliKey disconnecting mid-press. The CAS is what
-    // makes those mutually exclusive — whichever runs first wins and the rest see V14PttNone, so
-    // PTT is released exactly once (invariant 3).
-    void releaseCapturedPtt();
-
     // Set or clear the KPOD+ keyer-active gate, releasing both levers when it rises. Every writer
     // of the gate goes through here so the store-then-release order cannot drift between them.
     void setKpodPlusGate(bool active);
@@ -260,14 +224,6 @@ private:
     // true = V1.4 serial (deviceType 0), false = MIDI (deviceType 1).
     // Main-thread release store, HaliKey-worker acquire load — see doc block.
     std::atomic<bool> m_cachedIsV14{true};
-
-    enum V14PttDest { V14PttNone = 0, V14PttDitPaddle = 1, V14PttPtt = 2 };
-    std::atomic<int> m_v14PttDestination{V14PttNone};
-
-    // Previous PTT line level. lineStateChanged carries absolute levels for all three lines on
-    // every event, so the pedal demux — which is edge-driven — needs the prior level to tell a real
-    // PTT transition from a paddle event that merely reported PTT unchanged.
-    std::atomic<bool> m_lastPttState{false};
 };
 
 #endif // CWCONTROLLER_H
