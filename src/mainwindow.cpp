@@ -1271,7 +1271,7 @@ void MainWindow::onRadioReady() {
 
     // Sync element length with K4 server (sent in RDY dump as KZLnn)
     if (m_radioState->keyerSpeed() > 0) {
-        int ditMs = 1200 / m_radioState->keyerSpeed();
+        int ditMs = RadioUtils::ditMsForWpm(m_radioState->keyerSpeed());
         m_connectionController->sendCAT(QString("KZL%1;").arg(ditMs, 2, 10, QChar('0')));
     }
 

@@ -8,6 +8,7 @@
 #include "models/radiostate.h"
 #include "network/tcpclient.h"
 #include "settings/radiosettings.h"
+#include "utils/radioutils.h"
 
 CwController::CwController(RadioState *radioState, ConnectionController *connection, IambicKeyer *keyer,
                            SidetoneGenerator *sidetone, HalikeyDevice *halikey, KpodPlusDevice *kpodPlus,
@@ -48,8 +49,8 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
         // members would otherwise introduce a silent race with no call-site warning.
         QMetaObject::invokeMethod(m_sidetone, "setKeyerSpeed", Qt::QueuedConnection, Q_ARG(int, wpm));
         QMetaObject::invokeMethod(m_keyer, "setSpeed", Qt::QueuedConnection, Q_ARG(int, wpm));
-        // Sync element length with K4 server
-        int ditMs = 1200 / wpm;
+        // Sync element length with K4 server — same conversion the local keyer and sidetone use.
+        int ditMs = RadioUtils::ditMsForWpm(wpm);
         m_connection->sendCAT(QString("KZL%1;").arg(ditMs, 2, 10, QChar('0')));
         // K4 is the source of truth — mirror the speed onto the KPOD+ keyer.
         if (m_kpodPlus->isPolling())

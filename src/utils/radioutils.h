@@ -22,6 +22,23 @@ constexpr int SPAN_MAX = 368000;
 constexpr int SPAN_THRESHOLD_UP = 144000;
 constexpr int SPAN_THRESHOLD_DOWN = 140000;
 
+// K4 keyer speed range. The manual gives "from 8 to 100 WPM" and the KS command documents the
+// same, so a speed outside it cannot come from the radio.
+constexpr int KEYER_WPM_MIN = 8;
+constexpr int KEYER_WPM_MAX = 100;
+
+/// Dit unit length in ms for a keyer speed, clamped to the K4's range.
+///
+/// WHY this is shared rather than written out at each site: three places derive an element length
+/// from the speed — the local iambic keyer's element clock, the sidetone's PCM block length, and
+/// the KZL element length sent to the K4 — and they have to agree exactly. They did not: the
+/// sidetone clamped to 5-60 WPM while the keyer clamped not at all, so above 60 WPM the sidetone
+/// built longer blocks than the keyer's element interval and fell further behind on every element,
+/// with no recovery until keying stopped. One conversion, one clamp, no drift.
+inline int ditMsForWpm(int wpm) {
+    return 1200 / qBound(KEYER_WPM_MIN, wpm, KEYER_WPM_MAX);
+}
+
 /// Convert VT tuning step index (0-5) to Hz.
 /// Returns 1000 Hz for out-of-range values.
 int tuningStepToHz(int step);

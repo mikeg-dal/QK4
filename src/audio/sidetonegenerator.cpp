@@ -1,5 +1,6 @@
 #include "sidetonegenerator.h"
 #include "audio/audiologging.h"
+#include "utils/radioutils.h"
 #include <QAudioFormat>
 #include <QDebug>
 #include <QMediaDevices>
@@ -119,7 +120,9 @@ void SidetoneGenerator::setVolume(float volume) {
 }
 
 void SidetoneGenerator::setKeyerSpeed(int wpm) {
-    m_keyerWpm.store(qBound(5, wpm, 60), std::memory_order_relaxed);
+    // Stored unclamped; RadioUtils::ditMsForWpm applies the one clamp both this and the keyer's
+    // element clock use. Clamping to a different range here is what made the sidetone drift.
+    m_keyerWpm.store(wpm, std::memory_order_relaxed);
 }
 
 void SidetoneGenerator::playSingleDit() {
@@ -131,7 +134,7 @@ void SidetoneGenerator::playSingleDah() {
 }
 
 int SidetoneGenerator::ditDurationMs() const {
-    return 1200 / m_keyerWpm.load(std::memory_order_relaxed);
+    return RadioUtils::ditMsForWpm(m_keyerWpm.load(std::memory_order_relaxed));
 }
 
 int SidetoneGenerator::dahDurationMs() const {

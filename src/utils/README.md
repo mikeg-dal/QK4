@@ -4,7 +4,7 @@ Shared helper functions. Any helper needed in more than one translation unit goe
 
 ## Files
 
-- `radioutils.{cpp,h}` — `RadioUtils::` namespace. Frequency → band (11 bands + gaps), band edges, tuning step tables, span-dial stepping with K4 quirks.
+- `radioutils.{cpp,h}` — `RadioUtils::` namespace. Frequency → band (11 bands + gaps), band edges, tuning step tables, span-dial stepping with K4 quirks, and `ditMsForWpm()` — the single 1200/WPM conversion and keyer-speed clamp shared by the iambic keyer's element clock, the sidetone's block length and both KZL senders. Four copies of that arithmetic had drifted apart before it landed here (AUDIT.md → CW-017).
 - `bandplan.{cpp,h}` — `BandPlan::` namespace. Segment lookup (CW / data / beacon / phone) per IARU region, driving the panadapter band-plan overlay. Region 4 is the US FCC layout with practical Extra-class mode edges. Covered by `test_bandplan`.
 - `wheelaccumulator.{h}` — accumulates high-resolution trackpad / wheel deltas into discrete detents, so a fine-grained scroll device does not fire one tuning step per pixel.
 
