@@ -6,8 +6,6 @@
 #include <rhi/qshader.h>
 #include <QDebug>
 
-#include "dsp/panadapter_constants.h"
-
 namespace RhiUtils {
 
 // Waterfall color LUT constants
@@ -102,39 +100,6 @@ struct WaterfallUniforms {
     float padding;
 };
 static_assert(sizeof(WaterfallUniforms) == 32, "must match the std140 block in waterfall.{vert,frag}");
-
-// Build a vertical dashed line at `x`, spanning [yTop, yBottom) in DEVICE pixels, as two triangles
-// per dash. The last dash is clipped to yBottom.
-//
-// WHY one definition, and why it caps itself: this loop existed in six places across the two
-// widgets — the notch line, the primary and secondary RTTY mark/space lines, and the mini-pan's —
-// each uploading verts.size() floats into a fixed-size QRhiBuffer sized by its own constant. Both
-// constants were too small. The panadapter's 1200 floats cover 100 dashes = 1000 device px of
-// spectrum, which a Retina panel exceeds at any ordinary window height; the mini-pan's 512 covered
-// 420 px and its loop spans the whole widget. Past that, updateDynamicBuffer wrote past the end of
-// a GPU buffer on every frame.
-//
-// The cap is the backstop for PanadapterConstants::MaxDisplayHeightPx, not the normal path: on a
-// display taller than the ceiling the line stops early and says so, rather than corrupting memory.
-inline void appendDashedVerticalLine(QVector<float> &verts, float x, float width, float yTop, float yBottom,
-                                     int maxFloats = PanadapterConstants::MaxDashFloats) {
-    const float dashLen = PanadapterConstants::DashLengthPx;
-    const float stride = PanadapterConstants::DashStridePx;
-    for (float y = yTop; y < yBottom; y += stride) {
-        if (verts.size() + PanadapterConstants::FloatsPerDash > maxFloats) {
-            static bool warned = false;
-            if (!warned) {
-                warned = true;
-                qWarning("RhiUtils: dashed line clipped at %d floats — display taller than "
-                         "PanadapterConstants::MaxDisplayHeightPx (%.0f px); raise it",
-                         maxFloats, double(PanadapterConstants::MaxDisplayHeightPx));
-            }
-            return;
-        }
-        const float yEnd = qMin(y + dashLen, yBottom);
-        verts << x << y << x + width << y << x + width << yEnd << x << y << x + width << yEnd << x << yEnd;
-    }
-}
 
 } // namespace RhiUtils
 

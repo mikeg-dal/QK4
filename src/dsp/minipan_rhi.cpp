@@ -1,5 +1,6 @@
 #include "minipan_rhi.h"
 #include "panadapter_constants.h"
+#include "dashgeometry.h"
 #include "rhi_utils.h"
 #include "ui/styling/k4constants.h"
 #include <QLoggingCategory>
@@ -760,7 +761,7 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
                 float lineWidth = PanadapterConstants::RttyDashLineWidth;
 
                 QVector<float> verts;
-                RhiUtils::appendDashedVerticalLine(verts, spaceX, lineWidth, 0.0f, h);
+                DashGeometry::appendDashedVerticalLine(verts, spaceX, lineWidth, 0.0f, h);
 
                 QRhiResourceUpdateBatch *rtRub = m_rhi->nextResourceUpdateBatch();
                 rtRub->updateDynamicBuffer(m_rttySpaceVbo.get(), 0, verts.size() * sizeof(float), verts.constData());

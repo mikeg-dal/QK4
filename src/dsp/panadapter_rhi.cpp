@@ -3,6 +3,7 @@
 #include "dsp/spectrumscale.h"
 #include "dsp/waterfallgeometry.h"
 #include "panadapter_constants.h"
+#include "dashgeometry.h"
 #include "rhi_utils.h"
 #include "ui/styling/k4styles.h"
 #include <QLoggingCategory>
@@ -1261,7 +1262,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                         return;
 
                     QVector<float> verts;
-                    RhiUtils::appendDashedVerticalLine(verts, toneX, lineWidth, overlayTop, spectrumHeight);
+                    DashGeometry::appendDashedVerticalLine(verts, toneX, lineWidth, overlayTop, spectrumHeight);
 
                     QRhiResourceUpdateBatch *rub = m_rhi->nextResourceUpdateBatch();
                     rub->updateDynamicBuffer(vbo, 0, verts.size() * sizeof(float), verts.constData());
@@ -1399,7 +1400,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                         return;
 
                     QVector<float> verts;
-                    RhiUtils::appendDashedVerticalLine(verts, toneX, lineWidth, overlayTop, spectrumHeight);
+                    DashGeometry::appendDashedVerticalLine(verts, toneX, lineWidth, overlayTop, spectrumHeight);
 
                     QRhiResourceUpdateBatch *rub = m_rhi->nextResourceUpdateBatch();
                     rub->updateDynamicBuffer(vbo, 0, verts.size() * sizeof(float), verts.constData());
@@ -1556,7 +1557,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                     // Draw as dotted line (dashed segments with gaps)
                     float notchWidth = PanadapterConstants::MarkerLineWidth;
                     QVector<float> notchVerts;
-                    RhiUtils::appendDashedVerticalLine(notchVerts, notchX, notchWidth, overlayTop, spectrumHeight);
+                    DashGeometry::appendDashedVerticalLine(notchVerts, notchX, notchWidth, overlayTop, spectrumHeight);
 
                     QRhiResourceUpdateBatch *notchRub = m_rhi->nextResourceUpdateBatch();
                     notchRub->updateDynamicBuffer(m_notchVbo.get(), 0, notchVerts.size() * sizeof(float),

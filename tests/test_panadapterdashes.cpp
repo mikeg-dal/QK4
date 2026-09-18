@@ -1,5 +1,5 @@
 #include "dsp/panadapter_constants.h"
-#include "dsp/rhi_utils.h"
+#include "dsp/dashgeometry.h"
 
 #include <QtTest>
 
@@ -85,19 +85,19 @@ void TestPanadapterDashes::builderNeverExceedsTheCap() {
     // A display far taller than the ceiling must clip rather than overrun. This is the backstop
     // that makes a fixed ceiling safe.
     QVector<float> verts;
-    RhiUtils::appendDashedVerticalLine(verts, 100.0f, 1.5f, 0.0f, 1000000.0f);
+    DashGeometry::appendDashedVerticalLine(verts, 100.0f, 1.5f, 0.0f, 1000000.0f);
     QVERIFY(verts.size() <= PanadapterConstants::MaxDashFloats);
     QCOMPARE(verts.size() % PanadapterConstants::FloatsPerDash, 0);
 
     // An explicit smaller cap is honoured too.
     QVector<float> small;
-    RhiUtils::appendDashedVerticalLine(small, 10.0f, 1.0f, 0.0f, 10000.0f, 24);
+    DashGeometry::appendDashedVerticalLine(small, 10.0f, 1.0f, 0.0f, 10000.0f, 24);
     QCOMPARE(small.size(), 24);
 }
 
 void TestPanadapterDashes::builderEmitsWholeDashesAndClipsTheLast() {
     QVector<float> verts;
-    RhiUtils::appendDashedVerticalLine(verts, 50.0f, 2.0f, 0.0f, 25.0f);
+    DashGeometry::appendDashedVerticalLine(verts, 50.0f, 2.0f, 0.0f, 25.0f);
 
     // 0..25 at a 10 px stride: dashes at y=0, 10, 20.
     QCOMPARE(verts.size(), 3 * PanadapterConstants::FloatsPerDash);
@@ -114,9 +114,9 @@ void TestPanadapterDashes::emptyAndNegativeSpansProduceNothing() {
     QCOMPARE(PanadapterConstants::dashFloatsFor(-100.0f), 0);
 
     QVector<float> verts;
-    RhiUtils::appendDashedVerticalLine(verts, 10.0f, 1.0f, 40.0f, 40.0f);
+    DashGeometry::appendDashedVerticalLine(verts, 10.0f, 1.0f, 40.0f, 40.0f);
     QVERIFY(verts.isEmpty());
-    RhiUtils::appendDashedVerticalLine(verts, 10.0f, 1.0f, 40.0f, 10.0f);
+    DashGeometry::appendDashedVerticalLine(verts, 10.0f, 1.0f, 40.0f, 10.0f);
     QVERIFY(verts.isEmpty());
 }
 

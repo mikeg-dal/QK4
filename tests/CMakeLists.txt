@@ -138,11 +138,12 @@ target_link_libraries(test_halikeymidiports Qt6::Core Qt6::Test)
 add_test(NAME HalikeyMidiPortsTests COMMAND test_halikeymidiports)
 
 # Dashed-overlay vertex arithmetic: the buffer-sizing rule for the notch and RTTY tone lines.
-# Header-only (PanadapterConstants + RhiUtils), so no source files — but rhi_utils.h includes
-# rhi/qshader.h, which needs Qt6::GuiPrivate.
+# Header-only (PanadapterConstants + DashGeometry), so no source files. Those headers deliberately
+# depend on nothing but Qt Core — rhi_utils.h next to them includes the PRIVATE rhi/qshader.h, which
+# is not installed on every platform this builds on.
 add_executable(test_panadapterdashes test_panadapterdashes.cpp)
 target_include_directories(test_panadapterdashes PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(test_panadapterdashes Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Test)
+target_link_libraries(test_panadapterdashes Qt6::Core Qt6::Test)
 add_test(NAME PanadapterDashTests COMMAND test_panadapterdashes)
 
 # BandPlan data/lookup tests (QColor needs Qt6::Gui)
