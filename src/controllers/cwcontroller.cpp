@@ -237,16 +237,20 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // =========================================================================
     // KPOD+ keyer-active gate + EP02 keyer data routing
     // =========================================================================
-    // The KPOD+ owns the entire CW chain when present. The gate is set on
-    // deviceInfoReady (KPOD+ detected) rather than deviceConnected (open
-    // succeeded) so the ~10-100 ms open window doesn't leak paddle events to
-    // the local sidetone path.
-    connect(m_kpodPlus, &KpodPlusDevice::deviceConnected, this, [this]() { setKpodPlusGate(true); });
-    connect(m_kpodPlus, &KpodPlusDevice::deviceDisconnected, this, [this]() { setKpodPlusGate(false); });
-    connect(m_kpodPlus, &KpodPlusDevice::deviceInfoReady, this, [this]() {
-        if (m_kpodPlus->isDetected())
-            setKpodPlusGate(true);
-    });
+    // The gate is now driven by HardwareController, which owns the lifecycle policy and is the only
+    // thing that knows whether the KPOD+ is actually going to run. MainWindow wires
+    // HardwareController::kpodPlusOwnsCw to setKpodPlusGate().
+    //
+    // WHY it is not wired to the device's own signals here any more — USB-003. The gate used to go
+    // up on deviceInfoReady whenever isDetected(), which is DETECTION, not ownership. A KPOD+
+    // plugged in with "Enable K-Pod" unchecked therefore suppressed QK4's own keyer while itself
+    // doing nothing: with a HaliKey attached that is no CW from either source, and the Options page
+    // said "KPOD+ keyer is active" the whole time. Seen in a bench log as `detected: true` followed
+    // by `gate UP` with no `startPolling` anywhere near it.
+    //
+    // The early raise that comment defended is preserved, and is now honest: the policy raises it
+    // when it DECIDES to open, which is still ahead of the ~10-100 ms open window, but only ever
+    // when the device is really about to take over.
 
     // EP02 keyer data → straight to the I/O thread.
     //

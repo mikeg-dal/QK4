@@ -213,12 +213,17 @@ void HardwareController::applyKpod(UsbDeviceLifecycle::Event event) {
 void HardwareController::applyKpodPlus(UsbDeviceLifecycle::Event event) {
     const UsbDeviceLifecycle::Effects e = UsbDeviceLifecycle::apply(m_kpodPlusState, event);
     if (e.open) {
+        // Raise the CW gate BEFORE the open, not after: claiming the interface takes 10-100 ms and
+        // a paddle event landing in that window would reach QK4's own keyer and sidetone.
+        emit kpodPlusOwnsCw(true);
         m_kpodPlusDevice->startPolling();
         if (m_applyKpodPlusConfig)
             m_applyKpodPlusConfig();
     }
-    if (e.close)
+    if (e.close) {
         m_kpodPlusDevice->stopPolling();
+        emit kpodPlusOwnsCw(false);
+    }
     if (e.notifyConnected)
         emit hardwareError(QStringLiteral("KPOD+ connected — it now owns CW keying."));
     if (e.notifyDisconnected)

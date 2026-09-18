@@ -368,6 +368,12 @@ void MainWindow::setupHardwareController() {
                                       m_hardwareController->sidetoneGenerator(), m_hardwareController->halikeyDevice(),
                                       m_hardwareController->kpodPlusDevice(), this);
 
+    // Who owns CW keying. HardwareController decides it from the device lifecycle policy — plugged
+    // in AND switched on AND about to run — and CwController acts on it by suppressing QK4's own
+    // keyer. Wired here rather than inside CwController because that would mean a second reader of
+    // the device state, which is the arrangement USB-002 and USB-003 both came out of.
+    connect(m_hardwareController, &HardwareController::kpodPlusOwnsCw, m_cwController, &CwController::setKpodPlusGate);
+
     // KPOD button presses → macro execution
     connect(m_hardwareController, &HardwareController::macroRequested, m_macroController,
             &MacroController::executeMacro);

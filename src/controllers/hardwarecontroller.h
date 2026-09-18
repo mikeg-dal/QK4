@@ -94,6 +94,14 @@ signals:
     // KPOD button press → MainWindow dispatches macro
     void macroRequested(const QString &functionId);
 
+    /// The KPOD+ is taking over CW keying, or giving it back.
+    ///
+    /// Emitted from the lifecycle policy's decision to open or close, which is deliberately AHEAD
+    /// of the device actually opening — the ~10-100 ms claim window would otherwise leak paddle
+    /// events into QK4's own sidetone path. Ownership, not detection: a KPOD+ that is plugged in
+    /// but switched off never raises this (USB-003).
+    void kpodPlusOwnsCw(bool owns);
+
     // Hardware error (port open failure, MIDI subsystem error, etc.) → MainWindow
     // shows it on the notification overlay. Currently fed by HalikeyDevice's
     // connectionError signal; future device errors can route here too. Prefix the

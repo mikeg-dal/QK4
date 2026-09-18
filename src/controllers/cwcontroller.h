@@ -201,13 +201,21 @@ public:
                  QObject *parent = nullptr);
     ~CwController() override;
 
+public:
+    /// The KPOD+ has taken over CW keying, or given it back.
+    ///
+    /// Task-level API per CONVENTIONS Rule 2: the caller says what happened, not which object to
+    /// poke. Driven by HardwareController, which owns the device lifecycle policy and is the only
+    /// thing that knows whether the KPOD+ is actually going to run — as opposed to merely being
+    /// plugged in, which is what this used to key off (USB-003).
+    ///
+    /// While the gate is up, QK4's own keyer still runs but its KZ output and sidetone are
+    /// suppressed. Order is load-bearing; see the implementation.
+    void setKpodPlusGate(bool active);
+
     // No signals: pttRequested was the only one, and it went with the footswitch path.
 
 private:
-    // Set or clear the KPOD+ keyer-active gate, releasing both levers when it rises. Every writer
-    // of the gate goes through here so the store-then-release order cannot drift between them.
-    void setKpodPlusGate(bool active);
-
     // True when the KPOD+ device owns the CW path — reads the shared
     // atomic gate on ConnectionController with acquire ordering. While
     // set, all locally-driven KZ output + sidetone playback is suppressed.
