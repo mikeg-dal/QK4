@@ -127,6 +127,11 @@ private:
     // afterwards if the macro moved it.
     void sendCwMacro(const QVector<CwMacroSegment> &segments);
 
+    // Hand the transmitter back if — and only if — a TCI client is the one holding it, and tell
+    // the roster it is over. A no-op for any other holder: the operator transmitting is not
+    // something the TCI side may cancel.
+    void releaseClientTransmitter();
+
     // Set once the transmitter has been handed back, so closeEvent and the destructor cannot do it
     // twice.
     bool m_shutdownDone = false;
