@@ -130,6 +130,13 @@ target_include_directories(test_waterfallgeometry PRIVATE ${CMAKE_SOURCE_DIR}/sr
 target_link_libraries(test_waterfallgeometry Qt6::Core Qt6::Test)
 add_test(NAME WaterfallGeometryTests COMMAND test_waterfallgeometry)
 
+# MIDI HaliKey port-name matching: which port we open, and whether it has disappeared.
+# Header-only, no RtMidi or MIDI subsystem needed.
+add_executable(test_halikeymidiports test_halikeymidiports.cpp)
+target_include_directories(test_halikeymidiports PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_halikeymidiports Qt6::Core Qt6::Test)
+add_test(NAME HalikeyMidiPortsTests COMMAND test_halikeymidiports)
+
 # Dashed-overlay vertex arithmetic: the buffer-sizing rule for the notch and RTTY tone lines.
 # Header-only (PanadapterConstants + RhiUtils), so no source files — but rhi_utils.h includes
 # rhi/qshader.h, which needs Qt6::GuiPrivate.
