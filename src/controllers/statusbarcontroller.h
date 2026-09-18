@@ -52,8 +52,8 @@ public:
     void showDisconnected();
     void showConnecting();                       // amber bold — same style for Connecting + Authenticating
     void showConnected();                        // green bold
-    void showError(const QString &errorMessage); // red bold — "Error: <message>"
-    void showAuthFailed();                       // red bold — "Auth Failed"
+    void showError(const QString &errorMessage); // red bold — survives the disconnect that follows // red bold —
+                                                 // "Error: <message>"
 
 private:
     void onPowerButtonClicked();
@@ -72,6 +72,10 @@ private:
     PowerStatusButton *m_powerButton;
     QTimer *m_clockTimer;
     ConfirmPopup *m_confirmPopup = nullptr; // lazily constructed on first click
+
+    // A connection error is on the label and must outlive the Disconnected update that follows it.
+    // Cleared when the next attempt starts. See showDisconnected() for why this is needed.
+    bool m_errorShown = false;
 
     void updateDateTime();
 };

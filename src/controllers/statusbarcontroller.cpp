@@ -211,6 +211,18 @@ void StatusBarController::setTitle(const QString &text) {
 }
 
 void StatusBarController::showDisconnected() {
+    // WHY the guard: TcpClient reports a failure as errorOccurred() followed by
+    // setState(Disconnected), both queued to this thread in that order. Without this, the
+    // Disconnected handler landed a moment after showError() and reset the very label it had just
+    // written - so every connection and authentication failure was replaced by a plain grey "K4"
+    // before the operator could read it. The error was in the log and nowhere on screen.
+    //
+    // The error stays until the next attempt starts; showConnecting() is what clears it.
+    if (m_errorShown) {
+        m_titleLabel->setText("Elecraft K4");
+        return;
+    }
+
     m_connectionStatusLabel->setText("K4");
     m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
                                                .arg(K4Styles::Colors::InactiveGray)
@@ -219,6 +231,8 @@ void StatusBarController::showDisconnected() {
 }
 
 void StatusBarController::showConnecting() {
+    // A new attempt is the one thing that supersedes a previous failure.
+    m_errorShown = false;
     m_connectionStatusLabel->setText("K4");
     m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
                                                .arg(K4Styles::Colors::AccentAmber)
@@ -226,6 +240,7 @@ void StatusBarController::showConnecting() {
 }
 
 void StatusBarController::showConnected() {
+    m_errorShown = false;
     m_connectionStatusLabel->setText("K4");
     m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
                                                .arg(K4Styles::Colors::StatusGreen)
@@ -233,14 +248,8 @@ void StatusBarController::showConnected() {
 }
 
 void StatusBarController::showError(const QString &errorMessage) {
-    m_connectionStatusLabel->setText("Error: " + errorMessage);
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                               .arg(K4Styles::Colors::TxRed)
-                                               .arg(K4Styles::Dimensions::FontSizeButton));
-}
-
-void StatusBarController::showAuthFailed() {
-    m_connectionStatusLabel->setText("Auth Failed");
+    m_errorShown = true;
+    m_connectionStatusLabel->setText(errorMessage);
     m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
                                                .arg(K4Styles::Colors::TxRed)
                                                .arg(K4Styles::Dimensions::FontSizeButton));
