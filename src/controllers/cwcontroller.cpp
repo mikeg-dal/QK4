@@ -180,9 +180,12 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // =========================================================================
     // HaliKey lines → keyer (ZERO-LATENCY DirectConnection)
     // =========================================================================
-    // One handler for all three lines, because they arrive as one sample. Feeding the keyer both
-    // levers in a single call is what stops a released squeeze from being seen half-applied — the
-    // case that appended an element the operator never keyed. See IambicKeyer::setPaddleState.
+    // TWO handlers on one signal, split by what they drive and which thread they need. This one
+    // feeds the KEYER and must stay Direct on the HaliKey worker thread (invariant 1); the pedal
+    // demux below is queued to main (invariant 8). Both levers still reach the keyer in a single
+    // call from a single sample, which is what stops a released squeeze from being seen
+    // half-applied — the case that appended an element the operator never keyed. See
+    // IambicKeyer::setPaddleState.
     //
     // Line → lever mapping differs by transport. V1.4 serial firmware cannot distinguish the foot
     // pedal from the dit lever: both drive CTS, so in CW the CTS level IS the dit lever, and in
@@ -210,8 +213,36 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
             const bool ditLever = !gated && inCw && (isV14 ? ptt : dit);
             const bool dahLever = !gated && inCw && dah;
             m_keyer->setPaddleState(ditLever, dahLever);
+        },
+        Qt::DirectConnection);
 
-            // Pedal demux is edge-driven, so act only on a real PTT transition.
+    // Foot-pedal demux — SECOND connection on the same signal, QueuedConnection so it runs on the
+    // MAIN thread. See invariant 8: both writers of m_v14PttDestination (this handler and the
+    // modeChanged cleanup) have to share a thread, or a pedal press that races a mode change gets
+    // its queued pttRequested(true) delivered AFTER the cleanup's direct pttRequested(false), the
+    // capture is already spent, and the release never fires — PTT latched on.
+    //
+    // Main is the only thread they can share: HaliKeyV14Worker::monitorLoop() blocks for the life
+    // of the connection, so the worker thread has no event loop to post modeChanged to. Routing
+    // both through the queue instead would not help either — Qt's FIFO guarantee is per
+    // (source thread, dest thread) pair (invariant 4), and those would be two sources.
+    //
+    // This costs no pedal-to-TX latency: pttRequested already crossed to main queued, because
+    // MainWindow's receiver lives there. The hop just happens earlier in the chain now.
+    connect(
+        m_halikey, &HalikeyDevice::lineStateChanged, this,
+        [this](bool /*dit*/, bool /*dah*/, bool ptt) {
+            // A queued sample posted before closePort() can arrive after the disconnected handler
+            // has already released and reset. Acting on it would re-capture a destination for a
+            // device that is gone, and re-assert PTT with nothing left able to clear it.
+            if (!m_halikey->isConnected())
+                return;
+
+            const bool isV14 = m_cachedIsV14.load(std::memory_order_acquire);
+            const auto mode = static_cast<RadioState::Mode>(m_cachedMode.load(std::memory_order_acquire));
+            const bool inCw = (mode == RadioState::CW || mode == RadioState::CW_R);
+
+            // Edge-driven, so act only on a real PTT transition.
             const bool pttWas = m_lastPttState.exchange(ptt, std::memory_order_acq_rel);
             if (ptt == pttWas)
                 return;
@@ -221,8 +252,8 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
                 // mid-press mode change) fires the matching up event to the SAME destination even
                 // if the mode flipped meanwhile.
                 if (inCw) {
-                    // V1.4: the CTS edge was the dit lever and setPaddleState above already keyed
-                    // it. Record the destination so the falling edge does not also raise PTT.
+                    // V1.4: the CTS edge was the dit lever and the lever handler already keyed it.
+                    // Record the destination so the falling edge does not also raise PTT.
                     // MIDI: the pedal must not key in CW, so no destination is captured.
                     if (isV14)
                         m_v14PttDestination.store(V14PttDitPaddle, std::memory_order_release);
@@ -232,12 +263,11 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
                 }
             } else {
                 // FALLING EDGE: dispatch to whatever destination captured the rising edge. A
-                // DitPaddle destination needs nothing here: setPaddleState above already released
-                // the lever.
+                // DitPaddle destination needs nothing here: the lever handler already released it.
                 releaseCapturedPtt();
             }
         },
-        Qt::DirectConnection);
+        Qt::QueuedConnection);
 
     // Enable keyer when radio connects, disable on disconnect
     connect(m_connection, &ConnectionController::radioReady, this,

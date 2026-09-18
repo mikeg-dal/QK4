@@ -62,10 +62,10 @@ class KpodPlusDevice;
 //   IambicKeyer::characterSpace          | KZ space to K4     | keyer -> I/O thread       | QueuedConnection
 //   IambicKeyer::restartAfterPause       | KZP%04d to K4      | keyer -> I/O thread       | QueuedConnection
 //   IambicKeyer::elementStarted          | sidetone dit/dah   | keyer -> sidetone thread  | AutoConnection (Queued)
-//   HalikeyDevice::lineStateChanged      | keyer              | HaliKey worker -> main    | DirectConnection
-//                                        |  setPaddleState    |                           |
-//                                        | + V1.4 pedal demux:|                           |
-//                                        |  CW -> dit lever   |                           |
+//   HalikeyDevice::lineStateChanged      | keyer              | HaliKey worker -> same    | DirectConnection
+//                                        |  setPaddleState    |  (runs ON the worker)     |
+//   HalikeyDevice::lineStateChanged      | V1.4 pedal demux:  | HaliKey worker -> main    | QueuedConnection
+//                                        |  CW -> dit lever   |                           | (invariant 8)
 //                                        |  voice -> ptt      |                           |
 //   HalikeyDevice::disconnected          | stop keyer         | main -> main              | AutoConnection
 //   ConnectionController::radioReady     | keyer setEnabled t | main -> keyer thread      | invokeMethod queued
@@ -134,15 +134,21 @@ class KpodPlusDevice;
 //
 // Threading invariants (preserve verbatim)
 // ----------------------------------------
-//   1. HaliKey paddle handlers MUST stay DirectConnection on the HaliKey
-//      worker thread. Anything else adds latency to CW keying.
+//   1. The HaliKey LEVER handler MUST stay DirectConnection on the HaliKey
+//      worker thread. Anything else adds latency to CW keying. The pedal
+//      demux is a second connection on the same signal and is NOT covered
+//      by this rule — see invariant 8.
 //   2. m_cachedMode store happens on the main thread (AutoConnection
 //      from RadioState::modeChanged resolves to Direct); load happens on
 //      the HaliKey worker thread with acquire ordering. m_cachedIsV14
 //      follows the same rule.
 //   3. m_v14PttDestination's CAS-based cleanup must remain so the
 //      mode-change-during-press path doesn't double-release with the
-//      falling-edge path.
+//      falling-edge path. Since invariant 8 put every writer on the main
+//      thread the event loop already serialises them, so the CAS is now
+//      belt-and-braces rather than load-bearing — keep it anyway: it is off
+//      the hot path, and it is what makes a future re-threading fail loudly
+//      instead of silently double-releasing.
 //   4. IambicKeyer signals route to TcpClient on the I/O thread via
 //      QueuedConnection — keyer thread is high-priority, main thread is
 //      bypassed entirely. Order preservation relies on Qt's FIFO event
@@ -155,6 +161,27 @@ class KpodPlusDevice;
 //   7. Destructor MUST run disconnect(this) first per CONVENTIONS Rule 11
 //      to sever signal connections before any cross-thread devices tear
 //      down underneath the connections.
+//   8. The HaliKey PEDAL demux MUST run on the main thread (QueuedConnection
+//      from lineStateChanged). Both writers of m_v14PttDestination — the
+//      pedal edge and RadioState::modeChanged's cleanup — have to share a
+//      thread. They did not: the pedal's rising edge stored its capture on
+//      the worker and emitted pttRequested(true) QUEUED to main, while the
+//      cleanup emitted pttRequested(false) DIRECTLY on main. A mode change
+//      landing in that window delivered false-then-true, spent the capture,
+//      and left the falling edge with nothing to release. PTT stayed on.
+//      Funnelling both through the queue does not fix it: Qt's FIFO
+//      guarantee is per (source thread, dest thread) pair (invariant 4), and
+//      those would be two sources. Main is the only candidate —
+//      HaliKeyV14Worker::monitorLoop() blocks for the life of the
+//      connection, so the worker thread has no event loop to post to.
+//      This costs no pedal-to-TX latency: pttRequested already crossed to
+//      main queued, since MainWindow's receiver lives there.
+//   9. The KPOD+ gate is a TERM of the lever expression, never an early
+//      return, so the lever output stays a pure function of (sample, mode,
+//      transport, gate) and converges on the next edge. It gates levers, KZ
+//      and sidetone only — the KPOD+ owns CW keying, not voice PTT. On a
+//      gate rise, store the gate FIRST and then force both levers off; the
+//      reverse order lets a worker edge land in between and re-set them.
 //
 // What stays in HardwareController
 // --------------------------------
