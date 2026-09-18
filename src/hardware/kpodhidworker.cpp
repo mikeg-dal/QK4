@@ -240,11 +240,7 @@ void KpodHidWorker::onPollTimer() {
 #endif
 
     if (writeResult < 0) {
-        qCWarning(hwKpod) << "hid_write failed; assuming device gone";
-        if (m_pollTimer)
-            m_pollTimer->stop();
-        releaseHandle();
-        emit deviceRemoved();
+        handleLostDevice("hid_write failed");
         emit pollError(QStringLiteral("Failed to write to KPOD"));
         return;
     }
@@ -253,11 +249,7 @@ void KpodHidWorker::onPollTimer() {
     int readResult = hid_read_timeout(m_hidDevice, buffer, sizeof(buffer), 5);
 
     if (readResult < 0) {
-        qCWarning(hwKpod) << "hid_read failed; assuming device gone";
-        if (m_pollTimer)
-            m_pollTimer->stop();
-        releaseHandle();
-        emit deviceRemoved();
+        handleLostDevice("hid_read failed");
         emit pollError(QStringLiteral("Failed to read from KPOD"));
         return;
     }
@@ -301,7 +293,24 @@ void KpodHidWorker::onDeviceArrivedFromHotplug() {
     emit deviceInfoReady(m_info);
 }
 
-void KpodHidWorker::onDeviceRemovedFromHotplug() {
+void KpodHidWorker::handleLostDevice(const char *reason) {
+    // Idempotent, and both halves of that matter.
+    //
+    // IDEMPOTENT because one physical unplug reaches here twice: the 20 ms poll fails first, then up
+    // to 2 s later the presence timer notices the device is gone as well. Two deviceRemoved for one
+    // event is what defeats anything downstream that counts them — the KPOD+ had the same shape and
+    // the same consequence.
+    //
+    // CLEARS m_devicePresent, which is USB-005. The poll-failure path used to stop the timer and
+    // release the handle but leave the flag set, so the presence timer's "!present && now" branch
+    // could never fire again: after a sleep/wake or a hub reset the device stays enumerated, the
+    // knob is dead, and nothing short of physically unplugging it recovers. Clearing the flag lets
+    // the next presence tick re-detect and the lifecycle policy re-open it — if the operator has it
+    // enabled.
+    if (!m_devicePresent && !m_hidDevice) {
+        return;
+    }
+    qCWarning(hwKpod) << "KPOD lost:" << reason;
     m_devicePresent = false;
     if (m_pollTimer && m_pollTimer->isActive())
         m_pollTimer->stop();
@@ -309,6 +318,10 @@ void KpodHidWorker::onDeviceRemovedFromHotplug() {
     m_info = KpodDeviceInfo{};
     emit deviceInfoReady(m_info);
     emit deviceRemoved();
+}
+
+void KpodHidWorker::onDeviceRemovedFromHotplug() {
+    handleLostDevice("removed from the bus");
 }
 
 // =============================================================================

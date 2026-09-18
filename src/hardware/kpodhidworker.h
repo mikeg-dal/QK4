@@ -70,6 +70,14 @@ private slots:
 
 private:
     bool openHandle();
+    /// Report the device lost, once, and leave it recoverable.
+    ///
+    /// Idempotent: one unplug reaches here twice (the 20 ms poll fails, then the 2 s presence timer
+    /// notices), and the second must be silent. Clears m_devicePresent so the presence timer can
+    /// re-detect a device that is still enumerated after a transient — without that, a sleep/wake
+    /// left the knob dead until it was physically unplugged (USB-005).
+    void handleLostDevice(const char *reason);
+
     void releaseHandle();
     KpodDeviceInfo detectDeviceInfo();
 
