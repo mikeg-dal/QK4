@@ -20,6 +20,10 @@ capture_k4_golden.py
 __pycache__/
 *.pyc
 
+# Bench-test logs. A working area, not an archive: `git clean -xdf` wipes this along with the
+# build dirs. Anything that is evidence for a bug belongs attached to its GitHub issue.
+bench-logs/
+
 # Build artifacts
 /build/
 /build-san/
