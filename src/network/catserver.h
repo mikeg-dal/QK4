@@ -62,10 +62,19 @@ private:
         int aiMode = 0;
     };
 
+    // Release PTT if this socket is the one that asserted it. Called when a client disconnects
+    // and when the server stops.
+    void releasePttIfOwner(QTcpSocket *client);
+
     QTcpServer *m_server;
     RadioState *m_radioState;
     TcpClient *m_tcpClient = nullptr;
     QHash<QTcpSocket *, ClientState> m_clients;
+
+    // The client whose TX; asserted PTT, or null. Tracked only so a client that goes away without
+    // sending RX; does not leave the transmitter keyed — any client's RX; still releases,
+    // whoever keyed, because that is the fail-safe direction.
+    QTcpSocket *m_pttOwner = nullptr;
     CatPushBroadcaster *m_broadcaster = nullptr;
     quint16 m_port = 0;
 };

@@ -460,6 +460,84 @@ private slots:
         client.disconnectFromHost();
     }
 
+    // Regression: a CAT client that keyed and then vanished used to leave PTT asserted. Nothing
+    // released it — only an explicit RX; did — so a WSJT-X crash mid-transmission kept the K4
+    // transmitting until the operator pressed Escape.
+    void testPttReleasedWhenKeyingClientDisconnects() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QSignalSpy spy(&server, &CatServer::pttRequested);
+
+        QTcpSocket *client = connectAndKeepOpen(server.port());
+        QVERIFY(client);
+
+        client->write("TX;");
+        client->flush();
+        QTest::qWait(100);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), true);
+
+        // Drop the connection without sending RX;.
+        client->disconnectFromHost();
+        QTest::qWait(200);
+
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(1).at(0).toBool(), false);
+        client->deleteLater();
+    }
+
+    // A client that never keyed must not release someone else's transmission on its way out.
+    void testDisconnectOfNonKeyingClientDoesNotRelease() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QTcpSocket *keyer = connectAndKeepOpen(server.port());
+        QTcpSocket *bystander = connectAndKeepOpen(server.port());
+        QVERIFY(keyer);
+        QVERIFY(bystander);
+
+        keyer->write("TX;");
+        keyer->flush();
+        QTest::qWait(100);
+
+        QSignalSpy spy(&server, &CatServer::pttRequested);
+        bystander->disconnectFromHost();
+        QTest::qWait(200);
+
+        QCOMPARE(spy.count(), 0);
+
+        keyer->disconnectFromHost();
+        QTest::qWait(200);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), false);
+        keyer->deleteLater();
+        bystander->deleteLater();
+    }
+
+    // Disabling the CAT server while a client is transmitting must unkey too.
+    void testStoppingTheServerReleasesPtt() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QTcpSocket *client = connectAndKeepOpen(server.port());
+        QVERIFY(client);
+        client->write("TX;");
+        client->flush();
+        QTest::qWait(100);
+
+        QSignalSpy spy(&server, &CatServer::pttRequested);
+        server.stop();
+        QTest::qWait(100);
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), false);
+        client->deleteLater();
+    }
+
     void testTxToggleCommand() {
         RadioState rs;
         CatServer server(&rs);

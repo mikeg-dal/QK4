@@ -49,6 +49,10 @@ bool CatServer::start(quint16 port) {
 }
 
 void CatServer::stop() {
+    // Unkey before tearing the listener down. Disabling the CAT server while a client is
+    // transmitting used to leave the mic gate open with no client left to close it.
+    releasePttIfOwner(m_pttOwner);
+
     const auto sockets = m_clients.keys();
     for (QTcpSocket *client : sockets) {
         m_broadcaster->removeClient(client);
@@ -120,6 +124,10 @@ void CatServer::onNewConnection() {
         connect(client, &QTcpSocket::disconnected, this, [this, client]() {
             QString address = QString("%1:%2").arg(client->peerAddress().toString()).arg(client->peerPort());
             qCInfo(netCat) << "CAT client disconnected:" << address;
+            // A client that crashes or is killed mid-transmission never sends RX;. Without this
+            // the mic gate stayed open and the K4 kept transmitting until the operator pressed
+            // Escape.
+            releasePttIfOwner(client);
             m_broadcaster->removeClient(client);
             m_clients.remove(client);
             client->deleteLater();
@@ -131,6 +139,15 @@ void CatServer::onNewConnection() {
         qCInfo(netCat) << "CAT client connected:" << address;
         emit clientConnected(address);
     }
+}
+
+void CatServer::releasePttIfOwner(QTcpSocket *client) {
+    if (!client || m_pttOwner != client) {
+        return;
+    }
+    qCInfo(netCat) << "CAT client that asserted PTT is gone - releasing";
+    m_pttOwner = nullptr;
+    emit pttRequested(false);
 }
 
 QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
@@ -320,11 +337,14 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
     if (prefix == "TX") {
         const bool on = (args == "/") ? !m_radioState->isTransmitting() : true;
         qCDebug(netCat) << "   PTT request:" << (on ? "ON" : "OFF");
+        // Remember who keyed so the transmission can be ended if that client vanishes.
+        m_pttOwner = on ? client : nullptr;
         emit pttRequested(on);
         return QByteArray();
     }
     if (prefix == "RX") {
         qCDebug(netCat) << "   PTT request: OFF";
+        m_pttOwner = nullptr;
         emit pttRequested(false);
         return QByteArray();
     }
