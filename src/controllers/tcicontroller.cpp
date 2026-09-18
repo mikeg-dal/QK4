@@ -556,10 +556,59 @@ void TciController::audioLevelsChanged() {
 }
 
 void TciController::setAudioEnabled(bool enabled) {
+    const bool was = m_audioEnabled;
     m_audioEnabled = enabled;
+
+    // TURNING AUDIO OFF UNDER A TRANSMITTING CLIENT HAS TO END THE TRANSMISSION.
+    //
+    // A TCI client keys with Route::StreamedFromHere - the audio stream IS the keying mechanism,
+    // there is no TX; behind it - and the flag just written is what gates that stream, at the
+    // txAudioReceived handler in wireTransmit. So switching audio off starves the transmitter
+    // while leaving the gate asserted and the arbiter still recording TciClient as the holder.
+    // That is the worst of the three states: keyed, no audio reaching the radio, and the
+    // microphone locked out because the source is still Tci.
+    //
+    // FORCED THROUGH RATHER THAN REFUSED, deliberately. The alternative is to decline the setting
+    // change until the client unkeys, which would leave an operator toggling a checkbox with
+    // nothing happening and nothing saying why - and the operator is present while the client is
+    // not. Whoever is at the radio wins, the same principle as the local-takeover rule above.
+    //
+    // Edge-triggered: only a true->false transition can strand a transmission. Re-applying the
+    // same value, which is what construction does, must not touch anyone's transmitter.
+    if (was && !enabled) {
+        releaseClientTransmitter();
+    }
+
     // The bridge lives on the TCI thread; its flag is a plain bool read on that thread only.
     QMetaObject::invokeMethod(
         m_bridge, [bridge = m_bridge, enabled]() { bridge->setEnabled(enabled); }, Qt::QueuedConnection);
+}
+
+void TciController::releaseClientTransmitter() {
+    // Only a TCI client's transmission is ours to end. Owner::None means nobody is transmitting;
+    // any other owner is the operator or a CAT client, and cancelling those from here would be the
+    // takeover defect in reverse.
+    if (!m_transmitController || m_transmitController->owner() != TransmitOwner::Owner::TciClient) {
+        return;
+    }
+
+    // Guarded for the same reason as the client's own key/unkey: release() drives
+    // AudioController::setPttActive, whose pttActiveChanged is emitted synchronously on this
+    // thread. Unguarded, the handler in wireTransmit would read this controller's own release as
+    // the operator taking the transmitter - and would write the TX source DIRECTLY, which is the
+    // ordering bug de6ad9a fixed. The arbiter's apply() already sequences the gate and the source
+    // correctly; it must be left to do it.
+    m_drivingPtt = true;
+    m_transmitController->release(TransmitOwner::Owner::TciClient);
+    m_drivingPtt = false;
+
+    // Tell the roster. Without this the client keeps believing it holds the transmitter until its
+    // own transmit period ends - the same stale-ownership failure the local-unkey seam fixed, just
+    // reached from the settings page instead of the PTT button. releaseLocalPtt broadcasts
+    // trx:false and stops the chrono WITHOUT re-emitting pttRequested, which is what keeps this
+    // from recursing back into the handler above.
+    QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+    emit transmittingChanged(false);
 }
 
 void TciController::sendCwMacro(const QVector<CwMacroSegment> &segments) {
