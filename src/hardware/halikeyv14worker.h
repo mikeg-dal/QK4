@@ -33,6 +33,11 @@ private:
     // Debounce: 2 consecutive reads at ~500us = ~1ms
     static constexpr int DEBOUNCE_COUNT = 2;
 
+    // Linux TIOCMIWAIT branch only: how many times to re-read a bouncing line before emitting the
+    // last read anyway. Bounded so a chattering contact cannot spin the loop; at DEBOUNCE_COUNT=2
+    // that is at most ~4 ms of confirming before the sample goes out regardless.
+    static constexpr int kSettleAttempts = 8;
+
 #ifdef Q_OS_WIN
     // Diagnostic: last-logged raw modem-line states, so readPinState() only logs on a
     // transition rather than every ~1 ms poll. Windows-only (the raw-pin trace lives in

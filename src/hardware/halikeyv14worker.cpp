@@ -289,33 +289,55 @@ void HaliKeyV14Worker::monitorLoop() {
         if (!m_running)
             break;
 
-        // Read new state
+        // Read until the lines settle, rather than going back to TIOCMIWAIT when they disagree.
+        //
+        // WHY: TIOCMIWAIT snapshots the kernel's interrupt counters when it is ENTERED, so any
+        // change arriving before re-entry is never reported. Giving up on an unstable pair and
+        // waiting again therefore threw away the settled state: a squeeze release whose second
+        // lever drops a millisecond later (which is what the recommended 1 ms FTDI latency timer
+        // produces) left both levers reading down with no further edge to correct them, and the
+        // keyer sent dit-dah forever. The macOS and Windows branches cannot hit this because they
+        // poll — every tick re-reads. This loop now re-reads too.
         bool ditState = false, dahState = false, pttState = false;
-        if (!readPinState(ditState, dahState, pttState)) {
-            if (!m_running)
-                break;
-            QString error = "Failed to read pin state";
-            qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
-            emit errorOccurred(error);
-            return;
-        }
+        bool settled = false;
+        for (int attempt = 0; attempt < kSettleAttempts && m_running; ++attempt) {
+            if (!readPinState(ditState, dahState, pttState)) {
+                if (!m_running)
+                    break;
+                QString error = "Failed to read pin state";
+                qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
+                emit errorOccurred(error);
+                return;
+            }
 
-        // Confirm state is stable (matches macOS/Windows debounce)
-        bool stable = true;
-        for (int i = 1; i < DEBOUNCE_COUNT && m_running; ++i) {
-            usleep(500);
-            bool d = false, h = false, p = false;
-            if (!readPinState(d, h, p)) {
-                stable = false;
-                break;
+            // Confirm across DEBOUNCE_COUNT reads ≥500 µs apart — the only contact-bounce defense
+            // on this path, unchanged in substance from the original count-based filter.
+            bool stable = true;
+            for (int i = 1; i < DEBOUNCE_COUNT && m_running; ++i) {
+                usleep(500);
+                bool d = false, h = false, p = false;
+                if (!readPinState(d, h, p)) {
+                    stable = false;
+                    break;
+                }
+                if (d != ditState || h != dahState || p != pttState) {
+                    stable = false;
+                    break;
+                }
             }
-            if (d != ditState || h != dahState || p != pttState) {
-                stable = false;
+            if (stable) {
+                settled = true;
                 break;
             }
         }
-        if (!stable || !m_running)
-            continue;
+        if (!m_running)
+            break;
+        if (!settled) {
+            // Still bouncing after kSettleAttempts. Fall back to the last read rather than
+            // dropping it: an unsettled line is still closer to the truth than a stale one, and
+            // the next edge will correct it.
+            qCDebug(hwHalikey) << "HaliKeyV14Worker: lines did not settle, using last read";
+        }
 
         // One emit for the whole sample. These lines were read together and must stay together:
         // see the lineStateChanged comment in halikeyworkerbase.h.
@@ -326,6 +348,21 @@ void HaliKeyV14Worker::monitorLoop() {
             lastDahState = dahState;
             lastPttState = pttState;
             emit lineStateChanged(ditState, dahState, pttState);
+        }
+
+        // Re-read once more before blocking again, and emit if anything moved while we were
+        // confirming. Without this the change that lands between the confirm read and re-entry
+        // into TIOCMIWAIT is lost for good — the same hole as above, at the other end of the loop.
+        bool reDit = false, reDah = false, rePtt = false;
+        if (m_running && readPinState(reDit, reDah, rePtt)) {
+            if (reDit != lastDitState || reDah != lastDahState || rePtt != lastPttState) {
+                qCDebug(hwHalikey) << "HaliKeyV14Worker: lines moved while confirming, dit:" << reDit
+                                   << " dah:" << reDah << " ptt:" << rePtt;
+                lastDitState = reDit;
+                lastDahState = reDah;
+                lastPttState = rePtt;
+                emit lineStateChanged(reDit, reDah, rePtt);
+            }
         }
     }
 
