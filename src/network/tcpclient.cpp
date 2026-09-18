@@ -11,6 +11,13 @@
 Q_LOGGING_CATEGORY(catTx, "CAT.TX")
 Q_LOGGING_CATEGORY(netTcp, "net.tcp")
 
+// ConnectFailure::Phase mirrors ConnectionState rather than reusing it, so connect_failure.h - and
+// the test that links it alone - stays clear of QSslSocket. These keep the two from drifting.
+static_assert(static_cast<int>(ConnectFailure::Phase::Disconnected) == TcpClient::Disconnected);
+static_assert(static_cast<int>(ConnectFailure::Phase::Connecting) == TcpClient::Connecting);
+static_assert(static_cast<int>(ConnectFailure::Phase::Authenticating) == TcpClient::Authenticating);
+static_assert(static_cast<int>(ConnectFailure::Phase::Connected) == TcpClient::Connected);
+
 TcpClient::TcpClient(QObject *parent)
     : QObject(parent), m_socket(new QSslSocket(this)), m_protocol(new Protocol(this)), m_authTimer(new QTimer(this)),
       m_connectTimer(new QTimer(this)), m_pingTimer(new QTimer(this)), m_retryTimer(new QTimer(this)),
@@ -348,33 +355,30 @@ void TcpClient::onSocketEncrypted() {
     // Note: For TLS/PSK, no additional password auth needed - data flows immediately
 }
 
+// Kind::None is the ordinary case - a clean close, or a timer that lost its race - and says nothing.
+void TcpClient::reportFailure(ConnectFailure::Event event, ConnectFailure::Phase phase,
+                              const QString &socketErrorText) {
+    const ConnectFailure::Result result =
+        ConnectFailure::classify(event, phase, m_authResponseReceived, m_host, m_port, socketErrorText);
+    if (result.kind != ConnectFailure::Kind::None)
+        emit errorOccurred(result.message);
+}
+
 void TcpClient::onSocketDisconnected() {
     qCDebug(netTcp) << "Socket disconnected (was state=" << m_state.load(std::memory_order_acquire)
                     << "authReceived=" << m_authResponseReceived << ")";
     stopPingTimer();
     m_authTimer->stop();
 
-    // WHY this no longer says "authentication failed": the K4 sends no error codes. Nothing means
-    // "wrong password" and nothing means "accepted" — a good password produces ordinary traffic and
-    // a bad one produces silence or a closed socket. So reaching here with nothing received is
-    // equally consistent with a refused password, a blocked port, and a host that was never a K4.
-    //
-    // It used to claim the first of those. With the radio powered off, macOS reports the connect()
-    // failure while Qt emits connected() anyway, so QK4 enters Authenticating, writes the auth hash
-    // into a dead socket, lands here, and told the operator their credentials were wrong — sending
-    // them to re-type a password that was never the problem.
-    //
-    // TCP cannot rescue the distinction either, which is why this is not cleverer: the discriminator
-    // would be whether the connection truly reached ESTABLISHED, and in exactly this failure both
-    // socket signals lie the same way — connected() fires when it has not, and the error arrives as
-    // RemoteHostClosedError, which normally means it had.
-    if (m_state.load(std::memory_order_acquire) == Authenticating && !m_authResponseReceived) {
-        emit errorOccurred(QString("Unable to connect to %1:%2 - it closed the connection without "
-                                   "responding. Check the radio is on, the port is right, and the "
-                                   "password matches.")
-                               .arg(m_host)
-                               .arg(m_port));
-    }
+    // WHY this no longer says "authentication failed" (see connect_failure.h for the full reasoning):
+    // with the radio powered off, macOS reports the connect() failure while Qt emits connected()
+    // anyway, so QK4 enters Authenticating, writes the auth hash into a dead socket and lands here —
+    // indistinguishable from a password the K4 refused. TCP cannot rescue the distinction either:
+    // the discriminator would be whether the connection truly reached ESTABLISHED, and in exactly
+    // this failure both socket signals lie the same way — connected() fires when it has not, and the
+    // error arrives as RemoteHostClosedError, which normally means it had.
+    const auto phase = static_cast<ConnectFailure::Phase>(m_state.load(std::memory_order_acquire));
+    reportFailure(ConnectFailure::Event::SocketClosed, phase);
 
     setState(Disconnected);
 }
@@ -420,31 +424,7 @@ void TcpClient::onSocketError(QAbstractSocket::SocketError error) {
     qCWarning(netTcp) << "Connect attempt failed: phase=" << stateNow << "socketError=" << error << "port=" << m_port
                       << "tls=" << m_useTls << "everAnswered=" << m_authResponseReceived << "detail=" << errorMsg;
 
-    if (stateNow == Authenticating && !m_authResponseReceived) {
-        // Reached only on the unencrypted port, where the password is a hash the radio simply does
-        // not answer if it dislikes it. Nothing here can tell that from a radio that is switched
-        // off, so say what is certain and list the causes instead of picking one.
-        emit errorOccurred(QString("Unable to connect to %1:%2 - it closed the connection without "
-                                   "responding. Check the radio is on, the port is right, and the "
-                                   "password matches.")
-                               .arg(m_host)
-                               .arg(m_port));
-        setState(Disconnected);
-        return;
-    }
-
-    // Still failing a connection attempt, just with a socket reason worth repeating verbatim
-    // ("Connection refused", "Host not found"). Named the same way as the cases above so the status
-    // bar always leads with what went wrong rather than with a bare socket phrase.
-    if (stateNow == Connecting || stateNow == Authenticating) {
-        emit errorOccurred(QString("Unable to connect to %1:%2 - %3").arg(m_host).arg(m_port).arg(errorMsg));
-        setState(Disconnected);
-        return;
-    }
-
-    // An established session dropped. Different situation, different wording: nothing here is about
-    // reaching the radio or about credentials.
-    emit errorOccurred(QString("Connection to %1 lost - %2").arg(m_host, errorMsg));
+    reportFailure(ConnectFailure::Event::SocketError, static_cast<ConnectFailure::Phase>(stateNow), errorMsg);
     setState(Disconnected);
 }
 
@@ -472,10 +452,7 @@ void TcpClient::onConnectTimeout() {
         qCDebug(netTcp) << "Connection timeout - failed to establish" << (m_useTls ? "TLS" : "TCP") << "connection";
         // Verified: with nothing at the address, the socket reports neither connected() nor an
         // error - it simply stays in ConnectingState. This timer is the only thing that speaks.
-        emit errorOccurred(QString("Unable to connect - no response from %1:%2. Check the radio is "
-                                   "powered on and on the network.")
-                               .arg(m_host)
-                               .arg(m_port));
+        reportFailure(ConnectFailure::Event::ConnectTimeout, ConnectFailure::Phase::Connecting);
         m_socket->abort();
         setState(Disconnected);
     }
@@ -488,11 +465,7 @@ void TcpClient::onAuthTimeout() {
         // tell us it refused one - so the message names the port as well.
         qCWarning(netTcp) << "Connect attempt failed: phase=Authenticating, socket still up, no data"
                           << "port=" << m_port << "tls=" << m_useTls;
-        emit errorOccurred(QString("Unable to connect - %1:%2 accepted the connection but sent no "
-                                   "data. Check the password, and that the port matches the mode "
-                                   "(9204 encrypted, 9205 unencrypted).")
-                               .arg(m_host)
-                               .arg(m_port));
+        reportFailure(ConnectFailure::Event::AuthTimeout, ConnectFailure::Phase::Authenticating);
         disconnectFromHost();
     }
 }

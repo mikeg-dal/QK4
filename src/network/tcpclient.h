@@ -7,6 +7,7 @@
 #include <QThread>
 #include <QTimer>
 #include <atomic>
+#include "connect_failure.h"
 #include "protocol.h"
 
 class TcpClient : public QObject {
@@ -70,6 +71,12 @@ signals:
     void errorOccurred(const QString &error);
     void authenticated();
     void latencyChanged(int ms);
+
+private:
+    // Classifies a failed connection attempt and emits errorOccurred() if it amounts to one.
+    // The decision itself lives in connect_failure.h so it can be tested without a socket.
+    void reportFailure(ConnectFailure::Event event, ConnectFailure::Phase phase,
+                       const QString &socketErrorText = QString());
 
 private slots:
     void onSocketConnected();

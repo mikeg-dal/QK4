@@ -446,6 +446,12 @@ target_include_directories(test_kpodplususbworker PRIVATE
 target_link_libraries(test_kpodplususbworker Qt6::Core Qt6::Test ${LIBUSB_LIBRARIES})
 add_test(NAME KpodPlusUsbWorkerTests COMMAND test_kpodplususbworker)
 
+# Connect-failure classification — pure logic, no socket or Qt::Network linkage needed.
+add_executable(test_connectfailure test_connectfailure.cpp)
+target_include_directories(test_connectfailure PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_connectfailure Qt6::Core Qt6::Test)
+add_test(NAME ConnectFailureTests COMMAND test_connectfailure)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
