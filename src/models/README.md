@@ -8,6 +8,7 @@ Radio state model. One `QObject` façade (`RadioState`) over 11 plain-struct sub
 - `radiostate/` — 11 subsystem structs. One `.h` + `.cpp` pair per subsystem. See `radiostate/README.md` for the inventory.
 - `menumodel.{cpp,h}` — K4 MEDF menu tree model. Used by `MenuController`.
 - `macroids.h` — Shared enum for macro identifiers (F1–F12, PF1–PF4).
+- `transmitowner.h` — Header-only transmit arbiter: who owns the transmitter (`Owner`), how the radio was keyed (`Route`), and the `Effects` needed to move between states. Pure logic, no Qt — `test_transmitowner` links it alone. Route is the load-bearing idea: `TX;` keys the K4 expecting its OWN mic input, while streamed packets carry a tunnel header, so recording which mechanism was used is what lets a release be the exact inverse of its engage. Closes the G1 violation in `AUDIT.md`.
 
 ## Pattern C — plain-struct subsystems
 
