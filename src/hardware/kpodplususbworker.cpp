@@ -559,8 +559,15 @@ void KpodPlusUsbWorker::onPresenceTimer() {
     if (!m_devicePresent && now) {
         m_devicePresent = true;
         m_info = probe;
+        // REPORT ONLY. This used to call openDevice() here, and that was USB-002: every enable
+        // check in the app lives in HardwareController, so a worker that opens the device itself
+        // bypasses the operator's "Enable K-Pod" setting entirely. Plugging in a KPOD+ with the box
+        // unchecked opened it, polled it, raised the CW gate and announced that it owned keying.
+        //
+        // Detection is a fact about the world and belongs here. Whether to ACT on it is policy, and
+        // policy has one owner - see hardware/usbdevicelifecycle.h. The hidapi KPOD has always had
+        // this shape; this makes the KPOD+ match it.
         emit deviceInfoReady(m_info);
-        openDevice();
     } else if (m_devicePresent && !now) {
         m_devicePresent = false;
         // Reset cached info before closeDevice() so the façade's m_info
@@ -569,8 +576,10 @@ void KpodPlusUsbWorker::onPresenceTimer() {
         // even after the user pulls the cable.
         m_info = KpodPlusDeviceInfo{};
         emit deviceInfoReady(m_info);
+        // closeDevice() already emits deviceRemoved when this close ended a live session. Emitting
+        // it again here was the second of the two removals every unplug produced, and duplicates
+        // are what defeated the one-shot "expected stop" flag downstream.
         closeDevice();
-        emit deviceRemoved();
     }
 }
 

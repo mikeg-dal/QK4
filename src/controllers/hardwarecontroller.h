@@ -2,6 +2,9 @@
 #define HARDWARECONTROLLER_H
 
 #include <QObject>
+#include <functional>
+
+#include "hardware/usbdevicelifecycle.h"
 #include <QThread>
 
 class KpodDevice;
@@ -71,9 +74,20 @@ private:
     /// settings page can never disagree about what the operator's device is called.
     QString halikeyName() const;
 
-    /// True when the KPOD/KPOD+ stop now being reported was one QK4 asked for, so no notification
-    /// is due. Consumes the flag: a stop is expected once, not forever.
-    bool consumeExpectedKpodStop();
+    /// Apply one lifecycle event to a device and carry out what the policy decides.
+    ///
+    /// This is the ONLY place either device is opened, closed, or reported to the operator. Before
+    /// it, that was spread across two lambdas per device plus the worker's own presence timer, and
+    /// the worker's copy did not know the "Enable K-Pod" setting existed — which is USB-002.
+    void applyKpod(UsbDeviceLifecycle::Event event);
+    void applyKpodPlus(UsbDeviceLifecycle::Event event);
+
+    UsbDeviceLifecycle::State m_kpodState;
+    UsbDeviceLifecycle::State m_kpodPlusState;
+
+    // Pushes the K4's keyer settings to a freshly opened KPOD+. Held rather than captured in a
+    // lambda so the policy can invoke it on whichever event opens the device.
+    std::function<void()> m_applyKpodPlusConfig;
 
 public:
 signals:
@@ -90,7 +104,6 @@ signals:
 private slots:
     void onKpodEncoderRotated(int ticks);
     void onKpodPollError(const QString &error);
-    void onKpodEnabledChanged(bool enabled);
 
 private:
     void onKpodEncoderRotatedWithRocker(int ticks, int rockerPosition);
@@ -103,10 +116,6 @@ private:
     // shutdownDevices() runs once. closeEvent calls it, and so does the destructor for the paths
     // that never reach closeEvent — a fatal error, or a window that was never shown.
     bool m_devicesShutDown = false;
-
-    // Set immediately before a deliberate KPOD/KPOD+ stop, so the resulting deviceDisconnected is
-    // not reported to the operator as a disconnection.
-    bool m_kpodStopExpected = false;
 
     KpodDevice *m_kpodDevice;
 
