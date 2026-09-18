@@ -2,6 +2,7 @@
 #define TCICONTROLLER_H
 
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QVector>
 
@@ -46,6 +47,19 @@ public:
     TciController(AudioController *audioController, ConnectionController *connectionController, RadioState *radioState,
                   MenuController *menuController = nullptr, QObject *parent = nullptr);
     ~TciController();
+
+    // Hand the transmitter back BEFORE the owning objects start being destroyed. Idempotent.
+    //
+    // WHY this cannot wait for the destructor, which is where it used to live: both this controller
+    // and AudioController are MainWindow children, and QObjectPrivate::deleteChildren() destroys
+    // children in CONSTRUCTION order. AudioController is constructed first, so by the time
+    // ~TciController ran, m_audioController was a dangling pointer - and the `if (m_audioController)`
+    // guard could not see it, because the pointer was non-null, just freed. Quitting while
+    // connected segfaulted in AudioController::pttActiveChanged every time.
+    //
+    // MainWindow::closeEvent calls this while everything is still alive, alongside the audio and
+    // sidetone teardown that is there for the same class of reason.
+    void shutdown();
 
     // Both marshal to the TCI thread. start() is idempotent.
     void start(quint16 port, bool loopbackOnly = true);
@@ -111,7 +125,13 @@ private:
     // afterwards if the macro moved it.
     void sendCwMacro(const QVector<CwMacroSegment> &segments);
 
-    AudioController *m_audioController;
+    // Set once the transmitter has been handed back, so closeEvent and the destructor cannot do it
+    // twice.
+    bool m_shutdownDone = false;
+
+    // QPointer, not a raw pointer: the destructor's release path must be able to tell that
+    // AudioController has already gone. See shutdown().
+    QPointer<AudioController> m_audioController;
     ConnectionController *m_connectionController;
     bool m_audioEnabled = true;
     RadioState *m_radioState;

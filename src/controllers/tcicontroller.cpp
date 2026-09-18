@@ -720,6 +720,25 @@ void TciController::publishSnapshot() {
         m_server, [server = m_server, snapshot]() { server->setSnapshot(snapshot); }, Qt::QueuedConnection);
 }
 
+void TciController::shutdown() {
+    if (m_shutdownDone) {
+        return;
+    }
+    m_shutdownDone = true;
+
+    // Nothing to hand back to, which is the normal case when this runs from the destructor after
+    // closeEvent already did the work - or the abnormal one where AudioController is already gone.
+    if (!m_audioController) {
+        return;
+    }
+
+    // Calling AudioController directly is fine: it lives on this thread, and both calls marshal to
+    // the audio thread themselves. setTxSourceAfterPtt, not setTxSource, for the same ordering
+    // reason as the unkey in wireTransmit.
+    m_audioController->setPttActive(false);
+    m_audioController->setTxSourceAfterPtt(AudioController::TxSource::Microphone);
+}
+
 TciController::~TciController() {
     // Rule 11: drop queued signals before partial destruction, then stop producers before consumers.
     disconnect(this);
@@ -738,13 +757,11 @@ TciController::~TciController() {
     // signal. It is also safe to unkey this early precisely BECAUSE disconnect has run - nothing
     // can key again between here and the end of this destructor.
     //
-    // Calling AudioController directly is fine from here: it lives on this thread, and both calls
-    // marshal to the audio thread themselves. setTxSourceAfterPtt, not setTxSource, for the same
-    // ordering reason as the unkey in wireTransmit.
-    if (m_audioController) {
-        m_audioController->setPttActive(false);
-        m_audioController->setTxSourceAfterPtt(AudioController::TxSource::Microphone);
-    }
+    // Releases the transmitter if shutdown() has not already done it. The QPointer is what makes
+    // this safe: on the normal quit path AudioController is destroyed BEFORE this controller, and
+    // the release has to be skipped rather than performed against freed memory. Doing it here as a
+    // raw-pointer call is what segfaulted on every quit-while-connected.
+    shutdown();
 
     if (!m_tciThread) {
         delete m_bridge;

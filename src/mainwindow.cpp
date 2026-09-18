@@ -184,6 +184,12 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     // pw_stream_dequeue_buffer. Stopping the sinks here — while the audio and
     // sidetone thread event loops are still servicing BlockingQueuedConnection
     // — guarantees no live QAudioSink/QAudioSource remains at process exit.
+    // BEFORE the audio teardown below: a TCI client may be holding the transmitter, and handing it
+    // back needs a live AudioController. This used to live in ~TciController, which runs after
+    // AudioController has already been destroyed - see TciController::shutdown().
+    if (m_tciController) {
+        m_tciController->shutdown();
+    }
     if (m_audioController) {
         m_audioController->shutdown();
     }
