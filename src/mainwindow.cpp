@@ -1357,6 +1357,14 @@ void MainWindow::onCatResponse(const QString &response) {
 }
 
 void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
+    // Keep an open Radio Manager honest about which radio is live. It stays open across a
+    // disconnect now, so its Connect/Disconnect button has to follow the connection rather than
+    // the click that started it.
+    if (m_radioManager) {
+        m_radioManager->setConnectedHost(state == TcpClient::Connected ? m_connectionController->currentRadio().host
+                                                                       : QString());
+    }
+
     switch (state) {
     case TcpClient::Disconnected:
         m_statusBarController->showDisconnected();

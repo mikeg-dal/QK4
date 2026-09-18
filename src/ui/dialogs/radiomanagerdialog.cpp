@@ -345,8 +345,12 @@ void RadioManagerDialog::onConnectClicked() {
     if (RadioUtils::isValidHostOrIp(host)) {
         // Check if this is a disconnect request (selected radio is already connected)
         if (!m_connectedHost.isEmpty() && host == m_connectedHost) {
+            // Stay open. Connecting is the end of what you came here to do, so accept() is right
+            // there; disconnecting is almost never the end - you disconnected to go somewhere
+            // else, and closing the dialog made you reopen it to do that. MainWindow clears
+            // m_connectedHost from the real connection state, which flips the button back to
+            // "Connect" on its own.
             emit disconnectRequested();
-            accept();
             return;
         }
 
