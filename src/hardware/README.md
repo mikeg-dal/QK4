@@ -5,8 +5,8 @@ USB / serial / MIDI device wrappers. Owned by `controllers/hardwarecontroller.cp
 ## Files
 
 - `usbdevicelifecycle.h` — Header-only, Qt-free policy shared by the KPOD and KPOD+: given `{present, open, enabled}` and an event (detected / lost / opened / open-failed / enabled / disabled / shutting down), decides whether to open, close, report or notify. **One owner of "should this device be open"** — it used to be decided independently in the worker and in `HardwareController`, which is how a disabled KPOD+ got opened anyway (USB-002). Effects are derived from state EDGES, so the duplicate removals both devices emit per unplug report once. Covered by `test_usbdevicelifecycle`.
-- `kpoddevice.{cpp,h}` — KPOD tuning knob via hidapi. Main-thread (timing not critical). Device detection runs asynchronously at startup via `QTimer::singleShot(0, ...)` so the app window appears immediately; consumers observe `deviceInfoReady()` before reading `isDetected()`.
-- `kpodplusdevice.{cpp,h}` — KPOD+ tuning knob + CW keyer via libusb. Encoder/buttons/rocker polling on the main thread; keyer output read on a dedicated worker thread. Configurable keyer parameters (speed, pitch, iambic mode, paddle orientation, encode mode, stuck timeout) sent to device on change.
+- `kpoddevice.{cpp,h}` — Thin Qt façade over `KpodHidWorker`; owns `m_hidThread` and re-emits the worker's signals. **No `hid_*` call lives here** — see the hidapi section below. Detection runs on the worker thread as soon as it starts, so the window appears immediately; consumers observe `deviceInfoReady()` before reading `isDetected()`.
+- `kpodplusdevice.{cpp,h}` — Façade for the KPOD+ tuning knob + CW keyer. Owns **two** threads: `m_usbThread` (EP01 encoder/buttons/rocker polling and every config command) and `m_ep02Thread` (the keyer reader). Nothing here touches libusb. Configurable keyer parameters (speed, pitch, iambic mode, paddle orientation, encode mode, stuck timeout) are dispatched to the USB worker on change.
 - `halikeydevice.{cpp,h}` — HaliKey CW paddle. Delegates to one of 2 workers (selected by `deviceType`: 0 = V1.4 serial, 1 = MIDI); owns its own `m_workerThread`. Performs same-direction dedupe per line only — each worker is authoritative for its own debounce — then re-emits all three confirmed lines as one `lineStateChanged(dit, dah, ptt)` sample.
 - `halikeyworkerbase.{cpp,h}` — Abstract base for the workers. Defines the single input signal, `lineStateChanged(dit, dah, ptt)`. `prepareShutdown()` is the escape hatch for the Linux variant's blocking ioctl.
 
@@ -22,16 +22,45 @@ USB / serial / MIDI device wrappers. Owned by `controllers/hardwarecontroller.cp
 - `IambicKeyer` on `HardwareController::m_keyerThread` (HighPriority).
 - `SidetoneGenerator` on `HardwareController::m_sidetoneThread`.
 - `HalikeyDevice` has its own `m_workerThread` for platform-worker variants.
-- `KpodDevice` stays on the main thread.
-- `KpodPlusDevice` polls on the main thread; keyer reader runs on `m_ep02Thread`.
+- `KpodDevice` owns `m_hidThread`; all hidapi I/O is on it. On Linux `KpodHidWorker` starts a second thread for the udev hotplug poll.
+- `KpodPlusDevice` owns `m_usbThread` (EP01 + config) and `m_ep02Thread` (keyer reader, HighPriority).
 
-Ten `new QThread` sites across the app; seven are in or adjacent to this directory — five in
+**Neither device polls on the main thread.** Both used to, and the READMEs and header comments said so
+long after they stopped (USB-011); if a comment here claims main-thread USB I/O, it is stale, not a
+rule.
+
+Eleven `new QThread` sites across the app; seven are in or adjacent to this directory — five in
 `hardware/` (`kpoddevice`, `kpodhidworker`, `kpodplusdevice` ×2, `halikeydevice`) and two in
-`hardwarecontroller.cpp` (keyer, sidetone). The remaining three are in `audiocontroller.cpp`,
-`connectioncontroller.cpp`, and `dxclustercontroller.cpp`.
+`hardwarecontroller.cpp` (keyer, sidetone). The remaining four are in `audiocontroller.cpp`,
+`connectioncontroller.cpp`, `dxclustercontroller.cpp` and `tcicontroller.cpp`.
+
+Count them with `rg -c 'new QThread' src --glob '*.cpp'` rather than trusting this line — it has been
+wrong before.
 
 Live thread count is not the same as the site count: `kpodhidworker`'s udev hotplug thread is
 `#ifdef Q_OS_LINUX`, and `dxclustercontroller` creates one thread *per cluster instance*.
+
+## Who decides a device is open
+
+`usbdevicelifecycle.h`, and nothing else. `{present, open, enabled}` plus an event in, effects out;
+`HardwareController` holds one `State` per device and applies what comes back.
+
+The rule the workers must keep: **a worker reports, it does not decide.** `KpodPlusUsbWorker`'s
+presence timer used to call `openDevice()` itself, which is how a KPOD+ with "Enable K-Pod" unchecked
+was opened and polled anyway (USB-002) — every enable check in the app lived in `HardwareController`,
+and that one path went around all of them. Both workers now emit arrival/loss and wait.
+
+Three things that look like one and are not:
+
+| | |
+|---|---|
+| **detected** | enumerated on the bus |
+| **enabled** | the operator's setting |
+| **live** (`State::live()`) | we hold a handle and are polling it |
+
+Only *live* means the device is doing anything. The CW gate follows it (USB-003), and so does the
+Options page — both used to follow *detected*, which reported a KPOD+ as owning CW keying while it sat
+closed and switched off.
 
 ## Keyer flow
 
