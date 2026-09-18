@@ -1,5 +1,11 @@
 #include "cwcontroller.h"
 
+#include <QLoggingCategory>
+
+// Defined in hardware/iambickeyer.cpp. The gate below belongs with the keyer trace, not in a
+// category of its own — a reader following CW needs both in one stream.
+Q_DECLARE_LOGGING_CATEGORY(cwKeyer)
+
 #include "audio/sidetonegenerator.h"
 #include "connectioncontroller.h"
 #include "hardware/halikeydevice.h"
@@ -268,6 +274,13 @@ CwController::~CwController() {
 }
 
 void CwController::setKpodPlusGate(bool active) {
+    // The single most useful line in a CW bench log: it says who is generating the elements. While
+    // the gate is up QK4's own keyer still runs but its KZ output and sidetone are suppressed, so a
+    // log without this cannot distinguish "the KPOD+ is keying correctly" from "both are keying and
+    // one of them is inaudible".
+    qCInfo(cwKeyer) << "KPOD+ keyer gate"
+                    << (active ? "UP - the KPOD+ owns CW; local KZ and sidetone suppressed"
+                               : "DOWN - QK4's own keyer owns CW again");
     // Order is load-bearing. The release store has to be visible to the HaliKey worker's acquire
     // load BEFORE the levers are forced down, or an edge landing between the two lines recomputes
     // them with the gate still clear and sets them straight back.

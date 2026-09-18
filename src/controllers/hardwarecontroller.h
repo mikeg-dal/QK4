@@ -66,6 +66,16 @@ public:
     /// everything it touches is still alive.
     void shutdownDevices();
 
+private:
+    /// "HaliKey V1.4" or "HaliKey MIDI", matching the Options dropdown, so a notification and the
+    /// settings page can never disagree about what the operator's device is called.
+    QString halikeyName() const;
+
+    /// True when the KPOD/KPOD+ stop now being reported was one QK4 asked for, so no notification
+    /// is due. Consumes the flag: a stop is expected once, not forever.
+    bool consumeExpectedKpodStop();
+
+public:
 signals:
     // KPOD button press → MainWindow dispatches macro
     void macroRequested(const QString &functionId);
@@ -93,6 +103,10 @@ private:
     // shutdownDevices() runs once. closeEvent calls it, and so does the destructor for the paths
     // that never reach closeEvent — a fatal error, or a window that was never shown.
     bool m_devicesShutDown = false;
+
+    // Set immediately before a deliberate KPOD/KPOD+ stop, so the resulting deviceDisconnected is
+    // not reported to the operator as a disconnection.
+    bool m_kpodStopExpected = false;
 
     KpodDevice *m_kpodDevice;
 

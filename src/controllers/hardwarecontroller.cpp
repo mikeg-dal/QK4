@@ -183,11 +183,70 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     // connect/disconnect — lives on CwController (constructed by MainWindow
     // immediately after this controller). See cwcontroller.h.
 
-    // Surface HaliKey port-open failures to the user via NotificationWidget. Without
-    // this connect, openPort() failures (nonexistent serial port, busy MIDI device,
-    // permission denied) were silently swallowed.
-    connect(m_halikeyDevice, &HalikeyDevice::connectionError, this,
-            [this](const QString &error) { emit hardwareError(QStringLiteral("HaliKey: %1").arg(error)); });
+    // =========================================================================
+    // Device notifications — one policy for all four devices
+    // =========================================================================
+    // Only the HaliKey used to reach NotificationWidget. The KPOD and KPOD+ announced their arrival
+    // and departure to a label on the Options page and nowhere else, so a KPOD+ that vanished
+    // mid-session said nothing at all — despite taking the whole CW chain with it, because it owns
+    // keying while attached and QK4's keyer is gated off behind it.
+    //
+    // Each message names the device the operator recognises, and says what STOPPED WORKING rather
+    // than what failed internally. "KPOD+ disconnected" is not actionable on its own; "CW keying
+    // has returned to QK4's keyer" tells them why the paddle now feels different.
+    //
+    // WHY pollError is NOT wired to a popup: it comes from a polling loop and can repeat at the
+    // poll rate. A popup per failed poll would bury the screen. It stays a log line, now naming
+    // which device produced it.
+
+    // connectionError only, NOT disconnected. An unplug raises both - the worker's error handler
+    // calls closePort(), which emits disconnected(), and then emits connectionError - so wiring
+    // both would pop two notifications for one event. disconnected() also fires on a deliberate
+    // close (changing the port, or quitting), which deserves no notification at all.
+    connect(m_halikeyDevice, &HalikeyDevice::connectionError, this, [this](const QString &error) {
+        emit hardwareError(QStringLiteral("%1: %2 — paddle keying has stopped.").arg(halikeyName(), error));
+    });
+
+    connect(m_kpodDevice, &KpodDevice::deviceDisconnected, this, [this]() {
+        if (consumeExpectedKpodStop())
+            return;
+        emit hardwareError(QStringLiteral("KPOD disconnected — the tuning knob and its buttons have stopped."));
+    });
+
+    // The KPOD+ gets both edges, and it is the one device where that is clearly worth it: plugging
+    // it in silently transfers CW keying away from QK4's keyer, and unplugging it transfers it
+    // back. An operator who does not know which keyer is generating their CW cannot debug anything
+    // about it.
+    connect(m_kpodPlusDevice, &KpodPlusDevice::deviceConnected, this,
+            [this]() { emit hardwareError(QStringLiteral("KPOD+ connected — it now owns CW keying.")); });
+    connect(m_kpodPlusDevice, &KpodPlusDevice::deviceDisconnected, this, [this]() {
+        if (consumeExpectedKpodStop())
+            return;
+        emit hardwareError(QStringLiteral("KPOD+ disconnected — CW keying has returned to QK4's keyer."));
+    });
+}
+
+bool HardwareController::consumeExpectedKpodStop() {
+    // deviceDisconnected does not distinguish "the operator pulled the cable" from "we called
+    // stopPolling()" - KpodPlusUsbWorker::closeDevice() emits deviceRemoved either way, and the
+    // signal has to keep firing on a deliberate stop because the Options page's status row follows
+    // it. So the DELIBERATE stops mark themselves here, and the notification is the default.
+    //
+    // Failing this way round is the safe one: a missed flag costs a popup the operator did not
+    // need, while suppressing by default would hide a cable that actually fell out.
+    if (m_devicesShutDown)
+        return true; // quitting; nothing to tell anyone
+    const bool expected = m_kpodStopExpected;
+    m_kpodStopExpected = false;
+    return expected;
+}
+
+QString HardwareController::halikeyName() const {
+    // RadioSettings is the only place that knows which transport is configured; HalikeyDevice is
+    // constructed from the same value. Named for the operator, matching the Options dropdown, so a
+    // notification and the settings page cannot disagree about what the device is called.
+    return RadioSettings::instance()->halikeyDeviceType() == 1 ? QStringLiteral("HaliKey MIDI")
+                                                               : QStringLiteral("HaliKey V1.4");
 }
 
 void HardwareController::shutdownDevices() {
@@ -304,10 +363,16 @@ void HardwareController::onKpodEncoderRotatedWithRocker(int ticks, int rockerPos
 }
 
 void HardwareController::onKpodPollError(const QString &error) {
-    qCWarning(qk4Hardware) << "KPOD error:" << error;
+    // Deliberately a log line and not a notification: this arrives from a polling loop and can
+    // repeat at the poll rate, so a popup per occurrence would bury the screen. The user-visible
+    // signal for "the device is gone" is the deviceDisconnected notification, which fires once.
+    qCWarning(qk4Hardware) << "KPOD/KPOD+ poll error:" << error;
 }
 
 void HardwareController::onKpodEnabledChanged(bool enabled) {
+    if (!enabled)
+        m_kpodStopExpected = true; // the operator turned it off; not a disconnection to report
+
     if (enabled) {
         if (m_kpodDevice->isDetected()) {
             m_kpodDevice->startPolling();
