@@ -195,6 +195,13 @@ signals:
     void pttRequested(bool active);
 
 private:
+    // Fire the up event for a pedal press that was rising-edge-captured, if there is one, and
+    // clear the capture. Shared by every path that ends a press the falling edge will never
+    // reach: a mode change mid-press, and the HaliKey disconnecting mid-press. The CAS is what
+    // makes those mutually exclusive — whichever runs first wins and the rest see V14PttNone, so
+    // PTT is released exactly once (invariant 3).
+    void releaseCapturedPtt();
+
     // True when the KPOD+ device owns the CW path — reads the shared
     // atomic gate on ConnectionController with acquire ordering. While
     // set, all locally-driven KZ output + sidetone playback is suppressed.

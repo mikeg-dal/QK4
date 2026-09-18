@@ -90,15 +90,8 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
         m_cachedMode.store(static_cast<int>(mode), std::memory_order_release);
         // V1.4 mode-transition cleanup: if a paddle/PTT was rising-edge-captured before
         // the transition, fire the matching up event to the OLD destination so neither
-        // the IambicKeyer nor MainWindow gets stuck in a half-pressed state. CAS ensures
-        // the falling-edge handler doesn't also clean up (whichever fires first wins).
-        int dest = m_v14PttDestination.load(std::memory_order_acquire);
-        if (dest != V14PttNone) {
-            if (m_v14PttDestination.compare_exchange_strong(dest, V14PttNone, std::memory_order_acq_rel)) {
-                if (dest == V14PttPtt)
-                    emit pttRequested(false);
-            }
-        }
+        // the IambicKeyer nor MainWindow gets stuck in a half-pressed state.
+        releaseCapturedPtt();
 
         // Release both levers on any mode change. The line handler gates them on CW, so a lever
         // held across the transition would otherwise stay set on the keyer with no further event
@@ -233,17 +226,10 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
                     emit pttRequested(true);
                 }
             } else {
-                // FALLING EDGE: dispatch to whatever destination captured the rising edge. CAS
-                // ensures the mode-change cleanup handler doesn't also fire — only one of
-                // (mode-change, falling-edge) wins, and the other sees V14PttNone. A DitPaddle
-                // destination needs nothing here: setPaddleState above already released the lever.
-                int dest = m_v14PttDestination.load(std::memory_order_acquire);
-                if (dest == V14PttNone)
-                    return;
-                if (m_v14PttDestination.compare_exchange_strong(dest, V14PttNone, std::memory_order_acq_rel)) {
-                    if (dest == V14PttPtt)
-                        emit pttRequested(false);
-                }
+                // FALLING EDGE: dispatch to whatever destination captured the rising edge. A
+                // DitPaddle destination needs nothing here: setPaddleState above already released
+                // the lever.
+                releaseCapturedPtt();
             }
         },
         Qt::DirectConnection);
@@ -261,10 +247,21 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // Stop keyer when HaliKey disconnects (prevents runaway keying
     // if paddle was held when disconnected — Note Off never arrives)
     connect(m_halikey, &HalikeyDevice::disconnected, this, [this]() {
-        // Clear the edge-detect baseline and any captured pedal destination too. A line left high
-        // at unplug would otherwise make the first sample after reconnect look like a transition.
+        // WHY the release comes before the baseline reset: a pedal held at unplug has a captured
+        // destination and no falling edge will ever arrive to spend it. Clearing the capture on its
+        // own — which is all this handler used to do — leaves MainWindow, and therefore the
+        // transmitter, latched in TX with nothing left that can clear it. Pull the USB cable with a
+        // foot on the pedal in SSB and the radio transmits until the operator finds Esc.
+        releaseCapturedPtt();
+
+        // Clear the edge-detect baseline. A line left high at unplug would otherwise make the
+        // first sample after reconnect look like a transition.
         m_lastPttState.store(false, std::memory_order_release);
-        m_v14PttDestination.store(V14PttNone, std::memory_order_release);
+
+        // Both levers down, explicitly: IambicKeyer::stop() is guarded on the keyer not being
+        // Idle, so it leaves m_phys untouched when nothing was being sent, and a lever held at
+        // unplug would still read as down on the next entry into CW.
+        m_keyer->setPaddleState(false, false);
         QMetaObject::invokeMethod(m_keyer, "stop", Qt::QueuedConnection);
     });
 
@@ -298,6 +295,19 @@ CwController::~CwController() {
     // Sever all signal connections before HardwareController tears down the
     // devices these handlers reference. CONVENTIONS Rule 11.
     disconnect(this);
+}
+
+void CwController::releaseCapturedPtt() {
+    // CAS so only one of (falling edge, mode change, HaliKey disconnect) spends a capture: they
+    // can all describe the same press, and a second pttRequested(false) would unkey a transmission
+    // the operator started afterwards by some other means.
+    int dest = m_v14PttDestination.load(std::memory_order_acquire);
+    if (dest == V14PttNone)
+        return;
+    if (m_v14PttDestination.compare_exchange_strong(dest, V14PttNone, std::memory_order_acq_rel)) {
+        if (dest == V14PttPtt)
+            emit pttRequested(false);
+    }
 }
 
 bool CwController::kpodPlusActive() const {
