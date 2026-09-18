@@ -16,6 +16,7 @@ class QThread;
 class RadioState;
 class TciAudioBridge;
 class TciServer;
+class TransmitController;
 
 /**
  * @brief Owns the TCI thread, the TCI server and the audio bridge. Task-level API only.
@@ -45,7 +46,8 @@ public:
     // menuController may be null; without it tune power falls back to the drive level, since the
     // K4 keeps tune power in the menu rather than in a command of its own.
     TciController(AudioController *audioController, ConnectionController *connectionController, RadioState *radioState,
-                  MenuController *menuController = nullptr, QObject *parent = nullptr);
+                  TransmitController *transmitController, MenuController *menuController = nullptr,
+                  QObject *parent = nullptr);
     ~TciController();
 
     // Hand the transmitter back BEFORE the owning objects start being destroyed. Idempotent.
@@ -132,6 +134,10 @@ private:
     // QPointer, not a raw pointer: the destructor's release path must be able to tell that
     // AudioController has already gone. See shutdown().
     QPointer<AudioController> m_audioController;
+    // The owner of "are we transmitting". A client's key/unkey is asked of this rather than written
+    // straight onto the audio gate, so the arbiter knows the gate is open and can close it when the
+    // radio drops TX on its own (INT-002) — which it cannot do for a gate it did not open.
+    QPointer<TransmitController> m_transmitController;
     ConnectionController *m_connectionController;
     bool m_audioEnabled = true;
     RadioState *m_radioState;

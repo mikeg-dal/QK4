@@ -7,6 +7,7 @@
 #include "controllers/audiocontroller.h"
 #include "controllers/connectioncontroller.h"
 #include "controllers/menucontroller.h"
+#include "controllers/transmitcontroller.h"
 #include "network/catframes.h"
 #include "models/radiostate.h"
 #include <cmath>
@@ -183,10 +184,11 @@ constexpr int kAgcGainMax = 8;
 } // namespace
 
 TciController::TciController(AudioController *audioController, ConnectionController *connectionController,
-                             RadioState *radioState, MenuController *menuController, QObject *parent)
-    : QObject(parent), m_audioController(audioController), m_connectionController(connectionController),
-      m_radioState(radioState), m_menuController(menuController), m_server(new TciServer(nullptr)),
-      m_bridge(new TciAudioBridge(m_server, nullptr)) {
+                             RadioState *radioState, TransmitController *transmitController,
+                             MenuController *menuController, QObject *parent)
+    : QObject(parent), m_audioController(audioController), m_transmitController(transmitController),
+      m_connectionController(connectionController), m_radioState(radioState), m_menuController(menuController),
+      m_server(new TciServer(nullptr)), m_bridge(new TciAudioBridge(m_server, nullptr)) {
     m_tciThread = new QThread(this);
     m_tciThread->setObjectName(QStringLiteral("TCI"));
     m_server->moveToThread(m_tciThread);
@@ -281,18 +283,34 @@ void TciController::wireTransmit() {
     //              for afterwards. setTxSourceAfterPtt is queued behind the PTT for that reason.
     if (m_audioController) {
         connect(m_server, &TciServer::pttRequested, this, [this](bool active) {
-            // Guarded: setPttActive emits pttActiveChanged, and the handler below would otherwise
-            // read this controller's own request as the operator taking the transmitter.
+            // Guarded: the arbiter drives AudioController::setPttActive, which emits
+            // pttActiveChanged, and the handler below would otherwise read this controller's own
+            // request as the operator taking the transmitter.
             m_drivingPtt = true;
+            bool transmitting = active;
             if (active) {
-                m_audioController->setTxSource(AudioController::TxSource::Tci);
-                m_audioController->setPttActive(true);
+                // Ask rather than write. The arbiter applies the source and the gate in the order
+                // described above - it carries that ordering rule itself - and, crucially, it then
+                // KNOWS the gate is open. It could not know that while this handler wrote the gate
+                // directly, so a radio-side RX (a fault, a tune timeout, RX at the front panel)
+                // left a TCI client streaming into a radio that had stopped transmitting, and the
+                // arriving audio re-keyed it. The arbiter cannot close a gate it did not open.
+                transmitting = m_transmitController->engage(TransmitOwner::Owner::TciClient,
+                                                            TransmitOwner::Route::StreamedFromHere);
+                if (!transmitting) {
+                    // Refused: the operator holds the transmitter, or there is no radio. The server
+                    // has already taken ownership and told the client it is transmitting, so take
+                    // that back rather than leaving the two disagreeing. releaseLocalPtt is the
+                    // right call because it broadcasts trx:false WITHOUT re-emitting pttRequested,
+                    // which is what stops this recursing. TransmitController logs the refusal and
+                    // who holds it, so this does not log again.
+                    QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+                }
             } else {
-                m_audioController->setPttActive(false);
-                m_audioController->setTxSourceAfterPtt(AudioController::TxSource::Microphone);
+                m_transmitController->release(TransmitOwner::Owner::TciClient);
             }
             m_drivingPtt = false;
-            emit transmittingChanged(active);
+            emit transmittingChanged(transmitting);
         });
 
         // QK4 ITSELF KEYED OR UNKEYED - Esc, the PTT button, the HaliKey PTT line, the side panel,

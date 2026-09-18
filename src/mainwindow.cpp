@@ -418,13 +418,12 @@ void MainWindow::setupCatServer() {
     //
     // Created unconditionally but started only when enabled, so the listener is genuinely
     // runtime-toggleable rather than needing a restart.
-    m_tciController =
-        new TciController(m_audioController, m_connectionController, m_radioState, m_menuController, this);
+    m_tciController = new TciController(m_audioController, m_connectionController, m_radioState, m_transmitController,
+                                        m_menuController, this);
 
-    // The PTT button follows a TCI client keying, exactly as it already follows CatServer above.
-    // Without it the transmitter can be live with the button dark.
-    connect(m_tciController, &TciController::transmittingChanged, this,
-            [this](bool transmitting) { m_bottomMenuBar->setPttActive(transmitting); });
+    // No PTT-indicator wiring here any more. A TCI client now keys through TransmitController like
+    // every other producer, so the indicator already follows it from one place. Writing it here as
+    // well left two writers whose agreement depended on how quickly the K4's TX echo came back.
 
     // The enable/port/audio settings are TciController's own business and it listens to
     // RadioSettings itself - see TciController::wireSettings. Nothing about which port the TCI
