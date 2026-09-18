@@ -11,6 +11,11 @@ class IambicKeyer;
 class SidetoneGenerator;
 class RadioState;
 class ConnectionController;
+class Ctr2MidiDevice;
+class MidiInputRouter;
+namespace MidiMapping {
+struct DeviceMapping;
+}
 
 /**
  * @brief Owns hardware-side workers: KPOD USB knob (main thread), HaliKey CW paddle
@@ -43,6 +48,10 @@ public:
     KpodDevice *kpodDevice() const { return m_kpodDevice; }
     KpodPlusDevice *kpodPlusDevice() const { return m_kpodPlusDevice; }
     HalikeyDevice *halikeyDevice() const { return m_halikeyDevice; }
+    Ctr2MidiDevice *ctr2MidiDevice() const { return m_ctr2MidiDevice; }
+    MidiMapping::DeviceMapping ctr2Mapping() const;
+    void setCtr2Mapping(const MidiMapping::DeviceMapping &mapping);
+    bool connectCtr2(const QString &portName);
 
     // IambicKeyer + SidetoneGenerator accessors — consumed by CwController,
     // which is constructed right after HardwareController and wires the CW
@@ -63,6 +72,8 @@ signals:
     // emitted message with the device name (e.g. "HaliKey: <text>") so the user
     // can tell where it came from.
     void hardwareError(const QString &message);
+    void ctr2KnobActionRequested(const QString &action, int value, bool absolute);
+    void ctr2ButtonActionRequested(const QString &action);
 
 private slots:
     void onKpodEncoderRotated(int ticks);
@@ -84,6 +95,8 @@ private:
 
     // HaliKey CW paddle device
     HalikeyDevice *m_halikeyDevice;
+    Ctr2MidiDevice *m_ctr2MidiDevice = nullptr;
+    MidiInputRouter *m_midiInputRouter = nullptr;
 
     // Iambic keyer state machine (HighPriority thread). Constructed + owned
     // here; CW signal wiring lives on CwController.

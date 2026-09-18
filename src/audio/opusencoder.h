@@ -19,6 +19,7 @@ public:
     ~OpusEncoder();
 
     bool initialize(int sampleRate = 12000, int channels = 1, int bitrate = 24000);
+    bool reset();
 
     // Encode a PCM frame. frameSamples must match pcmData size (frameSamples * sizeof(opus_int16)).
     // Valid values at 12kHz: 240 (20ms), 480 (40ms), 720 (60ms), 1440 (120ms).

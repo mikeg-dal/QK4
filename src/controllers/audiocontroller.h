@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QThread>
+#include <QVector>
 
 class AudioEngine;
 class OpusDecoder;
@@ -39,6 +40,10 @@ public:
     // PTT control — forwards to AudioEngine (runs on the audio thread).
     void setPttActive(bool active);
     bool isPttActive() const;
+    bool isProgramAudioActive() const;
+    void startProgramAudio(const QVector<qint16> &samples, float gain = 0.12f);
+    void setProgramAudioGain(float gain);
+    void stopProgramAudio();
 
     // Volume/mix controls (atomic — safe from any thread)
     void setMainVolume(float vol);
@@ -54,6 +59,13 @@ public:
     void setMicDevice(const QString &deviceId);
     void setOutputDevice(const QString &deviceId);
     void setMicGain(float gain); // 0.0 to 1.0
+
+signals:
+    // Decoded K4 stereo Float32 PCM before playback volume and routing.
+    void receivePcmAvailable(const QByteArray &stereoFloatPcm, qint64 receivedUtcMs);
+    void programAudioStarted(int totalSamples);
+    void programAudioProgress(int emittedSamples, int totalSamples);
+    void programAudioFinished(bool completed);
 
 private slots:
     void onStreamingLatencyChanged(int tier);

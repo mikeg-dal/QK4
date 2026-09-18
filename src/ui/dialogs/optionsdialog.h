@@ -23,6 +23,7 @@ class CwKeyerPage;
 class KpodPage;
 class Kpa1500Page;
 class DxClusterPage;
+class Ctr2Page;
 
 /**
  * @brief Tabbed Options dialog. Left QListWidget drives a QStackedWidget holding the 8 option
@@ -41,6 +42,7 @@ public:
         PageRigControl,
         PageCwKeyer,
         PageKpod,
+        PageCtr2,
         PageKpa1500,
         PageDxCluster,
         PageCount
@@ -79,6 +81,7 @@ private:
     RigControlPage *m_rigControlPage = nullptr;
     CwKeyerPage *m_cwKeyerPage = nullptr;
     KpodPage *m_kpodPage = nullptr;
+    Ctr2Page *m_ctr2Page = nullptr;
     Kpa1500Page *m_kpa1500Page = nullptr;
     DxClusterPage *m_dxClusterPage = nullptr;
 };

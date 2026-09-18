@@ -5,10 +5,15 @@
 #include "hardware/iambickeyer.h"
 #include "hardware/kpoddevice.h"
 #include "hardware/kpodplusdevice.h"
+#include "hardware/ctr2mididevice.h"
+#include "hardware/midiinputrouter.h"
+#include "hardware/midimapping.h"
 #include "models/radiostate.h"
 #include "settings/radiosettings.h"
 #include "utils/radioutils.h"
 #include <QLoggingCategory>
+#include <QJsonDocument>
+#include <QSettings>
 
 Q_LOGGING_CATEGORY(qk4Hardware, "qk4.hardware")
 
@@ -130,6 +135,36 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     connect(RadioSettings::instance(), &RadioSettings::halikeyDeviceTypeChanged, m_halikeyDevice,
             &HalikeyDevice::setDeviceType);
 
+    // Independent CTR2-MIDI input. It does not borrow the HaliKey MIDI port,
+    // so both controllers can remain attached at the same time.
+    m_ctr2MidiDevice = new Ctr2MidiDevice(this);
+    m_midiInputRouter = new MidiInputRouter(this);
+    QSettings ctr2Settings;
+    MidiMapping::DeviceMapping ctr2Map = MidiMapping::ctr2Default();
+    const auto document = QJsonDocument::fromJson(ctr2Settings.value(QStringLiteral("ctr2/mapping")).toByteArray());
+    QString mappingError;
+    if (!document.isObject() || !MidiMapping::fromJson(document.object(), &ctr2Map, &mappingError))
+        ctr2Map = MidiMapping::ctr2Default();
+    m_midiInputRouter->setMapping(QStringLiteral("ctr2-midi"), ctr2Map);
+    connect(m_ctr2MidiDevice, &Ctr2MidiDevice::rawMidiEvent, this, [this](int status, int data1, int data2) {
+        m_midiInputRouter->processEvent(QStringLiteral("ctr2-midi"), status, data1, data2);
+    });
+    connect(m_ctr2MidiDevice, &Ctr2MidiDevice::disconnected, this,
+            [this] { m_midiInputRouter->clearSourceState(QStringLiteral("ctr2-midi")); });
+    connect(m_ctr2MidiDevice, &Ctr2MidiDevice::connectionError, this,
+            [this](const QString &error) { emit hardwareError(QStringLiteral("CTR2: %1").arg(error)); });
+    connect(m_midiInputRouter, &MidiInputRouter::knobActionRequested, this,
+            &HardwareController::ctr2KnobActionRequested);
+    connect(m_midiInputRouter, &MidiInputRouter::buttonActionRequested, this,
+            &HardwareController::ctr2ButtonActionRequested);
+    connect(m_midiInputRouter, &MidiInputRouter::macroRequested, this, [this](const QString &, const QString &command) {
+        if (m_connectionController->isConnected())
+            m_connectionController->sendCAT(command);
+    });
+    const QString savedCtr2 = ctr2Settings.value(QStringLiteral("ctr2/port")).toString();
+    if (!savedCtr2.isEmpty())
+        QTimer::singleShot(0, this, [this, savedCtr2] { connectCtr2(savedCtr2); });
+
     // =========================================================================
     // Sidetone generator (dedicated thread for low-latency audio feedback)
     // MUST be created BEFORE IambicKeyer signal connections that use it
@@ -208,6 +243,8 @@ HardwareController::~HardwareController() {
     if (m_halikeyDevice) {
         m_halikeyDevice->closePort();
     }
+    if (m_ctr2MidiDevice)
+        m_ctr2MidiDevice->closePort();
 
     if (m_keyerThread) {
         QMetaObject::invokeMethod(m_iambicKeyer, "stop", Qt::BlockingQueuedConnection);
@@ -230,6 +267,32 @@ HardwareController::~HardwareController() {
     if (m_kpodDevice) {
         m_kpodDevice->stopPolling();
     }
+}
+
+MidiMapping::DeviceMapping HardwareController::ctr2Mapping() const {
+    return m_midiInputRouter ? m_midiInputRouter->mapping(QStringLiteral("ctr2-midi")) : MidiMapping::ctr2Default();
+}
+
+void HardwareController::setCtr2Mapping(const MidiMapping::DeviceMapping &mapping) {
+    if (!m_midiInputRouter)
+        return;
+    m_midiInputRouter->setMapping(QStringLiteral("ctr2-midi"), mapping);
+    QSettings().setValue(QStringLiteral("ctr2/mapping"),
+                         QJsonDocument(MidiMapping::toJson(mapping)).toJson(QJsonDocument::Compact));
+}
+
+bool HardwareController::connectCtr2(const QString &portName) {
+    if (!m_ctr2MidiDevice)
+        return false;
+    if (portName.isEmpty()) {
+        m_ctr2MidiDevice->closePort();
+        QSettings().remove(QStringLiteral("ctr2/port"));
+        return true;
+    }
+    if (!m_ctr2MidiDevice->openPort(portName))
+        return false;
+    QSettings().setValue(QStringLiteral("ctr2/port"), portName);
+    return true;
 }
 
 // =============================================================================

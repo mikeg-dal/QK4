@@ -261,6 +261,31 @@ target_include_directories(test_kpodplususbworker PRIVATE
 target_link_libraries(test_kpodplususbworker Qt6::Core Qt6::Test ${LIBUSB_LIBRARIES})
 add_test(NAME KpodPlusUsbWorkerTests COMMAND test_kpodplususbworker)
 
+# External digital-mode tools: codec timing, session flow, logbook, and SSTV persistence.
+add_executable(test_digitalmodes test_digitalmodes.cpp
+    ${CMAKE_SOURCE_DIR}/src/ft8/ft8types.cpp
+    ${CMAKE_SOURCE_DIR}/src/ft8/ft8session.cpp
+    ${CMAKE_SOURCE_DIR}/src/ft8/ft8transmitter.cpp
+    ${CMAKE_SOURCE_DIR}/src/ft8/ft8logbook.cpp
+    ${CMAKE_SOURCE_DIR}/src/ft8/wsjtbroadcaster.cpp
+    ${CMAKE_SOURCE_DIR}/src/audio/digitaltxguard.cpp
+    ${CMAKE_SOURCE_DIR}/src/sstv/sstvmoderegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/sstv/sstvencoder.cpp
+    ${CMAKE_SOURCE_DIR}/src/sstv/sstvstorage.cpp
+)
+target_include_directories(test_digitalmodes PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_digitalmodes Qt6::Core Qt6::Gui Qt6::Network Qt6::Test qk4_ft8_codec)
+add_test(NAME DigitalModesTests COMMAND test_digitalmodes)
+
+# CTR2 mapping serialization, factory profiles, button modes, and MIDI routing.
+add_executable(test_midimapping test_midimapping.cpp
+    ${CMAKE_SOURCE_DIR}/src/hardware/midimapping.cpp
+    ${CMAKE_SOURCE_DIR}/src/hardware/midiinputrouter.cpp
+)
+target_include_directories(test_midimapping PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_midimapping Qt6::Core Qt6::Test)
+add_test(NAME MidiMappingTests COMMAND test_midimapping)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

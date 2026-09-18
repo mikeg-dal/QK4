@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(QK4 VERSION 0.7.0 LANGUAGES CXX)
+project(QK4 VERSION 0.7.0 LANGUAGES C CXX)
 
 # Full version string can include prerelease info (e.g., "0.1.0-alpha.123")
 # CI sets this via -DQK4_VERSION_FULL="x.y.z-prerelease"
@@ -17,6 +17,7 @@ set(CMAKE_AUTOUIC ON)
 
 # Core Qt components (GuiPrivate handled separately for cross-platform compatibility)
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Multimedia ShaderTools Gui SerialPort Svg Test)
+add_subdirectory(third_party/ft8_lib)
 
 # GuiPrivate is needed for QRhi access but may not have CMake config on all platforms
 if(APPLE)
@@ -111,6 +112,7 @@ set(SOURCES
     src/controllers/rightsidecontroller.cpp
     src/controllers/memorybuttonscontroller.cpp
     src/controllers/cwcontroller.cpp
+    src/controllers/digitalmodescontroller.cpp
     src/network/tcpclient.cpp
     src/network/protocol.cpp
     src/network/networkmetrics.cpp
@@ -122,9 +124,21 @@ set(SOURCES
     src/network/catpushbroadcaster.cpp
     src/network/k4discovery.cpp
     src/audio/audioengine.cpp
+    src/audio/digitaltxguard.cpp
     src/audio/opusdecoder.cpp
     src/audio/opusencoder.cpp
     src/audio/sidetonegenerator.cpp
+    src/ft8/ft8types.cpp
+    src/ft8/ft8session.cpp
+    src/ft8/ft8receiver.cpp
+    src/ft8/ft8snr.cpp
+    src/ft8/ft8transmitter.cpp
+    src/ft8/ft8logbook.cpp
+    src/ft8/wsjtbroadcaster.cpp
+    src/sstv/sstvmoderegistry.cpp
+    src/sstv/sstvencoder.cpp
+    src/sstv/sstvdecoder.cpp
+    src/sstv/sstvstorage.cpp
     src/dsp/panadapter_rhi.cpp
     src/dsp/minipan_rhi.cpp
     src/dsp/bandplanstrip.cpp
@@ -170,6 +184,7 @@ set(SOURCES
     src/ui/pages/rigcontrolpage.cpp
     src/ui/pages/cwkeyerpage.cpp
     src/ui/pages/kpodpage.cpp
+    src/ui/pages/ctr2page.cpp
     src/ui/pages/kpa1500page.cpp
     src/ui/pages/dxclusterpage.cpp
     src/ui/overlays/dxspotoverlay.cpp
@@ -195,6 +210,7 @@ set(SOURCES
     src/ui/popups/softwarelistpopup.cpp
     src/ui/dialogs/textdecodewindow.cpp
     src/ui/dialogs/macrodialog.cpp
+    src/ui/dialogs/digitalmodewindows.cpp
     src/ui/widgets/notificationwidget.cpp
     src/ui/styling/k4styles.cpp
     src/ui/styling/k4glyphs.cpp
@@ -209,6 +225,9 @@ set(SOURCES
     src/hardware/kpodplusdevice.cpp
     src/hardware/kpodplususbworker.cpp
     src/hardware/halikeydevice.cpp
+    src/hardware/ctr2mididevice.cpp
+    src/hardware/midimapping.cpp
+    src/hardware/midiinputrouter.cpp
     src/hardware/halikeyworkerbase.cpp
     src/hardware/halikeyv14worker.cpp
     src/hardware/halikeymidiworker.cpp
@@ -253,6 +272,7 @@ set(HEADERS
     src/controllers/rightsidecontroller.h
     src/controllers/memorybuttonscontroller.h
     src/controllers/cwcontroller.h
+    src/controllers/digitalmodescontroller.h
     src/network/tcpclient.h
     src/network/protocol.h
     src/network/networkmetrics.h
@@ -266,6 +286,19 @@ set(HEADERS
     src/audio/opusdecoder.h
     src/audio/opusencoder.h
     src/audio/sidetonegenerator.h
+    src/audio/digitaltxguard.h
+    src/ft8/ft8types.h
+    src/ft8/ft8session.h
+    src/ft8/ft8receiver.h
+    src/ft8/ft8snr.h
+    src/ft8/ft8transmitter.h
+    src/ft8/ft8radiomode.h
+    src/ft8/ft8logbook.h
+    src/ft8/wsjtbroadcaster.h
+    src/sstv/sstvmoderegistry.h
+    src/sstv/sstvencoder.h
+    src/sstv/sstvdecoder.h
+    src/sstv/sstvstorage.h
     src/dsp/panadapter_rhi.h
     src/dsp/minipan_rhi.h
     src/settings/radiosettings.h
@@ -305,6 +338,7 @@ set(HEADERS
     src/ui/pages/rigcontrolpage.h
     src/ui/pages/cwkeyerpage.h
     src/ui/pages/kpodpage.h
+    src/ui/pages/ctr2page.h
     src/ui/pages/kpa1500page.h
     src/ui/pages/dxclusterpage.h
     src/ui/overlays/dxspotoverlay.h
@@ -327,6 +361,7 @@ set(HEADERS
     src/ui/popups/softwarelistpopup.h
     src/ui/dialogs/textdecodewindow.h
     src/ui/dialogs/macrodialog.h
+    src/ui/dialogs/digitalmodewindows.h
     src/ui/widgets/notificationwidget.h
     src/ui/styling/k4styles.h
     src/ui/styling/k4constants.h
@@ -341,6 +376,9 @@ set(HEADERS
     src/hardware/kpodplusdevice.h
     src/hardware/kpodplususbworker.h
     src/hardware/halikeydevice.h
+    src/hardware/ctr2mididevice.h
+    src/hardware/midimapping.h
+    src/hardware/midiinputrouter.h
     src/hardware/halikeyworkerbase.h
     src/hardware/halikeyv14worker.h
     src/hardware/halikeymidiworker.h
@@ -409,6 +447,7 @@ foreach(dir ${QT_GUI_INCLUDE_DIRS})
 endforeach()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
+    qk4_ft8_codec
     Qt6::Core
     Qt6::Widgets
     Qt6::Network
@@ -592,4 +631,3 @@ elseif(WIN32)
         DEPENDS ${PROJECT_NAME}
     )
 endif()
-

@@ -31,6 +31,7 @@
 #include "controllers/textdecodecontroller.h"
 #include "controllers/menucontroller.h"
 #include "controllers/dxclustercontroller.h"
+#include "controllers/digitalmodescontroller.h"
 #include "controllers/spectrumcontroller.h"
 #include "controllers/audiocontroller.h"
 #include "controllers/cwcontroller.h"
@@ -88,6 +89,21 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
         closeAllPopups();
         m_popupManager->openSoftwareList();
     });
+    connect(m_macroController, &MacroController::ftxRequested, this, [this] {
+        closeAllPopups();
+        if (m_digitalModesController)
+            m_digitalModesController->showFtx();
+    });
+    connect(m_macroController, &MacroController::sstvRequested, this, [this] {
+        closeAllPopups();
+        if (m_digitalModesController)
+            m_digitalModesController->showSstv();
+    });
+    connect(m_macroController, &MacroController::logbookRequested, this, [this] {
+        closeAllPopups();
+        if (m_digitalModesController)
+            m_digitalModesController->showLogbook();
+    });
     m_antennaCfgController = new AntennaConfigController(m_radioState, m_connectionController, this, this);
     m_textDecodeController = new TextDecodeController(m_radioState, m_connectionController, this, this);
     m_buttonRowDispatcher = new ButtonRowDispatcher(m_radioState, m_connectionController, m_popupManager,
@@ -122,6 +138,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     setupHardwareController();
 
     m_kpa1500UiController = new KPA1500UiController(m_statusBarController, m_rightSidePanel, this);
+
+    m_digitalModesController =
+        new DigitalModesController(m_connectionController, m_audioController, m_radioState, this);
+    connect(m_hardwareController, &HardwareController::ctr2KnobActionRequested, this, &MainWindow::handleCtr2Knob);
+    connect(m_hardwareController, &HardwareController::ctr2ButtonActionRequested, this, &MainWindow::handleCtr2Button);
 
     m_processingDisplayController = new ProcessingDisplayController(m_radioState, m_vfoA, m_vfoB, this);
 
@@ -181,6 +202,9 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     // pw_stream_dequeue_buffer. Stopping the sinks here — while the audio and
     // sidetone thread event loops are still servicing BlockingQueuedConnection
     // — guarantees no live QAudioSink/QAudioSource remains at process exit.
+    if (m_digitalModesController) {
+        m_digitalModesController->shutdown();
+    }
     if (m_audioController) {
         m_audioController->shutdown();
     }
@@ -403,6 +427,93 @@ void MainWindow::setupCatServer() {
     }
 }
 
+void MainWindow::handleCtr2Knob(const QString &action, int value, bool absolute) {
+    if (m_digitalModesController->handleCtr2Knob(action, value, absolute) || action == QStringLiteral("disabled") ||
+        (!absolute && value == 0))
+        return;
+    const auto scaled = [absolute, value](int low, int high, int current, int step) {
+        return absolute ? low + qRound((high - low) * value / 127.0) : qBound(low, current + value * step, high);
+    };
+    if (action == QStringLiteral("main_volume")) {
+        const int next = scaled(0, 100, RadioSettings::instance()->volume(), 1);
+        RadioSettings::instance()->setVolume(next);
+        m_audioController->setMainVolume(next / 100.0f);
+        return;
+    }
+    if (!m_connectionController->isConnected())
+        return;
+    const bool targetB = m_radioState->bSetEnabled();
+    if (action == QStringLiteral("active_vfo_frequency") || action == QStringLiteral("other_vfo_frequency")) {
+        bool tuneB = targetB;
+        if (action == QStringLiteral("other_vfo_frequency"))
+            tuneB = !tuneB;
+        const quint64 current = tuneB ? m_radioState->vfoB() : m_radioState->vfoA();
+        const int step = RadioUtils::tuningStepToHz(tuneB ? m_radioState->tuningStepB() : m_radioState->tuningStep());
+        const qint64 next = qint64(current) + qint64(value) * step;
+        if (next > 0) {
+            const QString command = QStringLiteral("%1%2;")
+                                        .arg(tuneB ? QStringLiteral("FB") : QStringLiteral("FA"))
+                                        .arg(next, 11, 10, QLatin1Char('0'));
+            m_connectionController->sendCAT(command);
+            m_radioState->parseCATCommand(command);
+        }
+    } else if (action == QStringLiteral("rf_power")) {
+        const double current = m_radioState->rfPower();
+        const double next =
+            absolute ? .1 + 109.9 * value / 127.0 : qBound(.1, current + value * (current <= 10 ? .1 : 1.0), 110.0);
+        m_connectionController->sendCAT(next <= 10
+                                            ? QStringLiteral("PC%1L;").arg(qRound(next * 10), 3, 10, QLatin1Char('0'))
+                                            : QStringLiteral("PC%1H;").arg(qRound(next), 3, 10, QLatin1Char('0')));
+    } else if (action == QStringLiteral("cw_speed")) {
+        const int next = scaled(8, 40, qMax(8, m_radioState->keyerSpeed()), 1);
+        m_connectionController->sendCAT(QStringLiteral("KS%1;").arg(next, 3, 10, QLatin1Char('0')));
+    } else if (action == QStringLiteral("filter_bandwidth")) {
+        const int current = targetB ? m_radioState->filterBandwidthB() : m_radioState->filterBandwidth();
+        const int next = scaled(50, 5000, qMax(50, current), 10);
+        m_connectionController->sendCAT(QStringLiteral("BW%1%2;")
+                                            .arg(targetB ? QStringLiteral("$") : QString())
+                                            .arg(next / 10, 4, 10, QLatin1Char('0')));
+    } else if (action == QStringLiteral("rit_xit_frequency")) {
+        const QString command = value > 0 ? QStringLiteral("RU;") : QStringLiteral("RD;");
+        for (int i = 0; i < qMin(qAbs(value), 64); ++i)
+            m_connectionController->sendCAT(command);
+    }
+}
+
+void MainWindow::handleCtr2Button(const QString &action) {
+    if (m_digitalModesController->handleCtr2Button(action) || !m_connectionController->isConnected())
+        return;
+    const bool b = m_radioState->bSetEnabled();
+    QString command;
+    if (action == QStringLiteral("mode_next"))
+        command = b ? QStringLiteral("MD$+;") : QStringLiteral("MD+;");
+    else if (action == QStringLiteral("mode_previous"))
+        command = b ? QStringLiteral("MD$-;") : QStringLiteral("MD-;");
+    else if (action == QStringLiteral("band_up"))
+        command = b ? QStringLiteral("BN$+;") : QStringLiteral("BN+;");
+    else if (action == QStringLiteral("band_down"))
+        command = b ? QStringLiteral("BN$-;") : QStringLiteral("BN-;");
+    else if (action == QStringLiteral("nr_toggle"))
+        command = QStringLiteral("SW62;");
+    else if (action == QStringLiteral("rit_toggle"))
+        command = b ? QStringLiteral("RT$/;") : QStringLiteral("RT/;");
+    else if (action == QStringLiteral("split_toggle"))
+        command = QStringLiteral("FT/;");
+    else if (action == QStringLiteral("tune_step"))
+        command = b ? QStringLiteral("VT$/;") : QStringLiteral("VT/;");
+    else if (action == QStringLiteral("tune"))
+        command = QStringLiteral("SW16;");
+    else if (action == QStringLiteral("main_mute")) {
+        const int current = RadioSettings::instance()->volume();
+        const int next = current > 0 ? 0 : 50;
+        RadioSettings::instance()->setVolume(next);
+        m_audioController->setMainVolume(next / 100.0f);
+        return;
+    }
+    if (!command.isEmpty())
+        m_connectionController->sendCAT(command);
+}
+
 void MainWindow::setupMenuBar() {
     // Standard menu bar order: File, Connect, Tools, View, Help
     // On macOS, Qt automatically creates the app menu with About/Preferences
@@ -432,6 +543,31 @@ void MainWindow::setupMenuBar() {
         m_optionsDialog->activateWindow();
     });
     toolsMenu->addAction(optionsAction);
+
+    toolsMenu->addSeparator();
+    QAction *ftxAction = new QAction(QStringLiteral("&FT8 / FT4…"), this);
+    ftxAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+F")));
+    connect(ftxAction, &QAction::triggered, this, [this] {
+        if (m_digitalModesController)
+            m_digitalModesController->showFtx();
+    });
+    toolsMenu->addAction(ftxAction);
+
+    QAction *sstvAction = new QAction(QStringLiteral("&SSTV…"), this);
+    sstvAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+S")));
+    connect(sstvAction, &QAction::triggered, this, [this] {
+        if (m_digitalModesController)
+            m_digitalModesController->showSstv();
+    });
+    toolsMenu->addAction(sstvAction);
+
+    QAction *logbookAction = new QAction(QStringLiteral("&Logbook…"), this);
+    logbookAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+L")));
+    connect(logbookAction, &QAction::triggered, this, [this] {
+        if (m_digitalModesController)
+            m_digitalModesController->showLogbook();
+    });
+    toolsMenu->addAction(logbookAction);
 
     // Help menu
     QMenu *helpMenu = menuBar()->addMenu("&Help");

@@ -27,6 +27,10 @@ A cross-platform desktop application for remote control of Elecraft K4 radios ov
 - **KPOD / KPOD+ Support** — USB integration with Elecraft KPOD tuning knob and KPOD+ CW keyer
 - **KPA1500 Support** — Optional integration with Elecraft KPA1500 amplifier
 - **CAT Server** — Built-in CAT server (port 9299) for integration with third-party logging and contest software
+- **FT8 / FT4** — Live decode waterfall, standard QSO sequencing, UTC-slot transmission, protected/calibrated transmit audio, automatic contact logging, and WSJT-X UDP broadcast
+- **SSTV** — Automatic receive and image history plus transmission in 22 common modes with optional FSK and CW identification
+- **ADIF Logbook** — Shared contact log for FT8/FT4, SSTV, and manual contacts, with search and ADIF import/export
+- **CTR2-MIDI Support** — Independent MIDI connection with editable knob/button mappings and K4-Control defaults
 - **Self-Contained Releases** — macOS DMG, Windows ZIP, Raspberry Pi tarball, and Linux Flatpak include all dependencies
 
 ## Download
@@ -203,6 +207,18 @@ ctest --test-dir build --output-on-failure
 
 Once connected, the application displays real-time spectrum, audio, and radio state from your K4.
 
+FT8/FT4, SSTV, and the logbook open as independent desktop windows from the
+**Tools** menu. Their shortcuts are **Ctrl+Shift+F**, **Ctrl+Shift+S**, and
+**Ctrl+Shift+L**. They can also be launched from the radio-style **Fn** popup:
+click **FT8/FT4** or right-click it for **SSTV**, and right-click **DXLIST** for
+the logbook. FT8/FT4 temporarily selects DATA-A while its window is open
+and restores the previous mode when it closes. Digital transmissions use the
+existing K4 network-audio connection; SSTV always asks for confirmation before
+keying the radio, and both transmit windows provide an immediate stop control.
+The FT8/FT4 waterfall and decode list share a draggable divider. Station details,
+TX audio calibration, sequencing preferences, and optional WSJT-X-compatible UDP
+broadcasting are available from the FT8/FT4 **Options** window.
+
 ## Architecture
 
 ```
@@ -220,6 +236,8 @@ src/
 ├── mainwindow.cpp        # Main window and UI orchestration
 ├── network/              # TCP client and K4 protocol handling
 ├── audio/                # Opus codec and Qt audio engine
+├── ft8/                  # FT8/FT4 decode, transmit, QSO session, and logbook core
+├── sstv/                 # SSTV mode registry, encoder, decoder, and image storage
 ├── dsp/                  # Panadapter and spectrum widgets
 ├── models/               # Radio state model
 ├── settings/             # QSettings persistence
@@ -242,3 +260,6 @@ General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with this program. If not,
 see <https://www.gnu.org/licenses/>.
+
+The FT8/FT4 codec in `third_party/ft8_lib` is derived from
+[kgoba/ft8_lib](https://github.com/kgoba/ft8_lib) under its included MIT license.

@@ -95,6 +95,9 @@ const QString Macros = "MACROS";
 const QString SwList = "SW_LIST";
 const QString Update = "UPDATE";
 const QString DxList = "DXLIST";
+const QString Log = "LOGBOOK";
+const QString Sstv = "SSTV";
+const QString Ft8 = "FT8_FT4";
 } // namespace MacroIds
 
 #endif // MACROIDS_H

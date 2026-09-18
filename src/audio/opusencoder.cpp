@@ -25,6 +25,12 @@ bool OpusEncoder::initialize(int sampleRate, int channels, int bitrate) {
     return true;
 }
 
+bool OpusEncoder::reset() {
+    if (!m_encoder)
+        return false;
+    return opus_encoder_ctl(m_encoder, OPUS_RESET_STATE) == OPUS_OK;
+}
+
 QByteArray OpusEncoder::encode(const QByteArray &pcmData, int frameSamples) {
     if (!m_encoder) {
         return QByteArray();

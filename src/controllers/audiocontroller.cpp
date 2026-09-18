@@ -9,6 +9,7 @@
 #include "network/tcpclient.h"
 #include "settings/radiosettings.h"
 #include "utils/radioutils.h"
+#include <QDateTime>
 
 Q_LOGGING_CATEGORY(qk4Audio, "qk4.audio")
 
@@ -45,6 +46,7 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
     connect(protocol, &Protocol::audioDataReady, protocol, [this](const QByteArray &payload) {
         QByteArray pcmData = m_opusDecoder->decodeK4Packet(payload);
         if (!pcmData.isEmpty()) {
+            emit receivePcmAvailable(pcmData, QDateTime::currentMSecsSinceEpoch());
             m_audioEngine->enqueueAudio(pcmData);
         }
     });
@@ -60,6 +62,9 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
     // auto-marshals from the audio thread to its own IO thread. AutoConnection
     // resolves to QueuedConnection across the audio→IO boundary (one hop).
     connect(m_audioEngine, &AudioEngine::txPacketReady, m_connectionController->tcpClient(), &TcpClient::sendRaw);
+    connect(m_audioEngine, &AudioEngine::programAudioStarted, this, &AudioController::programAudioStarted);
+    connect(m_audioEngine, &AudioEngine::programAudioProgress, this, &AudioController::programAudioProgress);
+    connect(m_audioEngine, &AudioEngine::programAudioFinished, this, &AudioController::programAudioFinished);
 
     // SL tier changes → update TX frame size
     connect(m_radioState, &RadioState::streamingLatencyChanged, this, &AudioController::onStreamingLatencyChanged);
@@ -148,6 +153,28 @@ void AudioController::setPttActive(bool active) {
 bool AudioController::isPttActive() const {
     // Lock-free atomic read from AudioEngine — safe from any thread.
     return m_audioEngine ? m_audioEngine->isPttActive() : false;
+}
+
+bool AudioController::isProgramAudioActive() const {
+    return m_audioEngine && m_audioEngine->isProgramAudioActive();
+}
+
+void AudioController::startProgramAudio(const QVector<qint16> &samples, float gain) {
+    if (!m_audioEngine || samples.isEmpty())
+        return;
+    QMetaObject::invokeMethod(
+        m_audioEngine, [engine = m_audioEngine, samples, gain] { engine->startProgramAudio(samples, gain); },
+        Qt::QueuedConnection);
+}
+
+void AudioController::setProgramAudioGain(float gain) {
+    if (m_audioEngine)
+        QMetaObject::invokeMethod(m_audioEngine, "setProgramAudioGain", Qt::QueuedConnection, Q_ARG(float, gain));
+}
+
+void AudioController::stopProgramAudio() {
+    if (m_audioEngine)
+        QMetaObject::invokeMethod(m_audioEngine, "stopProgramAudio", Qt::QueuedConnection);
 }
 
 void AudioController::setMainVolume(float vol) {

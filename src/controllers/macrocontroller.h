@@ -44,6 +44,9 @@ signals:
     // the Fn popup. MainWindow listens and opens the read-only Software
     // List popup after closing its own popups.
     void softwareListRequested();
+    void ftxRequested();
+    void sstvRequested();
+    void logbookRequested();
 
 private slots:
     // Connected to PopupManager::macroFunctionTriggered in constructor.

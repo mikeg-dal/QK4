@@ -63,6 +63,12 @@ void MacroController::onFunctionTriggered(const QString &functionId) {
         QMessageBox::information(m_dialogParent, "Coming Soon", "Update check is not yet implemented.");
     } else if (functionId == MacroIds::DxList) {
         QMessageBox::information(m_dialogParent, "Coming Soon", "DX list is not yet implemented.");
+    } else if (functionId == MacroIds::Ft8) {
+        emit ftxRequested();
+    } else if (functionId == MacroIds::Sstv) {
+        emit sstvRequested();
+    } else if (functionId == MacroIds::Log) {
+        emit logbookRequested();
     } else {
         // User-configurable macro — look up + dispatch via executeMacro.
         executeMacro(functionId);

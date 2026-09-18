@@ -105,7 +105,7 @@ FnPopupWidget::FnPopupWidget(QWidget *parent) : K4PopupBase(parent) {
 QSize FnPopupWidget::contentSize() const {
     int cm = K4Styles::Dimensions::PopupContentMargin;
 
-    int width = 7 * ButtonWidth + 6 * ButtonSpacing + 2 * cm;
+    int width = 8 * ButtonWidth + 7 * ButtonSpacing + 2 * cm;
     int height = ButtonHeight + 2 * cm;
     return QSize(width, height);
 }
@@ -132,12 +132,20 @@ void FnPopupWidget::setupButtons() {
                                      {"F7", "F8", MacroIds::FnF7, MacroIds::FnF8},
                                      {"SCRN CAP", "MACROS", MacroIds::ScrnCap, MacroIds::Macros},
                                      {"SW LIST", "UPDATE", MacroIds::SwList, MacroIds::Update},
-                                     {"DXLIST", "", MacroIds::DxList, ""}};
+                                     {"DXLIST", "LOG", MacroIds::DxList, MacroIds::Log},
+                                     {"FT8/FT4", "SSTV", MacroIds::Ft8, MacroIds::Sstv}};
 
     for (int i = 0; i < buttonDefs.size(); ++i) {
         auto btn = new FnMenuButton(buttonDefs[i].primary, buttonDefs[i].alternate, this);
         btn->setPrimaryFunctionId(buttonDefs[i].primaryId);
         btn->setAlternateFunctionId(buttonDefs[i].alternateId);
+        if (buttonDefs[i].primaryId == MacroIds::DxList) {
+            btn->setAccessibleName(QStringLiteral("DXLIST. Right-click for Logbook."));
+            btn->setToolTip(QStringLiteral("Click: DXLIST · Right-click: Logbook"));
+        } else if (buttonDefs[i].primaryId == MacroIds::Ft8) {
+            btn->setAccessibleName(QStringLiteral("FT8 or FT4. Right-click for SSTV."));
+            btn->setToolTip(QStringLiteral("Click: FT8/FT4 · Right-click: SSTV"));
+        }
 
         connect(btn, &FnMenuButton::clicked, this, [this, i]() { onButtonClicked(i); });
         connect(btn, &FnMenuButton::rightClicked, this, [this, i]() { onButtonRightClicked(i); });

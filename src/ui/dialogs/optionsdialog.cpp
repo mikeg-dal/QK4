@@ -6,6 +6,7 @@
 #include "ui/pages/rigcontrolpage.h"
 #include "ui/pages/cwkeyerpage.h"
 #include "ui/pages/kpodpage.h"
+#include "ui/pages/ctr2page.h"
 #include "ui/pages/kpa1500page.h"
 #include "ui/pages/dxclusterpage.h"
 #include "ui/styling/k4constants.h"
@@ -58,6 +59,7 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("Rig Control");
     m_tabList->addItem("HaliKey");
     m_tabList->addItem("K-Pod");
+    m_tabList->addItem("CTR2-MIDI");
     m_tabList->addItem("KPA1500");
     m_tabList->addItem("DX Cluster");
     m_tabList->setCurrentRow(0);
@@ -134,6 +136,10 @@ void OptionsDialog::ensurePageCreated(int index) {
         m_kpodPage = new KpodPage(m_hardwareController->kpodDevice(), m_hardwareController->kpodPlusDevice(), this);
         page = m_kpodPage;
         break;
+    case PageCtr2:
+        m_ctr2Page = new Ctr2Page(m_hardwareController, this);
+        page = m_ctr2Page;
+        break;
     case PageKpa1500:
         m_kpa1500Page = new Kpa1500Page(m_kpa1500Client, this);
         page = m_kpa1500Page;
@@ -179,6 +185,10 @@ void OptionsDialog::refreshPage(int index) {
     case PageKpod:
         if (m_kpodPage)
             m_kpodPage->refresh();
+        break;
+    case PageCtr2:
+        if (m_ctr2Page)
+            m_ctr2Page->refresh();
         break;
     case PageKpa1500:
         if (m_kpa1500Page)

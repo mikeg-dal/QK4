@@ -36,6 +36,10 @@ AudioEngine::AudioEngine(QObject *parent)
     m_micPollTimer->setInterval(10); // Poll every 10ms for low latency
     connect(m_micPollTimer, &QTimer::timeout, this, &AudioEngine::onMicDataReady);
 
+    m_programAudioTimer = new QTimer(this);
+    m_programAudioTimer->setTimerType(Qt::PreciseTimer);
+    connect(m_programAudioTimer, &QTimer::timeout, this, &AudioEngine::sendProgramAudioFrame);
+
     m_feedTimer = new QTimer(this);
     m_feedTimer->setInterval(FEED_INTERVAL_MS);
     connect(m_feedTimer, &QTimer::timeout, this, &AudioEngine::feedAudioDevice);
@@ -88,6 +92,7 @@ bool AudioEngine::start() {
 }
 
 void AudioEngine::stop() {
+    stopProgramAudio();
     // Stop feed timer and clear jitter buffer
     if (m_feedTimer) {
         m_feedTimer->stop();
@@ -577,6 +582,8 @@ void AudioEngine::setEncodeMode(int mode) {
 void AudioEngine::setPttActive(bool active) {
     // Q_INVOKABLE — invoked via QueuedConnection from AudioController on the
     // main thread, so this method body runs on the audio thread.
+    if (active && m_programAudioActive.load(std::memory_order_acquire))
+        return;
     m_pttActive.store(active, std::memory_order_release);
     if (active) {
         m_txSequence = 0; // Restart sequence counter for each transmission
@@ -588,6 +595,81 @@ void AudioEngine::setPttActive(bool active) {
     }
     // PTT release: leave mic open. Next frames will be dropped by the
     // pttActive check at the top of onMicDataReady.
+}
+
+void AudioEngine::startProgramAudio(const QVector<qint16> &samples, float gain) {
+    if (samples.isEmpty()) {
+        emit programAudioFinished(false);
+        return;
+    }
+    if (m_pttActive.load(std::memory_order_acquire) || m_programAudioActive.exchange(true, std::memory_order_acq_rel)) {
+        emit programAudioFinished(false);
+        return;
+    }
+
+    m_programAudio = samples;
+    m_programAudioOffset = 0;
+    m_programAudioGain.store(qBound(0.001f, gain, 0.5f), std::memory_order_release);
+    m_programAudioCurrentGain = m_programAudioGain.load(std::memory_order_acquire);
+    m_txSequence = 0;
+    if (m_opusEncoder && !m_opusEncoder->reset()) {
+        m_programAudio.clear();
+        m_programAudioActive.store(false, std::memory_order_release);
+        emit programAudioFinished(false);
+        return;
+    }
+    const int frameSamples = m_frameSamples.load(std::memory_order_relaxed);
+    m_programAudioTimer->setInterval(qMax(1, qRound(1000.0 * frameSamples / 12000.0)));
+    m_programAudioTimer->start();
+    emit programAudioStarted(m_programAudio.size());
+    sendProgramAudioFrame();
+}
+
+void AudioEngine::stopProgramAudio() {
+    const bool wasActive = m_programAudioActive.exchange(false, std::memory_order_acq_rel);
+    if (m_programAudioTimer)
+        m_programAudioTimer->stop();
+    m_programAudio.clear();
+    m_programAudioOffset = 0;
+    if (wasActive)
+        emit programAudioFinished(false);
+}
+
+void AudioEngine::setProgramAudioGain(float gain) {
+    m_programAudioGain.store(qBound(0.001f, gain, 0.5f), std::memory_order_release);
+}
+
+void AudioEngine::sendProgramAudioFrame() {
+    if (!m_programAudioActive.load(std::memory_order_acquire))
+        return;
+
+    const int frameSamples = m_frameSamples.load(std::memory_order_relaxed);
+    const int remaining = m_programAudio.size() - m_programAudioOffset;
+    if (remaining <= 0) {
+        m_programAudioTimer->stop();
+        m_programAudio.clear();
+        m_programAudioOffset = 0;
+        m_programAudioActive.store(false, std::memory_order_release);
+        emit programAudioFinished(true);
+        return;
+    }
+
+    QVector<qint16> frame(frameSamples, 0);
+    const int count = qMin(frameSamples, remaining);
+    const float targetGain = m_programAudioGain.load(std::memory_order_acquire);
+    const int ramp = qMin(60, count);
+    for (int i = 0; i < count; ++i) {
+        const float gain =
+            i < ramp ? m_programAudioCurrentGain + (targetGain - m_programAudioCurrentGain) * float(i + 1) / ramp
+                     : targetGain;
+        frame[i] = qint16(qRound(m_programAudio[m_programAudioOffset + i] * gain));
+    }
+    m_programAudioCurrentGain = targetGain;
+    const QByteArray bytes(reinterpret_cast<const char *>(frame.constData()),
+                           frame.size() * static_cast<int>(sizeof(qint16)));
+    encodeAndSendFrame(bytes, frameSamples, m_encodeMode.load(std::memory_order_relaxed));
+    m_programAudioOffset += count;
+    emit programAudioProgress(m_programAudioOffset, m_programAudio.size());
 }
 
 void AudioEngine::setMainVolume(float volume) {

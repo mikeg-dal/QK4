@@ -86,6 +86,13 @@ public:
     Q_INVOKABLE void setPttActive(bool active);
     bool isPttActive() const { return m_pttActive.load(std::memory_order_relaxed); }
 
+    // Stream generated 12 kHz mono samples through the existing K4 TX encoder.
+    // This never opens the microphone; callers own the K4 TX/RX CAT lifecycle.
+    Q_INVOKABLE void startProgramAudio(const QVector<qint16> &samples, float gain = 0.12f);
+    Q_INVOKABLE void setProgramAudioGain(float gain);
+    Q_INVOKABLE void stopProgramAudio();
+    bool isProgramAudioActive() const { return m_programAudioActive.load(std::memory_order_acquire); }
+
     // Microphone settings
     Q_INVOKABLE void setMicGain(float gain); // 0.0 to 1.0
     float micGain() const { return m_micGain.load(std::memory_order_relaxed); }
@@ -110,9 +117,13 @@ signals:
     // event loop can no longer stall voice TX packet emission.
     void txPacketReady(const QByteArray &packet);
     void bufferStatus(int queueBytes, int maxBytes, bool prebuffering);
+    void programAudioStarted(int totalSamples);
+    void programAudioProgress(int emittedSamples, int totalSamples);
+    void programAudioFinished(bool completed);
 
 private slots:
     void onMicDataReady();
+    void sendProgramAudioFrame();
     void feedAudioDevice();
     // WHY: when the user leaves a device set to "System Default" (empty id), follow
     // the OS default live instead of caching it for the whole session. QMediaDevices
@@ -194,6 +205,12 @@ private:
     quint8 m_txSequence = 0;              // Audio-thread-only — no atomic needed
     std::atomic<int> m_encodeMode{3};     // EM3 (Opus float) default
     std::atomic<bool> m_pttActive{false}; // TX gate; read on every mic frame
+    std::atomic<bool> m_programAudioActive{false};
+    QVector<qint16> m_programAudio;
+    int m_programAudioOffset = 0;
+    std::atomic<float> m_programAudioGain{0.12f};
+    float m_programAudioCurrentGain = 0.12f;
+    QTimer *m_programAudioTimer = nullptr;
 
     // Microphone frame buffering for Opus encoding
     // Buffer accumulates S16LE samples at 12kHz until we have a complete frame.

@@ -44,6 +44,7 @@ class ModePopupController;
 class HardwareController;
 class CwController;
 class DxClusterController;
+class DigitalModesController;
 class KPA1500UiController;
 class CatServer;
 class OptionsDialog;
@@ -92,6 +93,8 @@ private:
     void setupSpectrumDataRouting();
     void setupHardwareController();
     void setupCatServer();
+    void handleCtr2Knob(const QString &action, int value, bool absolute);
+    void handleCtr2Button(const QString &action);
 
     void updateConnectionState(TcpClient::ConnectionState state);
     // Disconnect-path helper — owners of their own state each implement a
@@ -200,6 +203,9 @@ private:
 
     // DX Cluster controller
     DxClusterController *m_dxClusterController;
+
+    // External FT8/FT4, SSTV, and shared ADIF logbook windows.
+    DigitalModesController *m_digitalModesController = nullptr;
 
     // CAT server for external app integration (WSJT-X, MacLoggerDX, etc.)
     CatServer *m_catServer;
