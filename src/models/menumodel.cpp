@@ -130,6 +130,11 @@ QStringList MenuModel::getCategories() const {
 
 void MenuModel::clear() {
     m_items.clear();
+    // WHY this has to be announced: getMenuItem/getAllItems/filterByName hand out raw MenuItem *
+    // into m_items, and the menu overlay keeps one per row for the lifetime of the overlay. A
+    // silent clear left those rows pointing at freed memory, and the next ME update after a
+    // reconnect dereferenced them.
+    emit modelCleared();
 }
 
 QString MenuModel::urlDecode(const QString &str) {

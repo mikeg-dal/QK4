@@ -145,6 +145,12 @@ MenuOverlayWidget::MenuOverlayWidget(MenuModel *model, QWidget *parent) : QWidge
     setupUi();
 
     connect(m_model, &MenuModel::menuValueChanged, this, &MenuOverlayWidget::onMenuValueChanged);
+
+    // The row widgets hold raw MenuItem * into the model's map. On disconnect MenuController
+    // clears that map, so they have to go with it — otherwise the next ME update after a
+    // reconnect walks m_itemWidgets and dereferences freed memory. Reopening the menu
+    // repopulates from the new items.
+    connect(m_model, &MenuModel::modelCleared, this, &MenuOverlayWidget::clearItemWidgets);
 }
 
 void MenuOverlayWidget::setupUi() {
@@ -334,13 +340,18 @@ void MenuOverlayWidget::onSearchTextChanged(const QString &text) {
     populateItems();
 }
 
-void MenuOverlayWidget::populateItems() {
-    // Clear existing
+void MenuOverlayWidget::clearItemWidgets() {
     for (auto *widget : m_itemWidgets) {
         m_listLayout->removeWidget(widget);
         delete widget;
     }
     m_itemWidgets.clear();
+    m_selectedIndex = 0;
+    m_editMode = false;
+}
+
+void MenuOverlayWidget::populateItems() {
+    clearItemWidgets();
 
     // Add menu items (filtered if search is active)
     QVector<MenuItem *> items =

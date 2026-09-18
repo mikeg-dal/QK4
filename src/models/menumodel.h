@@ -101,6 +101,11 @@ signals:
     void menuItemAdded(int menuId);
     void menuValueChanged(int menuId, int newValue);
 
+    // Every MenuItem this model handed out is about to be destroyed. Anything holding a
+    // MenuItem * — the menu overlay's row widgets do — must drop it on this signal, because the
+    // pointers dangle the moment clear() returns.
+    void modelCleared();
+
 private:
     // Add/update menu items (internal — called from parseMEDF)
     void addMenuItem(const MenuItem &item);

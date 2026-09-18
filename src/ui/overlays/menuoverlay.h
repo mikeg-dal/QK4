@@ -91,6 +91,9 @@ private:
     void setupUi();
     void createSearchPopup();
     void populateItems();
+    // Destroy the row widgets and forget the selection. Called before repopulating, and when the
+    // model clears — each row holds a MenuItem * that the clear has just invalidated.
+    void clearItemWidgets();
     void updateSelection();
     void ensureSelectedVisible();
     void setEditMode(bool editing);

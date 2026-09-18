@@ -12,6 +12,7 @@ private slots:
     void testResolvedNameUpdatesWithSelector();
     void testResolvedNameAllAffectedXvtrIds();
     void testDisplayValueUnitFormatters();
+    void testClearAnnouncesItselfAndEmptiesTheModel();
 };
 
 void TestMenuModel::testResolvedNamePassesThrough() {
@@ -95,6 +96,29 @@ void TestMenuModel::testDisplayValueUnitFormatters() {
     QVERIFY(model.parseME("ME0103.0005;"));
     QCOMPARE(model.getMenuItem(101)->displayValue(), QStringLiteral("OFF"));
     QCOMPARE(model.getMenuItem(103)->displayValue(), QStringLiteral("5"));
+}
+
+// Regression: clear() used to empty the map silently. Consumers hold raw MenuItem * into it —
+// the menu overlay keeps one per row — so a silent clear left them dangling and the next ME
+// update after a reconnect dereferenced freed memory.
+void TestMenuModel::testClearAnnouncesItselfAndEmptiesTheModel() {
+    MenuModel model;
+    QVERIFY(model.parseMEDF("MEDF0007,AGC Hold Time,RX AGC,DEC,1,0,200,0,0,1;"));
+    QVERIFY(model.parseMEDF("MEDF0008,AGC Decay,RX AGC,DEC,1,0,200,0,0,1;"));
+    QCOMPARE(model.getAllItems().size(), 2);
+
+    QSignalSpy cleared(&model, &MenuModel::modelCleared);
+    model.clear();
+
+    QCOMPARE(cleared.count(), 1);
+    QCOMPARE(model.getAllItems().size(), 0);
+    QVERIFY(model.getMenuItem(7) == nullptr);
+
+    // A value update for an item that no longer exists must not resurrect one or emit.
+    QSignalSpy changed(&model, &MenuModel::menuValueChanged);
+    model.parseME("ME0007.0005;");
+    QCOMPARE(changed.count(), 0);
+    QCOMPARE(model.getAllItems().size(), 0);
 }
 
 QTEST_MAIN(TestMenuModel)
