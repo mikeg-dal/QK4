@@ -8,6 +8,16 @@
 #include <QLabel>
 
 RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QDialog(parent), m_currentIndex(-1), m_discovery(nullptr) {
+    // Application-modal. Nothing was set before, so show() left an ordinary window that the main
+    // window buried the moment you clicked anywhere else - and since this dialog now stays open
+    // across a disconnect, that left the operator with an app that does nothing and the one control
+    // that fixes it hidden behind it.
+    //
+    // Modal via show() rather than exec(): exec() nests an event loop, and this dialog is deleted
+    // from its own finished() signal. It does not block the event loop, so the spectrum, audio and
+    // CAT traffic all keep running underneath - only input is held here, which is the point.
+    setModal(true);
+
     setupUi();
     refreshList();
     updateButtonStates();
@@ -351,6 +361,8 @@ void RadioManagerDialog::onConnectClicked() {
             // m_connectedHost from the real connection state, which flips the button back to
             // "Connect" on its own.
             emit disconnectRequested();
+            raise();
+            activateWindow();
             return;
         }
 
