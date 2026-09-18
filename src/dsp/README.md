@@ -11,6 +11,7 @@ GPU-accelerated spectrum + waterfall rendering via Qt RHI (Metal / DX / Vulkan /
 - `spectrumscale.{cpp,h}` — `SpectrumScale::` namespace. The amplitude axis: dBm → chart fraction, S-unit dBm values, and which values earn a label at a given size. Pure arithmetic, no widget dependency, covered by `test_spectrumscale`.
 - `bandplanstrip.{cpp,h}` — `BandPlanStrip::` namespace. Layout of the band-plan strip at the top of the panadapter: mode-segment blocks, out-of-band blocks past the band edge (so the strip always spans the full width), the pinned band tag, sticky mode labels and marker labels that never overlap. Pure arithmetic; `BandPlanOverlay` in `panadapter_rhi.cpp` only paints it. Covered by `test_bandplanstrip`, including a sweep of every region × band × span.
 - `dashgeometry.h` — `DashGeometry::` namespace. Builds the vertices for a dashed vertical overlay line and caps itself at the buffer size `PanadapterConstants::MaxDashFloats` states. Depends on Qt Core only — kept out of `rhi_utils.h` so `test_panadapterdashes` needs no private Qt headers.
+- `audioupsampler.{cpp,h}` — `AudioUpsampler`, a streaming windowed-sinc 4:1 interpolator (12 kHz → 48 kHz) for the TCI receive path. Not used by the renderer; lives here as signal processing. Stopband rejection pinned by `test_audioupsampler`.
 - `rhi_utils.h` — Shared RHI helpers (color LUT size, texture builders).
 - `shaders/` — 4 shader pairs (vert/frag): spectrum, spectrum_fill, waterfall, overlay. Compiled at build time via `qt6_add_shaders()` in `CMakeLists.txt`.
 

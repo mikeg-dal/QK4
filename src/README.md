@@ -7,13 +7,13 @@ QK4 source tree. Qt 6 C++ desktop app for remote control of an Elecraft K4 ham r
 | Directory | Owns |
 |---|---|
 | `audio/` | RX/TX audio pipeline. AudioEngine (QAudio I/O), Opus encode/decode, CW sidetone. |
-| `controllers/` | 26 controllers. Each owns a cohesive UI slice + signal wiring + CAT dispatch. See `docs/controllers.md` for the symptom → controller map. |
+| `controllers/` | 30 controllers. Each owns a cohesive UI slice + signal wiring + CAT dispatch. See `docs/controllers.md` for the symptom → controller map. |
 | `dsp/` | GPU-accelerated spectrum + waterfall (Qt RHI). Shader pipelines. |
 | `hardware/` | USB / serial / MIDI device wrappers (KPOD, KPOD+, HaliKey variants, iambic keyer). |
-| `models/` | `RadioState` façade + 9+ plain-struct subsystems. Single QObject in the model layer. |
-| `network/` | TCP/TLS/PSK transport, K4 binary protocol, CAT server, DX cluster, KPA1500 client, K4 mDNS discovery. |
+| `models/` | `RadioState` façade + 13 plain-struct subsystems. Single QObject in the model layer. |
+| `network/` | TCP/TLS/PSK transport, K4 binary protocol, CAT server, TCI 2.0 server over WebSocket, DX cluster, KPA1500 client, K4 mDNS discovery. |
 | `settings/` | `QSettings`-backed persistence for radio profiles, DX clusters, audio preferences. |
-| `ui/` | 50 widgets / popups / pages / overlays / dialogs, styling infrastructure. |
+| `ui/` | 58 widgets / popups / pages / overlays / dialogs, styling infrastructure. |
 | `utils/` | Shared helpers (frequency/band/span math). Architecture Rule 1 lives here. |
 
 Top-level:
@@ -40,3 +40,4 @@ Non-negotiable rules live in `CONVENTIONS.md` → Architecture Rules. The ones t
 - `docs/controllers.md` — symptom → file map (highest-leverage onboarding doc).
 - `docs/radiostate-catserver-api-contract.md` — frozen public API for CatServer.
 - `docs/k4-protocol-quirks.md` — K4 CAT oddities (`$` suffix, RO/RO$ routing, SL no-echo).
+- `docs/tci-server-design.md` — TCI 2.0 server design; `docs/tci-command-coverage.md` for what is implemented.

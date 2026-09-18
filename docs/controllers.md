@@ -3,7 +3,7 @@
 > **Purpose:** if something is broken in the UI, find the owning controller here first.
 > Each entry maps a user-visible feature → the controller that owns it → the file path.
 
-Last updated: architectural endgame refactor — RightSideController, MemoryButtonsController, CwController added (29 controllers).
+Last updated: TCI server — TciController added (30 controllers).
 
 ---
 
@@ -54,12 +54,14 @@ Last updated: architectural endgame refactor — RightSideController, MemoryButt
 | "CW keying / paddle / sidetone / V1.4 PTT demux wrong" | CwController | `src/controllers/cwcontroller.cpp` |
 | "Spectrum / panadapter / click-tune not working" | SpectrumController | `src/controllers/spectrumcontroller.cpp` |
 | "DX cluster spots not appearing / cluster connect fail" | DxClusterController | `src/controllers/dxclustercontroller.cpp` |
+| "WSJT-X / QLog / RumLogNG over TCI: no connect, no audio, PTT or CW wrong" | TciController | `src/controllers/tcicontroller.cpp` (server: `src/network/tciserver.cpp`) |
+| "TCI Server options tab status or client list wrong" | TciServerPage | `src/ui/pages/tciserverpage.cpp` |
 
 ---
 
 ## What's still in MainWindow (and why)
 
-MainWindow is now ~1,800 LOC. What remains is genuinely MainWindow responsibility:
+MainWindow is now ~1,460 LOC. What remains is genuinely MainWindow responsibility:
 
 - **Widget construction** — `setupUi()` and `setupVfoSection()` build the window layout tree. This is MainWindow's job; controllers observe widgets they don't own.
 - **Setup helpers** — `setupControllers()`, `setupNotificationWidget()`, `setupConnectionWiring()`, `setupRadioStateWiring()`, `setupSpectrumDataRouting()`, `setupHardwareController()`, `setupCatServer()`, `setupMenuBar()`. Construction orchestration.
@@ -71,7 +73,7 @@ MainWindow is now ~1,800 LOC. What remains is genuinely MainWindow responsibilit
 
 ---
 
-## The 29 controllers at a glance
+## The 30 controllers at a glance
 
 Grouped by concern:
 
@@ -82,6 +84,7 @@ Grouped by concern:
 - **HardwareController** — constructs + owns KPOD, KPOD+, HaliKey, IambicKeyer, SidetoneGenerator + their threads; KPOD tuning-knob → CAT; device-config push; signal forwarding
 - **CwController** — CW keying orchestration across the HardwareController-owned devices: IambicKeyer↔CAT/sidetone wiring, the single HaliKey line handler (both levers passed to the keyer as one sample), V1.4 pedal demux, KPOD+ keyer-active gate. Paddle input is gated on CW/CW_R for both levers, and both are released on any mode change. See `cwcontroller.h` for the threading-invariant doc.
 - **DxClusterController** — DX cluster client (multi-instance; spot cache)
+- **TciController** — TCI 2.0 server for external apps: owns the TCI thread, `TciServer` and `TciAudioBridge`; maps client SETs to `CatFrames`, pushes `RadioState` snapshots to the server, routes TCI PTT/TX audio to `AudioController`. See `docs/tci-server-design.md`.
 
 ### Popup-family
 - **PopupManager** — owns 14 popups: band, display, Fn, macro dialog, 3 button rows (Main/Sub/Tx), RX EQ, TX EQ, line in/out, mic input/config, VOX, SSB BW, keying weight, software list. Also wires RX-row button label state observers.

@@ -7,6 +7,7 @@ Tab pages for `OptionsDialog`. Each is a `QWidget` that plugs into the dialog's 
 - `aboutpage` — version, license, credits.
 - `stationpage` — call sign, grid square, operator name, QTH, and the IARU region that drives the panadapter band-plan overlay (plus its show/hide toggle). Persists via settings.
 - `rigcontrolpage` — CAT server config + radio timing.
+- `tciserverpage` — TCI server enable/port, audio on/off, live status and connected-client list. Talks to `TciController`.
 - `audioinputpage` / `audiooutputpage` — device selection + test.
 - `cwkeyerpage` — HaliKey + iambic keyer config.
 - `dxclusterpage` — per-cluster host/port/callsign + auto-connect list.

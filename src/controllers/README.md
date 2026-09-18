@@ -15,7 +15,7 @@ here: two hand-maintained lists drift apart, and this one already had.
 
 ### Core I/O owners
 `ConnectionController`, `AudioController`, `HardwareController`, `SpectrumController`,
-`DxClusterController` — each owns a dedicated thread and a device/network boundary.
+`DxClusterController`, `TciController` — each owns a dedicated thread and a device/network boundary.
 `CwController` orchestrates keying across the HardwareController-owned devices.
 
 ### Popup family
