@@ -481,6 +481,16 @@ target_include_directories(test_opusdecoder PRIVATE ${CMAKE_SOURCE_DIR}/src ${OP
 target_link_libraries(test_opusdecoder Qt6::Core Qt6::Test ${OPUS_LIBRARIES})
 add_test(NAME OpusDecoderTests COMMAND test_opusdecoder)
 
+# Meter scale marks — needs the widget TU, so Qt6::Widgets and the K4Styles header it uses.
+add_executable(test_meterscale
+    test_meterscale.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/txmeterwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+)
+target_include_directories(test_meterscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_meterscale Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+add_test(NAME MeterScaleTests COMMAND test_meterscale)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

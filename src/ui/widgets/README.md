@@ -8,7 +8,7 @@ Top-level app widgets that aren't popups, pages, overlays, dialogs, or styling i
 - `vfowidget`, `vforowwidget` — dual-VFO display (freq + mini-pan per VFO).
 - `frequencydisplaywidget` — numeric frequency renderer (tabular figures, RIT/XIT aware).
 - `filterindicatorwidget` — filter bandwidth indicator on VFO row.
-- `txmeterwidget` — multifunction S / Po / ALC / COMP / SWR / Id meter.
+- `txmeterwidget` — multifunction S / Po / ALC / COMP / SWR / Id meter. Scale marks carry the value they denote alongside their position on the bar (`ScaleMark`), so a mark cannot drift away from the value drawn there; `tests/test_meterscale.cpp` asserts the two agree.
 
 ### Menu bars + panels (5)
 - `bottommenubar` — MENU, Fn, DISPLAY, BAND, PTT.

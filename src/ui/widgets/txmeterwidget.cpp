@@ -239,66 +239,73 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
 
     // === S/Po (S-Meter when RX, Power when TX) - Gradient ===
     {
-        QStringList labels;
+        QList<ScaleMark> marks;
         double displayValue, peakValue;
 
         if (!m_isTransmitting) {
-            // RX mode: show S-meter
-            labels = {"1", "3", "5", "7", "9", "+20", "+40", "+60"};
+            // RX mode: show S-meter.
+            marks = sMeterMarks();
             displayValue = m_sMeterDisplay;
             peakValue = m_sMeterPeak;
         } else if (m_isQrp) {
             // TX mode with K4 QRP: 0-10W scale
-            labels = {"0", "2", "4", "6", "8", "10W"};
+            marks = powerMarks(true);
             displayValue = m_powerDisplay;
             peakValue = m_powerPeak;
         } else {
             // TX mode with K4: 0-110W scale
-            labels = {"0", "22", "44", "66", "88", "110W"};
+            marks = powerMarks(false);
             displayValue = m_powerDisplay;
             peakValue = m_powerPeak;
         }
 
-        drawMeterRow(painter, y, rowHeight, "S/Po", displayValue, peakValue, labels, scaleFont, barStartX, barWidth,
+        drawMeterRow(painter, y, rowHeight, "S/Po", displayValue, peakValue, marks, scaleFont, barStartX, barWidth,
                      barHeight, MeterType::Gradient);
         y += rowHeight + spacing;
     }
 
     // === ALC - Gradient ===
     {
-        QStringList labels = {"", "1", "3", "5", "7"};
-        drawMeterRow(painter, y, rowHeight, "ALC", m_alcDisplay, m_alcPeak, labels, scaleFont, barStartX, barWidth,
+        // The K4 marks ALC 1/3/5/7. Those are not evenly spaced over 0..7 and so cannot sit on
+        // evenly spaced ticks. NOTE: the radio emits ALC 8 on occasion (observed on hardware);
+        // MaxAlcBars stays 7 because that is what the scale is marked to, so 8 renders as full.
+        // Changing the maximum without knowing the radio's true top of scale would be a guess.
+        const QList<ScaleMark> marks = alcMarks();
+        drawMeterRow(painter, y, rowHeight, "ALC", m_alcDisplay, m_alcPeak, marks, scaleFont, barStartX, barWidth,
                      barHeight, MeterType::Gradient);
         y += rowHeight + spacing;
     }
 
     // === COMP - Gradient ===
     {
-        QStringList labels = {"0", "5", "10", "15", "20", "dB"};
-        drawMeterRow(painter, y, rowHeight, "COMP", m_compDisplay, m_compPeak, labels, scaleFont, barStartX, barWidth,
+        const QList<ScaleMark> marks = compMarks();
+        drawMeterRow(painter, y, rowHeight, "COMP", m_compDisplay, m_compPeak, marks, scaleFont, barStartX, barWidth,
                      barHeight, MeterType::Gradient);
         y += rowHeight + spacing;
     }
 
     // === SWR - Gradient ===
     {
-        QStringList labels = {"1", "1.5", "2", "2.5", "3", QString::fromUtf8("\u221E")};
-        drawMeterRow(painter, y, rowHeight, "SWR", m_swrDisplay, m_swrPeak, labels, scaleFont, barStartX, barWidth,
+        // setSwr maps 1.0..3.0 onto the bar, so a mark for SWR s sits at (s - 1) / MaxSwrScale.
+        // The bar clamps at 3, hence "3+" at the right end - the previous infinity symbol occupied
+        // a tick slot of its own, which pushed every numbered mark off its true position.
+        const QList<ScaleMark> marks = swrMarks();
+        drawMeterRow(painter, y, rowHeight, "SWR", m_swrDisplay, m_swrPeak, marks, scaleFont, barStartX, barWidth,
                      barHeight, MeterType::Gradient);
         y += rowHeight + spacing;
     }
 
     // === Id (PA Drain Current) - Red ===
     {
-        QStringList labels = {"0", "5", "10", "15", "20", "25A"};
-        drawMeterRow(painter, y, rowHeight, "Id", m_currentDisplay, m_currentPeak, labels, scaleFont, barStartX,
+        const QList<ScaleMark> marks = currentMarks();
+        drawMeterRow(painter, y, rowHeight, "Id", m_currentDisplay, m_currentPeak, marks, scaleFont, barStartX,
                      barWidth, barHeight, MeterType::Red);
     }
 }
 
 void TxMeterWidget::drawMeterRow(QPainter &painter, int y, int rowHeight, const QString &label, double fillRatio,
-                                 double peakRatio, const QStringList &scaleLabels, const QFont &scaleFont,
-                                 int barStartX, int barWidth, int barHeight, MeterType type) {
+                                 double peakRatio, const QList<ScaleMark> &marks, const QFont &scaleFont, int barStartX,
+                                 int barWidth, int barHeight, MeterType type) {
     // Label box on the left (wider for larger font)
     QRect labelRect(2, y + 2, 36, rowHeight - 4);
     painter.setPen(QColor(K4Styles::Colors::InactiveGray));
@@ -344,32 +351,78 @@ void TxMeterWidget::drawMeterRow(QPainter &painter, int y, int rowHeight, const 
         painter.drawLine(peakX - 1, barY, peakX - 1, barY + barHeight);
     }
 
-    // Scale labels below bar
+    // Scale labels below bar, each at its own position along the bar.
     painter.setFont(scaleFont);
     int scaleY = barY + barHeight + 1;
-    int numLabels = scaleLabels.size();
-    if (numLabels > 0) {
-        for (int i = 0; i < numLabels; i++) {
-            if (scaleLabels[i].isEmpty())
-                continue;
-            // Color +dB labels red (S-meter over S9)
-            if (scaleLabels[i].startsWith('+')) {
-                painter.setPen(QColor(K4Styles::Colors::TxRed));
-            } else {
-                painter.setPen(QColor(K4Styles::Colors::TextGray));
-            }
-            int x = barStartX + (barWidth * i) / (numLabels - 1);
-            // Center the label, but keep last one right-aligned
-            int labelW = 20;
-            int labelX = (i == numLabels - 1) ? x - labelW : x - labelW / 2;
-            painter.drawText(labelX, scaleY, labelW, 8, Qt::AlignCenter, scaleLabels[i]);
+    for (const ScaleMark &mark : marks) {
+        if (mark.text.isEmpty())
+            continue;
+        // Color +dB labels red (S-meter over S9)
+        if (mark.text.startsWith('+')) {
+            painter.setPen(QColor(K4Styles::Colors::TxRed));
+        } else {
+            painter.setPen(QColor(K4Styles::Colors::TextGray));
         }
+        int x = barStartX + static_cast<int>(barWidth * mark.pos);
+        // Center the label, but keep the one at the right end from overhanging the bar.
+        int labelW = 20;
+        int labelX = (mark.pos >= 0.999) ? x - labelW : x - labelW / 2;
+        painter.drawText(labelX, scaleY, labelW, 8, Qt::AlignCenter, mark.text);
     }
 
     // Draw tick marks on the bar
     painter.setPen(QColor(K4Styles::Colors::InactiveGray));
-    for (int i = 0; i < numLabels; i++) {
-        int x = barStartX + (barWidth * i) / (numLabels - 1);
+    for (const ScaleMark &mark : marks) {
+        int x = barStartX + static_cast<int>(barWidth * mark.pos);
         painter.drawLine(x, barY, x, barY + 2);
     }
+}
+
+namespace {
+// ratio = (value - min) / (max - min). Every meter on this widget is affine, including SWR,
+// which simply starts at 1.0 rather than 0.
+QList<TxMeterWidget::ScaleMark> affineMarks(const QList<double> &values, const QStringList &texts, double minValue,
+                                            double maxValue) {
+    QList<TxMeterWidget::ScaleMark> marks;
+    marks.reserve(values.size());
+    const double span = maxValue - minValue;
+    for (int i = 0; i < values.size() && i < texts.size(); i++)
+        marks.append({values[i], span > 0.0 ? (values[i] - minValue) / span : 0.0, texts[i]});
+    return marks;
+}
+} // namespace
+
+QList<TxMeterWidget::ScaleMark> TxMeterWidget::sMeterMarks() {
+    // setSMeter maps S1..S9 to 1..9 and +20/+40/+60 over S9 to 11/13/15, so S1 sits at 1/15 of
+    // the bar - not at the left end, which is where evenly spaced labels used to put it.
+    return affineMarks({1, 3, 5, 7, 9, 11, 13, 15}, {"1", "3", "5", "7", "9", "+20", "+40", "+60"}, 0.0, MaxSMeter);
+}
+
+QList<TxMeterWidget::ScaleMark> TxMeterWidget::powerMarks(bool qrp) {
+    if (qrp)
+        return affineMarks({0, 2, 4, 6, 8, 10}, {"0", "2", "4", "6", "8", "10W"}, 0.0, MaxPowerQRP);
+    return affineMarks({0, 22, 44, 66, 88, 110}, {"0", "22", "44", "66", "88", "110W"}, 0.0, MaxPowerQRO);
+}
+
+QList<TxMeterWidget::ScaleMark> TxMeterWidget::alcMarks() {
+    // The K4 marks ALC 1/3/5/7, which are not evenly spaced over 0..7 and so cannot sit on evenly
+    // spaced ticks. NOTE: the radio emits ALC 8 on occasion (observed on hardware); MaxAlcBars
+    // stays 7 because that is what the scale is marked to, so 8 renders as full. Changing the
+    // maximum without knowing the radio's true top of scale would be a guess.
+    return affineMarks({1, 3, 5, 7}, {"1", "3", "5", "7"}, 0.0, MaxAlcBars);
+}
+
+QList<TxMeterWidget::ScaleMark> TxMeterWidget::compMarks() {
+    return affineMarks({0, 5, 10, 15, 20, 25}, {"0", "5", "10", "15", "20", "25dB"}, 0.0, MaxCompressionDb);
+}
+
+QList<TxMeterWidget::ScaleMark> TxMeterWidget::swrMarks() {
+    // setSwr maps 1.0..3.0 onto the bar. The bar clamps at 3, hence "3+" at the right end - the
+    // previous infinity symbol occupied a tick slot of its own, which pushed every numbered mark
+    // off its true position.
+    return affineMarks({1.0, 1.5, 2.0, 2.5, 3.0}, {"1", "1.5", "2", "2.5", "3+"}, MinSwr, MinSwr + MaxSwrScale);
+}
+
+QList<TxMeterWidget::ScaleMark> TxMeterWidget::currentMarks() {
+    return affineMarks({0, 5, 10, 15, 20, 25}, {"0", "5", "10", "15", "20", "25A"}, 0.0, MaxCurrentAmps);
 }
