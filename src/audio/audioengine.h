@@ -161,16 +161,23 @@ private:
 
     // Encode + packetize one captured S16LE mono frame and emit txPacketReady.
     // Runs on the audio thread, called from onMicDataReady when PTT is active.
-    void encodeAndSendFrame(const QByteArray &s16leMonoFrame, int frameSamples, int encodeMode);
+    void encodeAndSendFrame(const QByteArray &f32MonoFrame, int frameSamples, int encodeMode);
 
     // Report what one TX frame actually put on the wire, under qk4.audio.tx.
     // See the WHY at the call site in encodeAndSendFrame.
-    void logTxFrameDiagnostic(const QByteArray &s16leMonoFrame, const QByteArray &wireData, int frameSamples,
+    void logTxFrameDiagnostic(const QByteArray &f32MonoFrame, const QByteArray &wireData, int frameSamples,
                               int encodeMode) const;
 
     // Frames between qk4.audio.tx reports during a transmission. The first frame of
     // every transmission is always reported; this throttles the rest.
     static constexpr int TX_DIAG_FRAME_INTERVAL = 50;
+
+    // Loudest mic sample since PTT engaged, tracked across EVERY frame while qk4.audio.tx is on.
+    // WHY: reporting only the throttled frames' own peaks made short transmissions unreadable -
+    // a brief over keys, logs frame 0 (still silence, before the operator speaks) and ends before
+    // frame 50, so the log showed a near-zero peak next to a high ALC reading. The running peak
+    // is what a level measurement actually needs. Audio-thread only, like m_txSequence.
+    float m_txPeakSinceKey = 0.0f;
 
     // Apply MX routing + volume + balance to a raw [main, sub] interleaved packet
     void applyMixAndVolume(QByteArray &packet);

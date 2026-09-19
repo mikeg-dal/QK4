@@ -586,22 +586,27 @@ void AudioEngine::onMicDataReady() {
 }
 
 void AudioEngine::bufferAndEmitTxFrames(const QByteArray &pcm12k, float gain) {
-    // Convert Float32 to S16LE, apply gain, and buffer for frame-based emission
+    // Apply mic gain and buffer as Float32 for frame-based emission.
+    //
+    // WHY the buffer stays float. This used to quantise to S16 here, before the wire format was
+    // even chosen, which discarded bits in proportion to the gain: at a 30% mic slider only ~10.8
+    // bits survived, and quiet audio landed on a handful of codes. Undithered error at that depth
+    // correlates with the signal, so it is harmonic distortion, not noise — on the bench it was a
+    // tonal buzz on dead air that disappeared entirely once the gain was raised. Quantising once,
+    // at the wire format, is what encodeAndSendFrame now does.
     const float *floatData = reinterpret_cast<const float *>(pcm12k.constData());
     int floatSamples = pcm12k.size() / sizeof(float);
 
-    // Convert Float32 to S16LE with gain applied (cubic curve already baked into m_micGain)
     for (int i = 0; i < floatSamples; i++) {
-        float sample = qBound(-1.0f, floatData[i] * gain, 1.0f);
-        qint16 s16Sample = static_cast<qint16>(sample * 32767.0f);
-        m_micBuffer.append(reinterpret_cast<const char *>(&s16Sample), sizeof(qint16));
+        const float sample = qBound(-1.0f, floatData[i] * gain, 1.0f);
+        m_micBuffer.append(reinterpret_cast<const char *>(&sample), sizeof(float));
     }
 
     // Emit complete frames (size matches SL tier: 240/480/720/1440 samples).
     // m_micReadOffset advances per emitted frame instead of remove(0, n)'s O(N)
     // memmove on every poll. We compact only when the offset has grown past
     // half the buffer's size — keeps amortized work O(1) per frame.
-    const int frameBytes = m_frameSamples.load(std::memory_order_relaxed) * static_cast<int>(sizeof(qint16));
+    const int frameBytes = m_frameSamples.load(std::memory_order_relaxed) * static_cast<int>(sizeof(float));
     const int frameSamples = m_frameSamples.load(std::memory_order_relaxed);
     const bool pttActive = m_pttActive.load(std::memory_order_acquire);
     const int encodeMode = m_encodeMode.load(std::memory_order_relaxed);
@@ -622,37 +627,35 @@ void AudioEngine::bufferAndEmitTxFrames(const QByteArray &pcm12k, float gain) {
     }
 }
 
-void AudioEngine::encodeAndSendFrame(const QByteArray &s16leMonoFrame, int frameSamples, int encodeMode) {
-    // Runs on the audio thread. Translates the captured S16LE mono frame into
+void AudioEngine::encodeAndSendFrame(const QByteArray &f32MonoFrame, int frameSamples, int encodeMode) {
+    // Runs on the audio thread. Translates the captured Float32 mono frame into
     // the K4 wire format and emits txPacketReady. PR 12 moved this logic out
     // of AudioController::onMicrophoneFrame (which ran on the main thread)
     // so a busy GUI event loop no longer stalls voice TX packet emission.
+    //
+    // Quantisation happens HERE and nowhere earlier, so each mode gets the full depth its wire
+    // format allows: 24 bits for EM0, 16 for EM1, and none at all for the Opus modes.
     QByteArray audioData;
+    const float *samples = reinterpret_cast<const float *>(f32MonoFrame.constData());
+    const int sampleCount = static_cast<int>(f32MonoFrame.size() / sizeof(float));
 
     switch (encodeMode) {
-    case 0: // EM0 — RAW S32LE stereo. See audio/rawaudioformat.h for why it is not float.
-    {
-        const qint16 *samples = reinterpret_cast<const qint16 *>(s16leMonoFrame.constData());
-        const int sampleCount = static_cast<int>(s16leMonoFrame.size() / sizeof(qint16));
+    case 0: // EM0 — RAW S32LE stereo, 24-bit. See audio/rawaudioformat.h.
         audioData.resize(RawAudioFormat::em0BytesFor(sampleCount));
         RawAudioFormat::encodeEm0(samples, sampleCount, reinterpret_cast<unsigned char *>(audioData.data()));
         break;
-    }
 
     case 1: // EM1 — RAW 16-bit S16LE stereo
-    {
-        const qint16 *samples = reinterpret_cast<const qint16 *>(s16leMonoFrame.constData());
-        const int sampleCount = static_cast<int>(s16leMonoFrame.size() / sizeof(qint16));
         audioData.resize(RawAudioFormat::em1BytesFor(sampleCount));
         RawAudioFormat::encodeEm1(samples, sampleCount, reinterpret_cast<unsigned char *>(audioData.data()));
         break;
-    }
 
     case 2: // EM2 — Opus int
     case 3: // EM3 — Opus float
     default:
+        // Opus takes float natively, so these never quantise.
         if (m_opusEncoder)
-            audioData = m_opusEncoder->encode(s16leMonoFrame, frameSamples);
+            audioData = m_opusEncoder->encodeFloat(f32MonoFrame, frameSamples);
         break;
     }
 
@@ -664,20 +667,30 @@ void AudioEngine::encodeAndSendFrame(const QByteArray &s16leMonoFrame, int frame
     // mic. This records what actually left the machine. The per-sample scan is why the
     // category is off by default and why every frame after a transmission's first is
     // throttled; on the RT audio thread this is not free.
-    if (qk4AudioTx().isDebugEnabled() && (m_txSequence == 0 || m_txSequence % TX_DIAG_FRAME_INTERVAL == 0))
-        logTxFrameDiagnostic(s16leMonoFrame, audioData, frameSamples, encodeMode);
+    if (qk4AudioTx().isDebugEnabled()) {
+        // Scan every frame so the running peak is a true maximum, but only emit on the throttle.
+        for (int i = 0; i < sampleCount; i++)
+            m_txPeakSinceKey = qMax(m_txPeakSinceKey, std::fabs(samples[i]));
+
+        if (m_txSequence == 0 || m_txSequence % TX_DIAG_FRAME_INTERVAL == 0)
+            logTxFrameDiagnostic(f32MonoFrame, audioData, frameSamples, encodeMode);
+    }
 
     QByteArray packet = Protocol::buildAudioPacket(audioData, m_txSequence++, encodeMode, frameSamples);
     emit txPacketReady(packet);
 }
 
-void AudioEngine::logTxFrameDiagnostic(const QByteArray &s16leMonoFrame, const QByteArray &wireData, int frameSamples,
+void AudioEngine::logTxFrameDiagnostic(const QByteArray &f32MonoFrame, const QByteArray &wireData, int frameSamples,
                                        int encodeMode) const {
-    const qint16 *in = reinterpret_cast<const qint16 *>(s16leMonoFrame.constData());
-    const int inCount = static_cast<int>(s16leMonoFrame.size() / sizeof(qint16));
-    int micPeak = 0;
+    const float *in = reinterpret_cast<const float *>(f32MonoFrame.constData());
+    const int inCount = static_cast<int>(f32MonoFrame.size() / sizeof(float));
+    float framePeak = 0.0f;
     for (int i = 0; i < inCount; i++)
-        micPeak = qMax(micPeak, qAbs(static_cast<int>(in[i])));
+        framePeak = qMax(framePeak, std::fabs(in[i]));
+
+    // dBFS rather than raw counts: the TX path is float end to end now, and a level in dB is
+    // comparable across encode modes whose containers have different full scales.
+    auto dbfs = [](float v) { return v > 0.0f ? 20.0 * std::log10(static_cast<double>(v)) : -999.0; };
 
     // mic-peak is measured AFTER m_micGain, so a quiet frame is otherwise ambiguous between a quiet
     // room and a turned-down slider - an ambiguity that cost a bench cycle on 2026-09-19. Report
@@ -686,10 +699,10 @@ void AudioEngine::logTxFrameDiagnostic(const QByteArray &s16leMonoFrame, const Q
     const double gain = static_cast<double>(m_micGain.load(std::memory_order_relaxed));
     const double slider = std::cbrt(gain) * 100.0;
     qCDebug(qk4AudioTx,
-            "TX frame: EM%d seq=%u frameSamples=%d mic-peak=%d/32768 (mic slider %.0f%% -> gain %.4f) "
-            "wire-payload=%d",
-            encodeMode, static_cast<unsigned>(m_txSequence), frameSamples, micPeak, slider, gain,
-            static_cast<int>(wireData.size()));
+            "TX frame: EM%d seq=%u frameSamples=%d mic-peak=%.1f dBFS peak-since-key=%.1f dBFS "
+            "(mic slider %.0f%% -> gain %.4f) wire-payload=%d",
+            encodeMode, static_cast<unsigned>(m_txSequence), frameSamples, dbfs(framePeak), dbfs(m_txPeakSinceKey),
+            slider, gain, static_cast<int>(wireData.size()));
 
     if (encodeMode != 0)
         return;
@@ -722,8 +735,9 @@ void AudioEngine::setPttActive(bool active) {
     // main thread, so this method body runs on the audio thread.
     m_pttActive.store(active, std::memory_order_release);
     if (active) {
-        m_txSequence = 0; // Restart sequence counter for each transmission
-        openMic();        // Idempotent — see openMic() WHY comment
+        m_txSequence = 0;     // Restart sequence counter for each transmission
+        m_txPeakSinceKey = 0; // qk4.audio.tx running peak is per transmission
+        openMic();            // Idempotent — see openMic() WHY comment
         // Flush partial-frame tail from previous transmission so it can't leak
         // into this one's first frame.
         m_micBuffer.clear();

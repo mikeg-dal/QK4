@@ -25,6 +25,33 @@ bool OpusEncoder::initialize(int sampleRate, int channels, int bitrate) {
     return true;
 }
 
+QByteArray OpusEncoder::encodeFloat(const QByteArray &floatPcm, int frameSamples) {
+    if (!m_encoder) {
+        return QByteArray();
+    }
+
+    int expectedBytes = frameSamples * static_cast<int>(sizeof(float));
+    if (floatPcm.size() != expectedBytes) {
+        qCWarning(qk4Audio) << "OpusEncoder: Invalid float frame size" << floatPcm.size() << "bytes, expected"
+                            << expectedBytes;
+        return QByteArray();
+    }
+
+    QByteArray encoded(MAX_PACKET_SIZE, Qt::Uninitialized);
+
+    const float *pcm = reinterpret_cast<const float *>(floatPcm.constData());
+    int bytes = opus_encode_float(m_encoder, pcm, frameSamples, reinterpret_cast<unsigned char *>(encoded.data()),
+                                  MAX_PACKET_SIZE);
+
+    if (bytes < 0) {
+        qCWarning(qk4Audio) << "OpusEncoder: Float encode failed:" << opus_strerror(bytes);
+        return QByteArray();
+    }
+
+    encoded.resize(bytes);
+    return encoded;
+}
+
 QByteArray OpusEncoder::encode(const QByteArray &pcmData, int frameSamples) {
     if (!m_encoder) {
         return QByteArray();

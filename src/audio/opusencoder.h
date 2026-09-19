@@ -24,6 +24,12 @@ public:
     // Valid values at 12kHz: 240 (20ms), 480 (40ms), 720 (60ms), 1440 (120ms).
     QByteArray encode(const QByteArray &pcmData, int frameSamples);
 
+    // Encode a Float32 frame directly, without an S16 round trip. This is what the TX path uses:
+    // quantising to S16 first discarded bits in proportion to the mic gain, which was audible as
+    // tonal distortion on quiet audio (see audio/rawaudioformat.h). Opus takes float natively, so
+    // the Opus modes need not quantise at all.
+    QByteArray encodeFloat(const QByteArray &floatPcm, int frameSamples);
+
 private:
     ::OpusEncoder *m_encoder;
     int m_sampleRate;

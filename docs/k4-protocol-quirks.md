@@ -208,6 +208,15 @@ because `EM` is only applied at connect (it is sent in the startup macro), so th
 stationary reference instead — captures minutes apart are comparable when the signal is receiver
 noise into a dummy load.
 
+**A second, independent defect on the same path.** Mic gain was applied and the signal quantised to
+S16 *before* the wire format was chosen, so every mode inherited a 16-bit bottleneck and lost bits in
+proportion to the attenuation — at a 30% mic slider only ~10.8 bits survived, and EM0 carried 16 bits
+shifted into its 24-bit container. Undithered quantisation error at that depth correlates with the
+signal, so it is harmonic distortion rather than noise. On the bench this was a tonal buzz on dead
+air at low mic gain that vanished completely at 50% and above — a level-dependent *character* change,
+which is what distinguishes it from any acoustic or preamp noise. The path now stays Float32 and
+quantises once, at the wire format.
+
 **Still unmeasured.** TX levels for EM2/EM3; whether the K4 requires *stereo* Opus on TX (QK4 sends
 mono; K4-Companion duplicates to stereo and its author notes the K4 requires it).
 
