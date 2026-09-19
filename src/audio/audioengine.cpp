@@ -1,9 +1,9 @@
 #include "audioengine.h"
 #include "audio/audiologging.h"
-#include "audio/opusdecoder.h" // NORMALIZE_16BIT constant
 #include "audio/opusencoder.h"
-#include "network/protocol.h" // buildAudioPacket
-#include "utils/radioutils.h" // RX jitter-buffer watermarks
+#include "audio/rawaudioformat.h" // EM0/EM1 wire format
+#include "network/protocol.h"     // buildAudioPacket
+#include "utils/radioutils.h"     // RX jitter-buffer watermarks
 #include <QMediaDevices>
 #include <QAudioDevice>
 #include <QDebug>
@@ -630,30 +630,21 @@ void AudioEngine::encodeAndSendFrame(const QByteArray &s16leMonoFrame, int frame
     QByteArray audioData;
 
     switch (encodeMode) {
-    case 0: // EM0 — RAW 32-bit float stereo
+    case 0: // EM0 — RAW S32LE stereo. See audio/rawaudioformat.h for why it is not float.
     {
         const qint16 *samples = reinterpret_cast<const qint16 *>(s16leMonoFrame.constData());
-        const int sampleCount = s16leMonoFrame.size() / static_cast<int>(sizeof(qint16));
-        audioData.resize(sampleCount * 2 * static_cast<int>(sizeof(float))); // Stereo output
-        float *output = reinterpret_cast<float *>(audioData.data());
-        for (int i = 0; i < sampleCount; i++) {
-            const float normalized = static_cast<float>(samples[i]) * OpusDecoder::NORMALIZE_16BIT;
-            output[i * 2] = normalized;     // Left = Main
-            output[i * 2 + 1] = normalized; // Right = Sub (duplicate)
-        }
+        const int sampleCount = static_cast<int>(s16leMonoFrame.size() / sizeof(qint16));
+        audioData.resize(RawAudioFormat::em0BytesFor(sampleCount));
+        RawAudioFormat::encodeEm0(samples, sampleCount, reinterpret_cast<unsigned char *>(audioData.data()));
         break;
     }
 
     case 1: // EM1 — RAW 16-bit S16LE stereo
     {
         const qint16 *samples = reinterpret_cast<const qint16 *>(s16leMonoFrame.constData());
-        const int sampleCount = s16leMonoFrame.size() / static_cast<int>(sizeof(qint16));
-        audioData.resize(sampleCount * 2 * static_cast<int>(sizeof(qint16))); // Stereo output
-        qint16 *output = reinterpret_cast<qint16 *>(audioData.data());
-        for (int i = 0; i < sampleCount; i++) {
-            output[i * 2] = samples[i];     // Left = Main
-            output[i * 2 + 1] = samples[i]; // Right = Sub (duplicate)
-        }
+        const int sampleCount = static_cast<int>(s16leMonoFrame.size() / sizeof(qint16));
+        audioData.resize(RawAudioFormat::em1BytesFor(sampleCount));
+        RawAudioFormat::encodeEm1(samples, sampleCount, reinterpret_cast<unsigned char *>(audioData.data()));
         break;
     }
 
@@ -668,8 +659,58 @@ void AudioEngine::encodeAndSendFrame(const QByteArray &s16leMonoFrame, int frame
     if (audioData.isEmpty())
         return;
 
+    // WHY: EM0 and EM1 put raw samples on the wire, so a wrong container format is silent
+    // here and only wrong at the radio - nothing QK4 can hear distinguishes it from a dead
+    // mic. This records what actually left the machine. The per-sample scan is why the
+    // category is off by default and why every frame after a transmission's first is
+    // throttled; on the RT audio thread this is not free.
+    if (qk4AudioTx().isDebugEnabled() && (m_txSequence == 0 || m_txSequence % TX_DIAG_FRAME_INTERVAL == 0))
+        logTxFrameDiagnostic(s16leMonoFrame, audioData, frameSamples, encodeMode);
+
     QByteArray packet = Protocol::buildAudioPacket(audioData, m_txSequence++, encodeMode, frameSamples);
     emit txPacketReady(packet);
+}
+
+void AudioEngine::logTxFrameDiagnostic(const QByteArray &s16leMonoFrame, const QByteArray &wireData, int frameSamples,
+                                       int encodeMode) const {
+    const qint16 *in = reinterpret_cast<const qint16 *>(s16leMonoFrame.constData());
+    const int inCount = static_cast<int>(s16leMonoFrame.size() / sizeof(qint16));
+    int micPeak = 0;
+    for (int i = 0; i < inCount; i++)
+        micPeak = qMax(micPeak, qAbs(static_cast<int>(in[i])));
+
+    // mic-peak is measured AFTER m_micGain, so a quiet frame is otherwise ambiguous between a quiet
+    // room and a turned-down slider - an ambiguity that cost a bench cycle on 2026-09-19. Report
+    // both the effective gain and the slider position it came from: setMicGain cubes the slider,
+    // so the cube root recovers exactly what the operator set.
+    const double gain = static_cast<double>(m_micGain.load(std::memory_order_relaxed));
+    const double slider = std::cbrt(gain) * 100.0;
+    qCDebug(qk4AudioTx,
+            "TX frame: EM%d seq=%u frameSamples=%d mic-peak=%d/32768 (mic slider %.0f%% -> gain %.4f) "
+            "wire-payload=%d",
+            encodeMode, static_cast<unsigned>(m_txSequence), frameSamples, micPeak, slider, gain,
+            static_cast<int>(wireData.size()));
+
+    if (encodeMode != 0)
+        return;
+
+    // WHY: report the EM0 payload against the format's known full scale. AUD-003 survived
+    // because nothing QK4 can hear tells a wrong container apart from a dead mic - the bytes
+    // are only wrong at the radio. A number here makes a future format mistake obvious in a
+    // bench log instead of an opinion about how the monitor sounded.
+    const unsigned char *bytes = reinterpret_cast<const unsigned char *>(wireData.constData());
+    const int words = static_cast<int>(wireData.size() / 4);
+    qint64 wirePeak = 0;
+    for (int i = 0; i < words; i++) {
+        quint32 raw = static_cast<quint32>(bytes[i * 4]);
+        raw |= static_cast<quint32>(bytes[i * 4 + 1]) << 8;
+        raw |= static_cast<quint32>(bytes[i * 4 + 2]) << 16;
+        raw |= static_cast<quint32>(bytes[i * 4 + 3]) << 24;
+        wirePeak = qMax(wirePeak, qAbs(static_cast<qint64>(static_cast<qint32>(raw))));
+    }
+    const double fullScale = static_cast<double>(RawAudioFormat::EM0_FULL_SCALE);
+    qCDebug(qk4AudioTx, "  EM0 wire peak=%lld S32LE = %.4f of the %.0f full scale", static_cast<long long>(wirePeak),
+            static_cast<double>(wirePeak) / fullScale, fullScale);
 }
 
 void AudioEngine::setEncodeMode(int mode) {
@@ -723,6 +764,9 @@ void AudioEngine::setMicGain(float gain) {
     // e.g., 40% slider → 0.064x gain, 70% → 0.343x, 100% → 1.0x (unity)
     float cubic = gain * gain * gain;
     m_micGain.store(qBound(0.0f, cubic, 1.0f), std::memory_order_relaxed);
+    // Recorded so a bench log shows slider moves between transmissions, not only during them.
+    qCDebug(qk4AudioTx, "mic slider %.0f%% -> gain %.4f", static_cast<double>(gain) * 100.0,
+            static_cast<double>(cubic));
 }
 
 void AudioEngine::setFrameSamples(int samples) {

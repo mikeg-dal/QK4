@@ -79,8 +79,8 @@ public:
     void setFrameSamples(int samples); // 240, 480, 720, or 1440
     int frameSamples() const { return m_frameSamples.load(std::memory_order_relaxed); }
 
-    // TX encode mode (0=EM0 RAW32, 1=EM1 S16, 2=EM2 Opus int, 3=EM3 Opus float).
-    // Atomic so the audio-thread encode path reads it lock-free.
+    // TX encode mode (0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode)). See
+    // audio/rawaudioformat.h for the RAW wire scales. Atomic so the audio-thread encode path reads it lock-free.
     void setEncodeMode(int mode);
     int encodeMode() const { return m_encodeMode.load(std::memory_order_relaxed); }
 
@@ -162,6 +162,15 @@ private:
     // Encode + packetize one captured S16LE mono frame and emit txPacketReady.
     // Runs on the audio thread, called from onMicDataReady when PTT is active.
     void encodeAndSendFrame(const QByteArray &s16leMonoFrame, int frameSamples, int encodeMode);
+
+    // Report what one TX frame actually put on the wire, under qk4.audio.tx.
+    // See the WHY at the call site in encodeAndSendFrame.
+    void logTxFrameDiagnostic(const QByteArray &s16leMonoFrame, const QByteArray &wireData, int frameSamples,
+                              int encodeMode) const;
+
+    // Frames between qk4.audio.tx reports during a transmission. The first frame of
+    // every transmission is always reported; this throttles the rest.
+    static constexpr int TX_DIAG_FRAME_INTERVAL = 50;
 
     // Apply MX routing + volume + balance to a raw [main, sub] interleaved packet
     void applyMixAndVolume(QByteArray &packet);

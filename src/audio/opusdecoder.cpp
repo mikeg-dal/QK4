@@ -30,12 +30,13 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
     // Byte 0: TYPE = 1 (Audio)
     // Byte 1: VER = Version number
     // Byte 2: SEQ = Sequence number
-    // Byte 3: Encode Mode (0=S32LE, 1=S16LE, 2=Opus Int, 3=Opus Float)
+    // Byte 3: Encode Mode (0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode))
     // Bytes 4-5: Frame size (little-endian UInt16) - samples per channel
     // Byte 6: Sample rate code (0 = 12000 Hz)
     // Byte 7+: Audio data (format depends on encode mode)
     //
-    // Note: EM0 is documented as "RAW 32-bit float" but K4 actually sends S32LE integers
+    // Note: EM0 is documented by Elecraft as "RAW 32-bit float" but the K4 actually sends
+    // S32LE integers carrying 24-bit audio. Measured 2026-09-19 - see the class comment.
 
     if (packet.size() < 8) {
         return QByteArray();
@@ -58,7 +59,7 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
     // Decode based on encode mode — output raw normalized stereo [main, sub, main, sub, ...]
     // Volume/routing/balance is applied later at playback time in AudioEngine::feedAudioDevice()
     switch (encodeMode) {
-    case 0x00: // EM0 - 32-bit container, S16-range payload (see WHY below)
+    case 0x00: // EM0 - 24-bit payload in an S32LE container
     {
         const qint32 *stereoSamples = reinterpret_cast<const qint32 *>(audioData.constData());
         int totalSamples = audioData.size() / sizeof(qint32);
@@ -66,12 +67,10 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
         QByteArray out(totalSamples * sizeof(float), Qt::Uninitialized);
         float *dst = reinterpret_cast<float *>(out.data());
         // WHY: EM0 is documented as "RAW 32-bit float" but the K4 actually sends S32LE
-        // integers whose values stay in the S16 range with ~4× headroom (~±32k typical,
-        // bursts to ~131k on loud transients). Dividing by 2^31 made the audio inaudible;
-        // dividing by 2^15 (S16) clipped transients to a square wave. Empirical peak
-        // probe → 2^17 nominal range, so NORMALIZE_K4_RAW keeps headroom for transients.
+        // integers carrying 24-bit audio, so full scale is 2^23 and the same 32× every other
+        // mode gets applies here too. See the class comment for the measurement.
         for (int i = 0; i < totalSamples; i++) {
-            dst[i] = static_cast<float>(stereoSamples[i]) * NORMALIZE_K4_RAW;
+            dst[i] = static_cast<float>(stereoSamples[i]) * NORMALIZE_K4_RAW * K4_GAIN_BOOST;
         }
         return out;
     }
@@ -83,11 +82,11 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
 
         QByteArray out(totalSamples * sizeof(float), Qt::Uninitialized);
         float *dst = reinterpret_cast<float *>(out.data());
-        // WHY: K4 ships EM1 at ~-35 dBFS (peaks 480-600 in qint16 across many seconds of
-        // audio), which is ~18× quieter than EM0 in normalized terms. Apply 16× boost so
-        // EM1 perceived loudness matches EM0 (~0.26 typical float vs EM0's ~0.29).
+        // WHY the same 32× as EM2/EM3: measurement says the K4 ships EM1, EM2 and EM3 at an
+        // identical level (16.78 / 16.71 / 16.72 on a 2^15 scale, same signal). The old 16×
+        // here was tuned to match an EM0 that was itself 6 dB hot, so it inherited that error.
         for (int i = 0; i < totalSamples; i++) {
-            dst[i] = static_cast<float>(stereoSamples[i]) * NORMALIZE_16BIT * K4_EM1_GAIN_BOOST;
+            dst[i] = static_cast<float>(stereoSamples[i]) * NORMALIZE_16BIT * K4_GAIN_BOOST;
         }
         return out;
     }

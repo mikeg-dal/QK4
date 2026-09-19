@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <array>
+#include "audio/rawaudioformat.h" // EM0_FULL_SCALE
 #include <opus/opus.h>
 
 /**
@@ -10,15 +11,24 @@
  *        (EM0..EM3) and emits stereo Float32 PCM. Volume/mix/balance is applied later in
  *        AudioEngine at playback time, not here.
  *
- *        Per-mode normalization + gain (verified empirically; see commit 24f4e45):
- *          EM0 (32-bit container, S16-range payload) — NORMALIZE_K4_RAW (1/2^17) only.
- *                                                       Accounts for K4's ~4× headroom
- *                                                       over nominal S16.
- *          EM1 (S16LE)                               — NORMALIZE_16BIT × K4_EM1_GAIN_BOOST (16×).
- *                                                       Compensates for K4 shipping EM1 at
- *                                                       ~-35 dBFS (~18× quieter than EM0).
- *          EM2 (Opus → S16)                          — NORMALIZE_16BIT × K4_GAIN_BOOST (32×).
- *          EM3 (Opus → float)                        — K4_GAIN_BOOST (32×) only.
+ *        All four modes follow ONE rule:  out = native × K4_GAIN_BOOST / full_scale
+ *
+ *          EM0 (S32LE, 24-bit payload) — full scale 2^23  (RawAudioFormat::EM0_FULL_SCALE)
+ *          EM1 (S16LE)                 — full scale 2^15
+ *          EM2 (Opus → S16)            — full scale 2^15
+ *          EM3 (Opus → float)          — full scale 1.0
+ *
+ *        MEASURED 2026-09-19 by tools/k4_audio_capture.py against a stationary reference
+ *        (dummy load, AGC OFF, fixed AF gain, 20 s of receiver noise per mode) — capture
+ *        bench-logs/audiocal-20260919-0741. Under this rule all four modes land within
+ *        0.42% (0.04 dB) of each other. The K4 ships EM1, EM2 and EM3 at an identical level
+ *        (16.78 / 16.71 / 16.72 on a 2^15 scale) and EM0 at exactly 256× that.
+ *
+ *        This replaced four unrelated by-ear constants, two of which were wrong: EM0 was
+ *        6 dB hot (its full scale had been assumed 2^17, not 2^23) and EM1 was 6 dB quiet
+ *        (a 16× boost where the measurement says 32×, the same as every other mode). The
+ *        32× itself is independently corroborated — K4-Companion, a separate implementation,
+ *        applies the same 32× to the same stream.
  */
 class OpusDecoder : public QObject {
     Q_OBJECT
@@ -64,19 +74,15 @@ private:
     std::array<opus_int16, MAX_SCRATCH_SAMPLES> m_pcmIntScratch{};
     std::array<float, MAX_SCRATCH_SAMPLES> m_pcmFloatScratch{};
 
-    // Normalization constants
-    // WHY: K4 RAW modes (EM0/EM1) ship samples with ~4× headroom over nominal S16
-    // (empirical peaks up to ~131k = 2^17). Normalizing by 2^17 keeps transients
-    // ≤ 1.0 in float so the ±1.0 clamp in AudioEngine never hard-clips them.
-    static constexpr float NORMALIZE_K4_RAW = 1.0f / 131072.0f;
-
-    // K4-specific gain boost for Opus modes (EM2/EM3).
+    // The single gain every mode shares. The K4 ships all four encode modes ~32× below the
+    // full scale of whatever container they use, so this is a property of the radio, not of
+    // any one codec. Measured 2026-09-19; independently corroborated by K4-Companion, which
+    // applies the same 32× to the same stream.
     static constexpr float K4_GAIN_BOOST = 32.0f;
 
-    // K4 EM1 (S16 RAW) gain boost. Empirical: K4 ships EM1 at ~-35 dBFS (peaks 480-600 in
-    // qint16 across many seconds of audio), ~18× quieter than EM0. 16× brings typical
-    // amplitude to ~0.26 in float, matching EM0's ~0.29 perceived loudness.
-    static constexpr float K4_EM1_GAIN_BOOST = 16.0f;
+    // EM0's container full scale, shared with the TX side so the two directions of EM0 cannot
+    // drift apart again — that divergence is what AUD-003 was.
+    static constexpr float NORMALIZE_K4_RAW = 1.0f / RawAudioFormat::EM0_FULL_SCALE;
 };
 
 #endif // OPUSDECODER_H
