@@ -22,14 +22,28 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Install clang-format
-        # Pinned major so the formatting baseline can't shift when the runner
-        # image's default clang-format changes. Bumping this requires a
-        # repo-wide reformat commit first.
-        run: sudo apt-get install -y clang-format-18
+        # Pinned to an EXACT patch version, from PyPI's prebuilt LLVM binaries.
+        #
+        # WHY not apt. `clang-format-18` pins only the major, so the patch version moved with the
+        # runner image while developers ran whatever their platform's 18.x was. clang-format's
+        # line-breaking heuristics change between patch releases, so a file could be correctly
+        # formatted locally and rejected here - with no way to reproduce the failure except by
+        # guessing at the wrapping. The documented workaround was to hand-write long expressions as
+        # one formatted string to avoid giving the two versions anything to disagree about, which
+        # is a constraint on the source rather than a fix.
+        #
+        # The PyPI package ships the same upstream LLVM build for macOS and Linux, so this is
+        # byte-identical to a developer's pinned 18.1.8: verified across every file in src/ and
+        # tests/ against Homebrew's 18.1.8, zero differences.
+        #
+        # Bumping this requires a repo-wide reformat commit first, and the same version bump in
+        # CLAUDE.md so local and CI never diverge again.
+        run: pipx install clang-format==18.1.8
 
       - name: Check formatting
         run: |
-          find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format-18 --dry-run --Werror
+          clang-format --version
+          find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
 
   unit-tests:
     name: Unit Tests
