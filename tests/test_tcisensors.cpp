@@ -138,7 +138,9 @@ private slots:
         TciSensorReadings readings;
         readings.forwardPowerW = 47.4;
         readings.peakPowerW = 47.4;
-        readings.swr = 1.35;
+        // 1.5, not 1.35: SWR now goes out with one decimal like every other field, so a value
+        // needing two is no longer a meaningful input. See theSwrFieldSurvivesTheWsjtxDecoder.
+        readings.swr = 1.5;
         server.setSensors(readings);
         client.send("tx_sensors_enable:true,50;");
 
@@ -153,9 +155,68 @@ private slots:
             QCOMPARE(c.argCount(), 5);
             QCOMPARE(c.arg(0), QStringLiteral("0"));
             QCOMPARE(c.arg(2), QStringLiteral("47.4"));
-            QCOMPARE(c.arg(4), QStringLiteral("1.35"));
+            QCOMPARE(c.arg(4), QStringLiteral("1.5"));
         }
         QVERIFY2(checked > 0, "no tx_sensors reading arrived");
+
+        client.close();
+        server.stop();
+    }
+
+    // WHY THIS TEST EXISTS RATHER THAN A PLAIN STRING COMPARE: the precision of the SWR field is
+    // not cosmetic and the TCI spec does not pin it down, so "1.50" looks every bit as correct as
+    // "1.5" to a reviewer. WSJT-X's decoder is fixed-point and assumes exactly one decimal digit -
+    //
+    //     swr_ = 10 * whole + first_decimal;   update_swr(swr_ * 10);   // hundredths
+    //
+    // so a second decimal is read as though it were the first: "1.50" becomes 10*1 + 50 = 60, and
+    // an entirely healthy 1.5:1 is reported to the operator as 6:1. It decodes correctly only when
+    // the second decimal happens to be zero, which is exactly why a 1:1 dummy load on the bench
+    // showed nothing wrong for as long as it did.
+    //
+    // The test reproduces that arithmetic against the real wire output, so the field cannot quietly
+    // gain a decimal place again without someone being told what it breaks.
+    void theSwrFieldSurvivesTheWsjtxDecoder() {
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+
+        // Values whose SECOND decimal is non-zero are the ones that broke; 2.0 is the control that
+        // decoded correctly even before the fix, so a passing suite is not just the easy case.
+        const QVector<double> cases{1.1, 1.5, 1.8, 2.0, 2.5};
+        for (double swr : cases) {
+            TciSensorReadings readings;
+            readings.swr = swr;
+            server.setSensors(readings);
+            client.send("tx_sensors_enable:true,50;");
+
+            const QStringList seen = collectFor(client, kSettleMs);
+            int checked = 0;
+            for (const QString &line : seen) {
+                if (!line.startsWith(QStringLiteral("tx_sensors:"))) {
+                    continue;
+                }
+                const TciProtocol::Command c = TciProtocol::parseOne(line.chopped(1));
+                const QString field = c.arg(4);
+
+                // Qt's toInt() on the pieces either side of the point, exactly as WSJT-X does it.
+                const QStringList parts = field.split(QLatin1Char('.'));
+                QCOMPARE(parts.size(), 2);
+                const int decoded = 10 * parts.at(0).toInt() + parts.at(1).toInt();
+                const double shown = (decoded * 10) / 100.0;
+
+                QVERIFY2(qAbs(shown - swr) < 0.05,
+                         qPrintable(QStringLiteral("SWR %1 went out as \"%2\" and WSJT-X would show %3")
+                                        .arg(swr)
+                                        .arg(field)
+                                        .arg(shown)));
+                ++checked;
+            }
+            QVERIFY2(checked > 0, "no tx_sensors reading arrived");
+        }
 
         client.close();
         server.stop();
