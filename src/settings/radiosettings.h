@@ -134,6 +134,13 @@ public:
     // switchable. Defaults on, because carrying audio is the reason the TCI server exists.
     bool tciAudioEnabled() const;
     void setTciAudioEnabled(bool enabled);
+    // Transmit level for audio arriving FROM a TCI client, separate from Mic Gain.
+    //
+    // WHY SEPARATE: both feed the same encoder, but a microphone and a digital-mode program are
+    // nowhere near the same level - WSJT-X sends at or near full scale. Sharing one control meant a
+    // slider calibrated for one overdrove or starved the other, with no position that served both.
+    int tciTxGain() const;
+    void setTciTxGain(int value); // 0-100, default 25
 
     // Macro settings
     QMap<QString, MacroEntry> macros() const;
@@ -209,6 +216,7 @@ signals:
     void tciServerEnabledChanged(bool enabled);
     void tciServerPortChanged(quint16 port);
     void tciAudioEnabledChanged(bool enabled);
+    void tciTxGainChanged(int value);
     void macrosChanged();
     void halikeyEnabledChanged(bool enabled);
     void halikeyPortNameChanged(const QString &portName);

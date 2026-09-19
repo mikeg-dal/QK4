@@ -32,6 +32,7 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
         m_audioEngine->setOutputDevice(savedSpeakerDevice);
     }
     m_audioEngine->setMicGain(RadioSettings::instance()->micGain() / 100.0f);
+    m_audioEngine->setTciTxGain(RadioSettings::instance()->tciTxGain() / 100.0f);
 
     // Move AudioEngine to dedicated thread for glitch-free audio playback
     m_audioThread = new QThread(this);
@@ -251,6 +252,11 @@ void AudioController::setOutputDevice(const QString &deviceId) {
 void AudioController::setMicGain(float gain) {
     if (m_audioEngine)
         QMetaObject::invokeMethod(m_audioEngine, "setMicGain", Qt::QueuedConnection, Q_ARG(float, gain));
+}
+
+void AudioController::setTciTxGain(float gain) {
+    if (m_audioEngine)
+        QMetaObject::invokeMethod(m_audioEngine, "setTciTxGain", Qt::QueuedConnection, Q_ARG(float, gain));
 }
 
 void AudioController::onStreamingLatencyChanged(int tier) {

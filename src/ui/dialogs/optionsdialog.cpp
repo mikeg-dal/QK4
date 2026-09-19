@@ -129,7 +129,7 @@ void OptionsDialog::ensurePageCreated(int index) {
         page = m_rigControlPage;
         break;
     case PageTciServer:
-        m_tciServerPage = new TciServerPage(m_tciController, this);
+        m_tciServerPage = new TciServerPage(m_tciController, m_audioController, this);
         page = m_tciServerPage;
         break;
     case PageCwKeyer:

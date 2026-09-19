@@ -4,12 +4,14 @@
 #include <QCheckBox>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSlider>
 #include <QTableWidget>
 #include <QVector>
 #include <QWidget>
 
 #include "network/tciclientinfo.h"
 
+class AudioController;
 class TciController;
 
 /**
@@ -24,24 +26,30 @@ class TciServerPage : public QWidget {
     Q_OBJECT
 
 public:
-    explicit TciServerPage(TciController *tciController, QWidget *parent = nullptr);
+    // audioController is needed for the TCI transmit level, which reaches the encoder the same way
+    // Mic Gain does from the Audio Input page: write the setting, then tell the controller.
+    explicit TciServerPage(TciController *tciController, AudioController *audioController, QWidget *parent = nullptr);
 
     void refresh();
 
 private:
     void updateStatus();
+    void onTciTxGainChanged(int value);
 
     // Repaints the client table from a roster. Takes the roster by argument rather than pulling it
     // from the controller so the signal path and the manual path are the same code.
     void updateClients(const QVector<TciClientInfo> &clients);
 
     TciController *m_tciController;
+    AudioController *m_audioController;
     QCheckBox *m_enableCheckbox = nullptr;
     QCheckBox *m_audioCheckbox = nullptr;
     QLineEdit *m_portEdit = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_clientsLabel = nullptr;
     QTableWidget *m_clientsTable = nullptr;
+    QSlider *m_txGainSlider = nullptr;
+    QLabel *m_txGainValueLabel = nullptr;
 };
 
 #endif // TCISERVERPAGE_H

@@ -95,10 +95,12 @@ public:
 
     // Feed 48 kHz mono Float32 from a TCI client. Ignored unless the TX source is Tci.
     //
-    // Passes through m_micGain, the same control the sound-card input uses. WSJT-X transmits at or
-    // near full scale, so without an operator-facing level this drives the K4 far too hard - which
-    // it did on the first on-air test. setMicGain clamps to 0..1 with a cubic curve, so it can only
-    // attenuate and can never introduce clipping of its own.
+    // Passes through m_tciTxGain - its OWN level, not the microphone's. WSJT-X transmits at or near
+    // full scale, so without an operator-facing level this drives the K4 far too hard, as it did on
+    // the first on-air test. It shared m_micGain for a while, which fixed the overdrive but created
+    // a second problem: the curve is cubic, so a position calibrated for a microphone is far too
+    // low for a line-level digital source and vice versa. There is no single position that serves
+    // both, so there are now two controls.
     Q_INVOKABLE void feedTciTxAudio(const QByteArray &f32Mono48k);
 
     // PTT gate for the TX encode path. Setting to true on PTT-on edge also
@@ -111,6 +113,11 @@ public:
     // Microphone settings
     Q_INVOKABLE void setMicGain(float gain); // 0.0 to 1.0
     float micGain() const { return m_micGain.load(std::memory_order_relaxed); }
+
+    // The same 0.0-1.0 slider position and the same cubic curve as setMicGain, applied to audio
+    // from a TCI client instead of from the sound card. See feedTciTxAudio.
+    Q_INVOKABLE void setTciTxGain(float gain); // 0.0 to 1.0
+    float tciTxGain() const { return m_tciTxGain.load(std::memory_order_relaxed); }
 
     Q_INVOKABLE void setMicDevice(const QString &deviceId);
     QString micDeviceId() const;
@@ -245,6 +252,9 @@ private:
 
     // Microphone gain control
     std::atomic<float> m_micGain{0.25f}; // Default 25% (macOS mic input is typically hot)
+    // Default 25% slider -> 0.015625x, set so an injected signal keeps the K4's ALC at or below 5.
+    // See kTciTxGainDefault. Same number as m_micGain's default by coincidence, not by derivation.
+    std::atomic<float> m_tciTxGain{0.015625f};
 
     // Audio throughput: 12kHz × 2ch × sizeof(float) = 96,000 bytes/sec = 96 bytes/ms
     static constexpr int BYTES_PER_MS = 96;

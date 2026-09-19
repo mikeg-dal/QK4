@@ -1,4 +1,5 @@
 #include "ui/pages/tciserverpage.h"
+#include "controllers/audiocontroller.h"
 #include "controllers/tcicontroller.h"
 #include "settings/radiosettings.h"
 #include "ui/styling/k4styles.h"
@@ -41,8 +42,8 @@ QString clientTableStyle() {
 
 } // namespace
 
-TciServerPage::TciServerPage(TciController *tciController, QWidget *parent)
-    : QWidget(parent), m_tciController(tciController) {
+TciServerPage::TciServerPage(TciController *tciController, AudioController *audioController, QWidget *parent)
+    : QWidget(parent), m_tciController(tciController), m_audioController(audioController) {
     setStyleSheet(K4Styles::Dialog::pageBackground());
 
     auto *layout = new QVBoxLayout(this);
@@ -174,10 +175,39 @@ TciServerPage::TciServerPage(TciController *tciController, QWidget *parent)
     m_audioCheckbox->setChecked(RadioSettings::instance()->tciAudioEnabled());
     layout->addWidget(m_audioCheckbox);
 
+    // TCI transmit level. Same shape as Mic Gain on the Audio Input page, and deliberately so -
+    // it is the same kind of control doing the same job for the other transmit source.
+    auto *txGainLayout = new QHBoxLayout();
+    auto *txGainLabel = new QLabel("TX Level:", this);
+    txGainLabel->setStyleSheet(K4Styles::Dialog::formLabel());
+    txGainLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+    txGainLayout->addWidget(txGainLabel);
+
+    m_txGainSlider = new QSlider(Qt::Horizontal, this);
+    m_txGainSlider->setRange(0, 100);
+    m_txGainSlider->setValue(RadioSettings::instance()->tciTxGain());
+    m_txGainSlider->setStyleSheet(
+        K4Styles::sliderHorizontal(K4Styles::Colors::TextDark, K4Styles::Colors::AccentAmber));
+    connect(m_txGainSlider, &QSlider::valueChanged, this, &TciServerPage::onTciTxGainChanged);
+    txGainLayout->addWidget(m_txGainSlider, 1);
+
+    m_txGainValueLabel = new QLabel(QString("%1%").arg(m_txGainSlider->value()), this);
+    m_txGainValueLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                          .arg(K4Styles::Colors::TextWhite)
+                                          .arg(K4Styles::Dimensions::FontSizePopup));
+    m_txGainValueLabel->setFixedWidth(K4Styles::Dimensions::SliderValueLabelWidth);
+    m_txGainValueLabel->setAlignment(Qt::AlignRight);
+    txGainLayout->addWidget(m_txGainValueLabel);
+
+    layout->addLayout(txGainLayout);
+
     auto *helpLabel =
         new QLabel("In WSJT-X choose rig \"TCI Client RX1\", set the TCI server to 127.0.0.1 and the port above, "
-                   "and set both audio devices to \"TCI audio\". Transmit level is the Mic Gain on the Audio Input "
-                   "page. Note that 50001 is also AetherSDR's default — if you run both, change one.",
+                   "and set both audio devices to \"TCI audio\". TX Level above sets how hard a TCI client drives "
+                   "the transmitter — it is separate from Mic Gain, which now affects the microphone only. Set it "
+                   "by watching the radio: ALC should not go above 5. The K4 has no line-in level for LAN audio, "
+                   "so this and your client's own output level are the only adjustments in the chain. Note that "
+                   "50001 is also AetherSDR's default — if you run both, change one.",
                    this);
     helpLabel->setStyleSheet(K4Styles::Dialog::helpText());
     helpLabel->setWordWrap(true);
@@ -210,6 +240,20 @@ TciServerPage::TciServerPage(TciController *tciController, QWidget *parent)
     }
 
     updateStatus();
+}
+
+void TciServerPage::onTciTxGainChanged(int value) {
+    if (m_txGainValueLabel) {
+        m_txGainValueLabel->setText(QString("%1%").arg(value));
+    }
+
+    // Persisted AND pushed live, the same pair AudioInputPage does for Mic Gain: the setting is
+    // what survives a restart, the controller call is what the operator hears while dragging.
+    RadioSettings::instance()->setTciTxGain(value);
+
+    if (m_audioController) {
+        m_audioController->setTciTxGain(value / 100.0f);
+    }
 }
 
 void TciServerPage::refresh() {
