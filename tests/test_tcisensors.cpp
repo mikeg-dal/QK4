@@ -135,6 +135,8 @@ private slots:
         QVERIFY(client.connectTo(server.port()));
         client.collectUntil("ready;");
 
+        server.setSnapshot(transmittingSnapshot());
+
         TciSensorReadings readings;
         readings.forwardPowerW = 47.4;
         readings.peakPowerW = 47.4;
@@ -186,6 +188,8 @@ private slots:
 
         // Values whose SECOND decimal is non-zero are the ones that broke; 2.0 is the control that
         // decoded correctly even before the fix, so a passing suite is not just the easy case.
+        server.setSnapshot(transmittingSnapshot());
+
         const QVector<double> cases{1.1, 1.5, 1.8, 2.0, 2.5};
         for (double swr : cases) {
             TciSensorReadings readings;
@@ -222,9 +226,43 @@ private slots:
         server.stop();
     }
 
+    // tx_sensors only flow while the radio is transmitting, so every TX test has to key it
+    // first. Gating is deliberate - power and SWR mean nothing on receive - see onSensorTick.
+    static TciRadioSnapshot transmittingSnapshot() {
+        TciRadioSnapshot s;
+        s.transmitting = true;
+        return s;
+    }
+
+    void sendsNoTransmitReadingsWhileReceiving() {
+        // The gate itself. Forward power, peak power and SWR have no meaning on receive, and
+        // before this they went out every tick regardless - a steady stream of stale readings for
+        // as long as a client stayed subscribed. A subscription must not by itself produce
+        // traffic; only transmitting may.
+        TciServer server;
+        QVERIFY(server.start(0));
+
+        TciSensorReadings readings;
+        readings.forwardPowerW = 47.4;
+        readings.swr = 1.5;
+        server.setSensors(readings); // values present, but the radio is not keyed
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.send("tx_sensors_enable:true,50;");
+
+        const QStringList seen = collectFor(client, kSettleMs);
+        QCOMPARE(countStartingWith(seen, QStringLiteral("tx_sensors:")), 0);
+
+        client.close();
+        server.stop();
+    }
+
     void theTwoDirectionsSubscribeIndependently() {
         // A client that asked for TX readings must not be sent RX levels it never wanted.
         TciServer server;
+        server.setSnapshot(transmittingSnapshot());
         QVERIFY(server.start(0));
 
         TciTestClient client;

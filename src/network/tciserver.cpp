@@ -539,7 +539,19 @@ void TciServer::onSensorTick() {
         }
     }
 
-    if (!m_txSensorClients.isEmpty()) {
+    // ONLY WHILE THE RADIO IS ACTUALLY TRANSMITTING. Forward power, peak power and SWR have no
+    // meaning on receive, and sending them anyway published a steady stream of stale readings -
+    // every tick, to every subscriber, for as long as a client stayed connected.
+    //
+    // m_snapshot.transmitting is the right gate rather than "does a TCI client hold PTT": it
+    // follows the radio whoever keyed it, so a client watching power still sees the operator's own
+    // transmissions. See setSnapshot for why it is held at the client's value while one owns PTT.
+    //
+    // Matches both ends of the path this serves. AetherSDR gates the same way
+    // (`cs.txSensorsEnabled && m_model->transmitModel().isTransmitting()`), and WSJT-X only
+    // consumes these while its own PTT is asserted and zeroes them on the falling edge, so
+    // stopping mid-transmission leaves nothing stale on screen.
+    if (!m_txSensorClients.isEmpty() && m_snapshot.transmitting) {
         // Five arguments, so the QStringList form: trx, mic dBm, RMS power W, peak power W, SWR.
         // Transmit belongs to the main receiver; the K4 has one transmitter.
         //
