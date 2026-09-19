@@ -166,12 +166,42 @@ QByteArray xitEnabled(bool en) {
     return QString("XT%1;").arg(en ? 1 : 0).toUtf8();
 }
 
-QByteArray rfPower(double watts) {
-    return QString("PC%1;").arg(static_cast<int>(watts), 3, 10, QChar('0')).toUtf8();
+namespace {
+// The K4 reports the QRP (0.1-10.0 W) and XVTR (0.1-10.0 mW) ranges in TENTHS of their unit; the
+// QRO range is whole watts. handlePC decodes that on ingest (levelsstate.cpp), so RadioState holds
+// W or mW - and a reply must scale it back.
+//
+// CAT-005: neither reply did. 5.0 W was emitted as PCX005L, which a client reads as 0.5 W - a
+// factor of ten. The SET path (setRfPower) has always scaled correctly, so the same file disagreed
+// with itself about what 5 W looks like on the wire, and a test asserted each version.
+int powerToWire(double value, LevelsState::PowerRange range) {
+    const bool tenths = (range != LevelsState::PowerRange::Qro);
+    const int raw = static_cast<int>(tenths ? (value * 10.0 + 0.5) : (value + 0.5));
+    return qBound(0, raw, tenths ? 100 : 110);
 }
 
-QByteArray rfPowerExtended(double watts, bool qrp) {
-    return QString("PCX%1%2;").arg(static_cast<int>(watts), 3, 10, QChar('0')).arg(qrp ? "L" : "H").toUtf8();
+char powerRangeSuffix(LevelsState::PowerRange range) {
+    switch (range) {
+    case LevelsState::PowerRange::Qrp:
+        return 'L';
+    case LevelsState::PowerRange::Xvtr:
+        return 'X';
+    case LevelsState::PowerRange::Qro:
+    default:
+        return 'H';
+    }
+}
+} // namespace
+
+QByteArray rfPower(double value, LevelsState::PowerRange range) {
+    // No range suffix: PC is the plain query and the K4's own echo carries one (PC045H), but
+    // whether its reply to a bare `PC;` includes it has not been confirmed on the radio, so the
+    // shape is left alone here and only the scaling is corrected.
+    return QString("PC%1;").arg(powerToWire(value, range), 3, 10, QChar('0')).toUtf8();
+}
+
+QByteArray rfPowerExtended(double value, LevelsState::PowerRange range) {
+    return QString("PCX%1%2;").arg(powerToWire(value, range), 3, 10, QChar('0')).arg(powerRangeSuffix(range)).toUtf8();
 }
 
 QByteArray filterBandwidth(int bwHz) {

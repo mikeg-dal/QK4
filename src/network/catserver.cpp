@@ -251,7 +251,7 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
             return CatFrames::xitEnabled(m_radioState->xitEnabled());
         }
         if (prefix == "PC") {
-            return CatFrames::rfPower(m_radioState->rfPower());
+            return CatFrames::rfPower(m_radioState->rfPower(), m_radioState->powerRange());
         }
         if (prefix == "GT") {
             return CatFrames::agcSpeed(static_cast<int>(m_radioState->agcSpeed()));
@@ -300,7 +300,7 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
             return CatFrames::sMeterMain(m_radioState->sMeter());
         }
         if (prefix == "PCX") {
-            return CatFrames::rfPowerExtended(m_radioState->rfPower(), m_radioState->isQrpMode());
+            return CatFrames::rfPowerExtended(m_radioState->rfPower(), m_radioState->powerRange());
         }
         if (prefix == "AG") {
             return QByteArray("AG000;");

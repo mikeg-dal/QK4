@@ -676,14 +676,44 @@ private slots:
     }
 
     void testPcxQrpMode() {
+        // CAT-005. This asserted PCX005L, which a client reads as 0.5 W - the reply was not
+        // scaling QRP into the tenths the K4 reports it in, so every QRP power query was answered
+        // ten times low. The SET path (setRfPowerUsesThePcFormNotPcx, above) has always scaled
+        // correctly, so the two halves of this same file disagreed about what 5 W looks like on
+        // the wire and both tests passed.
         RadioState rs;
-        rs.setRfPower(5.0); // QRP mode (<=10W)
+        rs.parseCATCommand("PC050L;"); // the radio's own form: 5.0 W in the QRP range
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
-        QString response = sendCommand(server, "PCX;");
-        QCOMPARE(response, QString("PCX005L;"));
+        QCOMPARE(sendCommand(server, "PCX;"), QString("PCX050L;"));
+        // The plain PC reply carries no suffix, but must not mis-scale either.
+        QCOMPARE(sendCommand(server, "PC;"), QString("PC050;"));
+    }
+
+    void testPcxXvtrRangeCanBeEmitted() {
+        // The XVTR range could never appear: rfPowerExtended took a bool, so every non-QRP value
+        // was labelled H. Milliwatts are reported in tenths like QRP.
+        RadioState rs;
+        rs.parseCATCommand("PC050X;"); // 5.0 mW in the XVTR range
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "PCX;"), QString("PCX050X;"));
+    }
+
+    void testPcxQroIsWholeWatts() {
+        // QRO is NOT scaled - whole watts - so the fix must not push it ten times high.
+        RadioState rs;
+        rs.parseCATCommand("PC100H;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "PCX;"), QString("PCX100H;"));
+        QCOMPARE(sendCommand(server, "PC;"), QString("PC100;"));
     }
 };
 

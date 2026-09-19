@@ -2,6 +2,7 @@
 
 #include "models/radiostate.h"
 
+#include "models/radiostate/levelsstate.h"
 #include <QByteArray>
 #include <QList>
 #include <QString>
@@ -25,8 +26,11 @@ QByteArray subReceiver(bool enabled);
 QByteArray ritOffset(int offset);
 QByteArray ritEnabled(bool en);
 QByteArray xitEnabled(bool en);
-QByteArray rfPower(double watts);
-QByteArray rfPowerExtended(double watts, bool qrp);
+// PC / PCX replies. Both take the PowerRange because the wire encoding depends on it: the K4
+// reports the QRP and XVTR ranges in TENTHS, so a value in watts (or mW) must be scaled by 10.
+// Passing a bool could never express the XVTR range at all. See CAT-005.
+QByteArray rfPower(double value, LevelsState::PowerRange range);
+QByteArray rfPowerExtended(double value, LevelsState::PowerRange range);
 QByteArray filterBandwidth(int bwHz);
 QByteArray filterWidthExtended(int bwHz);
 // KSnnn. CLAMPED to the K4's documented range (manual: "from 8 to 100 WPM"), because the CW macro

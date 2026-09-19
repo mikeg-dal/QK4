@@ -83,12 +83,13 @@ void CatPushBroadcaster::onRitXitChanged(bool rit, bool xit, int offset) {
 }
 
 void CatPushBroadcaster::onRfPowerChanged(double value, LevelsState::PowerRange range) {
-    // CatFrames::rfPower formats as W. For XVTR (mW) we'd need a different frame
-    // (PCnnnX), which AI2 subscribers rarely care about — defer; the K4-direct
-    // PC echo still reaches them via passive forwarding.
+    // XVTR is still skipped: a bare PC reply carries no range suffix, so a subscriber has no way
+    // to tell milliwatts from watts and would read 5 mW as 5 W. The K4-direct PC echo still
+    // reaches them by passive forwarding. rfPower() now scales the value for the range it is
+    // given (CAT-005), so QRP no longer goes out ten times low.
     if (range == LevelsState::PowerRange::Xvtr)
         return;
-    broadcast(CatFrames::rfPower(value));
+    broadcast(CatFrames::rfPower(value, range));
 }
 
 void CatPushBroadcaster::onFilterBandwidthChanged(int bw) {
