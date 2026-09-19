@@ -223,10 +223,13 @@ void RadioManagerDialog::setupUi() {
             .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
             .arg(K4Styles::Dimensions::PaddingSmall)
             .arg(K4Styles::Colors::AccentAmber));
-    m_encodeModeCombo->addItem("EM3 - Opus Float", 3); // Default
-    m_encodeModeCombo->addItem("EM2 - Opus Int", 2);
-    m_encodeModeCombo->addItem("EM1 - RAW 16-bit", 1);
-    m_encodeModeCombo->addItem("EM0 - RAW 32-bit", 0);
+    // EM0 is 24-bit audio in a 32-bit container, not the "RAW 32-bit float" Elecraft's
+    // documentation describes — measured 2026-09-19, see docs/k4-protocol-quirks.md. The old
+    // label told the operator something untrue about the format they were selecting.
+    m_encodeModeCombo->addItem("EM3 - Opus (float decode)", 3); // Default
+    m_encodeModeCombo->addItem("EM2 - Opus (integer decode)", 2);
+    m_encodeModeCombo->addItem("EM1 - Uncompressed 16-bit", 1);
+    m_encodeModeCombo->addItem("EM0 - Uncompressed 24-bit", 0);
     m_encodeModeCombo->setCurrentIndex(0); // EM3 default
     formLayout->addWidget(encodeModeLabel, 7, 0);
     formLayout->addWidget(m_encodeModeCombo, 7, 1);
