@@ -1,5 +1,6 @@
 #include "audioengine.h"
-#include "audio/audiodecimator.h" // capture-rate decimation
+#include "audio/audiodecimator.h"       // capture-rate decimation
+#include "audio/audiodeviceselection.h" // which device a stream belongs on
 #include "audio/audiologging.h"
 #include "audio/opusencoder.h"
 #include "audio/rawaudioformat.h" // EM0/EM1 wire format
@@ -919,35 +920,33 @@ void AudioEngine::setOutputDevice(const QString &deviceId) {
 }
 
 void AudioEngine::onSystemDefaultInputChanged() {
-    // WHY logged at entry: a handler that never runs and a handler that runs and declines to act
-    // are indistinguishable from the outside. Observed 2026-09-19 - AirPods connected mid-session,
-    // the operator's selection was "System Default", and the microphone never moved off the device
-    // resolved at startup. Which of the guards below stopped it, or whether the signal arrived at
-    // all, could not be told from the log.
-    qCDebug(qk4Audio, "AudioEngine: input device list changed (selection=\"%s\", active=\"%s\")",
-            m_selectedMicDeviceId.isEmpty() ? "system default" : qUtf8Printable(m_selectedMicDeviceId),
-            qUtf8Printable(m_activeMicDeviceId));
-
-    // Only follow the OS default when the user hasn't pinned a specific device.
+    // Fires when the device LIST changes, not only when the default moves - which is what lets a
+    // pinned device be reclaimed the moment it reappears. See audio/audiodeviceselection.h.
+    bool pinnedPresent = false;
     if (!m_selectedMicDeviceId.isEmpty()) {
-        qCDebug(qk4Audio, "AudioEngine:   -> operator pinned a device; not following the OS default");
-        return;
+        for (const QAudioDevice &d : QMediaDevices::audioInputs()) {
+            if (d.id() == m_selectedMicDeviceId) {
+                pinnedPresent = true;
+                break;
+            }
+        }
     }
-    // Nothing built yet — the next openMic() resolves the current default fresh.
-    if (!m_audioSource) {
-        qCDebug(qk4Audio, "AudioEngine:   -> no source built yet; next openMic() resolves it");
-        return;
-    }
-    const QString newDefault = QMediaDevices::defaultAudioInput().id();
-    if (newDefault.isEmpty() || newDefault == m_activeMicDeviceId) {
-        qCDebug(qk4Audio, "AudioEngine:   -> effective default unchanged (\"%s\")", qUtf8Printable(newDefault));
-        return; // effective default unchanged
-    }
-    qCDebug(qk4Audio, "AudioEngine:   -> following OS default to \"%s\", rebuilding microphone",
-            qUtf8Printable(newDefault));
 
-    // Rebuild the source on the new default, preserving the open/closed state.
-    bool wasOpen = m_micEnabled.load(std::memory_order_relaxed);
+    const auto decision = AudioDeviceSelection::onDeviceListChanged(
+        m_selectedMicDeviceId.toStdString(), m_activeMicDeviceId.toStdString(),
+        QMediaDevices::defaultAudioInput().id().toStdString(), pinnedPresent, m_audioSource != nullptr);
+
+    // WHY logged either way: a handler that never runs and a handler that runs and declines to act
+    // are indistinguishable from outside, which cost a bench session on 2026-09-19.
+    qCDebug(qk4Audio, "AudioEngine: input device list changed (selection=\"%s\", active=\"%s\") -> %s",
+            m_selectedMicDeviceId.isEmpty() ? "system default" : qUtf8Printable(m_selectedMicDeviceId),
+            qUtf8Printable(m_activeMicDeviceId), decision.reason);
+
+    if (decision.action != AudioDeviceSelection::Action::SwitchTo)
+        return;
+
+    // Rebuild the source on the chosen device, preserving the open/closed state.
+    const bool wasOpen = m_micEnabled.load(std::memory_order_relaxed);
     if (wasOpen)
         closeMic();
     delete m_audioSource;
@@ -957,32 +956,32 @@ void AudioEngine::onSystemDefaultInputChanged() {
 }
 
 void AudioEngine::onSystemDefaultOutputChanged() {
-    // Logged at entry for the same reason as the input side - see that handler.
-    qCDebug(qk4Audio, "AudioEngine: output device list changed (selection=\"%s\", active=\"%s\")",
-            m_selectedOutputDeviceId.isEmpty() ? "system default" : qUtf8Printable(m_selectedOutputDeviceId),
-            qUtf8Printable(m_activeOutputDeviceId));
-
+    bool pinnedPresent = false;
     if (!m_selectedOutputDeviceId.isEmpty()) {
-        qCDebug(qk4Audio, "AudioEngine:   -> operator pinned a device; not following the OS default");
-        return; // the operator pinned a device; the OS default is not ours to follow
-    }
-    if (!m_outputRunning) {
-        qCDebug(qk4Audio, "AudioEngine:   -> output not running; start() will resolve the default");
-        return; // not producing output yet — start() will resolve the current default
+        for (const QAudioDevice &d : QMediaDevices::audioOutputs()) {
+            if (d.id() == m_selectedOutputDeviceId) {
+                pinnedPresent = true;
+                break;
+            }
+        }
     }
 
-    // With a sink up, only a real move of the effective default is worth a rebuild. With no sink,
-    // rebuild regardless: we are in the failed state, and the default having moved is precisely the
-    // chance to get out of it.
-    if (m_audioSink) {
-        const QString newDefault = QMediaDevices::defaultAudioOutput().id();
-        if (newDefault.isEmpty() || newDefault == m_activeOutputDeviceId) {
-            qCDebug(qk4Audio, "AudioEngine:   -> effective default unchanged (\"%s\")", qUtf8Printable(newDefault));
-            return;
-        }
-        qCDebug(qk4Audio, "AudioEngine:   -> following OS default to \"%s\", rebuilding sink",
-                qUtf8Printable(newDefault));
-    }
+    // With no sink we are in the failed state, and any list change is a chance to get out of it -
+    // so `haveStream` is reported as true only when one exists, and the no-sink case is handled
+    // below by rebuilding regardless of the decision.
+    const auto decision = AudioDeviceSelection::onDeviceListChanged(
+        m_selectedOutputDeviceId.toStdString(), m_activeOutputDeviceId.toStdString(),
+        QMediaDevices::defaultAudioOutput().id().toStdString(), pinnedPresent, m_audioSink != nullptr);
+
+    qCDebug(qk4Audio, "AudioEngine: output device list changed (selection=\"%s\", active=\"%s\") -> %s",
+            m_selectedOutputDeviceId.isEmpty() ? "system default" : qUtf8Printable(m_selectedOutputDeviceId),
+            qUtf8Printable(m_activeOutputDeviceId), decision.reason);
+
+    if (!m_outputRunning)
+        return; // not producing output yet - start() will resolve the current default
+
+    if (m_audioSink && decision.action != AudioDeviceSelection::Action::SwitchTo)
+        return;
 
     rebuildOutput();
 }

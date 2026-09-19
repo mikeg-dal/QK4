@@ -497,6 +497,12 @@ target_include_directories(test_audiodecimator PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_audiodecimator Qt6::Core Qt6::Test)
 add_test(NAME AudioDecimatorTests COMMAND test_audiodecimator)
 
+# Audio device selection policy — pure logic, no audio device needed.
+add_executable(test_audiodeviceselection test_audiodeviceselection.cpp)
+target_include_directories(test_audiodeviceselection PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_audiodeviceselection Qt6::Core Qt6::Test)
+add_test(NAME AudioDeviceSelectionTests COMMAND test_audiodeviceselection)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
