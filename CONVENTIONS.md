@@ -74,12 +74,25 @@ m_panadapterA, m_panadapterB
 | Includes | Preserve order (no auto-sort) |
 
 ```bash
-# Check formatting
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+# One-time: install the exact clang-format CI uses, into .format-venv/ (gitignored)
+scripts/check-format.sh --bootstrap
+
+# Check formatting, exactly as CI does
+scripts/check-format.sh
 
 # Auto-format
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format -i
+scripts/check-format.sh --fix
 ```
+
+**Use the script rather than calling `clang-format` directly.** The commands here previously read
+`find src -name ... | xargs clang-format`, which disagrees with CI twice over: CI covers `src` **and
+`tests`**, and it installs **`clang-format-18`**, which on `ubuntu-latest` is **18.1.3**. Homebrew's
+`llvm@18` ships 18.1.8, and the two disagree about real code in this repo — 18.1.8 accepts wrapping
+that 18.1.3 rejects. A plain `clang-format` run can therefore report success on code CI will fail.
+
+The script pins 18.1.3, walks the same paths CI walks, and **refuses to run on a mismatched
+version** rather than reporting a misleading pass. If CI's version is ever bumped, change
+`REQUIRED_VERSION` in the script in the same commit as `ci.yml`.
 
 ### Example
 
@@ -109,13 +122,18 @@ MainWindow::MainWindow(QWidget *parent)
 
 ```bash
 # 1. Run lint check (MUST pass before commit)
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+scripts/check-format.sh
 
 # 2. Auto-fix if lint fails
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format -i
+scripts/check-format.sh --fix
+
+# Checking only what is staged is faster, and enough for a pre-commit hook
+scripts/check-format.sh --staged
 ```
 
-If lint fails in CI, it means this step was skipped locally.
+If lint fails in CI, it means this step was skipped locally — or was run with a `clang-format` whose
+patch version differs from CI's, which is why the check above goes through the script. See
+**Code Formatting** for what that difference costs.
 
 ## Code Review Checklist
 
