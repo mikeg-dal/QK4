@@ -157,7 +157,14 @@ private:
     // Resample 48kHz Float32 samples to 12kHz (4:1 decimation with averaging).
     // Reads from input48k, writes into the pre-allocated m_resampleBuf12k
     // member and returns a const reference to it. Avoids per-poll allocation.
-    const QByteArray &resample48kTo12k(const QByteArray &input48k);
+    // Decimate a captured frame to the K4's 12 kHz, using whatever rate the device is actually
+    // running at. See audio/audiodecimator.h for why the rate is not a constant any more.
+    const QByteArray &resampleTo12k(const QByteArray &input);
+
+    // The microphone's ACTUAL capture rate, taken from the device rather than demanded of it.
+    // 0 until a device has been opened. See setupAudioInput().
+    int m_micSampleRate = 0;
+    int m_micDecimationFactor = 0;
 
     // Encode + packetize one captured S16LE mono frame and emit txPacketReady.
     // Runs on the audio thread, called from onMicDataReady when PTT is active.
@@ -171,6 +178,19 @@ private:
     // Frames between qk4.audio.tx reports during a transmission. The first frame of
     // every transmission is always reported; this throttles the rest.
     static constexpr int TX_DIAG_FRAME_INTERVAL = 50;
+
+    // Mic-silence watchdog. A microphone that opens successfully and then delivers nothing looks
+    // exactly like a quiet room from everywhere downstream, so PTT lights the indicator, the gate
+    // opens, and the operator transmits nothing while believing they are on the air. That is
+    // INT-005, and it stayed undiagnosed because the read path treats an empty read as normal -
+    // which it is, most of the time. These make the difference between "no data this poll" and
+    // "no data at all since the operator keyed" observable. Audio thread only.
+    // How long a keyed transmitter may produce no microphone data before we say so. Long enough
+    // that ordinary buffer starvation never trips it, short enough that the operator learns within
+    // one over rather than after the contact.
+    static constexpr qint64 MIC_SILENCE_WARN_MS = 500;
+    qint64 m_firstEmptyPollMs = 0;
+    bool m_micSilenceReported = false;
 
     // Loudest mic sample since PTT engaged, tracked across EVERY frame while qk4.audio.tx is on.
     // WHY: reporting only the throttled frames' own peaks made short transmissions unreadable -
@@ -258,10 +278,9 @@ private:
     // capacity.
     int m_micReadOffset = 0;
 
-    // Pre-allocated scratch for resample48kTo12k. Sized to INPUT_BUFFER_SIZE/4
-    // bytes (the 4:1 decimation ratio means 12kHz output is 1/4 the 48kHz input
-    // size; INPUT_BUFFER_SIZE bytes of 48kHz Float32 = INPUT_BUFFER_SIZE/16
-    // samples = INPUT_BUFFER_SIZE/16 * 4 bytes of 12kHz output = INPUT_BUFFER_SIZE/4).
+    // Pre-allocated scratch for resampleTo12k. Sized to the full INPUT_BUFFER_SIZE because the
+    // decimation factor depends on the capture device: a 48 kHz mic decimates 4:1, an AirPods Pro
+    // at 24 kHz decimates 2:1, and a 12 kHz device would pass through unchanged.
     QByteArray m_resampleBuf12k;
 
     // Timer for polling microphone data (more reliable than readyRead signal)

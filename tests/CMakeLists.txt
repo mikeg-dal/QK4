@@ -491,6 +491,12 @@ target_include_directories(test_meterscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_meterscale Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
 add_test(NAME MeterScaleTests COMMAND test_meterscale)
 
+# Capture-rate decimation — pure logic, no audio device needed.
+add_executable(test_audiodecimator test_audiodecimator.cpp)
+target_include_directories(test_audiodecimator PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_audiodecimator Qt6::Core Qt6::Test)
+add_test(NAME AudioDecimatorTests COMMAND test_audiodecimator)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
