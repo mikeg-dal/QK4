@@ -166,6 +166,53 @@ step below the threshold, so it lands on 6 kHz where the radio would not.
 
 ---
 
+## 11. Audio encode modes `EM0`–`EM3` carry the same audio at different numeric scales
+
+**Symptom.** The four encode modes sound like different volumes. Switching from EM3 to EM0 needs far
+more mic gain to reach the same ALC. EM1 transmits audible noise while the operator is silent.
+
+**K4 behavior.** Three facts, all measured 2026-09-19 against a stationary reference — dummy load,
+**AGC OFF**, fixed AF gain, 20 s of receiver noise captured in each mode with
+`tools/k4_audio_capture.py` (capture `bench-logs/audiocal-20260919-0741`, 240,000 samples/mode):
+
+1. **EM0 is 24-bit audio in a 32-bit container.** Its full scale is `2^23`, not the `2^17` QK4
+   previously assumed. The K4's EM0 stream carries exactly **256× (2^8)** the values of its EM1
+   stream for the same sound — a bit shift, which is why the ratio is exact rather than approximate.
+2. **EM1, EM2 and EM3 are all shipped at an identical level** — 16.780 / 16.710 / 16.718 on a `2^15`
+   scale for the same signal. EM2 and EM3 are the *same Opus bitstream*; they differ only in which
+   decode call the client uses (`opus_decode` vs `opus_decode_float`), not on the wire.
+3. **Every mode is shipped ~32× below its container's full scale.** That factor is a property of the
+   radio, not of any codec, and it is independently corroborated: K4-Companion, an unrelated
+   implementation, applies the same 32× to the same stream.
+
+Elecraft's documentation calls EM0 "RAW 32-bit float". It is neither float nor scaled to 2^31 — it is
+S32LE integers holding 24-bit values. Taking the documentation at its word is what produced AUD-003.
+
+**QK4 encoding.**
+- `src/audio/opusdecoder.h` / `.cpp` — one rule for all four modes:
+  `out = native × K4_GAIN_BOOST / full_scale`, with full scale `2^23` (EM0), `2^15` (EM1/EM2) and
+  `1.0` (EM3). This replaced four unrelated by-ear constants, two of which were wrong by 6 dB in
+  opposite directions. Under the corrected rule the modes agree to **0.04 dB**; before, they spanned
+  **12.03 dB**.
+- `src/audio/rawaudioformat.h` — `EM0_FULL_SCALE` (`2^23`) is the single source of truth, shared by
+  the TX side so the two directions cannot drift apart. `EM0_S16_TO_FULL_SCALE` (256) maps a captured
+  S16 mic sample onto EM0's full scale; anything less caps TX below full modulation with no way to
+  recover it, because `setMicGain` clamps at unity and can only attenuate.
+- `tests/test_opusdecoder.cpp` — pins the rule. Five of its eight cases fail on the pre-calibration
+  constants, including the 12.03 dB EM0-vs-EM1 spread.
+- `tests/test_rawaudioformat.cpp` — pins the TX wire format and scale.
+
+**Reproducing it.** `tools/k4_audio_capture.py capture ...` then `analyze`. AGC **must** be off: AGC
+normalises level and erases the quantity being measured. The modes cannot be compared simultaneously
+because `EM` is only applied at connect (it is sent in the startup macro), so the method relies on a
+stationary reference instead — captures minutes apart are comparable when the signal is receiver
+noise into a dummy load.
+
+**Still unmeasured.** TX levels for EM2/EM3; whether the K4 requires *stereo* Opus on TX (QK4 sends
+mono; K4-Companion duplicates to stereo and its author notes the K4 requires it).
+
+---
+
 ## How to extend this document
 
 Add a new section only when a behavior satisfies **all** of:

@@ -29,8 +29,8 @@ public:
      * @param useTls  Select the encrypted transport (TLS + PSK on port 9204).
      * @param identity PSK identity. Only used in TLS mode; empty is accepted.
      * @param encodeMode Opus encode profile sent to the K4 in the startup macro.
-     *                   Valid range: 0 = RAW32, 1 = RAW16, 2 = Opus Int, 3 = Opus Float (default).
-     *                   Values outside 0-3 are undefined.
+     *                   Valid range: 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode).
+     * EM3 is the default. Values outside 0-3 are undefined.
      * @param streamingLatency SL tier (audio packet bundling). Valid range 0–7; there are four
      *                   distinct tiers — 20/40/60/120 ms per packet, verified in
      *                   `memory/k4-streaming-latency.md`. Default 3 ≈ 40 ms.

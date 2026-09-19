@@ -77,7 +77,7 @@ TcpClient::TcpClient(QObject *parent)
             sendCAT(K4Protocol::Commands::READY);              // Triggers comprehensive state dump
             sendCAT(K4Protocol::Commands::ENABLE_K4_MODE);     // Enable advanced K4 protocol mode
             sendCAT(K4Protocol::Commands::ENABLE_LONG_ERRORS); // Request long format error messages
-            // Set audio encode mode (0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float)
+            // Set audio encode mode (0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode))
             qCDebug(netTcp) << "Sending:" << QString("EM%1;").arg(m_encodeMode);
             sendCAT(QString("EM%1;").arg(m_encodeMode));
             // Set streaming audio latency (0-7, higher values for high-latency connections)
@@ -112,8 +112,8 @@ void TcpClient::connectToHost(const QString &host, quint16 port, const QString &
     m_port = port;
     m_password = password; // Also used as PSK when TLS enabled
     m_useTls = useTls;
-    m_identity = identity;                 // TLS-PSK identity (optional)
-    m_encodeMode = encodeMode;             // Audio encode mode (0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float)
+    m_identity = identity;     // TLS-PSK identity (optional)
+    m_encodeMode = encodeMode; // 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode)
     m_streamingLatency = streamingLatency; // Remote streaming audio latency (0-7)
     m_authResponseReceived = false;
 

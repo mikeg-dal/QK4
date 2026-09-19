@@ -603,7 +603,7 @@ void RadioSettings::load() {
         entry.port = m_settings.value("port").toUInt();
         entry.useTls = m_settings.value("useTls", false).toBool();
         entry.identity = m_settings.value("identity").toString();
-        entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus Float)
+        entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus)
         entry.streamingLatency = m_settings.value("streamingLatency", 3).toInt(); // Default SL3
         entry.displayFps = m_settings.value("displayFps", 15).toInt();            // Default 15 FPS
         entry.connectAtStartup = m_settings.value("connectAtStartup", false).toBool();

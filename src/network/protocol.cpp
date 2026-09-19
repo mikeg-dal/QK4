@@ -184,7 +184,7 @@ QByteArray Protocol::buildAudioPacket(const QByteArray &audioData, quint8 sequen
     // Byte 0:    TYPE = 0x01 (Audio)
     // Byte 1:    VER = 0x01 (Version)
     // Byte 2:    SEQ = sequence number (0-255, wrapping)
-    // Byte 3:    MODE = encode mode (0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float)
+    // Byte 3:    MODE = encode mode (0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode))
     // Bytes 4-5: Frame size (little-endian UInt16) — samples per channel, matches SL tier
     // Byte 6:    Sample rate code = 0x00 (12000 Hz)
     // Byte 7+:   Audio data (format depends on encode mode)

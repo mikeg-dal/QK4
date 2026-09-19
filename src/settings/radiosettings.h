@@ -42,9 +42,11 @@ struct RadioEntry {
     QString host;
     QString password; // Password (used as PSK when TLS enabled)
     quint16 port;
-    bool useTls = false;      // Use TLS/PSK encryption (port 9204)
-    QString identity;         // TLS-PSK identity (optional, empty = default)
-    int encodeMode = 3;       // Audio encode mode: 0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float (default)
+    bool useTls = false; // Use TLS/PSK encryption (port 9204)
+    QString identity;    // TLS-PSK identity (optional, empty = default)
+    // Audio encode mode. See docs/k4-protocol-quirks.md -> "Audio encode modes EM0-EM3".
+    int encodeMode =
+        3; // 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode); EM3 default
     int streamingLatency = 3; // Remote streaming audio latency: 0-7 (default 3)
     int displayFps = 15;      // Display FPS: 12-30 (default 15, good balance for large monitors)
 
