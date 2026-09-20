@@ -309,6 +309,40 @@ private slots:
         server.stop();
     }
 
+    // #138. Qt buffers whatever the peer has not read, in our process, without limit. RX audio is
+    // ~384 kB/s per subscriber, so a client that stops reading grows QK4's memory for as long as
+    // it stays connected. CONVENTIONS.md rule 5 requires an explicit cap on any externally fed
+    // buffer; outbound was the one direction with none.
+    //
+    // The decision is tested rather than the socket: provoking the real thing needs a peer that
+    // connects and then never reads, which a test client cannot be. Same split, and same reason,
+    // as TransmitOwner against TransmitController.
+    void shedsAudioBeforeItShedsTheSession() {
+        using SendDecision = WebSocketServer::SendDecision;
+        constexpr qint64 soft = WebSocketServer::SEND_QUEUE_AUDIO_DROP_BYTES;
+        constexpr qint64 hard = WebSocketServer::SEND_QUEUE_HARD_LIMIT_BYTES;
+
+        // Draining normally: everything goes, whatever it is.
+        QCOMPARE(WebSocketServer::decideSend(0, /*sheddable=*/true), SendDecision::Send);
+        QCOMPARE(WebSocketServer::decideSend(0, /*sheddable=*/false), SendDecision::Send);
+        QCOMPARE(WebSocketServer::decideSend(soft, /*sheddable=*/true), SendDecision::Send);
+
+        // Backing up: audio is dropped, because late audio is worthless to a live stream...
+        QCOMPARE(WebSocketServer::decideSend(soft + 1, /*sheddable=*/true), SendDecision::DropFrame);
+        // ...but control is NOT, because it carries state the client cannot re-derive.
+        QCOMPARE(WebSocketServer::decideSend(soft + 1, /*sheddable=*/false), SendDecision::Send);
+        QCOMPARE(WebSocketServer::decideSend(hard, /*sheddable=*/false), SendDecision::Send);
+
+        // Not reading at all: the session goes, and this applies to control frames too - there is
+        // nothing to be gained by holding a megabyte for a peer that is not draining any of it.
+        QCOMPARE(WebSocketServer::decideSend(hard + 1, /*sheddable=*/true), SendDecision::DropSession);
+        QCOMPARE(WebSocketServer::decideSend(hard + 1, /*sheddable=*/false), SendDecision::DropSession);
+
+        // Ordering, stated as a property rather than left implicit in the numbers: audio must
+        // always be shed before the session is, or the cheap remedy never gets a chance to work.
+        QVERIFY(soft < hard);
+    }
+
     void echoesCloseAndReleasesTheSession() {
         WebSocketServer server;
         const quint16 port = freePort(server);
