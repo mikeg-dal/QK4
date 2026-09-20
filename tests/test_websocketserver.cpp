@@ -309,6 +309,54 @@ private slots:
         server.stop();
     }
 
+    // #137. A peer that vanishes without closing its socket is invisible to TCP until the OS gives
+    // up - about 15 minutes on macOS - and keeps whatever it was holding for that whole window.
+    // On the TCI server that is the transmitter, with the operator's own microphone locked out.
+    void dropsAPeerThatStopsAnswering() {
+        WebSocketServer server;
+        // Milliseconds, not the shipped 10 s / 30 s: the policy is the same, only the clock moves.
+        server.setLivenessPolicy(/*pingIntervalMs=*/50, /*silenceTimeoutMs=*/150);
+        const quint16 port = freePort(server);
+        QSignalSpy disconnected(&server, &WebSocketServer::clientDisconnected);
+
+        TestClient client;
+        QVERIFY(client.connectTo(port));
+        client.readHandshake();
+
+        // The client never answers the PINGs that follow. A real dead peer behaves exactly so:
+        // the socket stays open because nothing told either end otherwise.
+        QTRY_VERIFY_WITH_TIMEOUT(disconnected.count() == 1, 3000);
+
+        client.close();
+        server.stop();
+    }
+
+    void aPeerThatKeepsTalkingIsNeverDropped() {
+        // The other half, and the one that matters for not breaking working setups: ANY inbound
+        // frame proves life, so a client busy streaming is never probed into a false positive.
+        // Without this, a timeout tuned tight enough to be useful would disconnect live clients.
+        WebSocketServer server;
+        server.setLivenessPolicy(/*pingIntervalMs=*/50, /*silenceTimeoutMs=*/150);
+        const quint16 port = freePort(server);
+        QSignalSpy disconnected(&server, &WebSocketServer::clientDisconnected);
+
+        TestClient client;
+        QVERIFY(client.connectTo(port));
+        client.readHandshake();
+
+        // Well past the timeout, sending only data - never a PONG.
+        QElapsedTimer chatting;
+        chatting.start();
+        while (chatting.elapsed() < 600) {
+            client.sendText("trx:0;");
+            QTest::qWait(40);
+        }
+        QCOMPARE(disconnected.count(), 0);
+
+        client.close();
+        server.stop();
+    }
+
     // #138. Qt buffers whatever the peer has not read, in our process, without limit. RX audio is
     // ~384 kB/s per subscriber, so a client that stops reading grows QK4's memory for as long as
     // it stays connected. CONVENTIONS.md rule 5 requires an explicit cap on any externally fed

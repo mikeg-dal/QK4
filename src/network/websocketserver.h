@@ -2,9 +2,11 @@
 #define NETWORK_WEBSOCKETSERVER_H
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
 #include "network/websocketframe.h"
 
@@ -36,6 +38,21 @@ public:
     // terminating blank line cannot grow the buffer without bound (CONVENTIONS.md rule 5).
     static constexpr int MAX_HANDSHAKE_BYTES = 8 * 1024;
 
+    // LIVENESS. A peer that stops answering without closing its socket is invisible to TCP until
+    // the OS gives up - on the order of 15 minutes on macOS - and for that whole window it keeps
+    // whatever it was holding. For the TCI server that means the transmitter, with the operator's
+    // own microphone locked out and nothing on screen saying why.
+    //
+    // RFC 6455 5.5.2 requires a peer to answer PING with PONG, so this uses the mechanism the
+    // protocol already defines rather than inventing one. ANY inbound frame counts as proof of
+    // life, not just the PONG, so a busy client is never probed into a false positive.
+    //
+    // The timeout is generous on purpose. The cost of being wrong is asymmetric: dropping a live
+    // client is worse than holding a dead one a few seconds longer, and a client that is merely
+    // slow must survive. 30 s is still two orders of magnitude better than the OS timeout.
+    static constexpr int PING_INTERVAL_MS = 10000;
+    static constexpr int PEER_SILENCE_TIMEOUT_MS = 30000;
+
     // OUTBOUND BACKPRESSURE. Qt buffers whatever the peer has not read, in our process, without
     // limit. RX audio runs about 384 kB/s per subscriber, so a client that stops reading grows
     // QK4's memory for as long as it stays connected. CONVENTIONS.md rule 5 requires an explicit
@@ -49,11 +66,15 @@ public:
     static constexpr qint64 SEND_QUEUE_AUDIO_DROP_BYTES = 256 * 1024;  // ~0.7 s of RX audio
     static constexpr qint64 SEND_QUEUE_HARD_LIMIT_BYTES = 1024 * 1024; // rule 5's default cap
 
-    // The decision, separated from the socket so it can be tested without one - the same reason
-    // TransmitOwner is split out of TransmitController. Provoking the real thing needs a peer that
-    // connects and then never reads, which a test client cannot be.
+    // The backpressure decision, separated from the socket so it can be tested without one -
+    // the same reason TransmitOwner is split out of TransmitController. Provoking the real thing
+    // needs a peer that accepts a connection and then never reads, which a test client cannot be.
     enum class SendDecision { Send, DropFrame, DropSession };
     static SendDecision decideSend(qint64 queuedBytes, bool sheddable);
+
+    // Defaults to PING_INTERVAL_MS / PEER_SILENCE_TIMEOUT_MS. Overridable so a test does not have
+    // to wait half a minute to prove a dead peer is dropped.
+    void setLivenessPolicy(int pingIntervalMs, int silenceTimeoutMs);
 
     explicit WebSocketServer(QObject *parent = nullptr);
     ~WebSocketServer() override;
@@ -97,7 +118,10 @@ private:
         bool upgraded = false;
         QByteArray handshakeBuffer;
         WebSocketDecoder decoder{/*requireMask=*/true};
-        // Reported once per episode rather than per frame: a wedged peer would otherwise produce a
+        // Restarted by ANY inbound frame, which is what makes a busy client immune to the probe.
+        // Started at upgrade, so a peer that connects and then says nothing is still covered.
+        QElapsedTimer lastInbound;
+        // Reported once per session rather than per frame: a wedged peer would otherwise produce a
         // log line every audio block, burying the one line that matters.
         qint64 droppedAudioFrames = 0;
         bool reportedShedding = false;
@@ -117,7 +141,12 @@ private:
     // Returns false if the frame was not written, for any reason.
     bool writeFrame(int clientId, const QByteArray &frame, bool sheddable);
 
+    // Probes quiet peers and drops the ones that have stopped answering. See PING_INTERVAL_MS.
+    void onLivenessTick();
+
     QTcpServer *m_server;
+    QTimer *m_livenessTimer;
+    int m_silenceTimeoutMs = PEER_SILENCE_TIMEOUT_MS;
     QHash<int, Session> m_sessions;
     int m_nextClientId = 1;
     QString m_errorString;

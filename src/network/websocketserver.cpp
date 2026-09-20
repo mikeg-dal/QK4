@@ -5,7 +5,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 
-// Transport-level events only - backpressure and, later, liveness. What a client actually said
+// Transport-level events only - liveness probes and backpressure. What a client actually said
 // belongs to net.tci, which sits above this.
 Q_LOGGING_CATEGORY(netWs, "net.ws")
 
@@ -28,8 +28,14 @@ QString headerValue(const QByteArray &request, const char *name) {
 
 } // namespace
 
-WebSocketServer::WebSocketServer(QObject *parent) : QObject(parent), m_server(new QTcpServer(this)) {
+WebSocketServer::WebSocketServer(QObject *parent)
+    : QObject(parent), m_server(new QTcpServer(this)), m_livenessTimer(new QTimer(this)) {
     connect(m_server, &QTcpServer::newConnection, this, &WebSocketServer::onNewConnection);
+
+    // Runs only while listening - see start()/stop(). An idle server with no sessions should not
+    // wake the event loop every ten seconds for nothing.
+    m_livenessTimer->setInterval(PING_INTERVAL_MS);
+    connect(m_livenessTimer, &QTimer::timeout, this, &WebSocketServer::onLivenessTick);
 }
 
 WebSocketServer::~WebSocketServer() {
@@ -48,11 +54,13 @@ bool WebSocketServer::start(quint16 port, bool loopbackOnly) {
         return false;
     }
     m_errorString.clear();
+    m_livenessTimer->start();
     emit started(m_server->serverPort());
     return true;
 }
 
 void WebSocketServer::stop() {
+    m_livenessTimer->stop();
     if (!m_server->isListening() && m_sessions.isEmpty()) {
         return;
     }
@@ -172,6 +180,9 @@ bool WebSocketServer::tryUpgrade(int clientId) {
     // Everything that reads the session is done BEFORE the first write, because a write or flush
     // can surface a disconnect and erase the entry underneath us.
     it->upgraded = true;
+    // Starts the liveness clock here rather than on the first frame, so a peer that completes the
+    // handshake and then says nothing at all is still covered by the timeout.
+    it->lastInbound.start();
     const QByteArray leftover = it->handshakeBuffer.mid(end + 4);
     it->handshakeBuffer.clear();
     if (!leftover.isEmpty()) {
@@ -214,6 +225,11 @@ void WebSocketServer::pumpFrames(int clientId) {
             return;
         }
 
+        // ANY frame is proof of life, not just the PONG. A client streaming transmit audio or
+        // polling state never needs to be probed, and must never be dropped for not answering a
+        // PING it was too busy to notice.
+        it->lastInbound.restart();
+
         switch (message.opcode) {
         case WebSocketFrame::OpText:
             emit textMessageReceived(clientId, QString::fromUtf8(message.payload));
@@ -242,6 +258,28 @@ void WebSocketServer::pumpFrames(int clientId) {
         if (!m_sessions.contains(clientId)) {
             return;
         }
+    }
+}
+
+void WebSocketServer::onLivenessTick() {
+    // Snapshot the ids: dropSession erases from m_sessions, and it is reachable from this loop.
+    const QList<int> ids = m_sessions.keys();
+    for (int id : ids) {
+        auto it = m_sessions.find(id);
+        if (it == m_sessions.end() || !it->upgraded || !it->lastInbound.isValid()) {
+            continue; // still handshaking; MAX_HANDSHAKE_BYTES covers that phase
+        }
+        if (it->lastInbound.elapsed() > m_silenceTimeoutMs) {
+            qCWarning(netWs) << "client" << id << "has not answered in" << it->lastInbound.elapsed()
+                             << "ms - dropping it as dead";
+            // Whatever it was holding is released by the clientDisconnected this raises. For the
+            // TCI server that is the transmitter; see TciServer::onClientDisconnected.
+            dropSession(id, WebSocketFrame::CloseGoingAway, QStringLiteral("no response"));
+            continue;
+        }
+        // RFC 6455 5.5.2: the peer must answer this. A client that does not is indistinguishable
+        // from one that has gone, and will be dropped at the timeout above.
+        sendFrame(id, WebSocketFrame::OpPing, QByteArray());
     }
 }
 
@@ -281,6 +319,11 @@ void WebSocketServer::onDisconnected(int clientId) {
     if (wasUpgraded) {
         emit clientDisconnected(clientId);
     }
+}
+
+void WebSocketServer::setLivenessPolicy(int pingIntervalMs, int silenceTimeoutMs) {
+    m_livenessTimer->setInterval(pingIntervalMs);
+    m_silenceTimeoutMs = silenceTimeoutMs;
 }
 
 // HARD LIMIT FIRST, and it applies to every frame including control: past it the peer is not
@@ -327,7 +370,7 @@ bool WebSocketServer::writeFrame(int clientId, const QByteArray &frame, bool she
     }
 
     // Recovered: say so once, so a log shows the episode ending as well as starting.
-    if (it->reportedShedding) {
+    if (it->reportedShedding && queued <= SEND_QUEUE_AUDIO_DROP_BYTES) {
         it->reportedShedding = false;
         qCInfo(netWs) << "client" << clientId << "caught up after dropping" << it->droppedAudioFrames
                       << "audio frame(s)";
@@ -357,10 +400,10 @@ void WebSocketServer::broadcastText(const QString &text) {
     // synchronously, and erasing from m_sessions mid-loop invalidates the iterator. This is the
     // path every CAT broadcast takes, so it has to be safe by construction.
     //
-    // IDS, not socket pointers, which this previously snapshotted. A dropped session deletes its
-    // socket, so a pointer captured before the loop could be dangling by the time the loop reaches
-    // it - now reachable, because writeFrame can drop a session on overflow. Re-looking up by id
-    // makes that a miss rather than a use-after-free.
+    // IDS, not socket pointers, which the previous version snapshotted. A dropped session deletes
+    // its socket, so a pointer captured before the loop could be dangling by the time the loop
+    // reaches it - now reachable, because writeFrame can drop a session on overflow. Re-looking up
+    // by id makes that a miss rather than a use-after-free.
     const QList<int> targets = m_sessions.keys();
     for (int id : targets) {
         writeFrame(id, frame, /*sheddable=*/false); // broadcasts are control text, never shed
