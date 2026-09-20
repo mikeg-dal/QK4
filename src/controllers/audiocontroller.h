@@ -84,6 +84,10 @@ public:
     void setOutputDevice(const QString &deviceId);
     void setMicGain(float gain); // 0.0 to 1.0
 
+    // Transmit level for audio from a TCI client. Separate from setMicGain because the two sources
+    // sit in completely different parts of the same cubic curve — see AudioEngine::feedTciTxAudio.
+    void setTciTxGain(float gain); // 0.0 to 1.0
+
 signals:
     // PTT changed by SOMEBODY - this says nothing about who. Every local unkey in QK4 (the Esc
     // shortcut, the PTT button, the HaliKey PTT line, the side panel, CatServer) funnels through

@@ -1,5 +1,31 @@
 #include "radiosettings.h"
 
+// Starting point for the TCI transmit level: 25% on the cubic curve is 0.0156x, measured on a K4 as
+// keeping ALC at or below 5 on an injected signal, WITH WSJT-X'S OWN OUTPUT AT 80%.
+//
+// That pairing is the whole measurement - 25% on its own means nothing, because there are two gain
+// stages in series and the client owns the first one. 80% is recorded because it is a common
+// setting, not a required one; an operator running their client hotter or quieter moves this to
+// suit, which is why the control is a slider and why the help text gives them the ALC criterion
+// instead of a number to copy.
+//
+// WHY QK4 NEEDS ITS OWN CONTROL AT ALL, when WSJT-X already has an output slider: the client's
+// slider is not QK4's to spend. The same WSJT-X installation is commonly used against other
+// programs and other radios, where its output level is already set to suit them. Asking the
+// operator to retune it for QK4 would break those setups every time they switch. This control is
+// the one that belongs to this path, so the client's level can stay where the rest of their
+// station needs it.
+//
+// WHY THIS DEFAULT CARRIES MORE WEIGHT THAN MIC GAIN'S: the K4 has a settable line-in level for its
+// soundcard input and another for the rear 3.5 mm jack, but NONE for LAN audio. There is no
+// radio-side trim on this path, so this gain and the client's own output level are the only two
+// controls in the chain. That also means a bad default cannot be absorbed at the radio the way a
+// hot line input can.
+//
+// It coincides with the Mic Gain default by measurement, not derivation - the two are tuned against
+// different sources and different meters, and either may move without the other.
+static constexpr int kTciTxGainDefault = 25;
+
 static const QByteArray obfuscationKey = "K4RemoteObfuscation";
 
 static QString obfuscatePassword(const QString &password) {
@@ -378,6 +404,20 @@ void RadioSettings::setTciAudioEnabled(bool enabled) {
         m_tciAudioEnabled = enabled;
         save();
         emit tciAudioEnabledChanged(enabled);
+    }
+}
+
+int RadioSettings::tciTxGain() const {
+    return m_settings.value("tci/txGain", kTciTxGainDefault).toInt();
+}
+
+void RadioSettings::setTciTxGain(int value) {
+    value = qBound(0, value, 100);
+    const int oldValue = m_settings.value("tci/txGain", kTciTxGainDefault).toInt();
+    if (oldValue != value) {
+        m_settings.setValue("tci/txGain", value);
+        m_settings.sync();
+        emit tciTxGainChanged(value);
     }
 }
 

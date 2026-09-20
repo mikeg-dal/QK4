@@ -539,14 +539,39 @@ void TciServer::onSensorTick() {
         }
     }
 
-    if (!m_txSensorClients.isEmpty()) {
+    // ONLY WHILE THE RADIO IS ACTUALLY TRANSMITTING. Forward power, peak power and SWR have no
+    // meaning on receive, and sending them anyway published a steady stream of stale readings -
+    // every tick, to every subscriber, for as long as a client stayed connected.
+    //
+    // m_snapshot.transmitting is the right gate rather than "does a TCI client hold PTT": it
+    // follows the radio whoever keyed it, so a client watching power still sees the operator's own
+    // transmissions. See setSnapshot for why it is held at the client's value while one owns PTT.
+    //
+    // Matches both ends of the path this serves. AetherSDR gates the same way
+    // (`cs.txSensorsEnabled && m_model->transmitModel().isTransmitting()`), and WSJT-X only
+    // consumes these while its own PTT is asserted and zeroes them on the falling edge, so
+    // stopping mid-transmission leaves nothing stale on screen.
+    if (!m_txSensorClients.isEmpty() && m_snapshot.transmitting) {
         // Five arguments, so the QStringList form: trx, mic dBm, RMS power W, peak power W, SWR.
         // Transmit belongs to the main receiver; the K4 has one transmitter.
+        //
+        // ONE DECIMAL PLACE ON EVERY FIELD, INCLUDING SWR. SWR used to carry two, which is the
+        // obvious choice for a figure conventionally written as 1.25 - and it made WSJT-X report
+        // an SWR nearly four times too high. Its decoder is fixed-point and assumes exactly one
+        // decimal digit (TCITransceiver.cpp: `10 * whole + first_decimal`, then x10 for
+        // hundredths), so "1.50" decodes as 10*1 + 50 = 60 -> 6.00. It reads correctly only when
+        // the second decimal is zero, which is why a 1:1 bench load showed nothing wrong.
+        //
+        // The spec does not fix the precision, so this is not strictly our defect - but every
+        // other field here already sends one decimal and decodes correctly, so SWR was the odd one
+        // out, and being the only field a client has to special-case is not a position worth
+        // defending. Resolution is not lost that matters: 0.1 SWR is finer than the K4's own
+        // display.
         const QString reading =
             message(QStringLiteral("tx_sensors"),
                     QStringList{QString::number(MAIN_RECEIVER), QString::number(m_sensors.micLevelDbm, 'f', 1),
                                 QString::number(m_sensors.forwardPowerW, 'f', 1),
-                                QString::number(m_sensors.peakPowerW, 'f', 1), QString::number(m_sensors.swr, 'f', 2)});
+                                QString::number(m_sensors.peakPowerW, 'f', 1), QString::number(m_sensors.swr, 'f', 1)});
         const QList<int> targets = m_txSensorClients.values();
         for (int id : targets) {
             if (!m_txSensorClients.contains(id)) {

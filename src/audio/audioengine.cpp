@@ -610,10 +610,11 @@ void AudioEngine::feedTciTxAudio(const QByteArray &f32Mono48k) {
         return;
     }
     const QByteArray &data12k = resampleTo12k(f32Mono48k);
-    // Same Mic Gain control as the sound-card path. WSJT-X sends at or near full scale, so an
-    // operator-facing level is required here, not optional - the first on-air test drove the K4
-    // far too hard without one.
-    bufferAndEmitTxFrames(data12k, m_micGain.load(std::memory_order_relaxed));
+    // The TCI level, NOT the microphone's. An operator-facing level is required here rather than
+    // optional - WSJT-X sends at or near full scale and drove the K4 far too hard without one -
+    // but it has to be its own, because the cubic curve puts a microphone and a line-level digital
+    // source in completely different parts of the slider.
+    bufferAndEmitTxFrames(data12k, m_tciTxGain.load(std::memory_order_relaxed));
 }
 
 void AudioEngine::onMicDataReady() {
@@ -771,17 +772,22 @@ void AudioEngine::logTxFrameDiagnostic(const QByteArray &f32MonoFrame, const QBy
     // comparable across encode modes whose containers have different full scales.
     auto dbfs = [](float v) { return v > 0.0f ? 20.0 * std::log10(static_cast<double>(v)) : -999.0; };
 
-    // mic-peak is measured AFTER m_micGain, so a quiet frame is otherwise ambiguous between a quiet
+    // The peak is measured AFTER the gain, so a quiet frame is otherwise ambiguous between a quiet
     // room and a turned-down slider - an ambiguity that cost a bench cycle on 2026-09-19. Report
-    // both the effective gain and the slider position it came from: setMicGain cubes the slider,
+    // both the effective gain and the slider position it came from: both setters cube the slider,
     // so the cube root recovers exactly what the operator set.
-    const double gain = static_cast<double>(m_micGain.load(std::memory_order_relaxed));
+    //
+    // WHICH gain is named matters now that there are two. This function encodes frames from both
+    // sources, so reporting m_micGain unconditionally would have made a TCI bench log describe a
+    // control that had nothing to do with the level being measured.
+    const bool fromTci = txSource() == TxSource::Tci;
+    const double gain = static_cast<double>((fromTci ? m_tciTxGain : m_micGain).load(std::memory_order_relaxed));
     const double slider = std::cbrt(gain) * 100.0;
     qCDebug(qk4AudioTx,
-            "TX frame: EM%d seq=%u frameSamples=%d mic-peak=%.1f dBFS peak-since-key=%.1f dBFS "
-            "(mic slider %.0f%% -> gain %.4f) wire-payload=%d",
+            "TX frame: EM%d seq=%u frameSamples=%d peak=%.1f dBFS peak-since-key=%.1f dBFS "
+            "(%s slider %.0f%% -> gain %.4f) wire-payload=%d",
             encodeMode, static_cast<unsigned>(m_txSequence), frameSamples, dbfs(framePeak), dbfs(m_txPeakSinceKey),
-            slider, gain, static_cast<int>(wireData.size()));
+            fromTci ? "TCI TX" : "mic", slider, gain, static_cast<int>(wireData.size()));
 
     if (encodeMode != 0)
         return;
@@ -859,6 +865,15 @@ void AudioEngine::setMicGain(float gain) {
     m_micGain.store(qBound(0.0f, cubic, 1.0f), std::memory_order_relaxed);
     // Recorded so a bench log shows slider moves between transmissions, not only during them.
     qCDebug(qk4AudioTx, "mic slider %.0f%% -> gain %.4f", static_cast<double>(gain) * 100.0,
+            static_cast<double>(cubic));
+}
+
+void AudioEngine::setTciTxGain(float gain) {
+    // Identical curve to setMicGain, deliberately: the two controls behave the same way so a
+    // position means the same thing on both, even though the useful range differs by source.
+    const float cubic = gain * gain * gain;
+    m_tciTxGain.store(qBound(0.0f, cubic, 1.0f), std::memory_order_relaxed);
+    qCDebug(qk4AudioTx, "TCI TX slider %.0f%% -> gain %.4f", static_cast<double>(gain) * 100.0,
             static_cast<double>(cubic));
 }
 

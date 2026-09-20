@@ -68,7 +68,9 @@ AudioInputPage::AudioInputPage(AudioController *audioController, QWidget *parent
     layout->addLayout(gainLayout);
 
     auto *gainHelpLabel = new QLabel(
-        "Adjust the microphone input level. Uses an exponential curve for fine control at low levels.", this);
+        "Adjust the microphone input level. Uses an exponential curve for fine control at low levels. "
+        "This affects the microphone only — audio from a TCI client has its own TX Level on the TCI Server page.",
+        this);
     gainHelpLabel->setStyleSheet(K4Styles::Dialog::helpText());
     layout->addWidget(gainHelpLabel);
 
