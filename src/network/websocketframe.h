@@ -25,11 +25,14 @@ enum Opcode : quint8 {
     OpPong = 0xA,
 };
 
-// Close codes this server emits.
+// Close codes this server emits. RFC 6455 7.4.1 values, used for the meaning the RFC gives them
+// rather than as generic error numbers - a client that logs the code should learn why it was cut.
 enum CloseCode : quint16 {
     CloseNormal = 1000,
-    CloseProtocolError = 1002,
-    CloseTooBig = 1009,
+    CloseGoingAway = 1001,       // the peer stopped answering liveness probes
+    CloseProtocolError = 1002,   // malformed frame
+    ClosePolicyViolation = 1008, // the peer stopped reading and its send queue overflowed
+    CloseTooBig = 1009,          // a received message exceeded the frame limit
 };
 
 // Sec-WebSocket-Accept for a client's Sec-WebSocket-Key: base64(sha1(key + GUID)).

@@ -2,9 +2,11 @@
 #define NETWORK_WEBSOCKETSERVER_H
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
 #include "network/websocketframe.h"
 
@@ -35,6 +37,44 @@ public:
     // An HTTP upgrade request is a few hundred bytes. Capped so a peer that never sends the
     // terminating blank line cannot grow the buffer without bound (CONVENTIONS.md rule 5).
     static constexpr int MAX_HANDSHAKE_BYTES = 8 * 1024;
+
+    // LIVENESS. A peer that stops answering without closing its socket is invisible to TCP until
+    // the OS gives up - on the order of 15 minutes on macOS - and for that whole window it keeps
+    // whatever it was holding. For the TCI server that means the transmitter, with the operator's
+    // own microphone locked out and nothing on screen saying why.
+    //
+    // RFC 6455 5.5.2 requires a peer to answer PING with PONG, so this uses the mechanism the
+    // protocol already defines rather than inventing one. ANY inbound frame counts as proof of
+    // life, not just the PONG, so a busy client is never probed into a false positive.
+    //
+    // The timeout is generous on purpose. The cost of being wrong is asymmetric: dropping a live
+    // client is worse than holding a dead one a few seconds longer, and a client that is merely
+    // slow must survive. 30 s is still two orders of magnitude better than the OS timeout.
+    static constexpr int PING_INTERVAL_MS = 10000;
+    static constexpr int PEER_SILENCE_TIMEOUT_MS = 30000;
+
+    // OUTBOUND BACKPRESSURE. Qt buffers whatever the peer has not read, in our process, without
+    // limit. RX audio runs about 384 kB/s per subscriber, so a client that stops reading grows
+    // QK4's memory for as long as it stays connected. CONVENTIONS.md rule 5 requires an explicit
+    // limit on any buffer fed by an external source; this is the one direction that had none.
+    //
+    // Two limits, because audio and control must not be treated alike. Past the soft limit audio
+    // frames are DROPPED: for a live stream, late audio is worthless and dropping is the correct
+    // response, where queueing is not. Control frames are small and carry state a client cannot
+    // re-derive, so they are never shed. Past the hard limit the peer is not reading anything at
+    // all, and the session goes.
+    static constexpr qint64 SEND_QUEUE_AUDIO_DROP_BYTES = 256 * 1024;  // ~0.7 s of RX audio
+    static constexpr qint64 SEND_QUEUE_HARD_LIMIT_BYTES = 1024 * 1024; // rule 5's default cap
+
+    // The backpressure decision, separated from the socket so it can be tested without one -
+    // the same reason TransmitOwner is split out of TransmitController. Provoking the real thing
+    // needs a peer that accepts a connection and then never reads, which a test client cannot be.
+    enum class SendDecision { Send, DropFrame, DropSession };
+    static SendDecision decideSend(qint64 queuedBytes, bool sheddable);
+
+    // Defaults to PING_INTERVAL_MS / PEER_SILENCE_TIMEOUT_MS. Overridable so a test does not have
+    // to wait half a minute to prove a dead peer is dropped.
+    void setLivenessPolicy(int pingIntervalMs, int silenceTimeoutMs);
 
     explicit WebSocketServer(QObject *parent = nullptr);
     ~WebSocketServer() override;
@@ -78,6 +118,13 @@ private:
         bool upgraded = false;
         QByteArray handshakeBuffer;
         WebSocketDecoder decoder{/*requireMask=*/true};
+        // Restarted by ANY inbound frame, which is what makes a busy client immune to the probe.
+        // Started at upgrade, so a peer that connects and then says nothing is still covered.
+        QElapsedTimer lastInbound;
+        // Reported once per session rather than per frame: a wedged peer would otherwise produce a
+        // log line every audio block, burying the one line that matters.
+        qint64 droppedAudioFrames = 0;
+        bool reportedShedding = false;
     };
 
     // These take an id, never a Session& : a held reference cannot survive a signal emission,
@@ -89,7 +136,17 @@ private:
     void dropSession(int clientId, quint16 code, const QString &why);
     void sendFrame(int clientId, quint8 opcode, const QByteArray &payload);
 
+    // The single write path, so backpressure cannot be bypassed by adding another sender.
+    // `sheddable` marks a frame that may be dropped rather than queued - true for audio only.
+    // Returns false if the frame was not written, for any reason.
+    bool writeFrame(int clientId, const QByteArray &frame, bool sheddable);
+
+    // Probes quiet peers and drops the ones that have stopped answering. See PING_INTERVAL_MS.
+    void onLivenessTick();
+
     QTcpServer *m_server;
+    QTimer *m_livenessTimer;
+    int m_silenceTimeoutMs = PEER_SILENCE_TIMEOUT_MS;
     QHash<int, Session> m_sessions;
     int m_nextClientId = 1;
     QString m_errorString;
