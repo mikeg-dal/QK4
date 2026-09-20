@@ -74,11 +74,15 @@ m_panadapterA, m_panadapterB
 | Includes | Preserve order (no auto-sort) |
 
 ```bash
-# Check formatting
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+# clang-format 18.1.8 - the EXACT version ci.yml pins. clang-format changes its line-breaking
+# heuristics between patch releases, so a nearby version can accept wrapping CI rejects.
+CF=/opt/homebrew/opt/llvm@18/bin/clang-format
+
+# Check formatting - src AND tests, the same file set CI walks
+find src tests -name '*.cpp' -o -name '*.h' | xargs $CF --dry-run --Werror
 
 # Auto-format
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format -i
+find src tests -name '*.cpp' -o -name '*.h' | xargs $CF -i
 ```
 
 ### Example
@@ -108,11 +112,13 @@ MainWindow::MainWindow(QWidget *parent)
 **REQUIRED before every commit:**
 
 ```bash
+CF=/opt/homebrew/opt/llvm@18/bin/clang-format   # 18.1.8, the version ci.yml pins
+
 # 1. Run lint check (MUST pass before commit)
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+find src tests -name '*.cpp' -o -name '*.h' | xargs $CF --dry-run --Werror
 
 # 2. Auto-fix if lint fails
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format -i
+find src tests -name '*.cpp' -o -name '*.h' | xargs $CF -i
 ```
 
 If lint fails in CI, it means this step was skipped locally.
