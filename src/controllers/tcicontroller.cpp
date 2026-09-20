@@ -273,6 +273,37 @@ void TciController::wireAudioAndClients() {
 // Everything that keys or unkeys the transmitter, in both directions: a client asking, and
 // QK4 itself asking. Kept together because the ORDER within each edge is the subtle part.
 void TciController::wireTransmit() {
+    // THE TRANSMITTER CHANGED HANDS - whoever took it, and by whatever route.
+    //
+    // This is the seam TransmitController::ownerChanged was built for and never had: its own doc
+    // comment said TciController consumed it, and until now nothing did. The gap it left was a
+    // local takeover from a TCI client, where the operator correctly gets the microphone but the
+    // TCI layer is never told - the roster keeps showing trx:true, TX_CHRONO keeps running, and
+    // m_pttOwner stays set so no OTHER client can key either.
+    //
+    // WHY pttActiveChanged cannot carry it: PttButton and TciClient both engage with
+    // Route::StreamedFromHere, so the gate does not move across that takeover and there is no PTT
+    // edge to emit. That is correct at the arbiter level and test_transmitowner's
+    // localTakesItFromRemote asserts it. The defect was the missing consumer, not the arbiter,
+    // which is why the fix sits here rather than there.
+    //
+    // ownerChanged carries the PREVIOUS owner, which is the whole reason it can answer this: only
+    // the transition away from TciClient is ours to act on.
+    if (m_transmitController) {
+        connect(m_transmitController, &TransmitController::ownerChanged, this,
+                [this](TransmitOwner::Owner previous, TransmitOwner::Owner current) {
+                    Q_UNUSED(current) // ownerChanged only fires on a change, so current != previous
+                    if (previous != TransmitOwner::Owner::TciClient) {
+                        return; // nobody's client transmission ended
+                    }
+                    // Idempotent by design: releaseLocalPtt returns immediately when no client
+                    // holds PTT, which is exactly the case when the client unkeyed itself through
+                    // setPtt and the roster was already told. It does not re-emit pttRequested, so
+                    // this cannot recurse back into the handler below.
+                    QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+                });
+    }
+
     // TX. Order matters on both edges and is the reason these are not one connection:
     //  - keying:   select the TCI source BEFORE asserting PTT, or the first frames out are the
     //              microphone picking up the room.
@@ -600,12 +631,10 @@ void TciController::releaseClientTransmitter() {
     m_transmitController->release(TransmitOwner::Owner::TciClient);
     m_drivingPtt = false;
 
-    // Tell the roster. Without this the client keeps believing it holds the transmitter until its
-    // own transmit period ends - the same stale-ownership failure the local-unkey seam fixed, just
-    // reached from the settings page instead of the PTT button. releaseLocalPtt broadcasts
-    // trx:false and stops the chrono WITHOUT re-emitting pttRequested, which is what keeps this
-    // from recursing back into the handler above.
-    QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+    // The roster is NOT told from here. release() above moves the arbiter off TciClient, which
+    // emits ownerChanged, which is now wired in wireTransmit and does exactly that - for this path
+    // and for a local takeover alike. Telling it here as well would be a second route to the same
+    // state, and two routes are how the takeover case came to be missed in the first place.
     emit transmittingChanged(false);
 }
 
