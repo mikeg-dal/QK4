@@ -141,7 +141,11 @@ private:
     // Returns false if the frame was not written, for any reason.
     bool writeFrame(int clientId, const QByteArray &frame, bool sheddable);
 
-    // Probes quiet peers and drops the ones that have stopped answering. See PING_INTERVAL_MS.
+    // PINGs EVERY upgraded session each tick, and drops the ones that have gone silent past the
+    // timeout. Not selective: an earlier version of this comment said it probed only quiet peers,
+    // which the loop never did. Pinging unconditionally costs a 2-byte frame per client per
+    // interval and keeps the loop free of a second liveness rule that could disagree with the
+    // timeout. See PING_INTERVAL_MS.
     void onLivenessTick();
 
     QTcpServer *m_server;
