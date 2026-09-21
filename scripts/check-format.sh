@@ -94,13 +94,23 @@ if [ "${FOUND_VERSION}" != "${REQUIRED_VERSION}" ]; then
 fi
 
 # The same traversal CI uses, so the file set cannot drift from it.
-# -print0/-0 rather than a bare pipe: CI gets away without it because no path here has a space,
-# but a check that silently skips a file is the thing being guarded against.
+#
+# WHY `while read` AND NOT `mapfile`: mapfile and readarray arrived in bash 4.0. macOS ships
+# 3.2.57 - the last GPLv2 release, frozen since 2007 - and on a stock Mac it is the only bash
+# there is. The shebang is `env bash`, which is the portable choice and is also what hides this:
+# anyone with Homebrew's bash 5 ahead of /bin/bash never sees it. A stock Mac gets
+# "mapfile: command not found" and exit 127, which is not one of the exit codes above. This form
+# behaves identically on 3.2 and 5.x.
+#
+# Newline-delimited, the same way CI enumerates these files. The `printf '%s\0' | xargs -0` below
+# is what stops a path with a space being split; a path with an embedded newline would defeat
+# both, and there are none in this repo.
+FILES=()
 if [ "${MODE}" = "staged" ]; then
-    mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACMR -- '*.cpp' '*.h' | grep -E '^(src|tests)/' || true)
+    while IFS= read -r f; do FILES+=("$f"); done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.cpp' '*.h' | grep -E '^(src|tests)/' || true)
     [ "${#FILES[@]}" -eq 0 ] && { echo "No staged C++ files."; exit 0; }
 else
-    mapfile -t FILES < <(find src tests \( -name '*.cpp' -o -name '*.h' \) -print | sort)
+    while IFS= read -r f; do FILES+=("$f"); done < <(find src tests \( -name '*.cpp' -o -name '*.h' \) -print | sort)
 fi
 
 if [ "${MODE}" = "fix" ]; then
