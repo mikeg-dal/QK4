@@ -164,11 +164,19 @@ bool isValidIpv4(const QString &s) {
     for (const QString &part : parts) {
         if (part.isEmpty())
             return false;
+        // WHY: a leading zero makes the octet ambiguous. inet_aton() and several resolvers read
+        // "010" as OCTAL 8, not 10, so accepting it would let QK4 store an address that another
+        // part of the stack resolves to a different host. A bare "0" is still a valid octet.
+        if (part.size() > 1 && part.startsWith(QLatin1Char('0')))
+            return false;
         bool ok = false;
         const int octet = part.toInt(&ok);
         if (!ok || octet < 0 || octet > 255)
             return false;
-        // toInt accepts a leading '+' / '-'; reject anything non-digit.
+        // toInt accepts a leading '+' / '-'; reject anything non-digit. WHY the two checks are
+        // both needed: QChar::isDigit() is Unicode-aware and would pass non-ASCII digits, while
+        // toInt() is locale-independent and rejects them. Callers arriving through
+        // isValidHostOrIp() are already filtered by an ASCII-only gate, but this is public API.
         for (const QChar c : part) {
             if (!c.isDigit())
                 return false;

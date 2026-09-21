@@ -279,6 +279,22 @@ private slots:
     void testHost_whitespaceOnly() { QVERIFY(!RadioUtils::isValidHostOrIp("   ")); }
     void testHost_trimmed() { QVERIFY(RadioUtils::isValidHostOrIp("  k4.local  ")); }
     void testHost_tooLong() { QVERIFY(!RadioUtils::isValidHostOrIp(QString(254, 'a'))); }
+
+    // Leading zeros. inet_aton() and several resolvers read a leading-zero octet as OCTAL, so
+    // "010.0.0.1" would mean 8.0.0.1 to them and 10.0.0.1 here. Accepting the form would let QK4
+    // store an address another part of the stack resolves to a different host.
+    void testIpv4_leadingZeroOctet() { QVERIFY(!RadioUtils::isValidIpv4("010.0.0.1")); }
+    void testIpv4_leadingZeroPadded() { QVERIFY(!RadioUtils::isValidIpv4("192.168.001.001")); }
+    void testIpv4_leadingZeroDoubleZero() { QVERIFY(!RadioUtils::isValidIpv4("00.1.1.1")); }
+    void testIpv4_leadingZeroLastOctet() { QVERIFY(!RadioUtils::isValidIpv4("1.1.1.01")); }
+    // A bare zero is still a legal octet - the rule is about padding, not about the value.
+    void testIpv4_bareZeroOctetsStillValid() { QVERIFY(RadioUtils::isValidIpv4("0.0.0.0")); }
+    void testIpv4_zeroInsideAddress() { QVERIFY(RadioUtils::isValidIpv4("10.0.0.1")); }
+
+    // ...and the same rule reached through the host validator, which is what the dialog calls.
+    void testHost_leadingZeroRejected() { QVERIFY(!RadioUtils::isValidHostOrIp("010.0.0.1")); }
+    // A leading-zero address must NOT fall through to the hostname branch and pass as a name.
+    void testHost_leadingZeroNotTreatedAsHostname() { QVERIFY(!RadioUtils::isValidHostOrIp("192.168.001.001")); }
 };
 
 QTEST_MAIN(TestRadioUtils)
