@@ -57,6 +57,14 @@ public:
 
 private:
     void onPowerButtonClicked();
+    // Flip the status-bar temperature unit and persist the choice.
+    void toggleTemperatureUnit();
+    // Render one cached Celsius reading into its field in the selected unit. The warn/critical
+    // colours are decided in Celsius, so a given heatsink temperature looks the same in both.
+    void applyTemperature(IconTextLabel *field, int celsius);
+    // Re-render both fields from their cached readings, so a unit change is immediate rather
+    // than waiting for the next SIRF update.
+    void refreshTemperatureFields();
 
     RadioState *m_radioState;                     // injected, not owned
     ConnectionController *m_connectionController; // injected, not owned
@@ -76,6 +84,14 @@ private:
     // A connection error is on the label and must outlive the Disconnected update that follows it.
     // Cleared when the next attempt starts. See showDisconnected() for why this is needed.
     bool m_errorShown = false;
+
+    // Last Celsius readings, cached so the unit toggle has something to re-render. The sentinel
+    // means "nothing received yet" and must survive a disconnect, or toggling the unit while
+    // disconnected would resurrect the last numbers behind the "--" placeholder.
+    static constexpr int kNoTempReading = -999;
+    int m_paTempC = kNoTempReading;
+    int m_lpaTempC = kNoTempReading;
+    bool m_tempInFahrenheit = false;
 
     void updateDateTime();
 };

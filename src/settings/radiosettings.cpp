@@ -303,6 +303,18 @@ void RadioSettings::setBandPlanOverlayEnabled(bool enabled) {
     }
 }
 
+bool RadioSettings::temperatureInFahrenheit() const {
+    return m_settings.value("ui/temperatureFahrenheit", false).toBool();
+}
+
+void RadioSettings::setTemperatureInFahrenheit(bool fahrenheit) {
+    if (temperatureInFahrenheit() != fahrenheit) {
+        m_settings.setValue("ui/temperatureFahrenheit", fahrenheit);
+        m_settings.sync();
+        emit temperatureInFahrenheitChanged(fahrenheit);
+    }
+}
+
 int RadioSettings::micGain() const {
     return m_settings.value("audio/micGain", 25).toInt();
 }

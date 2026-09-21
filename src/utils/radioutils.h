@@ -133,6 +133,11 @@ QString fixedTuneSetCommand(FixedTuneMode mode);
 /// land on the same step boundary the dimmed-digit display indicates.
 qint64 snapFreqToStep(qint64 freq, int stepHz);
 
+/// Convert a Celsius reading to Fahrenheit, rounded to the nearest degree.
+/// Display-only: warning/critical thresholds stay in Celsius so a given physical
+/// temperature keeps its colour whichever unit is shown.
+int celsiusToFahrenheit(int celsius);
+
 /// True if s is a strictly-valid dotted IPv4 address: exactly 4 dot-separated
 /// octets, each parseable 0-255, none with a leading zero. Rejects "192.168.1",
 /// "192.168.100.500", "1.2.3.4.5", "010.0.0.1". (QHostAddress is NOT used here —

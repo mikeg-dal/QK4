@@ -4,6 +4,7 @@
 
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 
 namespace {
 constexpr int kIconSize = K4Styles::Dimensions::SmallIconSize;
@@ -121,4 +122,21 @@ void IconTextLabel::clear() {
 
 void IconTextLabel::applyValueStyle(const QColor &color) {
     m_valueLabel->setStyleSheet(QString("color: %1;").arg(color.name()));
+}
+
+void IconTextLabel::setClickable(bool clickable) {
+    m_clickable = clickable;
+    setCursor(clickable ? Qt::PointingHandCursor : Qt::ArrowCursor);
+}
+
+void IconTextLabel::mousePressEvent(QMouseEvent *event) {
+    // WHY the child labels are not wired individually: the QLabels fill this widget, but they do
+    // not accept mouse events, so the press propagates to the parent and one handler covers the
+    // whole field - icon, prefix, value and unit alike.
+    if (m_clickable && event->button() == Qt::LeftButton) {
+        emit clicked();
+        event->accept();
+        return;
+    }
+    QWidget::mousePressEvent(event);
 }

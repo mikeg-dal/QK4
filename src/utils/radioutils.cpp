@@ -157,6 +157,10 @@ qint64 snapFreqToStep(qint64 freq, int stepHz) {
     return (stepHz > 0) ? (freq / stepHz) * stepHz : freq;
 }
 
+int celsiusToFahrenheit(int celsius) {
+    return qRound(celsius * 9.0 / 5.0 + 32.0);
+}
+
 bool isValidIpv4(const QString &s) {
     const QStringList parts = s.split('.');
     if (parts.size() != 4)

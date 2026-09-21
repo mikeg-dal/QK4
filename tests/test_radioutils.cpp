@@ -295,6 +295,15 @@ private slots:
     void testHost_leadingZeroRejected() { QVERIFY(!RadioUtils::isValidHostOrIp("010.0.0.1")); }
     // A leading-zero address must NOT fall through to the hostname branch and pass as a name.
     void testHost_leadingZeroNotTreatedAsHostname() { QVERIFY(!RadioUtils::isValidHostOrIp("192.168.001.001")); }
+
+    // celsiusToFahrenheit - display conversion for the status-bar temperature toggle.
+    void testTemp_freezing() { QCOMPARE(RadioUtils::celsiusToFahrenheit(0), 32); }
+    void testTemp_boiling() { QCOMPARE(RadioUtils::celsiusToFahrenheit(100), 212); }
+    void testTemp_bodyRounds() { QCOMPARE(RadioUtils::celsiusToFahrenheit(37), 99); }
+    void testTemp_negative() { QCOMPARE(RadioUtils::celsiusToFahrenheit(-40), -40); }
+    // The two thresholds the status bar colours on, so a unit change cannot shift a warning.
+    void testTemp_warnThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(60), 140); }
+    void testTemp_critThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(75), 167); }
 };
 
 QTEST_MAIN(TestRadioUtils)

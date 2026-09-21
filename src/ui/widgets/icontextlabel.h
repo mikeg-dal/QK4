@@ -6,6 +6,8 @@
 #include <QPixmap>
 #include <QWidget>
 
+class QMouseEvent;
+
 class QLabel;
 
 // Small composite widget for the top status bar: an icon followed by a value
@@ -37,6 +39,17 @@ public:
     // Render the empty-state placeholder ("--"). Preserves any prefix label.
     void clear();
 
+    // Opt in to click handling: gives the widget a pointing-hand cursor and makes
+    // it emit clicked(). Off by default so a purely informational field (voltage,
+    // and anything added later) is not advertised as interactive.
+    void setClickable(bool clickable);
+
+signals:
+    void clicked();
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override;
+
 private:
     void applyValueStyle(const QColor &color);
     void renderGlyph(const QColor &color);
@@ -48,6 +61,7 @@ private:
     QColor m_valueColor;
     QColor m_glyphColor;
     K4Glyphs::Glyph m_glyph;
+    bool m_clickable = false;
 };
 
 #endif // ICONTEXTLABEL_H

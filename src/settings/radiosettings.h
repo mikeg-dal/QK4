@@ -202,6 +202,11 @@ public:
     bool bandPlanOverlayEnabled() const;
     void setBandPlanOverlayEnabled(bool enabled);
 
+    // Status-bar temperature unit. Display-only: the warn/critical thresholds stay in Celsius,
+    // so a given heatsink temperature keeps its colour whichever unit is shown.
+    bool temperatureInFahrenheit() const;
+    void setTemperatureInFahrenheit(bool fahrenheit);
+
 signals:
     void radiosChanged();
     void kpodEnabledChanged(bool enabled);
@@ -228,6 +233,7 @@ signals:
     void kpodPlusSettingsChanged();
     void iaruRegionChanged(int region);
     void bandPlanOverlayEnabledChanged(bool enabled);
+    void temperatureInFahrenheitChanged(bool fahrenheit);
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);
