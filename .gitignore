@@ -81,3 +81,7 @@ Release/
 x64/
 x86/
 out/
+
+# Local clang-format toolchain, created by scripts/check-format.sh --bootstrap.
+# Pinned to the exact version ci.yml installs; disposable and machine-specific.
+.format-venv/
