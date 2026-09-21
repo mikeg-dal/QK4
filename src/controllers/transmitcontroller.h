@@ -57,9 +57,14 @@ signals:
     /// requested.
     void transmittingChanged(bool transmitting);
 
-    /// Emitted whenever the holder changes, including to and from Owner::None. TciController uses
-    /// it to tell its clients they lost the transmitter — which is why it carries the previous
-    /// owner, not just the current one.
+    /// Emitted whenever the holder changes, including to and from Owner::None. TciController
+    /// consumes it in wireTransmit to tell its clients they lost the transmitter — which is why it
+    /// carries the previous owner, not just the current one.
+    ///
+    /// That consumer was missing until #147: this signal was emitted and read by nobody while the
+    /// comment said otherwise, and a local takeover from a TCI client left the roster, the chrono
+    /// and m_pttOwner stale because of it. Worth keeping in mind before adding another producer
+    /// here with no consumer — a signal nothing listens to reads as working code.
     void ownerChanged(TransmitOwner::Owner previous, TransmitOwner::Owner current);
 
 private:
