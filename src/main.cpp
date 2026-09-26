@@ -4,9 +4,16 @@
 #include <QSysInfo>
 #include <QGuiApplication>
 #include <QFontDatabase>
+#include <QMessageBox>
 #include <QSettings>
 #include <QSslSocket>
 #include <rhi/qrhi.h>
+#ifdef Q_OS_WIN
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <cstdio>
+#endif
 #ifdef Q_OS_MACOS
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/qpa/qplatformintegration.h>
@@ -55,6 +62,93 @@ void setupFonts() {
     defaultFont.setHintingPreference(QFont::PreferFullHinting);
     defaultFont.setStyleStrategy(QFont::PreferAntialias);
     QApplication::setFont(defaultFont);
+}
+
+#ifdef Q_OS_WIN
+// Re-attach to the console of whichever shell launched QK4, so command-line diagnostics can
+// actually be read.
+//
+// WHY THIS IS NEEDED AT ALL: CMakeLists.txt builds QK4 as a WIN32-subsystem binary, which is what
+// keeps a console window from flashing up behind the GUI on a double-click. The cost is that
+// Windows gives the process NO console and does not hand it the invoking cmd.exe's one either, so
+// stdout and stderr are invalid handles and everything main() prints is discarded in silence. The
+// operator sees a bare `QK4 --connect` do nothing at all. macOS has no subsystem concept - the
+// executable inherits Terminal's stdout when invoked by path - which is why the same code has
+// always worked there and never here.
+//
+// Returns whether anything printed can now be seen by somebody.
+static bool attachParentConsole() {
+    // Sample the inherited handles BEFORE attaching. AttachConsole() may point the standard
+    // handles at the new console, and doing that to a caller who wrote `QK4 --connect > out.txt`
+    // would take their output away from the file they asked for and scatter it on the terminal.
+    // Saving them here makes the outcome the same either way, so this does not rest on which
+    // behaviour AttachConsole() happens to have.
+    const auto usable = [](HANDLE handle) { return handle != nullptr && handle != INVALID_HANDLE_VALUE; };
+    const HANDLE inheritedOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    const HANDLE inheritedErr = GetStdHandle(STD_ERROR_HANDLE);
+    const bool outWasRedirected = usable(inheritedOut);
+    const bool errWasRedirected = usable(inheritedErr);
+
+    // ERROR_ACCESS_DENIED means this process already owns a console, which is a success for our
+    // purposes. Any other failure - ERROR_INVALID_HANDLE for an Explorer, shortcut or Start-menu
+    // launch - means there is no console to attach to and never will be.
+    const bool attached = AttachConsole(ATTACH_PARENT_PROCESS) != FALSE || GetLastError() == ERROR_ACCESS_DENIED;
+
+    if (attached) {
+        FILE *reopened = nullptr;
+        if (outWasRedirected) {
+            SetStdHandle(STD_OUTPUT_HANDLE, inheritedOut);
+        } else {
+            freopen_s(&reopened, "CONOUT$", "w", stdout);
+        }
+        if (errWasRedirected) {
+            SetStdHandle(STD_ERROR_HANDLE, inheritedErr);
+        } else {
+            freopen_s(&reopened, "CONOUT$", "w", stderr);
+        }
+    }
+
+    // Redirected handles are readable output even with no console behind them: the caller is
+    // holding the far end of the pipe or file.
+    return attached || outWasRedirected;
+}
+#endif
+
+// Whether a command-line message printed to stdout will reach anybody, which decides between
+// printing usage and putting it in a dialog.
+//
+// On macOS and Linux the invoking terminal's stdout is inherited as a matter of course, so there
+// is nothing to attach and printing has always reached whoever typed the command.
+static bool claimConsole() {
+#ifdef Q_OS_WIN
+    return attachParentConsole();
+#else
+    return true;
+#endif
+}
+
+// The single place that decides where an operator-facing command-line message goes. Every one of
+// them - help, version, and the --connect usage error - is answering someone who typed a command,
+// so they all face the same question of whether anybody can see stdout, and they must all answer
+// it the same way.
+//
+// WHY the console is claimed HERE and not in main(): AttachConsole() attaches whatever the parent
+// happens to be, and a console claimed at startup would be held for the whole GUI lifetime. A
+// launcher or logging wrapper that spawns QK4 from a console process would then receive every
+// qWarning for the rest of the session in its own window. Claiming it only when there is something
+// to say confines that to the command-line paths, all of which return immediately afterwards.
+static void reportToOperator(const QString &text, QMessageBox::Icon icon) {
+    static const bool haveConsole = claimConsole();
+    if (haveConsole) {
+        QTextStream out(stdout);
+        out << text;
+        out.flush();
+        return;
+    }
+    // No console: a shortcut or Explorer launch. Exiting silently is indistinguishable from the
+    // app being broken, so say it in the only place this launch can be heard.
+    QMessageBox box(icon, QStringLiteral("QK4"), text, QMessageBox::Ok);
+    box.exec();
 }
 
 // WHY: Windows ships both the Schannel and OpenSSL TLS backends, and Qt may activate
@@ -165,11 +259,21 @@ int main(int argc, char *argv[]) {
     parser.addOption(connectOption);
     const QStringList arguments = QCoreApplication::arguments();
     const bool parsedCleanly = parser.parse(arguments);
+    // WHY not showHelp()/showVersion(): both call ::exit(), which ends the process without
+    // unwinding, and Qt then reports its own half-torn-down state to whoever asked for --help -
+    // "QThreadStorage: entry 2 destroyed before end of thread" on the line after the usage text.
+    // Returning through main() instead shuts down in order and prints nothing extra. It also puts
+    // these two on the same footing as the --connect message below, which Qt's versions are not:
+    // showHelp() decides on a message box by its own rules, in its own words.
     if (parser.isSet(helpOption)) {
-        parser.showHelp(0);
+        reportToOperator(parser.helpText(), QMessageBox::Information);
+        return 0;
     }
     if (parser.isSet(versionOption)) {
-        parser.showVersion();
+        reportToOperator(QCoreApplication::applicationName() + QStringLiteral(" ") +
+                             QCoreApplication::applicationVersion() + QStringLiteral("\n"),
+                         QMessageBox::Information);
+        return 0;
     }
 
     // --connect WITH NO NAME is a usage error, not noise to ignore.
@@ -183,26 +287,37 @@ int main(int argc, char *argv[]) {
     // Listing the configured radios answers the question they were about to ask next. Printed
     // rather than shown in a dialog because a bare --connect is a typed command, and a shortcut
     // would have carried the name.
-    const bool askedToConnect =
-        arguments.contains(QStringLiteral("-c")) || arguments.contains(QStringLiteral("--connect"));
+    // Matching the bare strings alone let `--connect=` through: Qt parses an explicit but empty
+    // value as the option being set to nothing, `arguments.contains("--connect")` is false for it,
+    // and the guard below never fired - so the operator got the GUI and no complaint. An explicit
+    // empty value is the same mistake as a bare --connect and has to be caught with it.
+    bool askedToConnect = false;
+    for (const QString &argument : arguments) {
+        if (argument == QStringLiteral("-c") || argument == QStringLiteral("--connect") ||
+            argument.startsWith(QStringLiteral("--connect=")) || argument.startsWith(QStringLiteral("-c="))) {
+            askedToConnect = true;
+            break;
+        }
+    }
     //
     // Tested on the VALUE, not on isSet: after a failed parse Qt still reports the option as set,
     // with nothing in it, so isSet answers yes to the exact case this is here to catch.
     if (askedToConnect && parser.value(connectOption).trimmed().isEmpty()) {
-        QTextStream out(stdout);
-        out << "--connect needs the name of a saved radio.\n\n";
+        QString usage = QStringLiteral("--connect needs the name of a saved radio.\n\n");
         const auto radios = RadioSettings::instance()->radios();
         if (radios.isEmpty()) {
-            out << "No radios are configured yet. Add one in QK4's Server Manager first.\n";
+            usage += QStringLiteral("No radios are configured yet. Add one in QK4's Server Manager first.\n");
         } else {
-            out << "Configured radios:\n";
+            usage += QStringLiteral("Configured radios:\n");
             for (const RadioEntry &radio : radios) {
-                out << "  " << (radio.name.isEmpty() ? radio.host : radio.name)
-                    << (radio.connectAtStartup ? "   (currently opens at startup)" : "") << "\n";
+                usage += QStringLiteral("  ") + (radio.name.isEmpty() ? radio.host : radio.name) +
+                         (radio.connectAtStartup ? QStringLiteral("   (currently opens at startup)") : QString()) +
+                         QStringLiteral("\n");
             }
-            out << "\nFor example:  QK4 --connect \"" << radios.first().name << "\"\n";
+            usage += QStringLiteral("\nFor example:  QK4 --connect \"") + radios.first().name + QStringLiteral("\"\n");
         }
-        out.flush();
+
+        reportToOperator(usage, QMessageBox::Warning);
         return 2;
     }
 
