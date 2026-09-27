@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Attempt Qt 6.11 install
         id: probe
-        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125
         continue-on-error: true
         with:
           version: '6.11.*'
