@@ -44,6 +44,12 @@ void SpectrumController::clearDisplays() {
         m_panadapterA->clear();
     if (m_panadapterB)
         m_panadapterB->clear();
+    // WHY: RadioState::reset() clears the mini-pan flags without emitting, so a mini-pan left open
+    // here would survive a reconnect whose RDY dump reports #MP0 (false → false, no signal).
+    if (m_vfoA)
+        m_vfoA->showNormal();
+    if (m_vfoB)
+        m_vfoB->showNormal();
 }
 
 void SpectrumController::setAmplitudeUnits(bool useSUnits) {
@@ -353,6 +359,21 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             int specH = static_cast<int>(m_panadapterB->height() * m_panadapterB->spectrumRatio());
             m_spotOverlayB->setGeometry(0, 0, m_panadapterB->width(), specH);
         }
+    });
+    // WHY: the K4 pushes #MP / #MP$ whenever the mini-pan is toggled on the radio itself, and
+    // reports -1 (treated as off) when it withdraws one. The VFO view follows the radio's state
+    // so a front-panel toggle opens/closes ours too; our own clicks go through the same path.
+    connect(m_radioState, &RadioState::miniPanAEnabledChanged, this, [this](bool enabled) {
+        if (enabled)
+            m_vfoA->showMiniPan();
+        else
+            m_vfoA->showNormal();
+    });
+    connect(m_radioState, &RadioState::miniPanBEnabledChanged, this, [this](bool enabled) {
+        if (enabled)
+            m_vfoB->showMiniPan();
+        else
+            m_vfoB->showNormal();
     });
     connect(m_radioState, &RadioState::averagingChanged, this, [this](int level) {
         m_panadapterA->setAveraging(level);

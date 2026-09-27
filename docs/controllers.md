@@ -59,6 +59,7 @@ Last updated: TransmitController added — one owner of transmit (31 controllers
 | "CW keying / paddle / sidetone wrong" | CwController | `src/controllers/cwcontroller.cpp` |
 | "My foot pedal on the HaliKey does nothing" | Withdrawn on purpose — see the note in `src/controllers/cwcontroller.h` | n/a |
 | "Spectrum / panadapter / click-tune not working" | SpectrumController | `src/controllers/spectrumcontroller.cpp` |
+| "VFO mini-pan doesn't follow the radio's MINI-PAN button" / "mini-pan stuck open after reconnect" | SpectrumController | `src/controllers/spectrumcontroller.cpp` |
 | "DX cluster spots not appearing / cluster connect fail" | DxClusterController | `src/controllers/dxclustercontroller.cpp` |
 | "WSJT-X / QLog / RumLogNG over TCI: no connect, no audio, PTT or CW wrong" | TciController | `src/controllers/tcicontroller.cpp` (server: `src/network/tciserver.cpp`) |
 | "TCI Server options tab status or client list wrong" | TciServerPage | `src/ui/pages/tciserverpage.cpp` |

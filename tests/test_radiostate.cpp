@@ -1648,7 +1648,7 @@ private slots:
         QCOMPARE(rs.spanHzB(), 25000);
     }
 
-    // --- #MP / #MP$ (mini-pan enabled, via handleBoolPairVal) ---
+    // --- #MP / #MP$ (mini-pan enabled) ---
     void testMiniPanAEnabledParses() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::miniPanAEnabledChanged);
@@ -1661,6 +1661,72 @@ private slots:
         RadioState rs;
         rs.parseCATCommand("#MP$1;");
         QCOMPARE(rs.miniPanBEnabled(), true);
+    }
+
+    // Replays a capture of the mini-pan being toggled on the radio's front panel. The radio
+    // sends each toggle, then re-sends SB plus the #MP/#MP$ pair; the VFO view follows these
+    // signals, so each receiver must emit exactly once per real change and never for the other.
+    void testMiniPanFrontPanelToggleSequence() {
+        RadioState rs;
+        QSignalSpy spyA(&rs, &RadioState::miniPanAEnabledChanged);
+        QSignalSpy spyB(&rs, &RadioState::miniPanBEnabledChanged);
+
+        rs.parseCATCommand("#MP1;");
+        QCOMPARE(spyA.count(), 1);
+        QCOMPARE(spyA.last().at(0).toBool(), true);
+
+        rs.parseCATCommand("#MP0;");
+        rs.parseCATCommand("SB1;");
+        rs.parseCATCommand("#MP0;");
+        rs.parseCATCommand("#MP$-1;");
+        QCOMPARE(spyA.count(), 2);
+        QCOMPARE(spyA.last().at(0).toBool(), false);
+        QCOMPARE(spyB.count(), 0);
+
+        rs.parseCATCommand("#MP$1;");
+        rs.parseCATCommand("SB3;");
+        rs.parseCATCommand("#MP0;");
+        rs.parseCATCommand("#MP$1;");
+        QCOMPARE(spyB.count(), 1);
+        QCOMPARE(spyB.last().at(0).toBool(), true);
+        QCOMPARE(rs.miniPanBEnabled(), true);
+        QCOMPARE(spyA.count(), 2);
+
+        rs.parseCATCommand("#MP$0;");
+        rs.parseCATCommand("SB1;");
+        rs.parseCATCommand("#MP0;");
+        rs.parseCATCommand("#MP$0;");
+        QCOMPARE(spyB.count(), 2);
+        QCOMPARE(spyB.last().at(0).toBool(), false);
+        QCOMPARE(spyA.count(), 2);
+    }
+
+    // -1 means the radio will not show that mini-pan; it must close an open one.
+    void testMiniPanUnavailableClosesOpenMiniPan() {
+        RadioState rs;
+        rs.parseCATCommand("#MP1;");
+        rs.parseCATCommand("#MP$1;");
+        QSignalSpy spyA(&rs, &RadioState::miniPanAEnabledChanged);
+        QSignalSpy spyB(&rs, &RadioState::miniPanBEnabledChanged);
+        rs.parseCATCommand("#MP-1;");
+        rs.parseCATCommand("#MP$-1;");
+        QCOMPARE(rs.miniPanAEnabled(), false);
+        QCOMPARE(rs.miniPanBEnabled(), false);
+        QCOMPARE(spyA.count(), 1);
+        QCOMPARE(spyB.count(), 1);
+    }
+
+    void testMiniPanReopensAfterReset() {
+        RadioState rs;
+        rs.parseCATCommand("#MP1;");
+        rs.parseCATCommand("#MP$1;");
+        rs.reset();
+        QSignalSpy spyA(&rs, &RadioState::miniPanAEnabledChanged);
+        QSignalSpy spyB(&rs, &RadioState::miniPanBEnabledChanged);
+        rs.parseCATCommand("#MP1;");
+        rs.parseCATCommand("#MP$1;");
+        QCOMPARE(spyA.count(), 1);
+        QCOMPARE(spyB.count(), 1);
     }
 
     // Idempotence sample: the big chain above all uses the same pattern;
