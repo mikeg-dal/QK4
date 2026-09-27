@@ -7,7 +7,7 @@ Phase 1 RadioState subsystem split — every getter listed below must remain on
 same signature and the same semantics.
 
 The regression gate is `tests/test_catserver.cpp` (33 test cases). `test_catserver`
-is pinned in the CI build target list (`.github/workflows/ci.yml`) so any
+is pinned in the CI build target list (`.github/workflows/ci-checks.yml`) so any
 break of this contract fails the build.
 
 ## Getters consumed by CatServer

@@ -1,8 +1,8 @@
-name: Scheduled Sanitizers
+name: Scheduled · Sanitizers
 
 # Weekly ThreadSanitizer pass over the test suite. TSan cannot coexist with
 # ASAN, so it gets its own scheduled run; the ASAN/UBSAN gate already runs on
-# every push in ci.yml and is deliberately NOT duplicated here.
+# every push in ci-checks.yml and is deliberately NOT duplicated here.
 #
 # Failures become a tracked GitHub issue instead of an unread red run: one open
 # tracking issue per sanitizer kind (found by label), with a comment appended
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   sanitize:
-    # See codeql.yml — keeps scheduled runs from charging forkers.
+    # See ci-codeql.yml — keeps scheduled runs from charging forkers.
     if: github.repository == 'mikeg-dal/QK4'
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest

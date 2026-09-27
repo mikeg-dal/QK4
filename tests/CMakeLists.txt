@@ -506,7 +506,7 @@ add_test(NAME AudioDeviceSelectionTests COMMAND test_audiodeviceselection)
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
-# list in .github/workflows/ci.yml (which is what caused the late-May 2026
+# list in .github/workflows/ci-checks.yml (which is what caused the late-May 2026
 # string of red builds when test_menumodel / test_catpushbroadcaster /
 # test_halikeydevice were added but the workflow's --target list wasn't).
 get_property(_qk4_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)

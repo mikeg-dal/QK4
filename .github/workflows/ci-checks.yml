@@ -1,4 +1,11 @@
-name: CI
+name: CI · Checks
+
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+      && format('PR #{0} → {1}: {2}', github.event.pull_request.number, github.base_ref, github.event.pull_request.title)
+      || github.event_name == 'push'
+      && format('{0}: {1}', github.ref_name, github.event.head_commit.message)
+      || format('{0} ({1})', github.ref_name, github.event_name) }}
 
 on:
   push:
@@ -36,9 +43,8 @@ jobs:
         # byte-identical to a developer's pinned 18.1.8: verified across every file in src/ and
         # tests/ against Homebrew's 18.1.8, zero differences.
         #
-        # Bumping this requires a repo-wide reformat commit first, and the same version bump in
-        # CONVENTIONS.md so local and CI never diverge again. (This comment used to say CLAUDE.md,
-        # which does not exist in this repo.)
+        # Bumping this requires a repo-wide reformat commit first. scripts/check-format.sh follows
+        # this line on its own; a major bump also moves the llvm@18 path in CONVENTIONS.md.
         #
         # KEEP THE `clang-format==<version>` SHAPE: scripts/check-format.sh parses this exact line
         # to learn which version to demand locally, rather than carrying its own copy of the number.
@@ -86,7 +92,7 @@ jobs:
     # and UB that unit tests would otherwise miss. Post-refactor
     # (Phase 5.4) decision: keep it. Cost is one Ubuntu job + ~2 min;
     # it catches a bug class regular tests miss.
-    # Scheduled deep runs (including TSan) live in sanitizers.yml.
+    # Scheduled deep runs (including TSan) live in scheduled-sanitizers.yml.
     name: Sanitizer Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
