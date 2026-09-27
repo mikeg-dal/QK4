@@ -1,8 +1,9 @@
 name: Reusable · macOS build
 
 # Reusable macOS builder — the single definition of how a QK4 .app is assembled,
-# signed, notarized, and packaged. Called by build-signed.yml and release.yml; never
-# triggered directly (that is what the leading underscore signals).
+# signed, notarized, and packaged. Called by build-signed.yml, release.yml and
+# ci-packaging.yml (the last with sign: false); never triggered directly (that is
+# what the leading underscore signals).
 #
 # WHY this exists: this logic previously lived in three separate workflows. A fix
 # had to be written three times, and build-macos.yml shipped a structurally broken
@@ -20,6 +21,11 @@ on:
         required: false
         type: number
         default: 14
+      sign:
+        description: 'Developer ID sign and notarize. False ad-hoc signs instead, for callers without the Apple secrets.'
+        required: false
+        type: boolean
+        default: true
     outputs:
       artifact-name:
         description: 'Name of the uploaded artifact'
@@ -213,6 +219,7 @@ jobs:
           fi
 
       - name: Import Code Signing Certificate
+        if: inputs.sign
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -238,35 +245,49 @@ jobs:
       - name: Sign Application
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SIGN: ${{ inputs.sign }}
         run: |
           APP_BUNDLE="build/QK4.app"
 
+          # WHY one step for both identities: an unsigned build must still walk the same
+          # signing order, so the strict verify below judges the same bundle structure a
+          # release ships. Ad-hoc ("-") is the only identity available without the secrets,
+          # which a pull request from a fork never receives.
+          #
+          # The hardened runtime is dropped with the identity: notarization is what requires it, and
+          # with it an ad-hoc bundle can be refused its own ad-hoc-signed frameworks by library
+          # validation, so the DMG would verify here and then fail to launch for anyone who tried it.
+          if [ "$SIGN" = "true" ]; then
+            IDENTITY="Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)"
+            RUNTIME=(--options runtime)
+          else
+            IDENTITY="-"
+            RUNTIME=()
+          fi
+
           echo "=== Signing frameworks and libraries ==="
           find "$APP_BUNDLE/Contents/Frameworks" -name "*.dylib" -exec \
-            codesign --force --options runtime --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" {} \;
+            codesign --force "${RUNTIME[@]}" --sign "$IDENTITY" {} \;
 
           find "$APP_BUNDLE/Contents/Frameworks" -name "*.framework" -exec \
-            codesign --force --options runtime --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" {} \;
+            codesign --force "${RUNTIME[@]}" --sign "$IDENTITY" {} \;
 
           echo "=== Signing PlugIns ==="
           find "$APP_BUNDLE/Contents/PlugIns" -name "*.dylib" -exec \
-            codesign --force --options runtime --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" {} \;
+            codesign --force "${RUNTIME[@]}" --sign "$IDENTITY" {} \;
 
           echo "=== Signing main application with entitlements ==="
-          codesign --force --options runtime \
+          codesign --force "${RUNTIME[@]}" \
             --entitlements "resources/QK4.entitlements" \
-            --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" \
+            --sign "$IDENTITY" \
             "$APP_BUNDLE"
 
           codesign --verify --verbose=2 "$APP_BUNDLE"
-          spctl --assess --type execute --verbose "$APP_BUNDLE" || echo "Note: spctl may fail before notarization"
+          if [ "$SIGN" = "true" ]; then
+            spctl --assess --type execute --verbose "$APP_BUNDLE" || echo "Note: spctl may fail before notarization"
+          fi
 
-      - name: Create and Notarize DMG
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+      - name: Create DMG
         run: |
           DMG_NAME="QK4-${{ inputs.version }}-macos.dmg"
           APP_BUNDLE="build/QK4.app"
@@ -293,11 +314,23 @@ jobs:
             sleep 5
           done
           test -f "QK4-unsigned.dmg" || { echo "DMG creation failed after 3 attempts"; exit 1; }
+          mv "QK4-unsigned.dmg" "$DMG_NAME"
+          rm -rf dmg-staging
+          ls -lh "$DMG_NAME"
+
+      - name: Sign and Notarize DMG
+        if: inputs.sign
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          DMG_NAME="QK4-${{ inputs.version }}-macos.dmg"
 
           echo "=== Signing DMG ==="
           codesign --force --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" \
-            "QK4-unsigned.dmg"
-          mv "QK4-unsigned.dmg" "$DMG_NAME"
+            "$DMG_NAME"
 
           mkdir -p ~/private_keys
           echo "$APPLE_API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_$APPLE_API_KEY_ID.p8
@@ -316,10 +349,7 @@ jobs:
           xcrun stapler validate "$DMG_NAME"
           spctl --assess --type open --context context:primary-signature "$DMG_NAME" || echo "spctl check completed"
 
-          echo "=== Development DMG created ==="
-          ls -lh "$DMG_NAME"
-
-          rm -rf dmg-staging ~/private_keys
+          rm -rf ~/private_keys
 
       - name: Verify DMG contents
         run: |

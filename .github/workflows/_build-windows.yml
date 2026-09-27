@@ -1,7 +1,7 @@
 name: Reusable · Windows build
 
 # Reusable Windows builder — the single definition of how the QK4 Windows bundle
-# is assembled and verified. Called by build-signed.yml and release.yml; never triggered
+# is assembled and verified. Called by build-signed.yml, release.yml and ci-packaging.yml; never triggered
 # directly.
 #
 # WHY the explicit TLS-backend copy below: windeployqt omits plugins/tls/

@@ -27,6 +27,7 @@ or `development: <commit subject>`.
 |---|---|
 | `ci-checks.yml` | clang-format gate, unit tests, ASAN + UBSAN |
 | `ci-codeql.yml` | CodeQL static analysis → Security tab; also weekly |
+| `ci-packaging.yml` | Builds and packages all four platforms, unsigned, through the same `_build-*.yml` builders a release uses. Skips docs-only changes. Its `Packaging result` job is the one to require |
 | `build-signed.yml` | Signed, notarized artifacts for every platform, one run page. Dispatch it on `development` for a tester build. No Release, no gh-pages |
 | `release.yml` | The same builders, then the GitHub Release and gh-pages |
 | `scheduled-sanitizers.yml` | Weekly ThreadSanitizer; failures go to a sticky issue |

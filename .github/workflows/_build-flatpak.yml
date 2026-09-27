@@ -1,6 +1,6 @@
 name: Reusable · Flatpak build
 
-# Reusable Linux x86_64 (Flatpak) builder. Called by build-signed.yml; never triggered
+# Reusable Linux x86_64 (Flatpak) builder. Called by build-signed.yml and ci-packaging.yml; never triggered
 # directly. Flatpak is distro-agnostic — one bundle runs on Ubuntu, Fedora,
 # Debian, Arch and the rest — so this is one artifact, not per-distro packaging.
 #
