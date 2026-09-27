@@ -37,7 +37,11 @@ jobs:
         # tests/ against Homebrew's 18.1.8, zero differences.
         #
         # Bumping this requires a repo-wide reformat commit first, and the same version bump in
-        # CLAUDE.md so local and CI never diverge again.
+        # CONVENTIONS.md so local and CI never diverge again. (This comment used to say CLAUDE.md,
+        # which does not exist in this repo.)
+        #
+        # KEEP THE `clang-format==<version>` SHAPE: scripts/check-format.sh parses this exact line
+        # to learn which version to demand locally, rather than carrying its own copy of the number.
         run: pipx install clang-format==18.1.8
 
       - name: Check formatting

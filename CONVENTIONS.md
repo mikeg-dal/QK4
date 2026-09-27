@@ -74,15 +74,28 @@ m_panadapterA, m_panadapterB
 | Includes | Preserve order (no auto-sort) |
 
 ```bash
-# clang-format 18.1.8 - the EXACT version ci.yml pins. clang-format changes its line-breaking
-# heuristics between patch releases, so a nearby version can accept wrapping CI rejects.
-CF=/opt/homebrew/opt/llvm@18/bin/clang-format
-
 # Check formatting - src AND tests, the same file set CI walks
-find src tests -name '*.cpp' -o -name '*.h' | xargs $CF --dry-run --Werror
+scripts/check-format.sh
 
 # Auto-format
-find src tests -name '*.cpp' -o -name '*.h' | xargs $CF -i
+scripts/check-format.sh --fix
+```
+
+The script finds clang-format wherever it is installed and **refuses to run on the wrong version**
+rather than reporting a misleading pass. It reads the pinned version out of `ci.yml`, so there is no
+second copy of the number to keep in sync. If you have no matching version, `--bootstrap` installs
+one into `.format-venv/`.
+
+The version matters more than it looks: clang-format changes its line-breaking heuristics between
+**patch** releases, so a nearby 18.x can accept wrapping CI rejects. `ci.yml` pins an exact version
+for this reason.
+
+Running clang-format by hand works too, but the path below is correct only on an Apple Silicon Mac
+with Homebrew — it does not exist on Linux, on Windows, or on an Intel Mac:
+
+```bash
+CF=/opt/homebrew/opt/llvm@18/bin/clang-format
+find src tests -name '*.cpp' -o -name '*.h' | xargs $CF --dry-run --Werror
 ```
 
 ### Example
@@ -112,16 +125,26 @@ MainWindow::MainWindow(QWidget *parent)
 **REQUIRED before every commit:**
 
 ```bash
-CF=/opt/homebrew/opt/llvm@18/bin/clang-format   # 18.1.8, the version ci.yml pins
-
 # 1. Run lint check (MUST pass before commit)
-find src tests -name '*.cpp' -o -name '*.h' | xargs $CF --dry-run --Werror
+scripts/check-format.sh
 
 # 2. Auto-fix if lint fails
-find src tests -name '*.cpp' -o -name '*.h' | xargs $CF -i
+scripts/check-format.sh --fix
 ```
 
 If lint fails in CI, it means this step was skipped locally.
+
+**Or stop skipping it.** Install it as a pre-commit hook, which checks only the staged content of
+staged files and so costs a fraction of a second:
+
+```bash
+printf '#!/bin/sh\nexec "$(git rev-parse --show-toplevel)/scripts/check-format.sh" --staged\n' \
+    > .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+Do not symlink the script into `.git/hooks/` instead — a symlink cannot pass `--staged`, so every
+commit pays for a whole-tree check.
 
 ## Code Review Checklist
 
@@ -255,13 +278,12 @@ Never combine structural moves with logic changes in the same commit. If a refac
 ### 10. [CI] Build + Format + Tests Before Every Commit
 
 ```bash
-clang-format -i <changed files>
-find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+scripts/check-format.sh --fix   # or scripts/check-format.sh to check without rewriting
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-All four must pass. No exceptions. `.github/workflows/ci.yml` mirrors the format gate and runs the test suites — skipping locally means the CI run will fail.
+All three must pass. No exceptions. `.github/workflows/ci.yml` mirrors the format gate and runs the test suites — skipping locally means the CI run will fail.
 
 ### 11. [sanitizer + review] Controlled Shutdown Order
 
