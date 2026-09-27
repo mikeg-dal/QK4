@@ -1,3 +1,4 @@
+#include <QElapsedTimer>
 #include <QSignalSpy>
 #include <QTcpSocket>
 #include <QTest>
@@ -9,7 +10,43 @@ class TestCatServer : public QObject {
     Q_OBJECT
 
 private:
-    // Helper: connect to CatServer, send command, return response
+    // Upper bound on how long the server may take to answer. It is a bound, not a delay: a correct
+    // server never reaches it, so raising it costs nothing and lowering it buys nothing.
+    static constexpr int kReplyTimeoutMs = 2000;
+
+    // How often to come back and look. Small enough that a reply is noticed as soon as it lands,
+    // which is what makes the suite faster than the fixed wait it replaced, not just steadier.
+    static constexpr int kPollStepMs = 5;
+
+    // Spin the event loop until `ready()` reports true, or the budget runs out. Returns whether it
+    // became true.
+    //
+    // WHY everything waits through here: the server under test lives on this same thread and only
+    // runs when the event loop does, so every wait in this file has the same shape. It had been
+    // written out twice with different step sizes and different outcomes on timeout, which is how
+    // one copy came to be race-prone while the other was not.
+    template <typename Predicate> bool spinUntil(Predicate ready, int timeoutMs) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!ready()) {
+            if (timer.elapsed() >= timeoutMs)
+                return false;
+            QTest::qWait(kPollStepMs);
+        }
+        return true;
+    }
+
+    // Helper: connect to CatServer, send command, return the complete response.
+    //
+    // WHY this waits for the terminator instead of a fixed interval: it used to write the command,
+    // QTest::qWait(50), and read whatever had arrived. Fifty milliseconds is not a protocol
+    // requirement - it was a guess at loopback latency - so on a loaded machine the reply landed
+    // after the read and the test compared against an empty string while the server had done
+    // everything right. Its own log said so: "TX -> 2072 FA00014074000;" on the line above the
+    // failure. The case that failed moved between runs (testFrequencyA, testFrequencyB,
+    // testPcxXvtrRangeCanBeEmitted), which is the signature of a race in the shared helper rather
+    // than a fault in any one command. Every CAT reply ends in ';', so waiting for that makes the
+    // result depend on what the server sent rather than on how busy the machine was.
     QString sendCommand(CatServer &server, const QString &cmd) {
         QTcpSocket client;
         client.connectToHost("127.0.0.1", server.port());
@@ -22,12 +59,21 @@ private:
         client.write(cmd.toUtf8());
         client.flush();
 
-        // Process events to let server handle the data and write response
-        QTest::qWait(50);
+        // Accumulating inside the predicate is deliberate: readAll() drains the socket, so the
+        // bytes have to be kept as they arrive or a reply split across segments would be lost
+        // between polls.
+        QByteArray received;
+        spinUntil(
+            [&] {
+                received += client.readAll();
+                return received.endsWith(';');
+            },
+            kReplyTimeoutMs);
 
-        QString response = QString::fromUtf8(client.readAll());
         client.disconnectFromHost();
-        return response;
+        // On timeout this returns whatever did arrive rather than a bare QString(), so a genuine
+        // failure reports the partial reply instead of looking identical to the race it replaced.
+        return QString::fromUtf8(received);
     }
 
     QTcpSocket *connectAndKeepOpen(quint16 port) {
@@ -41,12 +87,10 @@ private:
         return sock;
     }
 
+    // Used where the expected traffic is a broadcast rather than an answer to a command, so the
+    // caller knows a byte count but not a terminator.
     QByteArray waitForBytes(QTcpSocket *sock, int minBytes, int timeoutMs = 500) {
-        int elapsed = 0;
-        while (sock->bytesAvailable() < minBytes && elapsed < timeoutMs) {
-            QTest::qWait(20);
-            elapsed += 20;
-        }
+        spinUntil([&] { return sock->bytesAvailable() >= minBytes; }, timeoutMs);
         return sock->readAll();
     }
 
