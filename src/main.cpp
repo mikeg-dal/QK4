@@ -8,12 +8,6 @@
 #include <QSettings>
 #include <QSslSocket>
 #include <rhi/qrhi.h>
-#ifdef Q_OS_WIN
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#include <cstdio>
-#endif
 #ifdef Q_OS_MACOS
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/qpa/qplatformintegration.h>
@@ -25,6 +19,16 @@
 #include "settings/radiosettings.h"
 #include "mainwindow.h"
 #include "ui/styling/k4styles.h"
+// WHY: last, after every project header. windows.h defines SendMessage, ERROR and a long tail of
+// other unqualified macros, and anything it reaches first it rewrites - a header that later
+// declares a member called SendMessage or an enumerator called ERROR fails in a way that names
+// neither. WIN32_LEAN_AND_MEAN and NOMINMAX cut most of it; include order handles the rest.
+#ifdef Q_OS_WIN
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <cstdio>
+#endif
 
 // Filter out known benign Qt warnings on macOS
 // QSocketNotifier::Exception is not supported by kqueue (macOS's event system)
@@ -68,7 +72,7 @@ void setupFonts() {
 // Re-attach to the console of whichever shell launched QK4, so command-line diagnostics can
 // actually be read.
 //
-// WHY THIS IS NEEDED AT ALL: CMakeLists.txt builds QK4 as a WIN32-subsystem binary, which is what
+// WHY: CMakeLists.txt builds QK4 as a WIN32-subsystem binary, which is what
 // keeps a console window from flashing up behind the GUI on a double-click. The cost is that
 // Windows gives the process NO console and does not hand it the invoking cmd.exe's one either, so
 // stdout and stderr are invalid handles and everything main() prints is discarded in silence. The
@@ -132,7 +136,7 @@ static bool claimConsole() {
 // so they all face the same question of whether anybody can see stdout, and they must all answer
 // it the same way.
 //
-// WHY the console is claimed HERE and not in main(): AttachConsole() attaches whatever the parent
+// WHY: the console is claimed HERE and not in main() because AttachConsole() attaches whatever the parent
 // happens to be, and a console claimed at startup would be held for the whole GUI lifetime. A
 // launcher or logging wrapper that spawns QK4 from a console process would then receive every
 // qWarning for the rest of the session in its own window. Claiming it only when there is something
@@ -243,7 +247,7 @@ int main(int argc, char *argv[]) {
     // --connect <name> opens one particular saved radio, overriding the list's auto-connect tick,
     // so one install can carry a desktop shortcut per K4.
     //
-    // WHY parse() and not process(): process() prints an error and EXITS on an unrecognised
+    // WHY: parse() and not process() - process() prints an error and EXITS on an unrecognised
     // option, and a desktop- or Finder-launched app can be handed arguments it never declared
     // (macOS has historically passed -psn_...). Trading "the app opens when double-clicked" for a
     // command-line flag is not a trade worth making, so anything unrecognised is warned about and
@@ -259,13 +263,21 @@ int main(int argc, char *argv[]) {
     parser.addOption(connectOption);
     const QStringList arguments = QCoreApplication::arguments();
     const bool parsedCleanly = parser.parse(arguments);
-    // WHY not showHelp()/showVersion(): both call ::exit(), which ends the process without
+    // WHY: not showHelp()/showVersion() - both call ::exit(), which ends the process without
     // unwinding, and Qt then reports its own half-torn-down state to whoever asked for --help -
     // "QThreadStorage: entry 2 destroyed before end of thread" on the line after the usage text.
     // Returning through main() instead shuts down in order and prints nothing extra. It also puts
     // these two on the same footing as the --connect message below, which Qt's versions are not:
     // showHelp() decides on a message box by its own rules, in its own words.
-    if (parser.isSet(helpOption)) {
+    //
+    // WHY: --help-all is tested by name. addHelpOption() declares BOTH --help and --help-all, and
+    // advertises the second one in the text the first one prints, but the QCommandLineOption it
+    // returns covers only --help. Nothing handled --help-all, and because parse() ignores what it
+    // cannot place rather than exiting, `QK4 --help-all` opened the full GUI - the app advertising
+    // an option that silently does something else entirely. Qt's own listing of its generic
+    // options is not reachable without showHelp()'s ::exit(), so this answers with the same text
+    // --help gives rather than pretending to more.
+    if (parser.isSet(helpOption) || parser.isSet(QStringLiteral("help-all"))) {
         reportToOperator(parser.helpText(), QMessageBox::Information);
         return 0;
     }
@@ -284,13 +296,15 @@ int main(int argc, char *argv[]) {
     // which, so running on would either connect to a different radio or to none, having been told
     // explicitly to connect to something.
     //
-    // Listing the configured radios answers the question they were about to ask next. Printed
-    // rather than shown in a dialog because a bare --connect is a typed command, and a shortcut
-    // would have carried the name.
-    // Matching the bare strings alone let `--connect=` through: Qt parses an explicit but empty
-    // value as the option being set to nothing, `arguments.contains("--connect")` is false for it,
-    // and the guard below never fired - so the operator got the GUI and no complaint. An explicit
-    // empty value is the same mistake as a bare --connect and has to be caught with it.
+    // Listing the configured radios answers the question they were about to ask next. It goes to
+    // the console when there is one and to a dialog when there is not, because a shortcut can
+    // carry a bare --connect too and exiting silently there is indistinguishable from the app
+    // being broken.
+    //
+    // WHY: matching the bare strings alone let `--connect=` through. Qt parses an explicit but
+    // empty value as the option being set to nothing, `arguments.contains("--connect")` is false
+    // for it, and the guard below never fired - so the operator got the GUI and no complaint. An
+    // explicit empty value is the same mistake as a bare --connect and has to be caught with it.
     bool askedToConnect = false;
     for (const QString &argument : arguments) {
         if (argument == QStringLiteral("-c") || argument == QStringLiteral("--connect") ||
@@ -299,9 +313,9 @@ int main(int argc, char *argv[]) {
             break;
         }
     }
-    //
-    // Tested on the VALUE, not on isSet: after a failed parse Qt still reports the option as set,
-    // with nothing in it, so isSet answers yes to the exact case this is here to catch.
+
+    // WHY: tested on the VALUE, not on isSet. After a failed parse Qt still reports the option as
+    // set, with nothing in it, so isSet answers yes to the exact case this is here to catch.
     if (askedToConnect && parser.value(connectOption).trimmed().isEmpty()) {
         QString usage = QStringLiteral("--connect needs the name of a saved radio.\n\n");
         const auto radios = RadioSettings::instance()->radios();
