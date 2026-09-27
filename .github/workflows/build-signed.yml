@@ -1,9 +1,9 @@
-name: Build
+name: Build · Signed
 
 run-name: >-
   ${{ github.event_name == 'push'
-      && format('Build {0}', github.ref_name)
-      || format('Build {0} (on demand)', github.ref_name) }}
+      && format('Signed build · {0}', github.ref_name)
+      || format('Signed build · {0} (on demand)', github.ref_name) }}
 
 # Packaging entry point for untagged builds. Produces the same signed, notarized,
 # release-equivalent artifacts a tag would ship — on one run page, for all three

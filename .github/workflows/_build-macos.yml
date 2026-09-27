@@ -1,7 +1,7 @@
-name: _build-macos
+name: Reusable · macOS build
 
 # Reusable macOS builder — the single definition of how a QK4 .app is assembled,
-# signed, notarized, and packaged. Called by build.yml and release.yml; never
+# signed, notarized, and packaged. Called by build-signed.yml and release.yml; never
 # triggered directly (that is what the leading underscore signals).
 #
 # WHY this exists: this logic previously lived in three separate workflows. A fix

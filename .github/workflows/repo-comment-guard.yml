@@ -1,4 +1,4 @@
-name: Comment Guard
+name: Repo · Comment guard
 
 # Deterministic moderation of issue/PR comments and new issue bodies.
 # GitHub has no setting to disable file attachments on issues, so this

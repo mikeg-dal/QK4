@@ -1,4 +1,4 @@
-name: Issue Triage
+name: Repo · Issue triage
 
 # Automatic first-pass triage of every new issue: parses the structured
 # form fields, applies labels, investigates likely source locations, and

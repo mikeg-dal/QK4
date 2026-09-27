@@ -10,10 +10,10 @@
 #
 # The version matters more than it looks. clang-format's line-breaking heuristics change between
 # PATCH releases, so 18.1.3 and 18.1.8 disagree about real files in this repo - a difference that
-# cost a red CI check on a PR and a red `development` before ci.yml was pinned to an exact version
+# cost a red CI check on a PR and a red `development` before ci-checks.yml was pinned to an exact version
 # in 32734a1. Pinning the major alone was not enough; neither is "some clang-format 18".
 #
-# The pinned version is READ FROM ci.yml rather than written here, so this file cannot disagree
+# The pinned version is READ FROM ci-checks.yml rather than written here, so this file cannot disagree
 # with what CI installs. There is nothing to keep in sync.
 #
 # Usage:
@@ -96,10 +96,10 @@ fi
 cd "${REPO_ROOT}"
 
 VENV_DIR="${REPO_ROOT}/.format-venv"
-CI_WORKFLOW=".github/workflows/ci.yml"
+CI_WORKFLOW=".github/workflows/ci-checks.yml"
 
 # SINGLE SOURCE OF TRUTH. This used to be a literal here, which made it a fourth hand-maintained
-# copy of the version (ci.yml, CONVENTIONS.md twice, and this one) inside a script whose whole
+# copy of the version (ci-checks.yml, CONVENTIONS.md twice, and this one) inside a script whose whole
 # reason to exist is that copies of a pinned version drift apart. Reading it from the workflow
 # means the guard below cannot disagree with what CI installs.
 # Anchored to the `run:` line rather than matching anywhere, so a comment that happens to mention
@@ -125,7 +125,7 @@ version_of() {
 }
 
 # Search order, most specific first. The llvm@N and clang-format-N paths follow the major read from
-# ci.yml, so bumping the pin moves the search with it.
+# ci-checks.yml, so bumping the pin moves the search with it.
 formatter_candidates() {
     printf '%s\n' \
         "${VENV_DIR}/bin/clang-format" \

@@ -1,4 +1,4 @@
-name: Qt 6.11 Canary
+name: Scheduled · Qt 6.11 canary
 
 # Windows CI is held at Qt 6.10 because Qt 6.11 restructured its download
 # repository and the installer tooling can't fetch it yet. This monthly
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   probe:
-    # See codeql.yml — keeps scheduled runs from charging forkers.
+    # See ci-codeql.yml — keeps scheduled runs from charging forkers.
     if: github.repository == 'mikeg-dal/QK4'
     runs-on: windows-latest
     timeout-minutes: 30
@@ -67,9 +67,9 @@ jobs:
               '1. Change `version: \'6.10.*\'` to `version: \'6.11.*\'` and drop the "6.11 pending" comment in:',
               '   - `.github/workflows/_build-windows.yml`',
               '   - `.github/workflows/release.yml`',
-              '2. Consider the same bump for the CodeQL workflow (`codeql.yml`, Linux Qt).',
-              '3. Validate with a `build.yml` dispatch and inspect the Windows artifact.',
-              '4. Delete `.github/workflows/qt611-canary.yml` — its job is done.',
+              '2. Consider the same bump for the CodeQL workflow (`ci-codeql.yml`, Linux Qt).',
+              '3. Validate with a `build-signed.yml` dispatch and inspect the Windows artifact.',
+              '4. Delete `.github/workflows/scheduled-qt611-canary.yml` — its job is done.',
             ].join('\n');
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,

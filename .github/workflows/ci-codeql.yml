@@ -1,4 +1,11 @@
-name: CodeQL
+name: CI · CodeQL
+
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+      && format('PR #{0} → {1}: {2}', github.event.pull_request.number, github.base_ref, github.event.pull_request.title)
+      || github.event_name == 'push'
+      && format('{0}: {1}', github.ref_name, github.event.head_commit.message)
+      || format('{0} ({1})', github.ref_name, github.event_name) }}
 
 # Static security/bug analysis of the C++ sources. Findings appear under
 # Security -> Code scanning; nothing blocks merges. C++ analysis requires a

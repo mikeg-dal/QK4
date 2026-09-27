@@ -1,6 +1,6 @@
-name: _build-pi
+name: Reusable · Raspberry Pi build
 
-# Reusable Raspberry Pi (ARM64) builder. Called by build.yml and release.yml;
+# Reusable Raspberry Pi (ARM64) builder. Called by build-signed.yml and release.yml;
 # never triggered directly. All the real work lives in .github/scripts/build-pi.sh,
 # which already takes the version string as $1 and stamps it via QK4_VERSION_FULL.
 

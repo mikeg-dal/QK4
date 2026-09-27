@@ -82,12 +82,12 @@ scripts/check-format.sh --fix
 ```
 
 The script finds clang-format wherever it is installed and **refuses to run on the wrong version**
-rather than reporting a misleading pass. It reads the pinned version out of `ci.yml`, so there is no
+rather than reporting a misleading pass. It reads the pinned version out of `ci-checks.yml`, so there is no
 second copy of the number to keep in sync. If you have no matching version, `--bootstrap` installs
 one into `.format-venv/`.
 
 The version matters more than it looks: clang-format changes its line-breaking heuristics between
-**patch** releases, so a nearby 18.x can accept wrapping CI rejects. `ci.yml` pins an exact version
+**patch** releases, so a nearby 18.x can accept wrapping CI rejects. `ci-checks.yml` pins an exact version
 for this reason.
 
 Running clang-format by hand works too, but the path below is correct only on an Apple Silicon Mac
@@ -204,7 +204,7 @@ These rules prevent the architectural issues identified in the 2026-03-30 audit.
 
 **How rules are enforced:** not all twelve rules have the same bite. The tag at the front of each rule tells a new contributor what happens when they're broken:
 
-- **[CI]** — a test or lint check in `.github/workflows/ci.yml` fails. The rule *breaks the build*.
+- **[CI]** — a test or lint check in `.github/workflows/ci-checks.yml` fails. The rule *breaks the build*.
 - **[sanitizer]** — ASAN or UBSAN in the sanitizer CI job catches the violation when the offending code path runs.
 - **[review]** — no automation. Enforced by reviewer discipline. Violations ship if reviewers miss them.
 - **[aspirational]** — target not fully met today; documented exemptions exist. Binds new code only.
@@ -283,7 +283,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-All three must pass. No exceptions. `.github/workflows/ci.yml` mirrors the format gate and runs the test suites — skipping locally means the CI run will fail.
+All three must pass. No exceptions. `.github/workflows/ci-checks.yml` mirrors the format gate and runs the test suites — skipping locally means the CI run will fail.
 
 ### 11. [sanitizer + review] Controlled Shutdown Order
 

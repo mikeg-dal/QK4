@@ -4,7 +4,7 @@ A cross-platform desktop application for remote control of Elecraft K4 radios ov
 
 [![Release](https://img.shields.io/github/v/release/mikeg-dal/QK4?include_prereleases)](https://github.com/mikeg-dal/QK4/releases)
 [![Build](https://github.com/mikeg-dal/QK4/actions/workflows/release.yml/badge.svg)](https://github.com/mikeg-dal/QK4/actions/workflows/release.yml)
-[![CI](https://github.com/mikeg-dal/QK4/actions/workflows/ci.yml/badge.svg)](https://github.com/mikeg-dal/QK4/actions/workflows/ci.yml)
+[![CI](https://github.com/mikeg-dal/QK4/actions/workflows/ci-checks.yml/badge.svg)](https://github.com/mikeg-dal/QK4/actions/workflows/ci-checks.yml)
 
 ## Supported Platforms
 
