@@ -296,7 +296,7 @@ void handleSIRF(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
 }
 
 void handleSB(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
-    // SB0=off, SB1=on, SB3=on (diversity)
+    // SB0=off, SB1=on, SB3=on with the Sub mini-pan running (see catframes.h)
     if (cmd.length() <= 2)
         return;
     int newState = (cmd.mid(2) != "0") ? 1 : 0;

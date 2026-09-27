@@ -19,9 +19,9 @@ QByteArray ptt(bool transmitting);
 QByteArray split(bool enabled);
 
 // Sub receiver on/off. SB0 is off and SB1 is on; the radio also reports SB3, which is the sub
-// receiver on in diversity mode. This builder never sends 3 - turning diversity on is a separate
-// decision from turning the sub receiver on - but a radio already in diversity reports SB3 and
-// RadioState treats that as enabled.
+// receiver on with its mini-pan running - the K4 requires it for the Sub mini-pan and moves between
+// SB1 and SB3 itself when #MP$ toggles. This builder never sends 3 - the mini-pan is driven by #MP$,
+// not SB - but RadioState treats SB3 as enabled. Diversity is DV, not SB.
 QByteArray subReceiver(bool enabled);
 QByteArray ritOffset(int offset);
 QByteArray ritEnabled(bool en);

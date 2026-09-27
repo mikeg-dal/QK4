@@ -238,6 +238,13 @@ SB0;#MP0;#MP$-1;                Sub RX off
 
 The same pair also arrives in the `RDY;` dump and after `#DPM` changes.
 
+**`SB3` is the Sub mini-pan, not diversity.** The K4 needs `SB3` for the Sub mini-pan to run and
+switches `SB1` ↔ `SB3` itself when `#MP$` toggles. QK4 reads any non-zero `SB` as Sub RX on, and the
+DIV badge follows `DV` only, so neither misreads it.
+
+**Main and Sub mini-pans are independent.** Both can run at once (`#MP1;#MP$1;SB3;`). Turning the Sub
+mini-pan on with Sub RX off is refused with `ER105:Operation requires SUB RX to be ON.`
+
 **`-1` is not "can never be turned on".** The radio reported `#MP$-1` just after `SB1`, then
 accepted `#MP$1` moments later. QK4 therefore treats `-1` as *off* (closing an open mini-pan) and
 does not use it to refuse the operator's click.
