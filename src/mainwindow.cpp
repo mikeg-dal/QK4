@@ -1133,14 +1133,11 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     m_vfoB->setMiniPanPassbandColor(vfoBPassband);
 
     // Connect VFO B click to toggle mini-pan (send CAT to enable Mini-Pan streaming)
-    // Only allow mini pan B if SUB RX is on or VFOs are on the same band
     connect(m_vfoB, &VFOWidget::normalContentClicked, this, [this]() {
-        // Block mini pan B if VFOs are on different bands and SUB RX is off
-        // (K4 cannot provide separate Sub RX spectrum without SUB RX enabled)
-        if (RadioUtils::getBandFromFrequency(m_radioState->vfoA()) !=
-                RadioUtils::getBandFromFrequency(m_radioState->vfoB()) &&
-            !m_radioState->subReceiverEnabled()) {
-            qCDebug(qk4Main) << "Mini-Pan B blocked: VFOs on different bands and SUB RX is off";
+        // WHY: the K4 refuses the Sub mini-pan while Sub RX is off
+        // (ER105 "Operation requires SUB RX to be ON"), whatever band VFO B is on.
+        if (!m_radioState->subReceiverEnabled()) {
+            qCDebug(qk4Main) << "Mini-Pan B blocked: SUB RX is off";
             return;
         }
         // The VFO view itself follows miniPanBEnabledChanged (SpectrumController).
