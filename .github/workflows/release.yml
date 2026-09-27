@@ -32,14 +32,22 @@ concurrency:
 
 jobs:
   version:
-    name: Derive version
+    name: Derive version and check for a tester build
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       version: ${{ steps.derive.outputs.version }}
       is_release: ${{ steps.derive.outputs.is_release }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          # Every branch's commits (not their file contents), so a tester build made on
+          # development can be found from a tag on main.
+          fetch-depth: 0
+          filter: blob:none
 
       - name: Derive version
         id: derive
@@ -54,6 +62,59 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
           echo "version=$VERSION is_release=$IS_RELEASE"
+
+      # WHY: testers approve one specific build, then the release is rebuilt from the tag. Nothing
+      # else stops a fix that landed after the tester build from shipping untested. This passes only
+      # if an on-demand build-signed.yml run - a tester build - succeeded on a commit whose shipped
+      # code is identical to the tag's. Pushes to main build automatically and nobody tested those,
+      # so they do not count. Content is compared, not SHAs: the merge commit on main has a new SHA.
+      #
+      # "Shipped code" is everything except what cannot change a package: docs, Markdown, and the
+      # entry-point workflows, which decide when to build and how to publish. The _build-*.yml
+      # builders DO shape the package and are compared. Without that exclusion, v0.7.0-beta.5 would
+      # have been refused over the release.yml fixes made while publishing it.
+      #
+      # A rehearsal reports the answer without enforcing it, so the guard can be exercised without
+      # minting a tag. To release code that has no tester build, dispatch build-signed.yml on it.
+      - name: Check this code had a tester build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IS_RELEASE: ${{ steps.derive.outputs.is_release }}
+        run: |
+          set -euo pipefail
+          same_shipped_code() {
+            git cat-file -e "$1^{commit}" 2>/dev/null || return 1
+            git diff --quiet --no-renames "$1" HEAD -- . \
+              ':(exclude)docs' ':(exclude)*.md' ':(exclude)LICENSE' \
+              ':(exclude).github/ISSUE_TEMPLATE' ':(exclude).github/workflows' || return 1
+            git diff --quiet --no-renames "$1" HEAD -- '.github/workflows/_build-*.yml'
+          }
+
+          MATCH=""
+          CHECKED=0
+          while IFS= read -r sha; do
+            [ -n "${sha}" ] || continue
+            CHECKED=$((CHECKED + 1))
+            if same_shipped_code "${sha}"; then
+              MATCH="${sha}"
+              break
+            fi
+          done < <(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build-signed.yml/runs?event=workflow_dispatch&status=success&per_page=100" \
+                     --jq '.workflow_runs[].head_sha')
+
+          if [ -n "${MATCH}" ]; then
+            echo "Tester build found: ${MATCH} ships the same code as ${GITHUB_REF_NAME}."
+            exit 0
+          fi
+
+          echo "No tester build of this code: none of the ${CHECKED} successful on-demand build-signed.yml runs"
+          echo "built a commit that ships the same code as ${GITHUB_REF_NAME}."
+          echo "Either something changed after the tester build, or none was made."
+          if [ "${IS_RELEASE}" = "true" ]; then
+            echo "::error::Refusing to release code testers never received. Dispatch build-signed.yml on this commit, have it tested, then re-tag."
+            exit 1
+          fi
+          echo "::warning::A tag on this code would be refused."
 
   macos:
     needs: version
