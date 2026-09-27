@@ -29,7 +29,7 @@ or `development: <commit subject>`.
 | `ci-codeql.yml` | CodeQL static analysis → Security tab; also weekly |
 | `ci-packaging.yml` | Builds and packages all four platforms, unsigned, through the same `_build-*.yml` builders a release uses. Skips docs-only changes. Its `Packaging result` job is the one to require |
 | `build-signed.yml` | Signed, notarized artifacts for every platform, one run page. Dispatch it on `development` for a tester build. No Release, no gh-pages |
-| `release.yml` | The same builders, then the GitHub Release and gh-pages |
+| `release.yml` | The same builders, then the GitHub Release and gh-pages. Refuses a tag unless an on-demand `build-signed.yml` run succeeded on the same shipped code, so what testers approved is what ships |
 | `scheduled-sanitizers.yml` | Weekly ThreadSanitizer; failures go to a sticky issue |
 | `scheduled-qt611-canary.yml` | Monthly Qt 6.11 install attempt on Windows; delete once the bump lands |
 | `repo-issue-triage.yml` | First-pass triage of new issues |
