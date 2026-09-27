@@ -1,0 +1,161 @@
+name: CI · Packaging
+
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+      && format('PR #{0} → {1}: {2}', github.event.pull_request.number, github.base_ref, github.event.pull_request.title)
+      || format('{0}: {1}', github.ref_name, github.event.head_commit.message) }}
+
+# Builds and packages every platform QK4 distributes - macOS, Windows, Raspberry Pi, Linux Flatpak -
+# on every PR and every push to development, through the same _build-*.yml builders that release.yml
+# uses. The question it answers is "does this change still build and package everywhere?", so a
+# break is found on the PR that caused it rather than at the next tester build.
+#
+# WHY UNSIGNED: a pull request from a fork gets no secrets, so Developer ID signing and notarization
+# cannot run here. macOS is ad-hoc signed instead, which still lets the packaged-artifact checks run
+# (framework symlinks, codesign --strict, the OpenSSL TLS plugin). Signed tester builds are
+# build-signed.yml, dispatched on development.
+#
+# Not on push to main: build-signed.yml already runs there, signed.
+
+on:
+  pull_request:
+    branches: [main, development]
+  push:
+    branches: [development]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-packaging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Decide what to build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # A PR checks out GitHub's merge commit, whose first parent is the base branch, so
+          # HEAD^1..HEAD is exactly what the PR changes.
+          if [ "${EVENT}" = "pull_request" ]; then
+            CHANGED="$(git diff --name-only HEAD^1 HEAD)"
+            VERSION="pr${PR_NUMBER}-${PR_HEAD_SHA:0:7}"
+          else
+            if [ -n "${PUSH_BEFORE}" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+              CHANGED="$(git diff --name-only "${PUSH_BEFORE}" HEAD)"
+            else
+              CHANGED=""
+            fi
+            VERSION="${REF_NAME//\//-}-$(git rev-parse --short=7 HEAD)"
+          fi
+
+          # WHY skip only on a positive match: a docs-only change cannot alter a package - no Markdown
+          # is bundled - but anything unrecognised, and an empty or unreadable diff, builds.
+          NON_DOCS="$(printf '%s\n' "${CHANGED}" | grep -vE '^docs/|\.md$|^\.github/ISSUE_TEMPLATE/|^LICENSE$' || true)"
+          if [ -z "${CHANGED}" ] || [ -n "${NON_DOCS}" ]; then
+            BUILD=true
+          else
+            BUILD=false
+          fi
+
+          echo "Changed files:"
+          while IFS= read -r f; do echo "  ${f}"; done <<< "${CHANGED:-(none readable - building)}"
+          echo "build=${BUILD}  version=${VERSION}"
+          echo "build=${BUILD}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    uses: ./.github/workflows/_build-macos.yml
+    with:
+      version: ${{ needs.changes.outputs.version }}
+      retention-days: 1
+      sign: false
+
+  windows:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    uses: ./.github/workflows/_build-windows.yml
+    with:
+      version: ${{ needs.changes.outputs.version }}
+      retention-days: 1
+
+  raspberry-pi:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    uses: ./.github/workflows/_build-pi.yml
+    with:
+      version: ${{ needs.changes.outputs.version }}
+      retention-days: 1
+
+  flatpak:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    uses: ./.github/workflows/_build-flatpak.yml
+    with:
+      version: ${{ needs.changes.outputs.version }}
+      retention-days: 1
+
+  # WHY ONE RESULT JOB: this is the check to make required in branch protection. A skipped
+  # reusable-workflow job reports under a different check name than one that ran ("macos" rather
+  # than "macos / build"), so requiring the platform jobs directly would leave every docs-only PR
+  # waiting forever on a check that never arrives.
+  result:
+    name: Packaging result
+    needs: [changes, macos, windows, raspberry-pi, flatpak]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Summarise
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          MACOS: ${{ needs.macos.result }}
+          WINDOWS: ${{ needs.windows.result }}
+          PI: ${{ needs.raspberry-pi.result }}
+          FLATPAK: ${{ needs.flatpak.result }}
+          VERSION: ${{ needs.changes.outputs.version }}
+        run: |
+          {
+            echo "### Packaging \`${VERSION}\`"
+            echo
+            echo "| Platform | Result |"
+            echo "|---|---|"
+            echo "| macOS (ad-hoc signed) | ${MACOS} |"
+            echo "| Windows | ${WINDOWS} |"
+            echo "| Raspberry Pi | ${PI} |"
+            echo "| Linux Flatpak | ${FLATPAK} |"
+            echo
+            echo "Unsigned; artifacts kept 1 day. Signed tester builds: dispatch build-signed.yml."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # "skipped" passes: that is a docs-only change. Anything else that is not "success" fails.
+          FAIL=0
+          [ "${CHANGES}" = "success" ] || FAIL=1
+          for r in "${MACOS}" "${WINDOWS}" "${PI}" "${FLATPAK}"; do
+            case "${r}" in
+              success | skipped) ;;
+              *) FAIL=1 ;;
+            esac
+          done
+          exit "${FAIL}"
