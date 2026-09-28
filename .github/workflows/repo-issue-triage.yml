@@ -69,7 +69,7 @@ jobs:
 
       - name: Run triage agent
         if: steps.gate.outputs.skip != 'true'
-        uses: anthropics/claude-code-action@9171db3e57d6a3140a37ddc2ba92788584e0ead6
+        uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
