@@ -58,8 +58,8 @@ struct State {
     Owner owner = Owner::None;
     Route route = Route::None;
 
-    // Has the radio echoed TX; for the transmission currently held? Cleared on every ownership
-    // change, set by the radio's own TX echo.
+    // Has the radio echoed TX; for the transmission currently held? Cleared when a transmission
+    // starts from idle or ends, kept across a re-assert or takeover, set by the radio's TX echo.
     //
     // WHY this is needed, and why it is exact rather than a timeout: on release the K4 takes a
     // while to notice the audio stopped and only then emits RX;. If the operator re-keys inside
@@ -131,7 +131,13 @@ inline Effects transition(State &s, Owner newOwner, Route newRoute) {
     Effects e;
     s.owner = newOwner;
     s.route = newRoute;
-    s.radioConfirmed = false; // a new episode; the radio has not acknowledged it yet
+    // WHY only when the transmitter was free or is being freed: a re-assert or a takeover keeps the
+    // radio keyed without a gap, and the K4 does not echo TX; again for a state it is already in.
+    // Clearing here would leave nothing to restore it, and the radio's genuine RX; would be
+    // dismissed as stale.
+    const bool sameEpisode = oldOwner != Owner::None && newOwner != Owner::None;
+    if (!sameEpisode)
+        s.radioConfirmed = false; // a new episode; the radio has not acknowledged it yet
     e.transmitting = s.transmitting();
 
     const bool gateWas = needsGate(oldRoute);

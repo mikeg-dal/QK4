@@ -248,6 +248,36 @@ private slots:
         QCOMPARE(s.owner, Owner::None);
     }
 
+    // The radio does not echo TX; again while it is already transmitting, so a re-assert by the
+    // holder must not throw away the confirmation it already has. Otherwise the radio's own RX;
+    // (a tune timeout, RX pressed at the radio) is taken for a stale one and the gate stays open.
+    void reassertingKeepsTheRadiosConfirmation() {
+        State s;
+        engage(s, Owner::TciClient, Route::StreamedFromHere);
+        radioReports(s, true);
+        engage(s, Owner::TciClient, Route::StreamedFromHere); // client repeats trx:true
+
+        const Effects rx = radioReports(s, false);
+        QVERIFY2(!rx.ignored, "the radio dropping TX must still close the gate");
+        QVERIFY(rx.setGate);
+        QVERIFY(!rx.gateActive);
+        QCOMPARE(s.owner, Owner::None);
+    }
+
+    // Same for a takeover that never lets the transmitter drop: the operator pressing PTT while a
+    // client streams. The radio stays keyed throughout and sends nothing new.
+    void aContinuousTakeoverKeepsTheRadiosConfirmation() {
+        State s;
+        engage(s, Owner::TciClient, Route::StreamedFromHere);
+        radioReports(s, true);
+        engage(s, Owner::PttButton, Route::StreamedFromHere);
+
+        const Effects rx = radioReports(s, false);
+        QVERIFY2(!rx.ignored, "the radio dropping TX must still close the gate");
+        QVERIFY(rx.setGate);
+        QCOMPARE(s.owner, Owner::None);
+    }
+
     // XMIT today sends TX; AND opens the gate. Until the bench says whether that is right, the
     // arbiter has to reproduce it exactly — and undo both halves on release.
     void catKeyedAndStreamedDoesBothAndUndoesBoth() {
