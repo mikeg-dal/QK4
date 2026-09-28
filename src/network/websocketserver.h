@@ -53,6 +53,18 @@ public:
     static constexpr int PING_INTERVAL_MS = 10000;
     static constexpr int PEER_SILENCE_TIMEOUT_MS = 30000;
 
+    // A connection that has not completed the HTTP upgrade in this long is dropped. It already
+    // counts against MAX_CLIENTS, so without a deadline eight idle connections - a port scan, a
+    // half-open socket - would lock every real client out. A real upgrade takes milliseconds.
+    // Checked on the liveness tick, so the effective limit is up to one PING_INTERVAL_MS later.
+    static constexpr int HANDSHAKE_TIMEOUT_MS = 10000;
+
+    // How long a graceful close may wait for the peer before the socket is aborted. A graceful
+    // close waits for the send queue to drain, which never happens for a peer that is not reading;
+    // until the socket actually closes, clientDisconnected is not emitted and whatever the client
+    // held (for TCI, the transmitter) is not released.
+    static constexpr int CLOSE_GRACE_MS = 2000;
+
     // OUTBOUND BACKPRESSURE. Qt buffers whatever the peer has not read, in our process, without
     // limit. RX audio runs about 384 kB/s per subscriber, so a client that stops reading grows
     // QK4's memory for as long as it stays connected. CONVENTIONS.md rule 5 requires an explicit
@@ -67,14 +79,16 @@ public:
     static constexpr qint64 SEND_QUEUE_HARD_LIMIT_BYTES = 1024 * 1024; // rule 5's default cap
 
     // The backpressure decision, separated from the socket so it can be tested without one -
-    // the same reason TransmitOwner is split out of TransmitController. Provoking the real thing
-    // needs a peer that accepts a connection and then never reads, which a test client cannot be.
+    // the same reason TransmitOwner is split out of TransmitController. The real thing is also
+    // exercised by a client that caps its read buffer and stops reading (test_websocketserver).
     enum class SendDecision { Send, DropFrame, DropSession };
     static SendDecision decideSend(qint64 queuedBytes, bool sheddable);
 
     // Defaults to PING_INTERVAL_MS / PEER_SILENCE_TIMEOUT_MS. Overridable so a test does not have
     // to wait half a minute to prove a dead peer is dropped.
     void setLivenessPolicy(int pingIntervalMs, int silenceTimeoutMs);
+    // Defaults to HANDSHAKE_TIMEOUT_MS; overridable for the same reason.
+    void setHandshakeTimeout(int ms) { m_handshakeTimeoutMs = ms; }
 
     explicit WebSocketServer(QObject *parent = nullptr);
     ~WebSocketServer() override;
@@ -117,6 +131,8 @@ private:
         QTcpSocket *socket = nullptr;
         bool upgraded = false;
         QByteArray handshakeBuffer;
+        // Started on accept. Bounds the handshake phase, which lastInbound does not cover.
+        QElapsedTimer accepted;
         WebSocketDecoder decoder{/*requireMask=*/true};
         // Restarted by ANY inbound frame, which is what makes a busy client immune to the probe.
         // Started at upgrade, so a peer that connects and then says nothing is still covered.
@@ -133,7 +149,13 @@ private:
     void onDisconnected(int clientId);
     bool tryUpgrade(int clientId);
     void pumpFrames(int clientId);
-    void dropSession(int clientId, quint16 code, const QString &why);
+    // How a dropped session's socket is closed. Graceful sends the close frame and waits up to
+    // CLOSE_GRACE_MS for it to go out. Abort closes at once; used when the peer is known not to be
+    // reading, since the close frame could never be delivered and waiting only delays the release.
+    enum class CloseMode { Graceful, Abort };
+    void dropSession(int clientId, quint16 code, const QString &why, CloseMode mode = CloseMode::Graceful);
+    // Starts a graceful close that cannot outlive CLOSE_GRACE_MS.
+    void closeSocketBounded(QTcpSocket *socket);
     void sendFrame(int clientId, quint8 opcode, const QByteArray &payload);
 
     // The single write path, so backpressure cannot be bypassed by adding another sender.
@@ -151,6 +173,7 @@ private:
     QTcpServer *m_server;
     QTimer *m_livenessTimer;
     int m_silenceTimeoutMs = PEER_SILENCE_TIMEOUT_MS;
+    int m_handshakeTimeoutMs = HANDSHAKE_TIMEOUT_MS;
     QHash<int, Session> m_sessions;
     int m_nextClientId = 1;
     QString m_errorString;
