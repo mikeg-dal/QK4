@@ -574,14 +574,11 @@ void AudioEngine::flushMicBuffer() {
     m_micReadOffset = 0;
 }
 
-const QByteArray &AudioEngine::resampleTo12k(const QByteArray &input) {
-    // Decimate from the device's own capture rate down to the K4's 12 kHz. The factor is derived
-    // from the rate the microphone actually opened at, NOT assumed - see audio/audiodecimator.h.
+const QByteArray &AudioEngine::resampleTo12k(const QByteArray &input, int factor) {
     // Writes into the pre-allocated m_resampleBuf12k member; resize() at the pre-reserved
     // capacity is alloc-free.
     const float *inputSamples = reinterpret_cast<const float *>(input.constData());
     const int inputCount = static_cast<int>(input.size() / sizeof(float));
-    const int factor = m_micDecimationFactor;
     const int outputCount = AudioDecimator::outputSampleCount(inputCount, factor);
 
     m_resampleBuf12k.resize(outputCount * static_cast<int>(sizeof(float)));
@@ -609,7 +606,11 @@ void AudioEngine::feedTciTxAudio(const QByteArray &f32Mono48k) {
     if (txSource() != TxSource::Tci || f32Mono48k.isEmpty()) {
         return;
     }
-    const QByteArray &data12k = resampleTo12k(f32Mono48k);
+    // WHY a fixed factor, not the microphone's: TCI audio is 48 kHz whatever device the mic opened
+    // on. The mic's factor is 2 for a 24 kHz headset (twice the samples: wrong pitch and timing)
+    // and 0 if the mic failed to open (silence).
+    static constexpr int TCI_DECIMATION_FACTOR = AudioDecimator::factorFor(48000);
+    const QByteArray &data12k = resampleTo12k(f32Mono48k, TCI_DECIMATION_FACTOR);
     // The TCI level, NOT the microphone's. An operator-facing level is required here rather than
     // optional - WSJT-X sends at or near full scale and drove the K4 far too hard without one -
     // but it has to be its own, because the cubic curve puts a microphone and a line-level digital
@@ -661,7 +662,9 @@ void AudioEngine::onMicDataReady() {
     }
 
     // Resample from 48kHz to 12kHz (writes into pre-allocated member buffer)
-    const QByteArray &data12k = resampleTo12k(data48k);
+    // The factor for the rate the microphone actually opened at, NOT assumed - see
+    // audio/audiodecimator.h.
+    const QByteArray &data12k = resampleTo12k(data48k, m_micDecimationFactor);
     bufferAndEmitTxFrames(data12k, m_micGain.load(std::memory_order_relaxed));
 }
 

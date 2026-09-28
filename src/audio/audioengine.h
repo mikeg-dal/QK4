@@ -161,12 +161,11 @@ private:
     // whole SL-tier frames while PTT is asserted. Audio thread only.
     void bufferAndEmitTxFrames(const QByteArray &pcm12k, float gain);
 
-    // Resample 48kHz Float32 samples to 12kHz (4:1 decimation with averaging).
-    // Reads from input48k, writes into the pre-allocated m_resampleBuf12k
-    // member and returns a const reference to it. Avoids per-poll allocation.
-    // Decimate a captured frame to the K4's 12 kHz, using whatever rate the device is actually
-    // running at. See audio/audiodecimator.h for why the rate is not a constant any more.
-    const QByteArray &resampleTo12k(const QByteArray &input);
+    // Decimate Float32 samples to the K4's 12 kHz by `factor` (averaging), writing into the
+    // pre-allocated m_resampleBuf12k member and returning a const reference to it. Avoids per-poll
+    // allocation. The microphone passes the factor for the rate its device actually opened at (see
+    // audio/audiodecimator.h); TCI passes a fixed 4, because TCI audio is always 48 kHz.
+    const QByteArray &resampleTo12k(const QByteArray &input, int factor);
 
     // The microphone's ACTUAL capture rate, taken from the device rather than demanded of it.
     // 0 until a device has been opened. See setupAudioInput().
