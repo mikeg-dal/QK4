@@ -3,6 +3,9 @@
 #include <QSignalSpy>
 #include <QTcpSocket>
 
+#include <memory>
+#include <vector>
+
 #include "network/websocketframe.h"
 #include "network/websocketserver.h"
 
@@ -326,6 +329,71 @@ private slots:
         // The client never answers the PINGs that follow. A real dead peer behaves exactly so:
         // the socket stays open because nothing told either end otherwise.
         QTRY_VERIFY_WITH_TIMEOUT(disconnected.count() == 1, 3000);
+
+        client.close();
+        server.stop();
+    }
+
+    // A dropped peer that is not reading must still produce clientDisconnected. A graceful close
+    // waits for the send queue to drain, which for this peer is never: the session stayed in
+    // ClosingState and TciServer, which releases PTT on clientDisconnected, kept the client keyed.
+    //
+    // The client caps its read buffer and then never reads, so the kernel buffers fill and the
+    // server's own queue grows until the hard limit drops the session.
+    void aStalledPeerIsReleasedWhenItsQueueOverflows() {
+        WebSocketServer server;
+        const quint16 port = freePort(server);
+        QSignalSpy connected(&server, &WebSocketServer::clientConnected);
+        QSignalSpy disconnected(&server, &WebSocketServer::clientDisconnected);
+        QSignalSpy errors(&server, &WebSocketServer::errorOccurred);
+
+        TestClient client;
+        QVERIFY(client.connectTo(port));
+        client.readHandshake();
+        QTRY_COMPARE(connected.count(), 1);
+        const int id = connected.at(0).at(0).toInt();
+        client.socket().setReadBufferSize(1);
+
+        // Control text is never shed, so it reaches the hard limit. Bounded so a broken limit
+        // fails the test instead of hanging it.
+        const QString chunk(16 * 1024, QLatin1Char('x'));
+        for (int i = 0; i < 8192 && errors.isEmpty(); ++i) {
+            server.sendText(id, chunk);
+            if (i % 16 == 0)
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+        }
+        QVERIFY2(!errors.isEmpty(), "the send queue never reached the hard limit");
+
+        QTRY_VERIFY_WITH_TIMEOUT(disconnected.count() == 1, 3000);
+        QCOMPARE(server.clientCount(), 0);
+
+        client.close();
+        server.stop();
+    }
+
+    // A peer that connects and never sends the upgrade request must not hold a slot forever;
+    // MAX_CLIENTS of them would lock out every real client.
+    void aPeerThatNeverCompletesTheHandshakeIsDropped() {
+        WebSocketServer server;
+        server.setLivenessPolicy(/*pingIntervalMs=*/50, /*silenceTimeoutMs=*/150);
+        server.setHandshakeTimeout(150);
+        const quint16 port = freePort(server);
+        QSignalSpy connected(&server, &WebSocketServer::clientConnected);
+
+        std::vector<std::unique_ptr<QTcpSocket>> silent;
+        for (int i = 0; i < WebSocketServer::MAX_CLIENTS; ++i) {
+            silent.push_back(std::make_unique<QTcpSocket>());
+            silent.back()->connectToHost(QHostAddress::LocalHost, port);
+            QVERIFY(silent.back()->waitForConnected(kTimeoutMs));
+        }
+        QTRY_COMPARE(server.clientCount(), WebSocketServer::MAX_CLIENTS);
+
+        QTRY_COMPARE_WITH_TIMEOUT(server.clientCount(), 0, 3000);
+
+        TestClient client;
+        QVERIFY(client.connectTo(port));
+        client.readHandshake();
+        QTRY_COMPARE(connected.count(), 1);
 
         client.close();
         server.stop();

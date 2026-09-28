@@ -103,6 +103,7 @@ void WebSocketServer::onNewConnection() {
         const int clientId = m_nextClientId++;
         Session session;
         session.socket = socket;
+        session.accepted.start();
         m_sessions.insert(clientId, session);
 
         socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
@@ -164,7 +165,7 @@ bool WebSocketServer::tryUpgrade(int clientId) {
         socket->write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n"
                       "Content-Length: 31\r\n\r\nThis endpoint expects WebSocket\n");
         socket->flush();
-        socket->disconnectFromHost();
+        closeSocketBounded(socket);
         return false;
     }
 
@@ -246,7 +247,7 @@ void WebSocketServer::pumpFrames(int clientId) {
         case WebSocketFrame::OpClose:
             sendFrame(clientId, WebSocketFrame::OpClose, message.payload);
             if (auto it = m_sessions.find(clientId); it != m_sessions.end() && it->socket) {
-                it->socket->disconnectFromHost();
+                closeSocketBounded(it->socket);
             }
             return;
         default:
@@ -266,15 +267,31 @@ void WebSocketServer::onLivenessTick() {
     const QList<int> ids = m_sessions.keys();
     for (int id : ids) {
         auto it = m_sessions.find(id);
-        if (it == m_sessions.end() || !it->upgraded || !it->lastInbound.isValid()) {
-            continue; // still handshaking; MAX_HANDSHAKE_BYTES covers that phase
+        if (it == m_sessions.end()) {
+            continue;
+        }
+        if (!it->upgraded) {
+            // MAX_HANDSHAKE_BYTES bounds how much a peer may send before upgrading; this bounds
+            // how long. Not a WebSocket peer yet, so there is no close frame to send.
+            if (it->accepted.isValid() && it->accepted.elapsed() > m_handshakeTimeoutMs) {
+                qCWarning(netWs) << "connection" << id << "did not complete the handshake in" << it->accepted.elapsed()
+                                 << "ms - dropping it";
+                dropSession(id, WebSocketFrame::CloseProtocolError, QStringLiteral("handshake timeout"),
+                            CloseMode::Abort);
+            }
+            continue;
+        }
+        if (!it->lastInbound.isValid()) {
+            continue;
         }
         if (it->lastInbound.elapsed() > m_silenceTimeoutMs) {
             qCWarning(netWs) << "client" << id << "has not answered in" << it->lastInbound.elapsed()
                              << "ms - dropping it as dead";
             // Whatever it was holding is released by the clientDisconnected this raises. For the
             // TCI server that is the transmitter; see TciServer::onClientDisconnected.
-            dropSession(id, WebSocketFrame::CloseGoingAway, QStringLiteral("no response"));
+            // Abort: a peer that answers nothing is not reading either, so a graceful close would
+            // wait on it indefinitely and clientDisconnected would never come.
+            dropSession(id, WebSocketFrame::CloseGoingAway, QStringLiteral("no response"), CloseMode::Abort);
             continue;
         }
         // RFC 6455 5.5.2: the peer must answer this. A client that does not is indistinguishable
@@ -283,7 +300,7 @@ void WebSocketServer::onLivenessTick() {
     }
 }
 
-void WebSocketServer::dropSession(int clientId, quint16 code, const QString &why) {
+void WebSocketServer::dropSession(int clientId, quint16 code, const QString &why, CloseMode mode) {
     auto it = m_sessions.find(clientId);
     if (it == m_sessions.end()) {
         return;
@@ -294,13 +311,30 @@ void WebSocketServer::dropSession(int clientId, quint16 code, const QString &why
     const bool upgraded = it->upgraded;
 
     if (socket) {
-        if (upgraded) {
-            socket->write(WebSocketFrame::encodeClose(code, why));
-            socket->flush();
+        if (mode == CloseMode::Abort) {
+            // Emits `disconnected` synchronously, so onDisconnected erases the session and raises
+            // clientDisconnected before this returns.
+            socket->abort();
+        } else {
+            if (upgraded) {
+                socket->write(WebSocketFrame::encodeClose(code, why));
+                socket->flush();
+            }
+            closeSocketBounded(socket);
         }
-        socket->disconnectFromHost();
     }
     emit errorOccurred(QStringLiteral("client %1: %2").arg(clientId).arg(why));
+}
+
+void WebSocketServer::closeSocketBounded(QTcpSocket *socket) {
+    // WHY bounded: disconnectFromHost() waits for the send queue to drain before the socket really
+    // closes. If the peer has stopped reading, that is never, and without the socket closing there
+    // is no clientDisconnected. The timer is parented to the socket, so it dies with it when the
+    // close completes normally and onDisconnected deletes the socket.
+    socket->disconnectFromHost();
+    if (socket->state() != QAbstractSocket::UnconnectedState) {
+        QTimer::singleShot(CLOSE_GRACE_MS, socket, [socket]() { socket->abort(); });
+    }
 }
 
 void WebSocketServer::onDisconnected(int clientId) {
@@ -355,7 +389,10 @@ bool WebSocketServer::writeFrame(int clientId, const QByteArray &frame, bool she
     if (decision == SendDecision::DropSession) {
         qCWarning(netWs) << "client" << clientId << "has" << queued
                          << "bytes unread and is not draining - dropping the session";
-        dropSession(clientId, WebSocketFrame::ClosePolicyViolation, QStringLiteral("send queue overflow"));
+        // Abort: the peer is by definition not reading, so the close frame would sit behind the
+        // megabyte already queued and a graceful close would never finish.
+        dropSession(clientId, WebSocketFrame::ClosePolicyViolation, QStringLiteral("send queue overflow"),
+                    CloseMode::Abort);
         return false;
     }
 
@@ -425,5 +462,5 @@ void WebSocketServer::closeClient(int clientId, quint16 code, const QString &rea
         socket->write(WebSocketFrame::encodeClose(code, reason));
         socket->flush();
     }
-    socket->disconnectFromHost();
+    closeSocketBounded(socket);
 }
