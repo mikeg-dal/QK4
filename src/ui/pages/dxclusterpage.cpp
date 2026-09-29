@@ -426,6 +426,10 @@ void DxClusterPage::saveEntry() {
 void DxClusterPage::removeEntry() {
     int row = m_clusterList->currentRow();
     if (row >= 0) {
+        // WHY first: the controller keys live connections by list row. Removing the entry shifts
+        // every later row up, so their connections have to move with them (and this one closes).
+        if (m_controller)
+            m_controller->removeCluster(row);
         RadioSettings::instance()->removeDxCluster(row);
         populateClusterList();
         updateFormState();

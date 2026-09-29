@@ -420,6 +420,15 @@ target_include_directories(test_dxcluster PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_dxcluster Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME DxClusterTests COMMAND test_dxcluster)
 
+# DxClusterController: live connections stay matched to the saved list when an entry is removed.
+add_executable(test_dxclustercontroller test_dxclustercontroller.cpp
+    ${CMAKE_SOURCE_DIR}/src/controllers/dxclustercontroller.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/dxclusterclient.cpp
+)
+target_include_directories(test_dxclustercontroller PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_dxclustercontroller Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME DxClusterControllerTests COMMAND test_dxclustercontroller)
+
 # HalikeyDevice edge-dedupe tests — pure logic, no Qt/RtMidi/serial linkage needed.
 add_executable(test_halikeydevice test_halikeydevice.cpp)
 target_include_directories(test_halikeydevice PRIVATE ${CMAKE_SOURCE_DIR}/src)
