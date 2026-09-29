@@ -115,6 +115,18 @@ private slots:
         QCOMPARE(CatFrames::setNoiseBlanker(15, true), QByteArray("NB151;"));
     }
 
+    void antennaConfigIsTerminated() {
+        // ACM / ACS / ACT from the ANT CFG popups were sent without their ';'. Nothing below
+        // sendCAT() adds one, so the K4 could hold the edit or run it into the next command.
+        QCOMPARE(CatFrames::setAntennaConfig("ACM", false, {false, true, true, true, true, true, true}, 7),
+                 QByteArray("ACM00111111;"));
+        QCOMPARE(CatFrames::setAntennaConfig("ACS", true, {true, false, false, false, false, false, true}, 7),
+                 QByteArray("ACS11000001;"));
+        QCOMPARE(CatFrames::setAntennaConfig("ACT", false, {true, true, true}, 3), QByteArray("ACT0111;"));
+        // A short mask pads with disabled, matching what the popups sent before.
+        QCOMPARE(CatFrames::setAntennaConfig("ACT", true, {true}, 3), QByteArray("ACT1100;"));
+    }
+
     void setRfPowerUsesThePcFormNotPcx() {
         // REGRESSION, found on a live K4. PCX is the extended QUERY; the radio ignores it as a
         // set, so drive silently did nothing. The set form is PCnnnr, which is what QK4's own UI

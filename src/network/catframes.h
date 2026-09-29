@@ -6,6 +6,7 @@
 #include <QByteArray>
 #include <QList>
 #include <QString>
+#include <QVector>
 
 namespace CatFrames {
 
@@ -92,6 +93,11 @@ QByteArray setVfoLock(bool locked, bool subVfo);
 
 // BWnnnn in 10-Hz units, which is the inverse of what RadioState's handleBW parses.
 QByteArray setFilterBandwidth(int bwHz);
+
+// ACMzabcdefg; / ACSzabcdefg; / ACTzabc; - antenna configuration from the ANT CFG popups.
+// z is display-all, then one enable digit per antenna: `count` of them (7 for RX, 3 for TX), with
+// any missing from `mask` sent as disabled.
+QByteArray setAntennaConfig(const char *prefix, bool displayAll, const QVector<bool> &mask, int count);
 
 // MEnnnn.vvvv - set a K4 MENU item to an absolute value. MenuController already sends the
 // relative forms (ME0069.+, .-, ./); this is the absolute one.

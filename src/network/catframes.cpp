@@ -269,6 +269,15 @@ QByteArray setVfoLock(bool locked, bool subVfo) {
     return QString("LK%1%2;").arg(subVfo ? "$" : "").arg(locked ? 1 : 0).toUtf8();
 }
 
+QByteArray setAntennaConfig(const char *prefix, bool displayAll, const QVector<bool> &mask, int count) {
+    QByteArray cmd(prefix);
+    cmd += displayAll ? '1' : '0';
+    for (int i = 0; i < count; i++)
+        cmd += (i < mask.size() && mask[i]) ? '1' : '0';
+    cmd += ';';
+    return cmd;
+}
+
 QByteArray setMenuValue(int menuId, int value) {
     return QString("ME%1.%2;").arg(menuId, 4, 10, QChar('0')).arg(value, 4, 10, QChar('0')).toUtf8();
 }

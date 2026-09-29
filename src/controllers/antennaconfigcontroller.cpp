@@ -2,6 +2,7 @@
 
 #include "connectioncontroller.h"
 #include "models/radiostate.h"
+#include "network/catframes.h"
 #include "ui/popups/antennacfgpopup.h"
 
 #include <QString>
@@ -19,31 +20,22 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
     connect(m_mainRxPopup, &AntennaCfgPopupWidget::configChanged, this, [this](bool displayAll, QVector<bool> mask) {
         if (!m_connection->isConnected())
             return;
-        // ACMzabcdefg  z=displayAll, a..g=per-antenna enable
-        QString cmd = QString("ACM%1").arg(displayAll ? '1' : '0');
-        for (int i = 0; i < 7; i++)
-            cmd += (i < mask.size() && mask[i]) ? '1' : '0';
-        m_connection->sendCAT(cmd);
+        // ACMzabcdefg;  z=displayAll, a..g=per-antenna enable
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACM", displayAll, mask, 7)));
     });
 
     // SUB RX popup — same shape, ACS command.
     connect(m_subRxPopup, &AntennaCfgPopupWidget::configChanged, this, [this](bool displayAll, QVector<bool> mask) {
         if (!m_connection->isConnected())
             return;
-        QString cmd = QString("ACS%1").arg(displayAll ? '1' : '0');
-        for (int i = 0; i < 7; i++)
-            cmd += (i < mask.size() && mask[i]) ? '1' : '0';
-        m_connection->sendCAT(cmd);
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACS", displayAll, mask, 7)));
     });
 
     // TX popup — 3 antennas (not 7), ACT command.
     connect(m_txPopup, &AntennaCfgPopupWidget::configChanged, this, [this](bool displayAll, QVector<bool> mask) {
         if (!m_connection->isConnected())
             return;
-        QString cmd = QString("ACT%1").arg(displayAll ? '1' : '0');
-        for (int i = 0; i < 3; i++)
-            cmd += (i < mask.size() && mask[i]) ? '1' : '0';
-        m_connection->sendCAT(cmd);
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACT", displayAll, mask, 3)));
     });
 
     // RadioState → popup state updates. MainWindow's own label-update slot
