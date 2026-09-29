@@ -4,6 +4,9 @@
 #include <QObject>
 #include <QThread>
 
+#include <memory>
+#include <mutex>
+
 class AudioEngine;
 class OpusDecoder;
 class ConnectionController;
@@ -117,6 +120,21 @@ private:
     AudioEngine *m_audioEngine;
     QThread *m_audioThread = nullptr;
     OpusDecoder *m_opusDecoder;
+
+    // Orders the two ways the TX source is written. Every write takes the next generation; a
+    // setTxSourceAfterPtt() switch still in the queue applies only if no write has happened since
+    // it was posted. Without this, unkey-then-rekey inside one audio-thread turn let the unkey's
+    // queued "back to Microphone" land after the rekey had selected Tci - TCI holding the
+    // transmitter, gate open, room microphone on the air.
+    //
+    // The mutex makes check-and-write atomic: the queued switch runs on the audio thread while a
+    // direct write can come from the main thread at the same moment. Shared so a queued switch
+    // that outlives this controller still has something valid to lock.
+    struct TxSourceOrder {
+        std::mutex mutex;
+        quint64 generation = 0;
+    };
+    std::shared_ptr<TxSourceOrder> m_txSourceOrder = std::make_shared<TxSourceOrder>();
 };
 
 #endif // AUDIOCONTROLLER_H

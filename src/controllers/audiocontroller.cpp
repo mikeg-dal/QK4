@@ -170,6 +170,11 @@ void AudioController::setTxSource(TxSource source) {
     //
     // Safe from any thread because setTxSource on the engine writes only an atomic; it queues its
     // own buffer flush to the audio thread rather than touching audio-thread state here.
+    //
+    // Taking a new generation invalidates any setTxSourceAfterPtt() switch still queued, so an
+    // older "back to Microphone" cannot land on top of this one.
+    std::lock_guard<std::mutex> lock(m_txSourceOrder->mutex);
+    ++m_txSourceOrder->generation;
     m_audioEngine->setTxSource(static_cast<AudioEngine::TxSource>(source));
 }
 
@@ -183,9 +188,23 @@ void AudioController::setTxSourceAfterPtt(TxSource source) {
     // opened a window - one audio block wide - in which the audio thread saw PTT still asserted
     // and the source already back to Microphone, and duly encoded the room and sent it while the
     // radio was still transmitting the TCI transmission.
+    //
+    // STALE SWITCHES ARE DROPPED. If a newer source write happens before this one is delivered - an
+    // immediate re-key selecting Tci directly - this switch no longer describes the transmission
+    // it was queued for, and applying it would put the microphone under the new one.
+    quint64 generation;
+    {
+        std::lock_guard<std::mutex> lock(m_txSourceOrder->mutex);
+        generation = ++m_txSourceOrder->generation;
+    }
     QMetaObject::invokeMethod(
         m_audioEngine,
-        [engine = m_audioEngine, source]() { engine->setTxSource(static_cast<AudioEngine::TxSource>(source)); },
+        [engine = m_audioEngine, order = m_txSourceOrder, generation, source]() {
+            std::lock_guard<std::mutex> lock(order->mutex);
+            if (order->generation != generation)
+                return; // superseded by a later source write
+            engine->setTxSource(static_cast<AudioEngine::TxSource>(source));
+        },
         Qt::QueuedConnection);
 }
 
