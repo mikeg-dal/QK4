@@ -118,6 +118,7 @@ void TcpClient::connectToHost(const QString &host, quint16 port, const QString &
     m_authResponseReceived = false;
 
     m_retryCount = 0;
+    ++m_attemptId;
     setState(Connecting);
 
     // Resolve .local (mDNS) hostnames before connecting — Qt's SSL socket
@@ -126,14 +127,16 @@ void TcpClient::connectToHost(const QString &host, quint16 port, const QString &
     // The context-object overload of lookupHost() cancels if `this` is destroyed.
     if (m_host.endsWith(QStringLiteral(".local"), Qt::CaseInsensitive)) {
         qCDebug(netTcp) << "Resolving mDNS hostname:" << m_host;
-        QHostInfo::lookupHost(m_host, this, [this](const QHostInfo &info) {
-            // Guard: user may have disconnected while resolution was in flight
-            if (m_state.load(std::memory_order_acquire) != Connecting)
+        QHostInfo::lookupHost(m_host, this, [this, attempt = m_attemptId, name = m_host](const QHostInfo &info) {
+            // WHY the attempt id and not just the state: switching radios while this lookup is in
+            // flight starts a new attempt that is ALSO Connecting. Without the id, this answer for
+            // the previous radio would overwrite m_host and connect the new attempt to the old radio.
+            if (attempt != m_attemptId || m_state.load(std::memory_order_acquire) != Connecting)
                 return;
 
             if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
-                qCWarning(netTcp) << "mDNS resolution failed for" << m_host << ":" << info.errorString();
-                emit errorOccurred(QString("Could not resolve %1: %2").arg(m_host, info.errorString()));
+                qCWarning(netTcp) << "mDNS resolution failed for" << name << ":" << info.errorString();
+                emit errorOccurred(QString("Could not resolve %1: %2").arg(name, info.errorString()));
                 setState(Disconnected);
                 return;
             }
@@ -148,7 +151,7 @@ void TcpClient::connectToHost(const QString &host, quint16 port, const QString &
             if (resolved.isEmpty()) {
                 resolved = info.addresses().first().toString();
             }
-            qCDebug(netTcp) << "Resolved" << m_host << "to" << resolved;
+            qCDebug(netTcp) << "Resolved" << name << "to" << resolved;
             m_host = resolved;
             attemptConnection();
         });
@@ -239,6 +242,7 @@ void TcpClient::disconnectFromHost() {
     m_retryTimer->stop();
     stopPingTimer();
     m_authTimer->stop();
+    ++m_attemptId; // anything still in flight for the attempt being ended is now stale
 
     if (m_socket->state() != QAbstractSocket::UnconnectedState) {
         // Send graceful disconnect command

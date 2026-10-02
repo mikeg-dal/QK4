@@ -105,6 +105,9 @@ private:
     QTimer *m_pingTimer;
     QTimer *m_retryTimer;
     int m_retryCount = 0;
+    // Bumped by every connectToHost() and disconnectFromHost(), so an asynchronous step started for
+    // one attempt (the mDNS lookup) can tell that it has since been replaced. I/O thread only.
+    quint64 m_attemptId = 0;
 
     QString m_host;
     quint16 m_port;
