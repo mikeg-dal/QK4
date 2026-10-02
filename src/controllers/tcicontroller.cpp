@@ -360,18 +360,11 @@ void TciController::wireTransmit() {
                 return; // this controller asked for it, not the operator
             }
             QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
-            // Either way the microphone is the source now: on a release because transmit is over,
-            // on a press because it is the operator transmitting.
-            //
-            // WHY the two differ: setPttActive() has already QUEUED the gate change and emitted
-            // this signal synchronously. On a press the source must be in place before that queued
-            // gate opens, so it is written now. On a release the gate is still open until the queued
-            // close lands; writing Microphone now would let one audio block of the room go out
-            // behind the client's transmission, so the write is queued after the close.
-            if (active)
-                m_audioController->setTxSource(AudioController::TxSource::Microphone);
-            else
-                m_audioController->setTxSourceAfterPtt(AudioController::TxSource::Microphone);
+            // WHY no TX source write here: TransmitController is the only thing that moves the gate,
+            // and its apply() already sets the source on both edges in the one order that is safe -
+            // before the gate on a press, queued behind the close on a release. A second writer here
+            // is what put the room microphone on the air in #161: it switched the source while the
+            // queued gate close was still in flight.
             emit transmittingChanged(active);
         });
 
