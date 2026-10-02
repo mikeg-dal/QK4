@@ -4,6 +4,8 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 
+#include <limits>
+
 #include "controllers/dxclustercontroller.h"
 
 // A stand-in cluster node: prompts for a login on every connection, which is what moves
@@ -89,6 +91,73 @@ private slots:
 
         QCOMPARE(controller.clusterState(0), DxClusterClient::Disconnected);
         QTRY_COMPARE(peer->state(), QAbstractSocket::UnconnectedState);
+    }
+
+    // One cluster going away must not take the other's spots with it (#167). Covers both ways a
+    // cluster goes: the operator disconnecting it, and the node dropping the connection.
+    void disconnectingOneClusterKeepsTheOthersSpots() {
+        FakeClusterNode nodeA;
+        FakeClusterNode nodeB;
+        DxClusterController controller;
+        connectAndSpot(controller, nodeA, nodeB);
+
+        controller.disconnectCluster(1);
+        QCOMPARE(spottedCalls(controller), QStringList{QStringLiteral("K0RX")});
+
+        // B again, this time dropped by the node rather than by the operator.
+        controller.connectCluster(1, "127.0.0.1", nodeB.port(), "N0CALL");
+        QTRY_COMPARE(nodeB.sockets().size(), 2);
+        QTRY_COMPARE(controller.clusterState(1), DxClusterClient::Connected);
+        nodeB.sockets().last()->write(kSpotB);
+        QTRY_COMPARE(spottedCalls(controller).size(), 2);
+        nodeB.sockets().last()->disconnectFromHost();
+        QTRY_COMPARE(controller.clusterState(1), DxClusterClient::Disconnected);
+        QCOMPARE(spottedCalls(controller), QStringList{QStringLiteral("K0RX")});
+
+        controller.disconnectAll();
+    }
+
+    // Removing a cluster drops its spots, and the spots of every later cluster move to its new row
+    // with it - so a later disconnect of that row still finds them.
+    void removingAClusterKeepsAndRenumbersTheOthersSpots() {
+        FakeClusterNode nodeA;
+        FakeClusterNode nodeB;
+        DxClusterController controller;
+        connectAndSpot(controller, nodeA, nodeB);
+
+        controller.removeCluster(0);
+        QCOMPARE(spottedCalls(controller), QStringList{QStringLiteral("JA1ABC")});
+
+        controller.disconnectCluster(0); // B, now on row 0
+        QVERIFY(spottedCalls(controller).isEmpty());
+
+        controller.disconnectAll();
+    }
+
+private:
+    static constexpr const char *kSpotA =
+        "DX de K3GMQ-#:  14031.00  K0RX           CW    18 dB  24 WPM  CQ      1902Z\r\n";
+    static constexpr const char *kSpotB =
+        "DX de W3LPL:    14074.00  JA1ABC         FT8   -12 dB                  1903Z\r\n";
+
+    // A on row 0 spots K0RX, B on row 1 spots JA1ABC.
+    static void connectAndSpot(DxClusterController &controller, FakeClusterNode &nodeA, FakeClusterNode &nodeB) {
+        controller.connectCluster(0, "127.0.0.1", nodeA.port(), "N0CALL");
+        controller.connectCluster(1, "127.0.0.1", nodeB.port(), "N0CALL");
+        QTRY_COMPARE(controller.clusterState(0), DxClusterClient::Connected);
+        QTRY_COMPARE(controller.clusterState(1), DxClusterClient::Connected);
+        QTRY_COMPARE(nodeA.sockets().size(), 1);
+        QTRY_COMPARE(nodeB.sockets().size(), 1);
+        nodeA.sockets().first()->write(kSpotA);
+        nodeB.sockets().first()->write(kSpotB);
+        QTRY_COMPARE(spottedCalls(controller).size(), 2);
+    }
+
+    static QStringList spottedCalls(const DxClusterController &controller) {
+        QStringList calls;
+        for (const DxSpot &spot : controller.spotsForFrequencyRange(0, std::numeric_limits<qint64>::max()))
+            calls << spot.spottedCall;
+        return calls;
     }
 };
 

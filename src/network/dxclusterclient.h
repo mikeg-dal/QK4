@@ -22,6 +22,9 @@ struct DxSpot {
     QString comment;
     QString timeUtc;
     QDateTime timestamp;
+    // Which DxClusterController row the spot came from; -1 until the controller stamps it. Lets one
+    // cluster's disconnect remove only its own spots.
+    int clusterIndex = -1;
 };
 
 /**
