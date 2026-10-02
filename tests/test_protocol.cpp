@@ -74,6 +74,22 @@ private slots:
         QCOMPARE(spy.at(0).at(0).toString(), QString("FA00014074000;"));
     }
 
+    // A connection that drops mid-packet leaves a header in the parser. Without reset() the next
+    // session's first packet - the auth reply - is read as that packet's missing body, and with a
+    // large announced length nothing is emitted at all (#162).
+    void testResetDiscardsAPacketCutOffByADisconnect() {
+        Protocol p;
+        QSignalSpy spy(&p, &Protocol::catResponseReceived);
+
+        QByteArray stale = buildTestPacket(QByteArray(100000, 'x'));
+        p.parse(stale.left(64)); // the old session ends here
+        p.reset();
+
+        p.parse(buildTestPacket(buildCATPayload("FA00014074000;")));
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("FA00014074000;"));
+    }
+
     void testEmptyPayload() {
         Protocol p;
         QSignalSpy spy(&p, &Protocol::packetReceived);

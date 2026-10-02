@@ -98,6 +98,10 @@ public:
     // Parse incoming raw data, extracts complete K4 packets
     void parse(const QByteArray &data);
 
+    // Discard any partly received packet. Called at every connection boundary: bytes left over from
+    // one session must never be joined to the next session's.
+    void reset() { m_buffer.clear(); }
+
     // Build a CAT command packet
     static QByteArray buildCATPacket(const QString &command);
 

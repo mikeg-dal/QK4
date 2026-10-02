@@ -163,6 +163,12 @@ void TcpClient::attemptConnection() {
                     << "socketState=" << m_socket->state()
                     << "thread=" << reinterpret_cast<quintptr>(QThread::currentThread());
 
+    // WHY here, which every attempt and every retry passes through: a session that ended mid-packet
+    // leaves its header in the parser, and the new session's first bytes - the auth reply - would be
+    // read as the rest of that packet. A stale header announcing a large payload makes the parser
+    // wait for bytes that never come, and the reconnect times out in authentication.
+    m_protocol->reset();
+
     if (m_useTls) {
         // Log OpenSSL version Qt is using (first attempt only)
         if (m_retryCount == 0) {
@@ -369,6 +375,7 @@ void TcpClient::onSocketDisconnected() {
                     << "authReceived=" << m_authResponseReceived << ")";
     stopPingTimer();
     m_authTimer->stop();
+    m_protocol->reset(); // nothing after this belongs to the session that just ended
 
     // WHY this no longer says "authentication failed" (see connect_failure.h for the full reasoning):
     // with the radio powered off, macOS reports the connect() failure while Qt emits connected()
