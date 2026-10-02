@@ -278,6 +278,21 @@ private slots:
         QCOMPARE(s.owner, Owner::None);
     }
 
+    // The exception to the two above: a takeover that moves off a CAT-keyed route sends RX; itself.
+    // The RX; that comes back is our own, so it must not be taken for the radio dropping out from
+    // under the new holder.
+    void aTakeoverThatSendsRxDoesNotTrustItsOwnEcho() {
+        State s;
+        engage(s, Owner::CatClient, Route::RadioLocal);
+        radioReports(s, true);
+        const Effects takeover = engage(s, Owner::PttButton, Route::StreamedFromHere);
+        QVERIFY(takeover.sendRx);
+
+        const Effects echo = radioReports(s, false);
+        QVERIFY2(echo.ignored, "our own RX; must not unkey the operator who just took over");
+        QCOMPARE(s.owner, Owner::PttButton);
+    }
+
     // XMIT today sends TX; AND opens the gate. Until the bench says whether that is right, the
     // arbiter has to reproduce it exactly — and undo both halves on release.
     void catKeyedAndStreamedDoesBothAndUndoesBoth() {

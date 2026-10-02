@@ -131,13 +131,6 @@ inline Effects transition(State &s, Owner newOwner, Route newRoute) {
     Effects e;
     s.owner = newOwner;
     s.route = newRoute;
-    // WHY only when the transmitter was free or is being freed: a re-assert or a takeover keeps the
-    // radio keyed without a gap, and the K4 does not echo TX; again for a state it is already in.
-    // Clearing here would leave nothing to restore it, and the radio's genuine RX; would be
-    // dismissed as stale.
-    const bool sameEpisode = oldOwner != Owner::None && newOwner != Owner::None;
-    if (!sameEpisode)
-        s.radioConfirmed = false; // a new episode; the radio has not acknowledged it yet
     e.transmitting = s.transmitting();
 
     const bool gateWas = needsGate(oldRoute);
@@ -152,6 +145,15 @@ inline Effects transition(State &s, Owner newOwner, Route newRoute) {
         e.sendTx = true;
     if (keyedByCat(oldRoute) && !keyedByCat(newRoute))
         e.sendRx = true;
+
+    // WHY only when the transmitter was free or is being freed: a re-assert or a takeover keeps the
+    // radio keyed without a gap, and the K4 does not echo TX; again for a state it is already in.
+    // Clearing here would leave nothing to restore it, and the radio's genuine RX; would be
+    // dismissed as stale. A takeover that sends RX; is the exception: it unkeys the radio itself,
+    // so the RX; that comes back is our own echo and must not be read as the radio dropping out.
+    const bool sameEpisode = oldOwner != Owner::None && newOwner != Owner::None && !e.sendRx;
+    if (!sameEpisode)
+        s.radioConfirmed = false; // a new episode; the radio has not acknowledged it yet
 
     // The source matters only while something is streaming. On the way down, restore the
     // microphone so the next key does not inherit a departed client's source.
