@@ -61,6 +61,7 @@ Last updated: TransmitController added — one owner of transmit (31 controllers
 | "Spectrum / panadapter / click-tune not working" | SpectrumController | `src/controllers/spectrumcontroller.cpp` |
 | "VFO mini-pan doesn't follow the radio's MINI-PAN button" / "mini-pan stuck open after reconnect" | SpectrumController | `src/controllers/spectrumcontroller.cpp` |
 | "DX cluster spots not appearing / cluster connect fail" | DxClusterController | `src/controllers/dxclustercontroller.cpp` |
+| "Removed a cluster and another shows the wrong status / opens twice" | DxClusterController (`removeCluster`), DxClusterPage | `src/controllers/dxclustercontroller.cpp`, `src/ui/pages/dxclusterpage.cpp` |
 | "WSJT-X / QLog / RumLogNG over TCI: no connect, no audio, PTT or CW wrong" | TciController | `src/controllers/tcicontroller.cpp` (server: `src/network/tciserver.cpp`) |
 | "TCI Server options tab status or client list wrong" | TciServerPage | `src/ui/pages/tciserverpage.cpp` |
 
