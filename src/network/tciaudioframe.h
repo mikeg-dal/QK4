@@ -57,6 +57,14 @@ QByteArray encodeRxAudio(int receiver, int sampleRate, const float *interleavedS
 // until asked, and answers exactly one TX_AUDIO block per chrono.
 QByteArray encodeTxChrono(int receiver, int sampleRate = 48000);
 
+// How a TX_AUDIO block's samples are laid out. Decided from the samples themselves, because the
+// header cannot be trusted (see decodeTxAudioToMono).
+enum class Layout {
+    Undecided,        // no evidence either way: the block is silent
+    DuplicatedStereo, // L == R pairs, what WSJT-X sends
+    Mono,
+};
+
 // Extract mono samples from an inbound TX_AUDIO frame.
 //
 // Three measured rules, all of which a naive reader gets wrong:
@@ -67,12 +75,18 @@ QByteArray encodeTxChrono(int receiver, int sampleRate = 48000);
 //  - header.channels is unusable: eight distinct values appeared across 762 captured frames,
 //    including 1818781545, 4098833031 and 0. Never read it.
 //
+// `layoutHint`, when given, carries the layout across one client's blocks: a block that settles the
+// question updates it, and a silent block - which settles nothing - is decoded with it. Without a
+// hint, or before the first decisive block, silence is taken as duplicated stereo, what the only
+// observed client sends.
+//
 // Returns false if the frame is not TX_AUDIO, is malformed, or carries a format we do not decode.
-bool decodeTxAudioToMono(const QByteArray &payload, std::vector<float> *out, Header *headerOut = nullptr);
+bool decodeTxAudioToMono(const QByteArray &payload, std::vector<float> *out, Header *headerOut = nullptr,
+                         Layout *layoutHint = nullptr);
 
-// Whether the first `count` floats look like duplicated stereo pairs. Exposed for tests; callers
-// should use decodeTxAudioToMono, which applies it.
-bool looksLikeDuplicatedStereo(const float *samples, int count);
+// The layout of `count` samples, judged only from pairs that carry signal. Exposed for tests;
+// callers should use decodeTxAudioToMono, which applies it.
+Layout classifyLayout(const float *samples, int count);
 
 } // namespace TciAudioFrame
 

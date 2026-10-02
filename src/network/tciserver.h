@@ -11,6 +11,7 @@
 
 #include <vector>
 
+#include "network/tciaudioframe.h"
 #include "network/tciclientinfo.h"
 #include "network/cwmacro.h"
 #include "network/tciprotocol.h"
@@ -242,6 +243,10 @@ private:
     // Counters behind the periodic log summaries. Blocks are far too frequent to log individually.
     qint64 m_rxBlocks = 0;
     qint64 m_txBlocks = 0;
+    // The PTT owner's TX_AUDIO layout, learned from its blocks and used for its silent ones. Reset
+    // whenever a transmission starts (every unkey clears the owner), so it never outlives the
+    // client that taught it; kept across a re-assert by the same owner.
+    TciAudioFrame::Layout m_txLayout = TciAudioFrame::Layout::Undecided;
     qint64 m_chronoSent = 0;
 };
 

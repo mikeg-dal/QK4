@@ -590,6 +590,9 @@ void TciServer::setPtt(int clientId, bool active) {
             sendTo(clientId, message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(false)));
             return;
         }
+        if (m_pttOwner != clientId) {
+            m_txLayout = TciAudioFrame::Layout::Undecided; // a new transmission; a re-assert keeps it
+        }
         m_pttOwner = clientId;
         m_snapshot.transmitting = true;
         qCInfo(netTci) << "PTT ON from client" << clientId;
@@ -678,7 +681,7 @@ void TciServer::onBinaryMessageReceived(int clientId, const QByteArray &payload)
         return;
     }
     std::vector<float> mono;
-    if (!TciAudioFrame::decodeTxAudioToMono(payload, &mono) || mono.empty()) {
+    if (!TciAudioFrame::decodeTxAudioToMono(payload, &mono, nullptr, &m_txLayout) || mono.empty()) {
         qCDebug(netTci) << "TX audio: dropped an undecodable binary frame of" << payload.size() << "bytes";
         return;
     }

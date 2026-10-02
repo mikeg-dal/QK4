@@ -48,6 +48,27 @@ QByteArray wsjtxTxFrame(const std::vector<float> &monoSamples, quint32 channelsF
     return frame;
 }
 
+// A true-mono TX_AUDIO frame: the declared length is the sample count, no pairs, no dirty tail.
+QByteArray monoTxFrame(const std::vector<float> &mono) {
+    QByteArray frame;
+    auto put = [&frame](quint32 v) {
+        char le[4];
+        qToLittleEndian<quint32>(v, le);
+        frame.append(le, 4);
+    };
+    put(0);
+    put(48000);
+    put(FormatFloat32);
+    put(0);
+    put(0);
+    put(static_cast<quint32>(mono.size()));
+    put(TypeTxAudio);
+    put(1);
+    frame.append(32, '\0');
+    frame.append(reinterpret_cast<const char *>(mono.data()), static_cast<int>(mono.size() * sizeof(float)));
+    return frame;
+}
+
 std::vector<float> tone(double freqHz, double rateHz, int count) {
     std::vector<float> v(static_cast<size_t>(count));
     for (int i = 0; i < count; ++i) {
@@ -218,8 +239,52 @@ private slots:
             independent[i * 2] = mono[i];
             independent[i * 2 + 1] = -mono[i]; // a real second receiver
         }
-        QVERIFY(looksLikeDuplicatedStereo(duplicated.data(), static_cast<int>(duplicated.size())));
-        QVERIFY(!looksLikeDuplicatedStereo(independent.data(), static_cast<int>(independent.size())));
+        QCOMPARE(classifyLayout(duplicated.data(), static_cast<int>(duplicated.size())), Layout::DuplicatedStereo);
+        QCOMPARE(classifyLayout(independent.data(), static_cast<int>(independent.size())), Layout::Mono);
+    }
+
+    // ---- leading silence (#164) -----------------------------------------------------------------
+    //
+    // Two silent samples always compare equal, so judging the layout on the first pairs alone
+    // called any block that opens with silence stereo - and halved the mono audio after it.
+
+    void monoAfterLeadingSilenceKeepsEverySample() {
+        std::vector<float> mono(256, 0.0f);
+        const std::vector<float> t = tone(1000.0, 48000.0, 768);
+        mono.insert(mono.end(), t.begin(), t.end());
+
+        std::vector<float> got;
+        QVERIFY(decodeTxAudioToMono(monoTxFrame(mono), &got));
+        QCOMPARE(got.size(), mono.size());
+    }
+
+    void duplicatedStereoAfterLeadingSilenceIsStillHalved() {
+        std::vector<float> mono(256, 0.0f);
+        const std::vector<float> t = tone(1000.0, 48000.0, 768);
+        mono.insert(mono.end(), t.begin(), t.end());
+
+        std::vector<float> got;
+        QVERIFY(decodeTxAudioToMono(wsjtxTxFrame(mono, 2, /*dirtyTail=*/false), &got));
+        QCOMPARE(got.size(), mono.size());
+    }
+
+    void aSilentBlockIsUndecided() {
+        const std::vector<float> quiet(512, 0.0f);
+        QCOMPARE(classifyLayout(quiet.data(), static_cast<int>(quiet.size())), Layout::Undecided);
+    }
+
+    // A silent block settles nothing, so it follows what the client's earlier blocks showed.
+    void aSilentBlockFollowsTheLayoutTheClientHasShown() {
+        Layout hint = Layout::Undecided;
+        std::vector<float> got;
+
+        QVERIFY(decodeTxAudioToMono(monoTxFrame(tone(1000.0, 48000.0, 512)), &got, nullptr, &hint));
+        QCOMPARE(hint, Layout::Mono);
+
+        const std::vector<float> quiet(512, 0.0f);
+        QVERIFY(decodeTxAudioToMono(monoTxFrame(quiet), &got, nullptr, &hint));
+        QCOMPARE(got.size(), quiet.size());
+        QCOMPARE(hint, Layout::Mono);
     }
 
     void decodesTheInt16Format() {

@@ -10,7 +10,8 @@ namespace {
 constexpr int kFieldCount = 8; // named fields; the rest of the 64 bytes is reserved
 constexpr int kReservedBytes = 32;
 
-// Enough pairs to be confident without scanning a whole block.
+// Enough pairs to be confident without scanning a whole block. Counted in pairs that carry signal:
+// a silent pair matches itself and says nothing about the layout.
 constexpr int kStereoProbePairs = 128;
 // The reference server accepts 90%; our own capture measured 100.00%, so this is slack, not a
 // tolerance we rely on.
@@ -160,22 +161,58 @@ QByteArray encodeTxChrono(int receiver, int sampleRate) {
     return buildHeader(h); // header only, no payload
 }
 
-bool looksLikeDuplicatedStereo(const float *samples, int count) {
+Layout classifyLayout(const float *samples, int count) {
     if (!samples || count < 2 || (count % 2) != 0) {
-        return false;
+        return Layout::Mono; // an odd count cannot be pairs
     }
+    // WHY the whole block and only pairs with signal: a mono block that opens with silence used to
+    // be judged on its first 128 pairs alone, every one of them 0 == 0, and was halved as stereo -
+    // the audio after the silence included (#164). Silence at the start of a transmission and in
+    // every gap is ordinary, so it must not be allowed to vote.
     const int pairs = count / 2;
-    const int probe = pairs < kStereoProbePairs ? pairs : kStereoProbePairs;
+    int informative = 0;
     int matched = 0;
-    for (int i = 0; i < probe; ++i) {
-        if (std::fabs(samples[i * 2] - samples[i * 2 + 1]) < kStereoEpsilon) {
+    for (int i = 0; i < pairs && informative < kStereoProbePairs; ++i) {
+        const float l = samples[i * 2];
+        const float r = samples[i * 2 + 1];
+        if (std::fabs(l) < kAudioFloor && std::fabs(r) < kAudioFloor) {
+            continue;
+        }
+        ++informative;
+        if (std::fabs(l - r) < kStereoEpsilon) {
             ++matched;
         }
     }
-    return matched >= (probe * kStereoMatchPercent) / 100;
+    if (informative == 0) {
+        return Layout::Undecided;
+    }
+    return matched >= (informative * kStereoMatchPercent) / 100 ? Layout::DuplicatedStereo : Layout::Mono;
 }
 
-bool decodeTxAudioToMono(const QByteArray &payload, std::vector<float> *out, Header *headerOut) {
+namespace {
+
+// Applies the block's own layout, or the hint when the block is silent, and keeps the hint current.
+void toMono(std::vector<float> &&samples, std::vector<float> *out, Layout *layoutHint) {
+    Layout layout = classifyLayout(samples.data(), static_cast<int>(samples.size()));
+    if (layout == Layout::Undecided) {
+        layout = (layoutHint && *layoutHint != Layout::Undecided) ? *layoutHint : Layout::DuplicatedStereo;
+    } else if (layoutHint) {
+        *layoutHint = layout;
+    }
+
+    if (layout == Layout::DuplicatedStereo) {
+        out->resize(samples.size() / 2);
+        for (size_t i = 0; i < out->size(); ++i) {
+            (*out)[i] = samples[i * 2];
+        }
+    } else {
+        *out = std::move(samples);
+    }
+}
+
+} // namespace
+
+bool decodeTxAudioToMono(const QByteArray &payload, std::vector<float> *out, Header *headerOut, Layout *layoutHint) {
     if (!out) {
         return false;
     }
@@ -211,15 +248,7 @@ bool decodeTxAudioToMono(const QByteArray &payload, std::vector<float> *out, Hea
 
         std::vector<float> samples(static_cast<size_t>(valid));
         std::memcpy(samples.data(), window, static_cast<size_t>(valid) * sizeof(float));
-
-        if (looksLikeDuplicatedStereo(samples.data(), valid)) {
-            out->resize(static_cast<size_t>(valid) / 2);
-            for (size_t i = 0; i < out->size(); ++i) {
-                (*out)[i] = samples[i * 2];
-            }
-        } else {
-            *out = std::move(samples);
-        }
+        toMono(std::move(samples), out, layoutHint);
         return true;
     }
 
@@ -237,14 +266,7 @@ bool decodeTxAudioToMono(const QByteArray &payload, std::vector<float> *out, Hea
             const qint16 s = qFromLittleEndian<qint16>(body + i * 2);
             samples[static_cast<size_t>(i)] = s / 32768.0f;
         }
-        if (looksLikeDuplicatedStereo(samples.data(), valid)) {
-            out->resize(static_cast<size_t>(valid) / 2);
-            for (size_t i = 0; i < out->size(); ++i) {
-                (*out)[i] = samples[i * 2];
-            }
-        } else {
-            *out = std::move(samples);
-        }
+        toMono(std::move(samples), out, layoutHint);
         return true;
     }
 
