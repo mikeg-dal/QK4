@@ -46,8 +46,13 @@ public:
     /// would let any client unkey the operator.
     void release(Owner who);
 
-    /// Unconditional release — the Esc key, losing the radio, shutting down. Fails closed.
+    /// Unconditional release — losing the radio, shutting down. Fails closed.
     void releaseAll();
+
+    /// The Esc key. Releases whoever holds the transmitter and always sends the K4's CW abort, which
+    /// carries RX; — including when nothing here holds it, because a KY macro or a TCI cw_macros is
+    /// keyed from the radio's own buffer and never passes through this controller (#173).
+    void operatorStop();
 
     bool isTransmitting() const { return m_state.transmitting(); }
     Owner owner() const { return m_state.owner; }

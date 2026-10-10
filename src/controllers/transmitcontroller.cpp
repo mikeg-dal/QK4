@@ -3,6 +3,7 @@
 #include "audiocontroller.h"
 #include "connectioncontroller.h"
 #include "models/radiostate.h"
+#include "network/catframes.h"
 
 #include <QLoggingCategory>
 
@@ -100,6 +101,12 @@ void TransmitController::releaseAll() {
     apply(TransmitOwner::releaseAll(m_state), previous, was);
 }
 
+void TransmitController::operatorStop() {
+    const Owner previous = m_state.owner;
+    const bool was = m_state.transmitting();
+    apply(TransmitOwner::operatorStop(m_state), previous, was);
+}
+
 void TransmitController::apply(const TransmitOwner::Effects &e, Owner previous, bool wasTransmitting) {
     // ORDER IS THE POINT OF THIS FUNCTION.
     //
@@ -120,8 +127,12 @@ void TransmitController::apply(const TransmitOwner::Effects &e, Owner previous, 
     if (e.setGate)
         m_audio->setPttActive(e.gateActive);
 
-    if (e.sendRx)
+    if (e.abortCw) {
+        if (m_connection->isConnected())
+            m_connection->sendCAT(QString::fromLatin1(CatFrames::cwAbort()));
+    } else if (e.sendRx) {
         m_connection->sendCAT(QStringLiteral("RX;"));
+    }
 
     if (e.setSource && !e.sourceBeforeGate())
         m_audio->setTxSourceAfterPtt(static_cast<AudioController::TxSource>(e.source));

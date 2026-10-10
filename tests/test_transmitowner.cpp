@@ -191,6 +191,71 @@ private slots:
         }
     }
 
+    // ---- The operator's stop (Esc) -------------------------------------------------------------
+
+    // #173: a KY macro is keyed from the radio's own buffer and never passes through the arbiter,
+    // so Esc must abort with nothing held. Routing Esc through releaseAll() made this a no-op.
+    void operatorStopAbortsWhenNothingIsHeld() {
+        State s;
+        const Effects e = operatorStop(s);
+        QVERIFY(e.abortCw);
+        QVERIFY(!e.ignored);
+        QVERIFY(!e.sendTx);
+        QVERIFY(!e.setGate);
+        QVERIFY(!e.transmitting);
+        QCOMPARE(s.owner, Owner::None);
+    }
+
+    // The other state a KY macro leaves behind: its QSK echo made the arbiter record the radio as
+    // keying itself, which releaseAll() deliberately does not touch. Esc must.
+    void operatorStopAbortsATransmissionTheRadioStarted() {
+        State s;
+        radioReports(s, true);
+        QCOMPARE(s.route, Route::Observed);
+        const Effects e = operatorStop(s);
+        QVERIFY(e.abortCw);
+        QVERIFY2(!e.setGate, "an observed transmission never opened the gate");
+        QVERIFY(!e.transmitting);
+        QCOMPARE(s.owner, Owner::None);
+    }
+
+    void operatorStopClosesAStreamedGate() {
+        for (auto who : {Owner::PttButton, Owner::CatClient, Owner::TciClient}) {
+            State s;
+            engage(s, who, Route::StreamedFromHere);
+            const Effects e = operatorStop(s);
+            QVERIFY(e.setGate && !e.gateActive);
+            QVERIFY(e.setSource);
+            QCOMPARE(e.source, AudioSource::Microphone);
+            QVERIFY(e.abortCw);
+            QVERIFY(!e.transmitting);
+        }
+    }
+
+    // The abort frame carries its own RX;, so a CAT-keyed route must not get a second one.
+    void operatorStopDoesNotDoubleTheUnkey() {
+        for (auto how : {Route::RadioLocal, Route::CatKeyedAndStreamed}) {
+            State s;
+            engage(s, Owner::Xmit, how);
+            const Effects e = operatorStop(s);
+            QVERIFY(e.abortCw);
+            QVERIFY(!e.sendRx);
+            QCOMPARE(s.owner, Owner::None);
+        }
+    }
+
+    // The RX; that the abort provokes can arrive after the operator has already re-keyed. It
+    // belongs to the stopped transmission and must not unkey the new one.
+    void aStaleRxAfterOperatorStopDoesNotUnkeyANewTransmission() {
+        State s;
+        radioReports(s, true);
+        operatorStop(s);
+        engage(s, Owner::PttButton, Route::StreamedFromHere);
+        const Effects late = radioReports(s, false);
+        QVERIFY(late.ignored);
+        QCOMPARE(s.owner, Owner::PttButton);
+    }
+
     // ---- The radio's own transmit state (INT-002) ---------------------------------------------
 
     // The radio keyed itself — front panel, a footswitch plugged into the radio, TUNE, VOX.
@@ -379,6 +444,14 @@ private slots:
                         QVERIFY2(!r.transmitting, "releaseAll must always end idle");
                         QCOMPARE(t.owner, Owner::None);
                         QVERIFY2(!(r.sendTx), "releasing must never key the radio");
+
+                        State u = s;
+                        const Effects o = operatorStop(u);
+                        QVERIFY2(!o.transmitting, "operatorStop must always end idle");
+                        QCOMPARE(u.owner, Owner::None);
+                        QVERIFY2(!o.sendTx, "stopping must never key the radio");
+                        QVERIFY2(o.abortCw, "Esc must always reach the radio");
+                        QVERIFY2(!o.sendRx, "the abort frame carries the RX;");
                     }
                 }
             }

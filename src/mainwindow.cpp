@@ -110,9 +110,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // Clears both the K4 TX state (RX;) and QK4's internal PTT/audio state so the UI unlocks too.
     auto *escShortcut = new QShortcut(Qt::Key_Escape, this);
     connect(escShortcut, &QShortcut::activated, this, [this]() {
-        // Unconditional, whoever holds it. This is the operator's last resort, so it releases
-        // rather than asking, and the arbiter sends whatever unkey the engage actually needs.
-        m_transmitController->releaseAll();
+        // Unconditional, whoever holds it — including nobody. This is the operator's last resort:
+        // it releases rather than asking, and always sends the K4's CW abort, because a KY macro
+        // or a TCI cw_macros is keyed from the radio's own buffer and the arbiter never sees it.
+        m_transmitController->operatorStop();
     });
 
     setupNotificationWidget();

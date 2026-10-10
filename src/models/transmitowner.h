@@ -78,8 +78,9 @@ struct Effects {
     bool refused = false; // the request was rejected; State is unchanged
     bool ignored = false; // not an error: a release from someone who did not hold it
 
-    bool sendTx = false; // put TX; on the wire
-    bool sendRx = false; // put RX; on the wire
+    bool sendTx = false;  // put TX; on the wire
+    bool sendRx = false;  // put RX; on the wire
+    bool abortCw = false; // put the CW-abort frame on the wire; it carries its own RX;, so never with sendRx
 
     bool setGate = false;    // write the audio gate...
     bool gateActive = false; // ...to this
@@ -205,8 +206,9 @@ inline Effects release(State &s, Owner who) {
     return detail::transition(s, Owner::None, Route::None);
 }
 
-/// Unconditional release, whoever holds it: the Esc key, losing the radio, shutting down.
+/// Unconditional release, whoever holds it: losing the radio, shutting down.
 /// Fail closed — these paths must never be able to leave the transmitter keyed.
+/// The Esc key is not a release; it is operatorStop() below.
 inline Effects releaseAll(State &s) {
     if (s.owner == Owner::None) {
         Effects e;
@@ -214,6 +216,26 @@ inline Effects releaseAll(State &s) {
         return e;
     }
     return detail::transition(s, Owner::None, Route::None);
+}
+
+/// The operator's stop — the Esc key. Releases whoever holds the transmitter, exactly as
+/// releaseAll() does, and then ALWAYS tells the radio to stop, even when nothing here holds it.
+///
+/// WHY it cannot be releaseAll(): some transmissions never pass through this arbiter. A KY macro,
+/// or a TCI client's cw_macros, hands text to the K4, which then keys it from its own buffer and
+/// echoes TX;/RX; per QSK cycle. At the moment Esc is pressed the arbiter therefore holds either
+/// nobody or Owner::Radio/Route::Observed, and releaseAll() sends nothing for either — so the radio
+/// played the whole message out (#173, a regression from routing Esc through releaseAll()). Before
+/// the arbiter, Esc sent RX; unconditionally; this keeps that and adds the K4's CW abort.
+///
+/// The abort frame carries its own RX;, so sendRx is folded into it rather than doubled.
+inline Effects operatorStop(State &s) {
+    Effects e;
+    if (s.owner != Owner::None)
+        e = detail::transition(s, Owner::None, Route::None);
+    e.sendRx = false;
+    e.abortCw = true;
+    return e;
 }
 
 /// The K4 told us its own transmit state changed (a TX;/RX; echo).
