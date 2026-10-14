@@ -1,32 +1,32 @@
 {
-  "tag": "v0.7.0-beta.5",
-  "version": "0.7.0-beta.5",
-  "date": "2026-08-16",
+  "tag": "v0.8.0-beta.1",
+  "version": "0.8.0-beta.1",
+  "date": "2026-10-14",
   "prerelease": true,
   "assets": {
     "macos": {
-      "name": "QK4-0.7.0-beta.5-macos.dmg",
-      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.5/QK4-0.7.0-beta.5-macos.dmg",
-      "size": "44M",
-      "sha256": "278b86a0044f079d62c3db1698114d6ab98d50cf75491c0db159abc6c4c5001e"
+      "name": "QK4-0.8.0-beta.1-macos.dmg",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.8.0-beta.1/QK4-0.8.0-beta.1-macos.dmg",
+      "size": "42M",
+      "sha256": "2d3fc5190cbbcc0637c02a6c86fcd4ba67d6cd66af227857adb6d62d45d0de98"
     },
     "windows": {
-      "name": "QK4-0.7.0-beta.5-windows.zip",
-      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.5/QK4-0.7.0-beta.5-windows.zip",
+      "name": "QK4-0.8.0-beta.1-windows.zip",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.8.0-beta.1/QK4-0.8.0-beta.1-windows.zip",
       "size": "43M",
-      "sha256": "dbacf5512783f20c61b9a0b06a023f8ecbd750ab56ff9776a796b0030c11f31c"
+      "sha256": "173ab49a59a937e08aacd3bac28698d87d23c654e20c9569a1d9d6d3a5e4c6d8"
     },
     "raspberry-pi": {
-      "name": "QK4-0.7.0-beta.5-raspberry-pi-arm64.tar.gz",
-      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.5/QK4-0.7.0-beta.5-raspberry-pi-arm64.tar.gz",
+      "name": "QK4-0.8.0-beta.1-raspberry-pi-arm64.tar.gz",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.8.0-beta.1/QK4-0.8.0-beta.1-raspberry-pi-arm64.tar.gz",
       "size": "22M",
-      "sha256": "4c945c619fdbb5154cd51c19600f6a7f2102f1ce053d5b51b816cd3ae3df46c0"
+      "sha256": "45bd38ac291f81e41423756bae6d1cb5184aae85925a8b28498ec66346bcc429"
     },
     "linux": {
-      "name": "QK4-0.7.0-beta.5-linux-x86_64.flatpak",
-      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.7.0-beta.5/QK4-0.7.0-beta.5-linux-x86_64.flatpak",
-      "size": "1.6M",
-      "sha256": "15527b1cae83dde58e109a7510e638f11733bbc1b992870750892e238ee77133"
+      "name": "QK4-0.8.0-beta.1-linux-x86_64.flatpak",
+      "url": "https://github.com/mikeg-dal/QK4/releases/download/v0.8.0-beta.1/QK4-0.8.0-beta.1-linux-x86_64.flatpak",
+      "size": "1.8M",
+      "sha256": "a1cfd2ff30fba7eeb92d7aeb4106695b9737247835256660a46169732cf1b20b"
     }
   }
 }
