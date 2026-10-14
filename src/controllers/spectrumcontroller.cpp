@@ -343,6 +343,11 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         m_panadapterA->setScale(scale);
         m_panadapterB->setScale(scale);
     });
+    connect(m_radioState, &RadioState::autoRefSettingsChanged,
+            this, [this](int averaging, int debounce, int offsetDb, bool enabled) {
+        m_panadapterA->setAutoRefSettings(averaging, debounce, offsetDb, enabled);
+        m_panadapterB->setAutoRefSettings(averaging, debounce, offsetDb, enabled);
+    });
     connect(m_radioState, &RadioState::spanChanged, this, [this](int spanHz) { m_panadapterA->setSpan(spanHz); });
     connect(m_radioState, &RadioState::spanBChanged, this, [this](int spanHz) { m_panadapterB->setSpan(spanHz); });
     connect(m_radioState, &RadioState::waterfallHeightChanged, this, [this](int percent) {

@@ -615,7 +615,8 @@ signals:
     void freezeChanged(bool enabled);            // #FRZ: 0/1
     void vfoACursorChanged(int mode);            // #VFA: 0-3
     void vfoBCursorChanged(int mode);            // #VFB: 0-3
-    void autoRefLevelChanged(bool enabled);      // #AR: A/M (GLOBAL - affects both VFOs)
+    void autoRefLevelChanged(bool enabled);      // #AR: trailing 1/0 (GLOBAL - affects both VFOs)
+    void autoRefSettingsChanged(int averaging, int debounce, int offsetDb, bool enabled); // #ARaadd+oom
     void ddcNbModeChanged(int mode);             // #NB$: 0=off, 1=on, 2=auto
     void ddcNbLevelChanged(int level);           // #NBL$: 0-14
     void dataSubModeChanged(int subMode);        // DT: 0=DATA-A, 1=AFSK-A, 2=FSK-D, 3=PSK-D

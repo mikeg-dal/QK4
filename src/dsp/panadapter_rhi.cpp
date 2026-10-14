@@ -1596,6 +1596,7 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
                                          qint32 sampleRate, float noiseFloor) {
     m_centerFreq = centerFreq;
     m_noiseFloor = noiseFloor;
+    updateAutoRefFromNoiseFloor(noiseFloor);
 
     // Zero-copy view into payload's bin data
     QByteArray bins = QByteArray::fromRawData(payload.constData() + binsOffset, binCount);
@@ -1964,6 +1965,9 @@ void PanadapterRhiWidget::clear() {
     // Clear runtime data buffers
     m_currentSpectrum.clear();
     m_rawSpectrum.clear();
+    m_autoRefEnabled = false;
+    m_autoRefInitialized = false;
+    m_autoRefPendingFrames = 0;
     m_waterfallWriteRow = 0;
     m_waterfallData.fill(0);
     m_rowTierSpanHz.fill(0.0f);
@@ -2009,6 +2013,26 @@ void PanadapterRhiWidget::setRefLevel(int level) {
     }
 }
 
+void PanadapterRhiWidget::setAutoRefSettings(int averaging, int debounce, int offsetDb, bool enabled) {
+    averaging = qBound(1, averaging, 20);
+    debounce = qBound(1, debounce, 18);
+    offsetDb = qBound(-8, offsetDb, 8);
+    if (m_autoRefEnabled == enabled && m_autoRefAveraging == averaging && m_autoRefDebounce == debounce &&
+        m_autoRefOffsetDb == offsetDb)
+        return;
+
+    m_autoRefEnabled = enabled;
+    m_autoRefAveraging = averaging;
+    m_autoRefDebounce = debounce;
+    m_autoRefOffsetDb = offsetDb;
+    // Start from the next PAN packet instead of blending a new receiver/band with the previous
+    // floor. Disabling AutoRef immediately restores the radio's explicit #REF value.
+    m_autoRefInitialized = false;
+    m_autoRefPendingFrames = 0;
+    updateDbRangeFromRefAndScale();
+    update();
+}
+
 void PanadapterRhiWidget::setScale(int scale) {
     // Scale range: 10-150 (per K4 documentation)
     // Higher values = more compressed display (signals appear weaker, wider dB range)
@@ -2021,12 +2045,40 @@ void PanadapterRhiWidget::setScale(int scale) {
 }
 
 void PanadapterRhiWidget::updateDbRangeFromRefAndScale() {
-    // RefLevel is the bottom reference, scale is the dB range upward
-    // Display shows from refLevel to (refLevel + scale)
-    m_minDb = static_cast<float>(m_refLevel);
-    m_maxDb = static_cast<float>(m_refLevel) + static_cast<float>(m_scale);
+    // In manual mode #REF is the bottom reference. The K4's AutoRef changes its own display from
+    // the noise-floor measurement carried in each PAN packet; it does not continuously publish a
+    // matching #REF. Follow that measurement here so the remote panadapter behaves like the radio.
+    const float effectiveRef =
+        (m_autoRefEnabled && m_autoRefInitialized) ? m_autoRefLevel : static_cast<float>(m_refLevel);
+    m_minDb = effectiveRef;
+    m_maxDb = effectiveRef + static_cast<float>(m_scale);
 
     updateDbmScaleOverlay();
+}
+
+void PanadapterRhiWidget::updateAutoRefFromNoiseFloor(float noiseFloor) {
+    if (!m_autoRefEnabled || !std::isfinite(noiseFloor) || noiseFloor < -200.0f || noiseFloor > 50.0f)
+        return;
+
+    // aa is the averaging constant: one new sample contributes 1/aa of the running floor. dd is
+    // the debounce interval: publish the accumulated result only after that many PAN frames. A
+    // positive offset places the noise floor above the bottom, so it is subtracted from the floor
+    // to obtain the effective reference level.
+    if (!m_autoRefInitialized) {
+        m_autoRefSmoothedFloor = noiseFloor;
+        m_autoRefLevel = noiseFloor - static_cast<float>(m_autoRefOffsetDb);
+        m_autoRefInitialized = true;
+        m_autoRefPendingFrames = 0;
+        updateDbRangeFromRefAndScale();
+    } else {
+        const float alpha = 1.0f / static_cast<float>(m_autoRefAveraging);
+        m_autoRefSmoothedFloor = alpha * noiseFloor + (1.0f - alpha) * m_autoRefSmoothedFloor;
+        if (++m_autoRefPendingFrames >= m_autoRefDebounce) {
+            m_autoRefLevel = m_autoRefSmoothedFloor - static_cast<float>(m_autoRefOffsetDb);
+            m_autoRefPendingFrames = 0;
+            updateDbRangeFromRefAndScale();
+        }
+    }
 }
 
 void PanadapterRhiWidget::setSpan(int spanHz) {

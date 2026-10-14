@@ -21,15 +21,21 @@ The radio owns it: `#REF` is the bottom of the window in dBm, `#SCL` its height 
 visible range is `[REF, REF + SCALE]` and a bin's height is `(dBm - REF) / SCALE`. Bin dBm is
 `raw_byte - RhiUtils::K4_DBM_OFFSET`.
 
-Nothing is subtracted from that. The renderer used to remove a smoothed per-frame minimum — an
-automatic noise-floor tracker — which moved the trace by roughly 20% of the chart height depending
-on band conditions, so signal height tracked the noise rather than the signal, and no dBm or S-unit
-label could be correct. Auto-reference is the radio's job: in `AR=Auto` the K4 adjusts REF itself
-and reports it, which arrives as `#REF` like any other change.
+In manual-reference mode nothing is subtracted from that. The renderer used to remove a smoothed
+per-frame minimum unconditionally, which moved the trace by roughly 20% of the chart height
+depending on band conditions, so signal height tracked the noise rather than the signal even when
+the operator selected manual reference.
 
-**Do not reintroduce a display-side baseline.** The trace, the waterfall and the scale labels all
-route through `SpectrumScale::normalizedForDb` specifically so they cannot disagree about where a
-given dBm belongs.
+In `AR=Auto`, the K4 adjusts its own display from the noise-floor measurement carried in every PAN
+packet; it does not continuously publish a matching `#REF`. QK4 therefore uses that packet value as
+the effective bottom reference while AutoRef is active. The `#ARaadd+oom` response supplies the
+averaging constant, debounce interval, signed desired offset and mode; QK4 applies all four to the
+remote axis. Returning to manual mode immediately restores the explicit `#REF` value. This is
+separate from `#AVG`, which controls smoothing of the spectrum trace itself.
+
+The trace, the waterfall and the scale labels all route through `SpectrumScale::normalizedForDb`
+specifically so they cannot disagree about where a given dBm belongs. Do not apply an additional
+baseline after that normalization; AutoRef changes the effective dBm window itself.
 
 S-units follow the amateur convention — S9 = -73 dBm, 6 dB per unit, round decades above S9 — and
 are drawn at their true dBm positions rather than at even divisions of the widget. Labels outside
