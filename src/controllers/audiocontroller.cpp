@@ -74,6 +74,10 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
     // resolves to QueuedConnection across the audio→IO boundary (one hop).
     connect(m_audioEngine, &AudioEngine::txPacketReady, m_connectionController->tcpClient(), &TcpClient::sendRaw);
 
+    // Straight through to whoever can put it on screen. Queued by default - emitted on the audio
+    // thread and consumed by the UI.
+    connect(m_audioEngine, &AudioEngine::micUnavailable, this, &AudioController::micUnavailable);
+
     // SL tier changes → update TX frame size
     connect(m_radioState, &RadioState::streamingLatencyChanged, this, &AudioController::onStreamingLatencyChanged);
 

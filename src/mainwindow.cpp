@@ -244,6 +244,15 @@ void MainWindow::setupControllers() {
     // Audio controller owns AudioEngine, Opus codecs, audio thread, and PTT state
     m_audioController = new AudioController(m_connectionController, m_radioState, this);
 
+    // Microphone trouble, on screen. A local PTT press keys the K4 by streaming audio, so a
+    // microphone QK4 cannot use is a PTT button that does nothing at all - and an operator who gets
+    // no explanation reports a dead radio rather than changing the setting. Held for 12 seconds
+    // because every one of these asks the operator to go and do something.
+    connect(m_audioController, &AudioController::micUnavailable, this, [this](const QString &reason) {
+        if (m_notificationWidget)
+            m_notificationWidget->showMessage(reason, 12000);
+    });
+
     // The single owner of "are we transmitting". Constructed here, directly after the two
     // controllers it drives, so Qt's child destruction order tears it down after them and its
     // disconnect(this) has already run by the time anything it references is gone.

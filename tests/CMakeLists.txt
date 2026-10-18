@@ -553,6 +553,18 @@ target_include_directories(test_audiodeviceselection PRIVATE ${CMAKE_SOURCE_DIR}
 target_link_libraries(test_audiodeviceselection Qt6::Core Qt6::Test)
 add_test(NAME AudioDeviceSelectionTests COMMAND test_audiodeviceselection)
 
+# Rational resampling for capture rates AudioDecimator cannot take — pure DSP, no audio device.
+add_executable(test_audioresampler test_audioresampler.cpp)
+target_include_directories(test_audioresampler PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_audioresampler Qt6::Core Qt6::Test)
+add_test(NAME AudioResamplerTests COMMAND test_audioresampler)
+
+# What the operator is told when a microphone's rate cannot be captured from — pure wording.
+add_executable(test_micrate test_micrate.cpp)
+target_include_directories(test_micrate PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_micrate Qt6::Core Qt6::Test)
+add_test(NAME MicRateTests COMMAND test_micrate)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
