@@ -41,6 +41,7 @@ signals:
     void decrementRequested();
     void extraButtonClicked();
     void nrEngineToggleRequested(); // Title label clicked while showing NR ADJUST
+    void nrResetRequested();        // RESET clicked while showing NR ADJUST with the SSNR engine
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -54,6 +55,7 @@ private:
     QPushButton *m_titleLabel;
     QPushButton *m_toggleBtn;
     QPushButton *m_nrEngineBtn; // Shown only for NrAdjust — toggles LMS / SSNR
+    QPushButton *m_nrResetBtn;  // Shown only for NrAdjust + SSNR — resets the noise estimate
     QPushButton *m_extraBtn;
     QPushButton *m_valueLabel;
     QPushButton *m_decrementBtn;

@@ -53,6 +53,15 @@ void FeatureMenuBar::setupUi() {
     m_nrEngineBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
     m_nrEngineBtn->hide();
 
+    // NR+ noise-estimate reset — only shown for NrAdjust with the SSNR engine selected.
+    m_nrResetBtn = new QPushButton("RESET", this);
+    m_nrResetBtn->setMinimumWidth(60);
+    m_nrResetBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
+    m_nrResetBtn->setCursor(Qt::PointingHandCursor);
+    m_nrResetBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
+    m_nrResetBtn->setToolTip("Reset the NR+ noise estimate. Tune away from signals first.");
+    m_nrResetBtn->hide();
+
     // Extra button (only shown for NB LEVEL - "FILTER NONE/NARROW/WIDE")
     m_extraBtn = new QPushButton("FILTER\nNONE", this);
     m_extraBtn->setMinimumWidth(90);
@@ -95,6 +104,7 @@ void FeatureMenuBar::setupUi() {
     layout->addWidget(m_titleLabel, 0, Qt::AlignVCenter);
     layout->addWidget(m_toggleBtn, 0, Qt::AlignVCenter);
     layout->addWidget(m_nrEngineBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_nrResetBtn, 0, Qt::AlignVCenter);
     layout->addWidget(m_extraBtn, 0, Qt::AlignVCenter);
     layout->addWidget(m_valueLabel, 0, Qt::AlignVCenter);
     layout->addWidget(m_decrementBtn, 0, Qt::AlignVCenter);
@@ -106,6 +116,7 @@ void FeatureMenuBar::setupUi() {
     connect(m_incrementBtn, &QPushButton::clicked, this, &FeatureMenuBar::incrementRequested);
     connect(m_extraBtn, &QPushButton::clicked, this, &FeatureMenuBar::extraButtonClicked);
     connect(m_nrEngineBtn, &QPushButton::clicked, this, &FeatureMenuBar::nrEngineToggleRequested);
+    connect(m_nrResetBtn, &QPushButton::clicked, this, &FeatureMenuBar::nrResetRequested);
 }
 
 void FeatureMenuBar::showForFeature(Feature feature) {
@@ -194,6 +205,7 @@ void FeatureMenuBar::updateForFeature() {
         m_titleLabel->setText("ATTENUATOR");
         m_extraBtn->hide();
         m_nrEngineBtn->hide();
+        m_nrResetBtn->hide();
         m_valueUnit = " dB";
         break;
     case NbLevel:
@@ -201,6 +213,7 @@ void FeatureMenuBar::updateForFeature() {
         m_extraBtn->setText("FILTER\nNONE");
         m_extraBtn->show();
         m_nrEngineBtn->hide();
+        m_nrResetBtn->hide();
         m_valueUnit = "";
         break;
     case NrAdjust:
@@ -208,12 +221,14 @@ void FeatureMenuBar::updateForFeature() {
         m_extraBtn->hide();
         m_nrEngineBtn->setText(m_nrEngine == Ssnr ? "NR+" : "LMS");
         m_nrEngineBtn->show();
+        m_nrResetBtn->setVisible(m_nrEngine == Ssnr);
         m_valueUnit = "";
         break;
     case ManualNotch:
         m_titleLabel->setText("MANUAL NOTCH");
         m_extraBtn->hide();
         m_nrEngineBtn->hide();
+        m_nrResetBtn->hide();
         m_valueUnit = " Hz";
         break;
     }
@@ -226,8 +241,13 @@ void FeatureMenuBar::setNrEngine(NrEngine engine) {
     if (m_nrEngine == engine)
         return;
     m_nrEngine = engine;
-    if (m_currentFeature == NrAdjust)
-        m_nrEngineBtn->setText(m_nrEngine == Ssnr ? "NR+" : "LMS");
+    if (m_currentFeature != NrAdjust)
+        return;
+    m_nrEngineBtn->setText(m_nrEngine == Ssnr ? "NR+" : "LMS");
+    m_nrResetBtn->setVisible(m_nrEngine == Ssnr);
+    // The bar's width changed — re-center it over its anchor.
+    if (isVisible() && m_referenceWidget)
+        showAboveWidget(m_referenceWidget);
 }
 
 void FeatureMenuBar::setFeatureEnabled(bool enabled) {
@@ -292,6 +312,7 @@ void FeatureMenuBar::paintEvent(QPaintEvent *event) {
     drawDelimiter(m_titleLabel);  // After title
     drawDelimiter(m_toggleBtn);   // After OFF/ON
     drawDelimiter(m_nrEngineBtn); // After LMS/NR+ (only visible for NrAdjust)
+    drawDelimiter(m_nrResetBtn);  // After RESET (only visible for NrAdjust + SSNR)
     drawDelimiter(m_extraBtn);    // After FILTER NONE (only visible for NB)
     drawDelimiter(m_valueLabel);  // After value
     // No delimiter after +/- buttons (they're at the end now)
