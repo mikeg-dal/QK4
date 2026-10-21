@@ -14,7 +14,9 @@ const std::vector<Group> &groups() {
         {"audio", "Audio", {"qk4.audio"}},
         // WHY qk4.kpod.plus here too: the KPOD+ forwards its own keyer's KZ strings, and its device
         // lifecycle decides who owns CW.
-        {"cw", "CW keying", {"qk4.cw.keyer", "qk4.cw.halikey", "qk4.cw.midi", "qk4.audio.sidetone", "qk4.kpod.plus"}},
+        {"cw",
+         "CW keying",
+         {"qk4.cw.keyer", "qk4.cw.halikey", "qk4.cw.midi", "qk4.cw.vail", "qk4.audio.sidetone", "qk4.kpod.plus"}},
         {"kpod", "KPOD and KPOD+", {"qk4.hardware", "qk4.kpod", "qk4.kpod.udev", "qk4.kpod.plus"}},
         {"catserver", "CAT server", {"qk4.catserver", "qk4.catserver.push"}},
         {"tci", "TCI server", {"qk4.tci", "qk4.tci.ws"}},

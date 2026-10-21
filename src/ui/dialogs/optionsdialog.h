@@ -30,7 +30,7 @@ class DiagnosticsPage;
 
 /**
  * @brief Tabbed Options dialog. Left QListWidget drives a QStackedWidget holding the option
- *        pages (About, Station, Display, Audio Input/Output, Rig Control, TCI Server, HaliKey,
+ *        pages (About, Station, Display, Audio Input/Output, Rig Control, TCI Server, CW Keyer,
  *        K-Pod, KPA1500, DX Cluster, Diagnostics).
  *        Pages are lazy-constructed on first tab activation via @c ensurePageCreated.
  */
