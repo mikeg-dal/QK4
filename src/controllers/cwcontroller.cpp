@@ -11,6 +11,7 @@ Q_DECLARE_LOGGING_CATEGORY(cwKeyer)
 #include "hardware/halikeydevice.h"
 #include "hardware/iambickeyer.h"
 #include "hardware/kpodplusdevice.h"
+#include "hardware/vail_sidetone_routing.h"
 #include "models/radiostate.h"
 #include "network/tcpclient.h"
 #include "settings/radiosettings.h"
@@ -57,7 +58,9 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
         QMetaObject::invokeMethod(m_keyer, "setSpeed", Qt::QueuedConnection, Q_ARG(int, wpm));
         // Sync element length with K4 server — same conversion the local keyer and sidetone use.
         int ditMs = RadioUtils::ditMsForWpm(wpm);
-        m_connection->sendCAT(QString("KZL%1;").arg(ditMs, 2, 10, QChar('0')));
+        if (RadioSettings::instance()->halikeyDeviceType() != HalikeyDevice::Vail)
+            m_connection->sendCAT(QString("KZL%1;").arg(ditMs, 2, 10, QChar('0')));
+        configureVailKeyer();
         // K4 is the source of truth — mirror the speed onto the KPOD+ keyer.
         if (m_kpodPlus->isPolling())
             m_kpodPlus->setKeyerSpeed(wpm);
@@ -66,6 +69,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // Update the local iambic keyer mode/reversal — and the KPOD+ keyer — when
     // the K4's KP settings change. The K4 is the source of truth.
     connect(m_radioState, &RadioState::keyerPaddleChanged, this, [this](QChar iambic, QChar paddle, int /*weight*/) {
+        configureVailKeyer();
         QMetaObject::invokeMethod(
             m_keyer, "setMode", Qt::QueuedConnection,
             Q_ARG(IambicKeyer::Mode, iambic == 'B' ? IambicKeyer::IambicB : IambicKeyer::IambicA));
@@ -75,6 +79,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     });
 
     connect(m_radioState, &RadioState::cwPitchChanged, this, [this](int pitchHz) {
+        configureVailKeyer();
         QMetaObject::invokeMethod(m_sidetone, "setFrequency", Qt::QueuedConnection, Q_ARG(int, pitchHz));
         // K4 is the source of truth — mirror the CW pitch onto the KPOD+ keyer.
         if (m_kpodPlus->isPolling())
@@ -102,6 +107,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
         const bool inCw = (mode == RadioState::CW || mode == RadioState::CW_R);
         if (!inCw)
             m_keyer->setPaddleState(false, false);
+        updateVailKeying();
     });
 
     // Device-type fan-out: mirror for the V1.4 PTT demux below + the keyer's hold
@@ -110,13 +116,30 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // is a plain main-thread singleton; the PTT handler runs on the HaliKey worker
     // thread — same store/load pattern as m_cachedMode above. setHoldGateEnabled is a
     // plain atomic write, safe to call directly from the main thread.
-    const bool initIsV14 = (RadioSettings::instance()->halikeyDeviceType() != 1);
+    const bool initIsV14 = (RadioSettings::instance()->halikeyDeviceType() == HalikeyDevice::Serial);
+    m_vailSelected->store(RadioSettings::instance()->halikeyDeviceType() == HalikeyDevice::Vail,
+                          std::memory_order_release);
+    m_vailComputerSidetone->store(RadioSettings::instance()->vailComputerSidetone(), std::memory_order_release);
+    m_vailSidetoneRoute = std::make_shared<VailSidetoneRouting::Route>();
+    connect(RadioSettings::instance(), &RadioSettings::vailComputerSidetoneChanged, this, [this](bool computer) {
+        m_vailComputerSidetone->store(computer, std::memory_order_release);
+        if (m_vailSelected->load(std::memory_order_acquire))
+            updateVailSidetone(true);
+    });
     m_cachedIsV14.store(initIsV14, std::memory_order_release);
     m_keyer->setHoldGateEnabled(initIsV14);
     connect(RadioSettings::instance(), &RadioSettings::halikeyDeviceTypeChanged, this, [this](int type) {
-        const bool isV14 = (type != 1);
+        const bool vail = type == HalikeyDevice::Vail;
+        m_vailSelected->store(vail, std::memory_order_release);
+        updateVailSidetone(true);
+        m_keyer->setPaddleState(false, false);
+        QMetaObject::invokeMethod(m_keyer, "stop", Qt::QueuedConnection);
+        QMetaObject::invokeMethod(m_keyer, "setEnabled", Qt::QueuedConnection, Q_ARG(bool, m_radioReady && !vail));
+        const bool isV14 = (type == HalikeyDevice::Serial);
         m_cachedIsV14.store(isV14, std::memory_order_release);
         m_keyer->setHoldGateEnabled(isV14);
+        configureVailKeyer();
+        updateVailKeying();
     });
 
     // =========================================================================
@@ -138,18 +161,89 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // monospace rendering of "KZ_;" is a typographic artifact, not an underscore byte).
     auto *tc = m_connection->tcpClient();
     auto *cc = m_connection;
+    const auto vailSelected = m_vailSelected;
+    const auto vailControl = m_halikey->vailRoutingControl();
+    const auto vailRoute = std::make_shared<VailCatRouting::Route>();
+    const auto computerSidetone = m_vailComputerSidetone;
+    const auto sidetoneGeneration = m_vailSidetoneGeneration;
+    const auto sidetoneGate = m_vailSidetoneGate;
+    const auto sidetoneRoute = m_vailSidetoneRoute;
+    auto *sg = m_sidetone;
+    connect(
+        m_halikey, &HalikeyDevice::routedVailKeyingStateChanged, sg,
+        [sg, cc, vailSelected, computerSidetone, vailControl, sidetoneGeneration, sidetoneGate,
+         sidetoneRoute](bool down, quint64 epoch, qint64 timestampNs) {
+            // Capture the feedback generation on the emitting worker thread, before
+            // audio queuing. A rapid source switch cannot revive an old queued DOWN.
+            const quint64 generation = sidetoneGeneration->load(std::memory_order_acquire);
+            const bool eligibleAtEmission = sidetoneGate->load(std::memory_order_acquire);
+            QMetaObject::invokeMethod(
+                sg,
+                [sg, cc, vailSelected, computerSidetone, vailControl, sidetoneGeneration, sidetoneGate, sidetoneRoute,
+                 down, epoch, generation, timestampNs, eligibleAtEmission]() {
+                    const bool eligible = eligibleAtEmission && sidetoneGate->load(std::memory_order_acquire) &&
+                                          vailSelected->load(std::memory_order_acquire) &&
+                                          computerSidetone->load(std::memory_order_acquire) &&
+                                          !cc->isKpodPlusKeyerActive();
+                    if (sidetoneRoute->accept(down, epoch, generation,
+                                              sidetoneGeneration->load(std::memory_order_acquire), *vailControl,
+                                              eligible))
+                        sg->setKeyDownAt(down, timestampNs);
+                },
+                Qt::QueuedConnection);
+        },
+        Qt::DirectConnection);
+    connect(
+        m_halikey, &HalikeyDevice::routedVailKeyingCommand, tc,
+        [tc, cc, vailSelected, vailControl, vailRoute](const QString &command, quint64 epoch) {
+            const bool eligible = vailSelected->load(std::memory_order_acquire) && !cc->isKpodPlusKeyerActive();
+            if (tc->isConnected() && vailRoute->accept(command, epoch, *vailControl, eligible))
+                tc->sendCAT(command);
+        },
+        Qt::QueuedConnection);
+    // Reset on the I/O thread itself, before a blocked GUI can process disconnect.
+    // Old UP/RX cleanup must never target a newly authenticated radio connection.
+    connect(
+        tc, &TcpClient::stateChanged, tc,
+        [vailControl, vailRoute, sidetoneGeneration, sidetoneGate](TcpClient::ConnectionState state) {
+            if (state != TcpClient::Connected) {
+                vailControl->invalidate();
+                vailRoute->reset();
+                sidetoneGate->store(false, std::memory_order_release);
+                sidetoneGeneration->fetch_add(1, std::memory_order_acq_rel);
+            }
+        },
+        Qt::DirectConnection);
+    // A queued receiver context keeps teardown safe after the audio object is
+    // destroyed. The I/O-side gate above closes before a stalled GUI can react.
+    connect(
+        tc, &TcpClient::stateChanged, sg,
+        [sg, vailSelected, sidetoneGate, sidetoneRoute](TcpClient::ConnectionState state) {
+            if (state != TcpClient::Connected && vailSelected->load(std::memory_order_acquire) &&
+                !sidetoneGate->load(std::memory_order_acquire)) {
+                sidetoneRoute->reset();
+                sg->resetKeyedTone();
+            }
+        },
+        Qt::QueuedConnection);
+    connect(m_halikey, &HalikeyDevice::connected, this, [this]() {
+        configureVailKeyer();
+        if (RadioSettings::instance()->halikeyDeviceType() == HalikeyDevice::Vail && m_radioReady)
+            m_connection->sendCAT(QStringLiteral("KZL0080;"));
+        updateVailKeying();
+    });
     connect(
         m_keyer, &IambicKeyer::elementStarted, tc,
-        [tc, cc](bool isDit) {
-            if (cc->isKpodPlusKeyerActive())
+        [tc, cc, vailSelected](bool isDit) {
+            if (cc->isKpodPlusKeyerActive() || vailSelected->load(std::memory_order_acquire))
                 return;
             tc->sendCAT(isDit ? QStringLiteral("KZ.;") : QStringLiteral("KZ-;"));
         },
         Qt::QueuedConnection);
     connect(
         m_keyer, &IambicKeyer::characterSpace, tc,
-        [tc, cc]() {
-            if (cc->isKpodPlusKeyerActive())
+        [tc, cc, vailSelected]() {
+            if (cc->isKpodPlusKeyerActive() || vailSelected->load(std::memory_order_acquire))
                 return;
             // WHY space, not underscore: the Elecraft KPodKeyerInterface.pdf renders the
             // letter-space marker as "KZ_;" but a hexdump of EP02 traffic from a live KPOD+
@@ -162,8 +256,8 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
         Qt::QueuedConnection);
     connect(
         m_keyer, &IambicKeyer::restartAfterPause, tc,
-        [tc, cc](int ms) {
-            if (cc->isKpodPlusKeyerActive())
+        [tc, cc, vailSelected](int ms) {
+            if (cc->isKpodPlusKeyerActive() || vailSelected->load(std::memory_order_acquire))
                 return;
             tc->sendCAT(QStringLiteral("KZP%1;").arg(ms, 4, 10, QChar('0')));
         },
@@ -171,8 +265,8 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
 
     // Sidetone stays on its own thread. Sidetone gate uses the local helper so a hot KPOD+
     // takeover silences feedback immediately even before the next emit lands on I/O.
-    connect(m_keyer, &IambicKeyer::elementStarted, m_sidetone, [this, sg = m_sidetone](bool isDit) {
-        if (kpodPlusActive())
+    connect(m_keyer, &IambicKeyer::elementStarted, m_sidetone, [this, sg = m_sidetone, vailSelected](bool isDit) {
+        if (kpodPlusActive() || vailSelected->load(std::memory_order_acquire))
             return;
         isDit ? sg->playSingleDit() : sg->playSingleDah();
     });
@@ -203,7 +297,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
             // gate), so a
             // lever held across a gate rise is released by the very next edge instead of staying
             // latched on the keyer until the gate clears - and then emitting KZ nobody keyed.
-            const bool gated = kpodPlusActive();
+            const bool gated = kpodPlusActive() || m_vailSelected->load(std::memory_order_acquire);
 
             // Both levers are gated on CW together. Keying the radio from a paddle in SSB/AM/FM is
             // never wanted, and letting one lever through outside CW also left its state set on the
@@ -215,11 +309,20 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
         Qt::DirectConnection);
 
     // Enable keyer when radio connects, disable on disconnect
-    connect(m_connection, &ConnectionController::radioReady, this,
-            [this]() { QMetaObject::invokeMethod(m_keyer, "setEnabled", Qt::QueuedConnection, Q_ARG(bool, true)); });
+    connect(m_connection, &ConnectionController::radioReady, this, [this]() {
+        m_radioReady = true;
+        configureVailKeyer();
+        if (RadioSettings::instance()->halikeyDeviceType() == HalikeyDevice::Vail)
+            m_connection->sendCAT(QStringLiteral("KZL0080;"));
+        updateVailKeying();
+        QMetaObject::invokeMethod(m_keyer, "setEnabled", Qt::QueuedConnection,
+                                  Q_ARG(bool, !m_vailSelected->load(std::memory_order_acquire)));
+    });
     connect(m_connection, &ConnectionController::connectionStateChanged, this,
             [this](TcpClient::ConnectionState state) {
-                if (state == TcpClient::Disconnected) {
+                if (state != TcpClient::Connected) {
+                    m_radioReady = false;
+                    updateVailKeying();
                     QMetaObject::invokeMethod(m_keyer, "setEnabled", Qt::QueuedConnection, Q_ARG(bool, false));
                 }
             });
@@ -227,6 +330,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // Stop keyer when HaliKey disconnects (prevents runaway keying
     // if paddle was held when disconnected — Note Off never arrives)
     connect(m_halikey, &HalikeyDevice::disconnected, this, [this]() {
+        updateVailSidetone(true);
         // Both levers down, explicitly: IambicKeyer::stop() is guarded on the keyer not being
         // Idle, so it leaves m_phys untouched when nothing was being sent, and a lever held at
         // unplug would still read as down on the next entry into CW.
@@ -260,6 +364,49 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // trims NUL padding on the I/O thread and hands off to sendCAT().
     connect(m_kpodPlus, &KpodPlusDevice::keyerDataReceived, m_connection->tcpClient(), &TcpClient::sendCATBytes,
             Qt::QueuedConnection);
+    configureVailKeyer();
+    updateVailKeying();
+    if (m_vailSelected->load(std::memory_order_acquire))
+        updateVailSidetone(true);
+}
+
+void CwController::configureVailKeyer() {
+    m_halikey->configureVailKeyer(m_radioState->keyerSpeed() > 0 ? m_radioState->keyerSpeed() : 20,
+                                  m_radioState->cwPitch() > 0 ? m_radioState->cwPitch() : 600,
+                                  m_radioState->iambicMode() == 'B' ? 1 : 0);
+}
+
+void CwController::updateVailKeying() {
+    const bool inCw = m_radioState->mode() == RadioState::CW || m_radioState->mode() == RadioState::CW_R;
+    // Queue audio reset/priming before a newly enabled worker can emit DOWN.
+    updateVailSidetone();
+    m_halikey->setVailKeyingEnabled(m_radioReady && inCw && !kpodPlusActive());
+}
+
+void CwController::updateVailSidetone(bool forceReset) {
+    const bool inCw = m_radioState->mode() == RadioState::CW || m_radioState->mode() == RadioState::CW_R;
+    const bool allowed = m_vailSelected->load(std::memory_order_acquire) &&
+                         m_vailComputerSidetone->load(std::memory_order_acquire) && m_halikey->isConnected() &&
+                         m_radioReady && inCw && !kpodPlusActive();
+    if (!forceReset && allowed == m_vailSidetoneAllowed &&
+        allowed == m_vailSidetoneGate->load(std::memory_order_acquire))
+        return;
+    m_vailSidetoneAllowed = allowed;
+    // Close eligibility until the reset is enqueued. An edge racing a source
+    // change cannot enter the audio queue ahead of the reset for its generation.
+    m_vailSidetoneGate->store(false, std::memory_order_release);
+    const quint64 generation = m_vailSidetoneGeneration->fetch_add(1, std::memory_order_acq_rel) + 1;
+    QMetaObject::invokeMethod(
+        m_sidetone,
+        [sg = m_sidetone, route = m_vailSidetoneRoute, generations = m_vailSidetoneGeneration, generation, allowed]() {
+            if (!route->resetIfCurrent(generation, generations->load(std::memory_order_acquire)))
+                return;
+            sg->resetKeyedTone();
+            if (allowed)
+                sg->setKeyDown(false);
+        },
+        Qt::QueuedConnection);
+    m_vailSidetoneGate->store(allowed, std::memory_order_release);
 }
 
 CwController::~CwController() {
@@ -289,6 +436,7 @@ void CwController::setKpodPlusGate(bool active) {
     // load BEFORE the levers are forced down, or an edge landing between the two lines recomputes
     // them with the gate still clear and sets them straight back.
     m_connection->setKpodPlusKeyerActive(active);
+    updateVailKeying();
     if (active) {
         // A lever held when the KPOD+ takes over stays down on the keyer otherwise, and surfaces
         // as KZ nobody keyed once the KPOD+ is unplugged again. Unconditional rather than

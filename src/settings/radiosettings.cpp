@@ -583,6 +583,18 @@ void RadioSettings::setSidetoneVolume(int value) {
     }
 }
 
+bool RadioSettings::vailComputerSidetone() const {
+    return m_vailComputerSidetone;
+}
+
+void RadioSettings::setVailComputerSidetone(bool enabled) {
+    if (m_vailComputerSidetone != enabled) {
+        m_vailComputerSidetone = enabled;
+        save();
+        emit vailComputerSidetoneChanged(enabled);
+    }
+}
+
 // =============================================================================
 // KPOD+ Keyer Settings
 // =============================================================================
@@ -792,6 +804,7 @@ void RadioSettings::load() {
     m_halikeyEnabled = m_settings.value("halikey/enabled", false).toBool();
     m_halikeyDeviceType = m_settings.value("halikey/deviceType", 0).toInt();
     m_sidetoneVolume = m_settings.value("halikey/sidetoneVolume", 30).toInt();
+    m_vailComputerSidetone = m_settings.value("vail/computerSidetone", false).toBool();
 
     // KPOD+ keyer settings
     m_kpodPlusEncodeMode = m_settings.value("kpodPlus/encodeMode", 0).toInt();
@@ -894,6 +907,7 @@ void RadioSettings::save() {
     m_settings.setValue("halikey/enabled", m_halikeyEnabled);
     m_settings.setValue("halikey/deviceType", m_halikeyDeviceType);
     m_settings.setValue("halikey/sidetoneVolume", m_sidetoneVolume);
+    m_settings.setValue("vail/computerSidetone", m_vailComputerSidetone);
 
     // KPOD+ keyer settings
     m_settings.setValue("kpodPlus/encodeMode", m_kpodPlusEncodeMode);

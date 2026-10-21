@@ -243,6 +243,7 @@ set(SOURCES
     src/hardware/halikeyworkerbase.cpp
     src/hardware/halikeyv14worker.cpp
     src/hardware/halikeymidiworker.cpp
+    src/hardware/vailmidiworker.cpp
     src/hardware/iambickeyer.cpp
     third_party/rtmidi/RtMidi.cpp
 )
@@ -378,6 +379,8 @@ set(HEADERS
     src/hardware/halikeyworkerbase.h
     src/hardware/halikeyv14worker.h
     src/hardware/halikeymidiworker.h
+    src/hardware/vailmidiworker.h
+    src/hardware/vail_midi_protocol.h
     src/hardware/iambickeyer.h
 )
 

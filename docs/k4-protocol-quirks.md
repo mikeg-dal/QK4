@@ -115,8 +115,15 @@ Sidebar — not directly a protocol *quirk*, but non-obvious enough to belong he
 | `KZ-;` | dah element (3 dits on) |
 | `KZ ;` | letter space |
 | `KZP####;` | pause N ms before the next element (fist preservation) |
-| `KZL##;` | element length in ms (`1200 / WPM`) |
-| `KZD####;` / `KZU####;` | raw key-down / key-up for N ms. K4/0 uses this form for real-time paddle forwarding; QK4 does not |
+| `KZL####;` | initial remote key-down delay, 0-1000 ms (default 80 ms) |
+| `KZD####;` / `KZU####;` | raw key-down / key-up after N ms since the preceding edge, 0-2500 ms |
+
+The Vail adapter path uses raw edges with an 80 ms initial delay. For example,
+`KZD0000;KZU0090;` is a 90 ms mark. Its onboard keyer and buzzer generate the
+CW timing; QK4 timestamps and forwards it without invoking its software keyer.
+See [Elecraft's programmer's reference, rev. D12](https://ftp.elecraft.com/K4/Manuals%20Downloads/K4ProgrammersReferencerev.D12.html).
+The older HaliKey element path still sends its existing speed-derived `KZL`
+value; that behavior is separate from the Vail integration.
 
 **The byte between `Z` and `;` in the letter-space form is 0x20, a literal SPACE.** Confirmed by
 hexdump of EP02 traffic from a live KPOD+. Elecraft's `KPodKeyerInterface.pdf` v1.00 renders it as
