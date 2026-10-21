@@ -34,6 +34,8 @@ class KzEgress : public QObject, public CwKeying::Link {
     Q_OBJECT
 
 public:
+    enum class Source { Kpod, Software };
+
     // WHY 1024: a frame is never dropped in practice, because a dropped KZU leaves the radio keyed.
     // 1024 frames is more than ten seconds of keying at 50 WPM with the I/O thread not draining at
     // all, by which time the session is lost anyway.
@@ -52,15 +54,27 @@ public:
     bool post(std::string_view frame) noexcept QK4_NONBLOCKING;
     void send(std::string_view command) override { post(command); }
 
+    // The software keyer is a single producer. Its UP keeps the epoch of its preceding DOWN,
+    // even when a device switch changes the gate before that UP is posted.
+    CwKeying::Link *softwareLink() { return &m_softwareLink; }
+    void setSoftwareKeyingAllowed(bool allowed);
+    bool softwareKeyingAllowed() const { return (m_softwareState.load(std::memory_order_acquire) & 1U) != 0; }
+    quint64 softwareEpoch() const { return m_softwareState.load(std::memory_order_acquire) >> 1; }
+
     // Owning thread. Calls fn(std::string_view frame, std::int64_t enqueuedNs) for every frame
     // published so far, oldest first. Returns how many it handed over.
     template <typename Fn> int drain(Fn &&fn) {
+        return drainTagged(
+            [&fn](std::string_view frame, std::int64_t enqueuedNs, Source, quint64, bool) { fn(frame, enqueuedNs); });
+    }
+
+    template <typename Fn> int drainTagged(Fn &&fn) {
         int handed = 0;
         while (true) {
             Slot &slot = m_slots[m_dequeuePos & kMask];
             if (slot.sequence.load(std::memory_order_acquire) != m_dequeuePos + 1)
                 return handed; // empty, or the next frame is claimed but not yet published
-            fn(std::string_view(slot.data, slot.length), slot.enqueuedNs);
+            fn(std::string_view(slot.data, slot.length), slot.enqueuedNs, slot.source, slot.epoch, slot.eligibleAtPost);
             slot.sequence.store(m_dequeuePos + kCapacity, std::memory_order_release);
             ++m_dequeuePos;
             ++handed;
@@ -78,10 +92,23 @@ signals:
     void framesReady();
 
 private:
+    class SoftwareLink final : public CwKeying::Link {
+    public:
+        explicit SoftwareLink(KzEgress *owner) : m_owner(owner) {}
+        void send(std::string_view command) noexcept QK4_NONBLOCKING override;
+
+    private:
+        KzEgress *m_owner;
+        quint64 m_downEpoch = 0; // only the software keyer thread writes this
+    };
+
     struct Slot {
         std::atomic<std::size_t> sequence{0};
         std::int64_t enqueuedNs = 0;
         std::uint8_t length = 0;
+        Source source = Source::Kpod;
+        quint64 epoch = 0;
+        bool eligibleAtPost = false;
         char data[kMaxFrameBytes] = {};
     };
     static constexpr std::size_t kMask = kCapacity - 1;
@@ -89,12 +116,15 @@ private:
 
     void wake() noexcept;
     void onWake();
+    bool postTagged(std::string_view frame, Source source, quint64 epoch, bool eligibleAtPost) noexcept QK4_NONBLOCKING;
 
     std::unique_ptr<Slot[]> m_slots;
     alignas(64) std::atomic<std::size_t> m_enqueuePos{0};
     alignas(64) std::size_t m_dequeuePos = 0; // owning thread only
     std::atomic<bool> m_wakePending{false};
     std::atomic<std::uint64_t> m_dropped{0};
+    std::atomic<quint64> m_softwareState{0}; // generation in high bits, allowed in bit 0
+    SoftwareLink m_softwareLink{this};
 
 #ifdef Q_OS_WIN
     void *m_event = nullptr; // HANDLE, auto-reset

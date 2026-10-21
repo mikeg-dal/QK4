@@ -57,6 +57,47 @@ class TestKzEgress : public QObject {
     Q_OBJECT
 
 private slots:
+    void sourceAndEligibilitySurviveADeviceChangeBeforeDrain() {
+        KzEgress egress;
+        egress.setSoftwareKeyingAllowed(true);
+        const quint64 original = egress.softwareEpoch();
+        egress.softwareLink()->send("KZD0000;");
+        egress.setSoftwareKeyingAllowed(false);
+        egress.setSoftwareKeyingAllowed(true);
+        QVERIFY(egress.softwareEpoch() != original);
+        egress.softwareLink()->send("KZU0060;");
+        QVERIFY(egress.post("KZD0000;KZU0060;"));
+        int seen = 0;
+        egress.drainTagged(
+            [&](std::string_view frame, std::int64_t, KzEgress::Source source, quint64 epoch, bool eligible) {
+                if (seen < 2) {
+                    QCOMPARE(source, KzEgress::Source::Software);
+                    QCOMPARE(epoch, original);
+                    QVERIFY(eligible);
+                    QCOMPARE(frame, seen == 0 ? std::string_view("KZD0000;") : std::string_view("KZU0060;"));
+                } else {
+                    QCOMPARE(source, KzEgress::Source::Kpod);
+                }
+                ++seen;
+            });
+        QCOMPARE(seen, 3);
+    }
+
+    void disabledDownCannotBecomeEligibleWhenTheDeviceIsReenabled() {
+        KzEgress egress;
+        egress.softwareLink()->send("KZD0000;");
+        egress.setSoftwareKeyingAllowed(true);
+        egress.softwareLink()->send("KZU0060;");
+        int seen = 0;
+        egress.drainTagged([&](std::string_view, std::int64_t, KzEgress::Source source, quint64 epoch, bool eligible) {
+            QCOMPARE(source, KzEgress::Source::Software);
+            QCOMPARE(epoch, quint64(0));
+            QCOMPARE(eligible, seen != 0);
+            ++seen;
+        });
+        QCOMPARE(seen, 2);
+    }
+
     void framesArriveWholeAndInOrder() {
         KzEgress egress;
         Collector c;
