@@ -240,11 +240,18 @@ private slots:
         rig.sleepMs(150);
         rig.keyer.setInhibited(true);
         rig.sleepMs(150);
-        const size_t before = rig.link.sent().size();
+        const auto before = rig.link.sent();
+        const int finishingElement = openKzd(before);
+        QVERIFY(finishingElement == 0 || finishingElement == 1);
         rig.keyer.paddleEvent(PaddleKeyer::Event::DahDown, 0);
         rig.sleepMs(150);
+        // Inhibit releases the paddles; an element already started still sends its matching
+        // KZU. A loaded runner can delay that cleanup beyond the first settling interval.
+        QTRY_COMPARE_WITH_TIMEOUT(openKzd(rig.link.sent()), 0, 2000);
         const auto sent = rig.link.sent();
-        QCOMPARE(sent.size(), before);
+        QCOMPARE(sent.size(), before.size() + static_cast<size_t>(finishingElement));
+        for (size_t i = before.size(); i < sent.size(); ++i)
+            QVERIFY2(sent[i].rfind("KZU", 0) == 0, sent[i].c_str());
         QCOMPARE(openKzd(sent), 0);
     }
 

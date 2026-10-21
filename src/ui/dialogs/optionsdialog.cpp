@@ -55,7 +55,7 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("Audio Output");
     m_tabList->addItem("Rig Control");
     m_tabList->addItem("TCI Server");
-    m_tabList->addItem("HaliKey");
+    m_tabList->addItem("CW Keyer");
     m_tabList->addItem("K-Pod");
     m_tabList->addItem("KPA1500");
     m_tabList->addItem("DX Cluster");

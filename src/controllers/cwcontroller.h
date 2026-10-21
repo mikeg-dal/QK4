@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <atomic>
+#include <memory>
 
 class RadioState;
 class ConnectionController;
@@ -36,44 +37,22 @@ class KpodPlusDevice;
 //         m_hardwareController->sidetoneGenerator(), m_hardwareController->halikeyDevice(),
 //         m_hardwareController->kpodPlusDevice(), this);
 //
-// Wiring
-// ------
-//   src                                  | dst                         | thread
-//   -------------------------------------|-----------------------------|-----------------------------
-//   PaddleKeyer → ForwardingLink         | TcpClient's KzEgress        | keyer → I/O (lock-free post)
-//   HalikeyDevice::paddleChanged (V1.4)  | PaddleKeyer::paddleEvent    | runs ON the HaliKey worker
-//   HalikeyDevice MIDI sink (MIDI)       | PaddleKeyer::midiMessage    | runs ON RtMidi's thread
-//   RadioState keyer speed/KP/pitch/ML/KZL| keyer + sidetone + KPOD+    | main
-//   RadioState::modeChanged, radioReady,  | PaddleKeyer::setInhibited   | main
-//     disconnect, KPOD+ gate             |                             |
-//   RadioSettings halikey/*              | keyer mode, straight key,   | main
-//                                        | dit memory, monitor mute    |
-//   KpodPlusDevice EP02 reader           | TcpClient's KzEgress        | EP02 worker → I/O (lock-free)
-//
-// Inhibit
-// -------
-// The keyer keys nothing unless the radio is ready, the mode is CW or CW-R, and the KPOD+ does not
-// own CW (CwGate::keyerInhibited). The sidetone's output stream is open only while, in addition, a
-// HaliKey port is open (CwGate::sidetoneStreamWanted), so nothing is pumped while idle (#92). Raising the inhibit
-// releases whatever is keyed (an open straight-key KZD gets its KZU) and drops paddle events at the door. It replaces
-// the per-lever gating the iambic keyer needed: the keyer reads its paddles from time-stamped history, so a single
-// release is all a gate needs.
-//
-// Threading invariants
+// Wiring and threading
 // --------------------
-//   1. The V1.4 line handler runs DirectConnection on the HaliKey worker, and the MIDI sink on
-//      RtMidi's thread. Both stamp the edge on arrival; a queued hop would be timing error.
-//   2. m_cachedIsV14 and m_reversed are stored on the main thread (release) and loaded on those
-//      device threads (acquire).
-//   3. The keyer's commands reach TcpClient through ForwardingLink → KzEgress, a lock-free queue
-//      the I/O thread drains in order. FIFO per producer, so KZD/KZU stay in order. The keyer
-//      thread is the only producer: a release, inhibit or close from the main thread, and the
-//      monitor-restore timer, post requests to the keyer's queue and never send KZ or ML.
-//   4. KPOD+ EP02 keyer data goes from the EP02 worker to the same KzEgress.
-//   5. The destructor cuts the V1.4 line handler first (CONVENTIONS Rule 11). That stops new
-//      calls only; an edge already in flight on the worker is ruled out by shutdownDevices().
-//   6. The link is never gated: a KZU closing an open KZD must always reach the K4. Suppression
-//      is the inhibit's job, upstream of the keyer.
+// The software keyer sends through ForwardingLink into KzEgress's tagged software link. Posting
+// copies into a bounded lock-free queue; strings, routing and monitor control run only on I/O.
+// Source generations reject stale queued starts and preserve the release of a forwarded DOWN.
+// Vail's worker sends already-keyed edges to the same I/O route without invoking PaddleKeyer.
+// The KPOD+ posts its complete strings directly to the egress and bypasses software routing.
+//
+// The V1.4 handler and HaliKey MIDI sink run on their device threads. They read only atomic
+// configuration and pass timestamped paddle events to the keyer. The Vail audio route captures
+// its feedback generation before queuing to the sidetone thread, so a source change cannot revive
+// old audio. Their producers stop before audio and I/O are destroyed (shutdownDevices()).
+//
+// Keyability follows CwGate, with PaddleKeyer additionally inhibited while Vail is selected.
+// Sidetone output is open only while CW is keyable and the selected device is connected; Vail
+// also requires computer sidetone. Its default buzzer setting leaves the output stream closed.
 //
 // Footswitch PTT: REMOVED, deliberately
 // -------------------------------------
@@ -89,6 +68,10 @@ class KpodPlusDevice;
 //   - Hold a paddle in CW and switch to SSB mid-press: keying stops, nothing stuck
 //   - Esc mid-burst: keying stops, radio unkeyed
 // =============================================================================
+
+namespace VailSidetoneRouting {
+class Route;
+}
 
 class CwController : public QObject {
     Q_OBJECT
@@ -108,10 +91,14 @@ public:
     void setKeyDownInitialDelay(int ms);
 
     /// Esc: stop QK4's own keying now. The burst ends at its next element boundary; an open
-    /// straight-key KZD gets its KZU.
+    /// straight-key KZD gets its KZU. Vail aborts immediately and waits for held inputs to release.
     void stopKeying();
 
 private:
+    void wireKeyingRoutes();
+    void configureVailKeyer();
+    void updateVailKeying();
+    void updateVailSidetone(bool forceReset = false);
     void applySpeed();
     void applyMode();
     void applyReversal();
@@ -126,18 +113,25 @@ private:
     HalikeyDevice *m_halikey;      // owned by HardwareController
     KpodPlusDevice *m_kpodPlus;    // owned by HardwareController
 
-    // The V1.4 line handler (invariant 1). Kept so the destructor can cut it: it runs on the HaliKey
-    // worker, and ~QObject would drop it only after this object's members are gone.
     QMetaObject::Connection m_paddleConnection;
+    QMetaObject::Connection m_vailSidetoneConnection;
+
+    std::shared_ptr<std::atomic<bool>> m_vailSelected = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<std::atomic<bool>> m_kpodPlusOwnsCw = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<std::atomic<bool>> m_vailComputerSidetone = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<std::atomic<quint64>> m_vailSidetoneGeneration = std::make_shared<std::atomic<quint64>>(0);
+    std::shared_ptr<std::atomic<bool>> m_vailSidetoneGate = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<VailSidetoneRouting::Route> m_vailSidetoneRoute;
+    bool m_vailSidetoneAllowed = false;
 
     // Main thread only.
     bool m_radioReady = false;
     bool m_kpodPlusGate = false;
     bool m_sidetoneStreamWanted = false; // last value sent to SidetoneGenerator::setStreamWanted
 
-    // true = V1.4 serial (deviceType 0), false = MIDI (deviceType 1). See invariant 2.
+    // true only for V1.4 serial (deviceType 0). Vail bypasses the software keyer.
     std::atomic<bool> m_cachedIsV14{true};
-    // The K4's KP paddle orientation is Reverse. See invariant 2.
+    // The K4's KP paddle orientation is Reverse.
     std::atomic<bool> m_reversed{false};
 };
 

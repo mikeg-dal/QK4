@@ -62,6 +62,29 @@ std::int64_t KzEgress::nowNs() {
 }
 
 bool KzEgress::post(std::string_view frame) noexcept {
+    return postTagged(frame, Source::Kpod, 0, true);
+}
+
+void KzEgress::setSoftwareKeyingAllowed(bool allowed) {
+    quint64 state = m_softwareState.load(std::memory_order_acquire);
+    while (static_cast<bool>(state & 1U) != allowed) {
+        const quint64 next = ((state >> 1) + 1) * 2 + static_cast<quint64>(allowed);
+        if (m_softwareState.compare_exchange_weak(state, next, std::memory_order_acq_rel))
+            return;
+    }
+}
+
+void KzEgress::SoftwareLink::send(std::string_view command) noexcept {
+    const quint64 state = m_owner->m_softwareState.load(std::memory_order_acquire);
+    quint64 epoch = state >> 1;
+    if (command.substr(0, 3) == "KZD")
+        m_downEpoch = epoch;
+    else if (command.substr(0, 3) == "KZU")
+        epoch = m_downEpoch;
+    m_owner->postTagged(command, Source::Software, epoch, (state & 1U) != 0);
+}
+
+bool KzEgress::postTagged(std::string_view frame, Source source, quint64 epoch, bool eligibleAtPost) noexcept {
     if (frame.empty() || frame.size() > kMaxFrameBytes) {
         m_dropped.fetch_add(1, std::memory_order_relaxed);
         return false;
@@ -84,6 +107,9 @@ bool KzEgress::post(std::string_view frame) noexcept {
     }
     slot->enqueuedNs = nowNs();
     slot->length = static_cast<std::uint8_t>(frame.size());
+    slot->source = source;
+    slot->epoch = epoch;
+    slot->eligibleAtPost = eligibleAtPost;
     std::memcpy(slot->data, frame.data(), frame.size());
     slot->sequence.store(pos + 1, std::memory_order_release);
 

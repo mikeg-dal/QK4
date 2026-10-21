@@ -11,6 +11,7 @@ class HalikeyDevice;
 class HaliKeyPortScan;
 class RadioState;
 class CwController;
+class QFormLayout;
 
 /**
  * @brief OptionsDialog "CW Keyer" tab. Chooses the HaliKey device type (V1.4 / MIDI / etc.) and
@@ -37,6 +38,7 @@ private:
     void updateCwKeyerDescription();
     void showKeyDownDelay(int ms);
     void sendKeyDownDelay();
+    void updateSidetoneControls();
 
     HalikeyDevice *m_halikeyDevice;
     QComboBox *m_cwKeyerDeviceTypeCombo = nullptr;
@@ -47,10 +49,16 @@ private:
     QLabel *m_cwKeyerStatusLabel = nullptr;
     QSlider *m_sidetoneVolumeSlider = nullptr;
     QLabel *m_sidetoneVolumeValueLabel = nullptr;
+    QWidget *m_halikeyKeyerSettings = nullptr;
     RadioState *m_radioState;
     CwController *m_cwController;
     QSlider *m_keyDownDelaySlider = nullptr;
     QLabel *m_keyDownDelayValueLabel = nullptr;
+    QWidget *m_sidetoneSourceRow = nullptr;
+    QComboBox *m_sidetoneSourceCombo = nullptr;
+    QWidget *m_sidetoneVolumeRow = nullptr;
+    QLabel *m_sidetoneHelpLabel = nullptr;
+    QFormLayout *m_sidetoneForm = nullptr;
     HaliKeyPortScan *m_portScan = nullptr;
     int m_scanType = -1; // device type of the list being shown or scanned
 };

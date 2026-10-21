@@ -5,6 +5,7 @@
 #include "halikeyv14worker.h"
 #include "halikeyworkerbase.h"
 #include "utils/threadshutdown.h"
+#include "vailmidiworker.h"
 #include <QDebug>
 #include <RtMidi.h>
 #include <chrono>
@@ -39,8 +40,32 @@ bool HalikeyDevice::openPort(const QString &portName) {
 
     m_portName = portName;
 
-    // Create worker based on injected device type (0 = V1.4, 1 = MIDI)
-    if (m_deviceType == 1) {
+    if (m_deviceType == Vail) {
+        auto *vail = new VailMidiWorker(portName, m_vailWpm, m_vailPitchHz, m_vailMode);
+        m_worker = vail;
+        m_vailWorkerEpoch = std::make_shared<quint64>(m_vailRouting->epoch.load(std::memory_order_acquire));
+        const auto token = m_vailWorkerEpoch;
+        connect(
+            vail, &VailMidiWorker::timedKeyingCommand, this,
+            [this, token](const QString &command) {
+                emit timedKeyingCommand(command);
+                emit routedVailKeyingCommand(command, *token);
+            },
+            Qt::DirectConnection);
+        connect(
+            vail, &VailMidiWorker::keyingStateChanged, this,
+            [this, token](bool down, qint64 timestampNs) {
+                emit routedVailKeyingStateChanged(down, *token, timestampNs);
+            },
+            Qt::DirectConnection);
+        connect(
+            vail, &VailMidiWorker::keyingAborted, this,
+            [this, token]() {
+                emit timedKeyingCommand(QStringLiteral("RX;"));
+                emit routedVailKeyingCommand(QStringLiteral("RX;"), *token);
+            },
+            Qt::DirectConnection);
+    } else if (m_deviceType == Midi) {
         m_worker = new HaliKeyMidiWorker(portName, m_midiSink);
     } else {
         m_worker = new HaliKeyV14Worker(portName);
@@ -54,12 +79,21 @@ bool HalikeyDevice::openPort(const QString &portName) {
     // Straight through, on the worker thread: the keyer stamps the edge on arrival.
     connect(m_worker, &HaliKeyWorkerBase::paddleChanged, this, &HalikeyDevice::paddleChanged, Qt::DirectConnection);
     m_worker->setStraightKey(m_straightKey.load(std::memory_order_acquire));
-    connect(m_worker, &HaliKeyWorkerBase::portOpened, this, [this]() {
-        qCInfo(lcCwHalikey) << "HaliKey opened on" << m_portName << (m_deviceType == 1 ? "(MIDI)" : "(V1.4 serial)");
+    const quint64 generation = ++m_workerGeneration;
+    connect(m_worker, &HaliKeyWorkerBase::portOpened, this, [this, generation]() {
+        if (generation != m_workerGeneration || !m_worker)
+            return;
+        const char *transport = m_deviceType == Vail   ? "(Vail MIDI)"
+                                : m_deviceType == Midi ? "(MIDI)"
+                                                       : "(V1.4 serial)";
+        qCInfo(lcCwHalikey) << "CW keyer opened on" << m_portName << transport;
         m_connected = true;
         emit connected();
+        updateVailRouting();
     });
-    connect(m_worker, &HaliKeyWorkerBase::errorOccurred, this, [this](const QString &error) {
+    connect(m_worker, &HaliKeyWorkerBase::errorOccurred, this, [this, generation](const QString &error) {
+        if (generation != m_workerGeneration || !m_worker)
+            return;
         qCWarning(lcCwHalikey) << "HalikeyDevice: Worker error -" << error;
         closePort();
         emit connectionError(error);
@@ -72,28 +106,111 @@ bool HalikeyDevice::openPort(const QString &portName) {
     connect(m_workerThread, &QThread::finished, m_worker, &QObject::deleteLater);
 
     m_workerThread->start();
+    updateVailRouting();
     return true;
 }
 
+void HalikeyDevice::setDeviceType(int deviceType) {
+    if (deviceType == m_deviceType)
+        return;
+    closePort();
+    m_deviceType = deviceType;
+}
+
 void HalikeyDevice::closePort() {
+    closeWorker(true);
+}
+
+void HalikeyDevice::closeWorker(bool cleanupVail) {
+    const QDeadlineTimer deadline(kWorkerStopTimeout);
+    ++m_workerGeneration; // disconnect() does not cancel already queued opened/error callbacks.
+    const quint64 epoch = m_vailRouting->invalidate();
+    auto *vail = qobject_cast<VailMidiWorker *>(m_worker);
+    bool cleanupFailed = vail && !cleanupVail;
+    // WHY: send the matching key-up while the worker-to-radio route is still connected.
+    if (vail && cleanupVail) {
+        const auto token = m_vailWorkerEpoch;
+        cleanupFailed = !ThreadShutdown::callBlocking(
+            vail,
+            [vail, token, epoch]() {
+                vail->setKeyingEnabled(false); // Cleanup carries the generation which keyed DOWN.
+                *token = epoch;
+            },
+            deadline);
+    }
     // Disconnect worker signals FIRST — prevent stale queued events
     // from reaching slots after state reset
     if (m_worker) {
         disconnect(m_worker, nullptr, this, nullptr);
         m_worker->stop();
-        m_worker->prepareShutdown();
+        if (vail) {
+            ThreadShutdown::callBlocking(vail, [vail]() { vail->prepareShutdown(); }, deadline);
+        } else {
+            m_worker->prepareShutdown();
+        }
     }
 
     // The worker goes with its thread (finished -> deleteLater), or stays on it if the thread is
     // disowned; its paddle line into this object was cut above either way.
-    ThreadShutdown::retire(m_workerThread, QDeadlineTimer(kWorkerStopTimeout), lcCwHalikey());
+    ThreadShutdown::retire(m_workerThread, deadline, lcCwHalikey());
     m_worker = nullptr;
+    m_vailWorkerEpoch.reset();
+    m_vailWorkerEnabled = false;
 
     bool wasConnected = m_connected;
     m_connected = false;
 
     if (wasConnected) {
         emit disconnected();
+    }
+    if (cleanupFailed) {
+        qCWarning(lcCwHalikey) << "Vail keying cleanup timed out; disconnecting the radio for safety";
+        emit vailCleanupFailed();
+    }
+}
+
+void HalikeyDevice::configureVailKeyer(int wpm, int pitchHz, int mode) {
+    m_vailWpm = wpm;
+    m_vailPitchHz = pitchHz;
+    m_vailMode = mode;
+    if (auto *vail = qobject_cast<VailMidiWorker *>(m_worker)) {
+        QMetaObject::invokeMethod(vail, "configure", Qt::QueuedConnection, Q_ARG(int, wpm), Q_ARG(int, pitchHz),
+                                  Q_ARG(int, mode));
+    }
+}
+
+void HalikeyDevice::setVailKeyingEnabled(bool enabled) {
+    m_vailKeyingEnabled = enabled;
+    updateVailRouting();
+}
+
+void HalikeyDevice::updateVailRouting() {
+    const bool enabled = m_vailKeyingEnabled && m_connected && m_deviceType == Vail;
+    if (enabled == m_vailRouting->enabled.load(std::memory_order_acquire) && enabled == m_vailWorkerEnabled)
+        return;
+    const quint64 epoch = m_vailRouting->invalidate();
+    m_vailRouting->enabled.store(enabled, std::memory_order_release);
+    m_vailWorkerEnabled = enabled;
+    if (auto *vail = qobject_cast<VailMidiWorker *>(m_worker)) {
+        const auto token = m_vailWorkerEpoch;
+        // A takeover can start the KPOD+ immediately after this returns. Queue Vail
+        // cleanup to I/O first, so it cannot arrive after the replacement keyer.
+        const auto update = [vail, token, epoch, enabled]() {
+            if (enabled) {
+                *token = epoch;
+                vail->setKeyingEnabled(true);
+            } else {
+                vail->setKeyingEnabled(false);
+                *token = epoch;
+            }
+        };
+        if (enabled) {
+            QMetaObject::invokeMethod(vail, update, Qt::QueuedConnection);
+        } else if (!ThreadShutdown::callBlocking(vail, update, QDeadlineTimer(kWorkerStopTimeout))) {
+            closeWorker(false);
+            emit connectionError(QStringLiteral("Vail did not finish keying cleanup in time. The radio was "
+                                                "disconnected; reconnect before keying again."));
+        }
     }
 }
 
