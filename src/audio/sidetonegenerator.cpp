@@ -1,13 +1,31 @@
 #include "sidetonegenerator.h"
 #include "audio/audiologging.h"
+#include "audio/livesidetone.h"
 #include "utils/radioutils.h"
 #include <QAudioFormat>
 #include <QDebug>
 #include <QMediaDevices>
 #include <QtMath>
 #include <algorithm>
+#include <chrono>
+
+class LiveSidetoneSource : public QIODevice {
+public:
+    explicit LiveSidetoneSource(QObject *parent) : QIODevice(parent) {
+        // QIODevice's default read-ahead buffer could otherwise pre-render another 170 ms.
+        open(QIODevice::ReadOnly | QIODevice::Unbuffered);
+    }
+    bool isSequential() const override { return true; }
+    qint64 bytesAvailable() const override { return 1920 + QIODevice::bytesAvailable(); }
+    LiveSidetone tone;
+
+protected:
+    qint64 readData(char *data, qint64 size) override { return tone.render(data, size); }
+    qint64 writeData(const char *, qint64) override { return -1; }
+};
 
 SidetoneGenerator::SidetoneGenerator(QObject *parent) : QObject(parent) {
+    m_liveSource = new LiveSidetoneSource(this);
     // Audio init deferred to start() which runs on the sidetone thread.
     // WHY parented here, pre-moveToThread: the monitor rides moveToThread() with the
     // generator, so audioOutputsChanged is delivered on the sidetone thread — the same
@@ -31,17 +49,17 @@ void SidetoneGenerator::setOutputDevice(const QString &deviceId) {
     if (m_selectedOutputDeviceId == deviceId)
         return;
     m_selectedOutputDeviceId = deviceId;
-
-    if (m_audioSink) {
-        m_audioSink->stop();
-        delete m_audioSink;
-        m_audioSink = nullptr;
-        m_pushDevice = nullptr;
+    m_liveSource->tone.reset();
+    if (m_started) {
+        clearAudio();
         initAudio();
     }
 }
 
 void SidetoneGenerator::initAudio() {
+    if (m_audioSink || !m_started) {
+        return;
+    }
     QAudioFormat format;
     format.setSampleRate(48000);
     format.setChannelCount(1);
@@ -64,59 +82,135 @@ void SidetoneGenerator::initAudio() {
     // a failed start() records what was attempted (same ordering as AudioEngine).
     m_activeOutputDeviceId = device.id();
 
+    if (device.isNull()) {
+        qCWarning(qk4Audio) << "SidetoneGenerator: No audio output device";
+        return;
+    }
     if (!device.isFormatSupported(format)) {
-        qCWarning(qk4Audio) << "SidetoneGenerator: Default format not supported, trying nearest";
-        format = device.preferredFormat();
+        // Both renderers produce this exact PCM format. Falling back to a device's preferred
+        // float/stereo format while still writing mono Int16 corrupts audio and its duration.
+        qCWarning(qk4Audio) << "SidetoneGenerator: Output does not support 48 kHz mono Int16 audio";
+        return;
     }
 
     m_audioSink = new QAudioSink(device, format, this);
-    m_audioSink->setBufferSize(131072); // 128KB - handles even 5 WPM dah (720ms = ~69KB)
+    if (m_audioMode == AudioMode::Live) {
+        // Request 20 ms, not the complete-element path's 1.36 s capacity. The backend may use a
+        // larger hardware minimum; the adapter buzzer remains the path for zero USB/audio delay.
+        m_audioSink->setBufferSize(48000 * 2 * 20 / 1000);
+        m_audioSink->start(m_liveSource);
+        if (m_audioSink->error() != QAudio::NoError) {
+            qCWarning(qk4Audio) << "SidetoneGenerator: Failed to start live audio:" << m_audioSink->error();
+            clearAudio();
+        }
+        return;
+    }
+    m_audioSink->setBufferSize(131072); // Complete dit/dah plus inter-element space.
 
     // Start audio sink immediately and keep it running
     m_pushDevice = m_audioSink->start();
     if (!m_pushDevice) {
         qCWarning(qk4Audio) << "SidetoneGenerator: Failed to start audio sink:" << m_audioSink->error();
+        clearAudio();
     }
 }
 
 void SidetoneGenerator::start() {
+    m_started = true;
     initAudio();
 }
 
 void SidetoneGenerator::stop() {
+    m_started = false;
+    clearAudio();
+    m_liveSource->tone.reset();
+    m_activeOutputDeviceId.clear();
+}
+
+void SidetoneGenerator::clearAudio() {
     if (m_audioSink) {
-        m_audioSink->stop();
+        m_audioSink->reset(); // Discard queued samples as well as stopping output.
         delete m_audioSink;
         m_audioSink = nullptr;
         m_pushDevice = nullptr;
     }
-    m_activeOutputDeviceId.clear();
+}
+
+void SidetoneGenerator::setAudioMode(AudioMode mode) {
+    if (mode == m_audioMode) {
+        return;
+    }
+    clearAudio();
+    m_liveSource->tone.reset();
+    m_audioMode = mode;
+    initAudio();
+}
+
+void SidetoneGenerator::setKeyDown(bool down) {
+    const auto timestampNs =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    setKeyDownAt(down, timestampNs);
+}
+
+void SidetoneGenerator::setKeyDownAt(bool down, qint64 timestampNs) {
+    if (!m_started) {
+        return;
+    }
+    setAudioMode(AudioMode::Live);
+    if (down && (!m_audioSink || m_audioSink->error() != QAudio::NoError)) {
+        clearAudio();
+        m_liveSource->tone.reset();
+        initAudio();
+    }
+    if (!m_liveSource->tone.setKeyDown(down, timestampNs)) {
+        qCWarning(qk4Audio) << "SidetoneGenerator: Live edge queue overflowed; silencing output";
+    }
+}
+
+void SidetoneGenerator::resetKeyedTone() {
+    m_liveSource->tone.reset();
+    if (m_audioMode == AudioMode::Live && m_started) {
+        clearAudio();
+        initAudio();
+    }
 }
 
 void SidetoneGenerator::onSystemDefaultOutputChanged() {
-    // Only follow the OS default when the user hasn't pinned a specific device.
-    if (!m_selectedOutputDeviceId.isEmpty())
+    if (!m_started)
         return;
-    // Nothing built yet (or stop() already ran) — the next initAudio() resolves fresh.
-    if (!m_audioSink)
+    QAudioDevice effectiveDevice;
+    if (!m_selectedOutputDeviceId.isEmpty()) {
+        for (const QAudioDevice &device : QMediaDevices::audioOutputs()) {
+            if (device.id() == m_selectedOutputDeviceId) {
+                effectiveDevice = device;
+                break;
+            }
+        }
+    }
+    if (effectiveDevice.isNull()) {
+        effectiveDevice = QMediaDevices::defaultAudioOutput();
+    }
+    if (effectiveDevice.id() == m_activeOutputDeviceId && m_audioSink && m_audioSink->error() == QAudio::NoError) {
         return;
-    const QString newDefault = QMediaDevices::defaultAudioOutput().id();
-    if (newDefault.isEmpty() || newDefault == m_activeOutputDeviceId)
-        return; // effective default unchanged
-
-    m_audioSink->stop();
-    delete m_audioSink;
-    m_audioSink = nullptr;
-    m_pushDevice = nullptr;
+    }
+    // Retry if a formerly missing/unsupported output became usable, including a pinned device
+    // returning. Every replacement starts silent; never replay held or queued tone on a new sink.
+    clearAudio();
+    m_liveSource->tone.reset();
     initAudio();
 }
 
 void SidetoneGenerator::setFrequency(int hz) {
-    m_frequency.store(hz, std::memory_order_relaxed);
+    const int frequency = std::clamp(hz, 100, 2000);
+    m_frequency.store(frequency, std::memory_order_relaxed);
+    m_liveSource->tone.setFrequency(frequency);
 }
 
 void SidetoneGenerator::setVolume(float volume) {
-    m_volume.store(volume, std::memory_order_relaxed);
+    const float bounded = std::isfinite(volume) ? std::clamp(volume, 0.0f, 1.0f) : 0.0f;
+    m_volume.store(bounded, std::memory_order_relaxed);
+    m_liveSource->tone.setVolume(bounded);
 }
 
 void SidetoneGenerator::setKeyerSpeed(int wpm) {
@@ -142,6 +236,10 @@ int SidetoneGenerator::dahDurationMs() const {
 }
 
 void SidetoneGenerator::playElement(int durationMs) {
+    if (!m_started) {
+        return;
+    }
+    setAudioMode(AudioMode::Elements);
     if (!m_audioSink)
         return;
     if (!m_pushDevice) {

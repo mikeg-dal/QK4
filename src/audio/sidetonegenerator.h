@@ -9,12 +9,16 @@
 #include <QtMath>
 #include <atomic>
 
+class LiveSidetoneSource;
+
 /**
  * @brief Local CW sidetone synth. Lives on its own thread (HardwareController's m_sidetoneThread)
  *        so audio output never blocks the keyer or UI. IambicKeyer drives `playSingleDit/Dah` per
  *        element for both HaliKey transports (V1.4 serial and MIDI); when the KPOD+ owns the CW
  *        path, CwController suppresses this local sidetone entirely. Each element is written as a
  *        complete PCM block (tone + inter-element space) and always plays to completion.
+ *        Optional Vail computer feedback follows already-keyed edges through setKeyDownAt(),
+ *        using a small pull buffer and timestamped edge queue rather than another keyer.
  *        All public slots are Q_INVOKABLE and expected to be posted via QueuedConnection.
  */
 class SidetoneGenerator : public QObject {
@@ -36,21 +40,34 @@ public:
     Q_INVOKABLE void playSingleDit();
     Q_INVOKABLE void playSingleDah();
 
+    // Follow already-keyed hardware edges for optional computer feedback. Calling false while
+    // started primes the live pull stream, so the first press need not reopen the sound device.
+    Q_INVOKABLE void setKeyDown(bool down);
+    // Hardware routing passes its callback ingress timestamp so delayed Qt delivery cannot
+    // collapse a complete short element into two adjacent processing-time edges.
+    Q_INVOKABLE void setKeyDownAt(bool down, qint64 timestampNs);
+    // Lifecycle/source changes must discard pending edge history and already-buffered PCM.
+    Q_INVOKABLE void resetKeyedTone();
+
 signals:
 
 private:
     void initAudio();
+    void clearAudio();
+    enum class AudioMode { Elements, Live };
+    void setAudioMode(AudioMode mode);
     void playElement(int durationMs);
     int ditDurationMs() const;
     int dahDurationMs() const;
-    // WHY: when the user leaves the speaker on "System Default" (empty device id),
-    // follow the OS default live instead of caching it for the session — same
-    // pattern as AudioEngine. Without this, a default-device change (or hot-unplug)
-    // left the sink on a stale/dead device and the sidetone went silent.
+    // Follow the effective selected/default output and recover when a missing output returns.
+    // Every replacement starts silent so held live tone cannot survive a device change.
     void onSystemDefaultOutputChanged();
 
     QAudioSink *m_audioSink = nullptr;
     QIODevice *m_pushDevice = nullptr;
+    LiveSidetoneSource *m_liveSource = nullptr;
+    AudioMode m_audioMode = AudioMode::Elements;
+    bool m_started = false;
     QString m_selectedOutputDeviceId;
     QString m_activeOutputDeviceId;          // id of the device the sink was actually opened on
     QMediaDevices *m_mediaDevices = nullptr; // OS device/default-change monitor

@@ -241,8 +241,14 @@ QString HardwareController::halikeyName() const {
     // RadioSettings is the only place that knows which transport is configured; HalikeyDevice is
     // constructed from the same value. Named for the operator, matching the Options dropdown, so a
     // notification and the settings page cannot disagree about what the device is called.
-    return RadioSettings::instance()->halikeyDeviceType() == 1 ? QStringLiteral("HaliKey MIDI")
-                                                               : QStringLiteral("HaliKey V1.4");
+    switch (RadioSettings::instance()->halikeyDeviceType()) {
+    case HalikeyDevice::Midi:
+        return QStringLiteral("HaliKey MIDI");
+    case HalikeyDevice::Vail:
+        return QStringLiteral("Vail Adapter");
+    default:
+        return QStringLiteral("HaliKey V1.4");
+    }
 }
 
 void HardwareController::shutdownDevices() {
