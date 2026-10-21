@@ -883,6 +883,97 @@ if(QK4_TESTS_RTSAN)
     set_tests_properties(RtSanSelfTestAllowed PROPERTIES PASS_REGULAR_EXPRESSION "allowed: no report")
 endif()
 
+add_executable(test_cwmonitormute test_cwmonitormute.cpp)
+target_include_directories(test_cwmonitormute PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_cwmonitormute Qt6::Core Qt6::Test)
+add_test(NAME CwMonitorMuteTests COMMAND test_cwmonitormute)
+
+add_executable(test_vailmidiprotocol test_vailmidiprotocol.cpp)
+target_include_directories(test_vailmidiprotocol PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_vailmidiprotocol Qt6::Core Qt6::Test)
+add_test(NAME VailMidiProtocolTests COMMAND test_vailmidiprotocol)
+
+add_executable(test_vailcatrouting test_vailcatrouting.cpp)
+target_include_directories(test_vailcatrouting PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_vailcatrouting Qt6::Core Qt6::Test)
+add_test(NAME VailCatRoutingTests COMMAND test_vailcatrouting)
+
+add_executable(test_vaillivesidetone test_vaillivesidetone.cpp)
+target_include_directories(test_vaillivesidetone PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_vaillivesidetone Qt6::Core Qt6::Test)
+add_test(NAME VailLiveSidetoneTests COMMAND test_vaillivesidetone)
+
+add_executable(test_vailsidetonerouting test_vailsidetonerouting.cpp)
+target_include_directories(test_vailsidetonerouting PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_vailsidetonerouting Qt6::Core Qt6::Test)
+add_test(NAME VailSidetoneRoutingTests COMMAND test_vailsidetonerouting)
+
+if(NOT QK4_TESTS_ONLY)
+    add_library(qk4_test_vail_device STATIC
+        ${CMAKE_SOURCE_DIR}/src/hardware/halikeydevice.cpp
+        ${CMAKE_SOURCE_DIR}/src/hardware/halikeyworkerbase.cpp
+        ${CMAKE_SOURCE_DIR}/src/hardware/halikeyv14worker.cpp
+        ${CMAKE_SOURCE_DIR}/src/hardware/seriallinepoller.cpp
+        ${CMAKE_SOURCE_DIR}/src/hardware/keyerruntime.cpp
+        ${CMAKE_SOURCE_DIR}/src/utils/rtscheduling.cpp
+        ${CMAKE_SOURCE_DIR}/src/hardware/halikeymidiworker.cpp
+        ${CMAKE_SOURCE_DIR}/src/hardware/vailmidiworker.cpp
+        ${CMAKE_SOURCE_DIR}/third_party/rtmidi/RtMidi.cpp
+    )
+    target_include_directories(qk4_test_vail_device PUBLIC
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/third_party/rtmidi)
+    target_link_libraries(qk4_test_vail_device PUBLIC qk4_test_common Qt6::SerialPort)
+    if(APPLE)
+        target_compile_definitions(qk4_test_vail_device PUBLIC __MACOSX_CORE__)
+        target_link_libraries(qk4_test_vail_device PUBLIC
+            "-framework CoreMIDI" "-framework CoreAudio" "-framework CoreFoundation")
+    elseif(WIN32)
+        target_compile_definitions(qk4_test_vail_device PUBLIC __WINDOWS_MM__)
+        target_link_libraries(qk4_test_vail_device PUBLIC winmm avrt)
+    else()
+        target_compile_definitions(qk4_test_vail_device PUBLIC __LINUX_ALSA__)
+        target_link_libraries(qk4_test_vail_device PUBLIC asound)
+    endif()
+    add_executable(test_vaildevice test_vaildevice.cpp)
+    target_link_libraries(test_vaildevice qk4_test_vail_device Qt6::Test)
+    add_test(NAME VailDeviceTests COMMAND test_vaildevice)
+
+    add_library(qk4_test_vail_cw STATIC
+        ${CMAKE_SOURCE_DIR}/src/hardware/kpodplususbworker.cpp
+        ${CMAKE_SOURCE_DIR}/src/hardware/kpodplusdevice.cpp
+        ${QK4_PADDLEKEYER_SOURCES}
+        ${CMAKE_SOURCE_DIR}/src/controllers/cwcontroller.cpp
+        ${CMAKE_SOURCE_DIR}/src/controllers/connectioncontroller.cpp
+        ${CMAKE_SOURCE_DIR}/src/network/tcpclient.cpp
+        ${CMAKE_SOURCE_DIR}/src/network/pingtracker.cpp
+        ${CMAKE_SOURCE_DIR}/src/network/kzegress.cpp
+        ${CMAKE_SOURCE_DIR}/src/network/networkmetrics.cpp
+        ${CMAKE_SOURCE_DIR}/src/audio/sidetonegenerator.cpp
+    )
+    target_include_directories(qk4_test_vail_cw PUBLIC ${CMAKE_SOURCE_DIR}/src ${LIBUSB_INCLUDE_DIRS})
+    target_link_libraries(qk4_test_vail_cw PUBLIC
+        qk4_test_vail_device qk4_test_radiostate Qt6::Multimedia ${LIBUSB_LIBRARIES})
+    if(APPLE)
+        set_source_files_properties(${CMAKE_SOURCE_DIR}/src/utils/rtscheduling_mac.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        target_sources(qk4_test_vail_cw PRIVATE ${CMAKE_SOURCE_DIR}/src/utils/rtscheduling_mac.mm)
+        target_link_libraries(qk4_test_vail_cw PUBLIC "-framework Foundation")
+    endif()
+
+    add_executable(test_vailkeyerpage test_vailkeyerpage.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/pages/cwkeyerpage.cpp
+        ${CMAKE_SOURCE_DIR}/src/hardware/halikeyportscan.cpp
+    )
+    target_link_libraries(test_vailkeyerpage qk4_test_vail_cw qk4_test_widgets Qt6::Test)
+    add_test(NAME VailKeyerPageTests COMMAND test_vailkeyerpage)
+    set_tests_properties(VailKeyerPageTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(test_cwmonitorrouting test_cwmonitorrouting.cpp)
+    target_link_libraries(test_cwmonitorrouting qk4_test_vail_cw Qt6::Test)
+    add_test(NAME CwMonitorRoutingTests COMMAND test_cwmonitorrouting
+        -o -,txt -o "${CMAKE_CURRENT_BINARY_DIR}/cwmonitorrouting-test.txt,txt")
+endif()
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
