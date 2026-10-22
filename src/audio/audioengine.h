@@ -12,6 +12,8 @@
 #include <QMutex>
 #include <atomic>
 
+#include "audio/audioresampler.h"
+
 class OpusEncoder;
 
 /**
@@ -143,6 +145,16 @@ signals:
     void txPacketReady(const QByteArray &packet);
     void bufferStatus(int queueBytes, int maxBytes, bool prebuffering);
 
+    // The microphone could not be opened, with the reason as a sentence for the operator. The
+    // operator has to act - a different device, or a different rate.
+    //
+    // WHY A SIGNAL AND NOT JUST THE LOG: every path that sets this emits a qCWarning already, and
+    // has for some time. The field reports still arrived as "PTT does not work", because a local
+    // PTT press keys the K4 by streaming audio - no microphone means no audio means the radio never
+    // keys - and the explanation was only ever in a log nobody reads unless they start QK4 from a
+    // terminal. Emitted on the audio thread; connect queued.
+    void micUnavailable(const QString &reason);
+
 private slots:
     void onMicDataReady();
     void feedAudioDevice();
@@ -170,10 +182,20 @@ private:
     // audio/audiodecimator.h); TCI passes a fixed 4, because TCI audio is always 48 kHz.
     const QByteArray &resampleTo12k(const QByteArray &input, int factor);
 
+    // Resample Float32 microphone samples to 12 kHz when the capture rate is NOT an exact multiple
+    // of it, writing into m_resampleBuf12k and returning a const reference. Stateful across calls:
+    // the filter history and phase have to survive block boundaries or every poll starts a
+    // discontinuity. Audio thread only.
+    const QByteArray &rationalResampleTo12k(const QByteArray &input);
+
     // The microphone's ACTUAL capture rate, taken from the device rather than demanded of it.
     // 0 until a device has been opened. See setupAudioInput().
     int m_micSampleRate = 0;
+    // Non-zero when the rate is an exact multiple of 12 kHz and AudioDecimator handles it. Zero
+    // when m_micResampler is doing the work instead - the two are mutually exclusive, and the
+    // integer path is kept for the rates that already worked so their audio does not change.
     int m_micDecimationFactor = 0;
+    AudioResampler::Resampler m_micResampler;
 
     // Encode + packetize one captured S16LE mono frame and emit txPacketReady.
     // Runs on the audio thread, called from onMicDataReady when PTT is active.

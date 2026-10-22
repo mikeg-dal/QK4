@@ -615,13 +615,16 @@ signals:
     void freezeChanged(bool enabled);            // #FRZ: 0/1
     void vfoACursorChanged(int mode);            // #VFA: 0-3
     void vfoBCursorChanged(int mode);            // #VFB: 0-3
-    void autoRefLevelChanged(bool enabled);      // #AR: A/M (GLOBAL - affects both VFOs)
+    void autoRefLevelChanged(bool enabled);      // #AR: trailing 1/0 (GLOBAL - affects both VFOs)
     void ddcNbModeChanged(int mode);             // #NB$: 0=off, 1=on, 2=auto
     void ddcNbLevelChanged(int level);           // #NBL$: 0-14
     void dataSubModeChanged(int subMode);        // DT: 0=DATA-A, 1=AFSK-A, 2=FSK-D, 3=PSK-D
     void dataSubModeBChanged(int subMode);       // DT$: Sub RX data sub-mode
     void dataRateChanged(int rate);              // DR: 0=slower (RTTY45/PSK31), 1=faster (RTTY75/PSK63)
     void dataRateBChanged(int rate);             // DR$: Sub RX data rate
+
+    // #ARaadd+oom
+    void autoRefSettingsChanged(int averaging, int debounce, int offsetDb, bool enabled);
 
     // Streaming latency
     void streamingLatencyChanged(int tier); // SL: 0-7

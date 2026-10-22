@@ -50,6 +50,7 @@ Last updated: TransmitController added — one owner of transmit (31 controllers
 | "Connection to K4 / status indicator wrong" | ConnectionController + MainWindow::updateConnectionState | `src/controllers/connectioncontroller.cpp` + `src/mainwindow.cpp` |
 | "Top status bar label / KPA1500 badge wrong" | StatusBarController | `src/controllers/statusbarcontroller.cpp` |
 | "Audio (RX/TX, PTT) not working" | AudioController | `src/controllers/audiocontroller.cpp` |
+| "PTT does nothing in voice modes" / microphone banner on screen | AudioController → AudioEngine | `src/audio/audioengine.cpp` `setupAudioInput()` (rate rule: `src/audio/audioresampler.h`, wording: `src/audio/micrate.h`) |
 | "Radio stays keyed after I stop transmitting" | TransmitController | `src/controllers/transmitcontroller.cpp` (decision: `src/models/transmitowner.h`) |
 | "PTT indicator lit but nothing is transmitting (or the reverse)" | TransmitController | same |
 | "WSJT-X keyed while I was already transmitting" | TransmitController | same |

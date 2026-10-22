@@ -111,6 +111,14 @@ signals:
     // control stream.
     void rxAudioAvailable(const QByteArray &pcm12kStereo);
 
+    // Microphone trouble the OPERATOR has to see, relayed from AudioEngine on the audio thread.
+    //
+    // WHY IT HAS TO REACH THE SCREEN: a local PTT press keys the K4 by streaming audio, so a
+    // microphone QK4 cannot use is a PTT button that does nothing whatever. Every cause already
+    // writes a qCWarning and has for some time, and the field reports still arrive as "PTT does not
+    // work" - because nobody runs QK4 from a terminal.
+    void micUnavailable(const QString &reason);
+
 private slots:
     void onStreamingLatencyChanged(int tier);
 

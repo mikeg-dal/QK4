@@ -1,6 +1,8 @@
 #ifndef PANADAPTER_RHI_H
 #define PANADAPTER_RHI_H
 
+#include "dsp/autoreference.h"
+
 #include <QRhiWidget>
 #include <rhi/qrhi.h>
 #include <QColor>
@@ -50,6 +52,7 @@ public:
     // Display settings
     void setGridEnabled(bool enabled);
     void setRefLevel(int level);
+    void setAutoRefSettings(int averaging, int debounce, int offsetDb, bool enabled);
     void setScale(int scale); // 10-150, affects display gain/range
     void setSpan(int spanHz);
     void setWaterfallHeight(int percent); // 0-100: percentage of display for waterfall
@@ -111,6 +114,7 @@ private:
     void updateBandPlanOverlay();
     // Update dB range based on current ref level and scale
     void updateDbRangeFromRefAndScale();
+    void updateAutoRefFromNoiseFloor(float noiseFloor);
     // Initialization
     void initColorLUT();
     void initSpectrumLUT();
@@ -269,6 +273,11 @@ private:
     bool m_gridEnabled = true;
     int m_refLevel = -110;
     int m_scale = 75; // 10-150, default 75 (neutral)
+    bool m_autoRefEnabled = false;
+    AutoReference::State m_autoRef;
+    int m_autoRefAveraging = 1;
+    int m_autoRefDebounce = 4;
+    int m_autoRefOffsetDb = 0;
     int m_spanHz = 10000;
     bool m_notchEnabled = false;
     int m_notchPitchHz = 0;
@@ -306,8 +315,6 @@ private:
 
     // Display averaging (K4 #AVG control, 1-20)
     int m_averagingLevel = 1;
-    float m_attackAlpha = 0.52f;
-    float m_decayAlpha = 0.34f;
 
     WheelAccumulator m_wheelAccumulator;
 

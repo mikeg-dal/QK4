@@ -21,23 +21,30 @@ The radio owns it: `#REF` is the bottom of the window in dBm, `#SCL` its height 
 visible range is `[REF, REF + SCALE]` and a bin's height is `(dBm - REF) / SCALE`. Bin dBm is
 `raw_byte - RhiUtils::K4_DBM_OFFSET`.
 
-Nothing is subtracted from that. The renderer used to remove a smoothed per-frame minimum — an
-automatic noise-floor tracker — which moved the trace by roughly 20% of the chart height depending
-on band conditions, so signal height tracked the noise rather than the signal, and no dBm or S-unit
-label could be correct. Auto-reference is the radio's job: in `AR=Auto` the K4 adjusts REF itself
-and reports it, which arrives as `#REF` like any other change.
+In manual mode, REF supplies the bottom reference. In AutoRef mode, QK4 tracks the PAN packet's
+noise floor using the averaging, debounce and signed offset from `#ARaadd+oom`. AutoRef averaging
+accepts 1–30, as advertised by the radio. Disabling AutoRef restores the manual REF value.
+`autoreference.h` holds the tracking arithmetic, covered by `test_autoreference`.
 
-**Do not reintroduce a display-side baseline.** The trace, the waterfall and the scale labels all
-route through `SpectrumScale::normalizedForDb` specifically so they cannot disagree about where a
-given dBm belongs.
+Display `#AVG` is separate (1–20): `spectrumaveraging.h` applies a symmetric exponential average
+with new-frame weight `1 / AVG` to the main trace, waterfall input and mini-pan. Level 1 follows
+each frame directly. Equal rise/fall weights avoid biasing the noise upward; regression tests live
+in `test_spectrumaveraging`. The K4's exact filter response still needs live verification.
+
+The PAN bin offset is 160 dB. The previous 146 dB offset raised the trace by 14 dB; simultaneous
+K4/QK4 photos supported restoring 160. Absolute accuracy has not been checked with a calibrated
+signal source. The trace, waterfall and scale labels share `SpectrumScale::normalizedForDb`.
 
 S-units follow the amateur convention — S9 = -73 dBm, 6 dB per unit, round decades above S9 — and
 are drawn at their true dBm positions rather than at even divisions of the widget. Labels outside
 the window are omitted, never clamped; clamping is what once printed S1 at two different heights.
 
-With `qk4.pan.diag` enabled a `CALIB` line compares the radio's reported noise floor against our own
-minimum bin. A persistent gap means `K4_DBM_OFFSET` is wrong and every value on the scale is off by
-that amount.
+With `qk4.pan.diag` enabled, `CALIB` compares the packet's reported floor with the decoded bins'
+5th percentile and median. Neither statistic must equal the radio's floor estimate.
+
+Waterfall matching remains incomplete: `#WBS` brightness is not applied and `#WFC` does not change
+the renderer palette. The current LUT is black below 10% of the display range. Those controls
+need separate implementation; this change does not add a waterfall-only calibration offset.
 
 ## Sampling
 

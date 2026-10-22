@@ -1,4 +1,5 @@
 #include "minipan_rhi.h"
+#include "dsp/spectrumaveraging.h"
 #include "panadapter_constants.h"
 #include "dashgeometry.h"
 #include "rhi_utils.h"
@@ -887,13 +888,11 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins) {
         m_spectrum = trimmed;
     }
 
-    // Apply asymmetric EMA smoothing (attack fast, decay slow)
     if (m_smoothedSpectrum.size() != m_spectrum.size()) {
         m_smoothedSpectrum = m_spectrum;
     } else {
         for (int i = 0; i < m_spectrum.size(); ++i) {
-            float alpha = (m_spectrum[i] > m_smoothedSpectrum[i]) ? m_attackAlpha : m_decayAlpha;
-            m_smoothedSpectrum[i] = alpha * m_spectrum[i] + (1.0f - alpha) * m_smoothedSpectrum[i];
+            m_smoothedSpectrum[i] = SpectrumAveraging::update(m_smoothedSpectrum[i], m_spectrum[i], m_averagingLevel);
         }
     }
 
@@ -1012,9 +1011,6 @@ void MiniPanRhiWidget::setAveraging(int level) {
     if (m_averagingLevel == level)
         return;
     m_averagingLevel = level;
-    float t = (level - 1) / 19.0f;
-    m_attackAlpha = 0.52f - t * 0.22f; // 0.52 → 0.30
-    m_decayAlpha = 0.34f - t * 0.24f;  // 0.34 → 0.10
 }
 
 void MiniPanRhiWidget::mousePressEvent(QMouseEvent *event) {

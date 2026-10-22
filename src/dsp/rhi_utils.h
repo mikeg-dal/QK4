@@ -74,9 +74,9 @@ inline QShader loadShader(const QString &path) {
     return QShader();
 }
 
-// K4 spectrum calibration constant (shared between panadapter and minipan)
-// dBm = raw_byte - K4_DBM_OFFSET
-constexpr float K4_DBM_OFFSET = 146.0f;
+// The previous empirical offset of 146 raised PAN bins 14 dB relative to the K4 display.
+// Keep the packet reference separate from the measured noise floor used by AutoRef.
+constexpr float K4_DBM_OFFSET = 160.0f;
 
 // Uniform block for waterfall.vert / waterfall.frag.
 //

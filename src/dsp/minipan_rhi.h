@@ -160,8 +160,6 @@ private:
 
     // Display averaging (K4 #AVG control, 1-20)
     int m_averagingLevel = 1;
-    float m_attackAlpha = 0.52f;
-    float m_decayAlpha = 0.34f;
 
     // Filter passband visualization
     int m_filterBw = 2400;

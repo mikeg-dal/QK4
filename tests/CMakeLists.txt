@@ -122,6 +122,16 @@ target_include_directories(test_spectrumscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_spectrumscale Qt6::Core Qt6::Test)
 add_test(NAME SpectrumScaleTests COMMAND test_spectrumscale)
 
+add_executable(test_spectrumaveraging test_spectrumaveraging.cpp)
+target_include_directories(test_spectrumaveraging PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_spectrumaveraging Qt6::Core Qt6::Test)
+add_test(NAME SpectrumAveragingTests COMMAND test_spectrumaveraging)
+
+add_executable(test_autoreference test_autoreference.cpp)
+target_include_directories(test_autoreference PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_autoreference Qt6::Core Qt6::Test)
+add_test(NAME AutoReferenceTests COMMAND test_autoreference)
+
 # RFC 6455 framing for the TCI server: length forms, masking, fragment reassembly, size limits.
 add_executable(test_websocketframe test_websocketframe.cpp
     ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
@@ -552,6 +562,18 @@ add_executable(test_audiodeviceselection test_audiodeviceselection.cpp)
 target_include_directories(test_audiodeviceselection PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_audiodeviceselection Qt6::Core Qt6::Test)
 add_test(NAME AudioDeviceSelectionTests COMMAND test_audiodeviceselection)
+
+# Rational resampling for capture rates AudioDecimator cannot take — pure DSP, no audio device.
+add_executable(test_audioresampler test_audioresampler.cpp)
+target_include_directories(test_audioresampler PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_audioresampler Qt6::Core Qt6::Test)
+add_test(NAME AudioResamplerTests COMMAND test_audioresampler)
+
+# What the operator is told when a microphone's rate cannot be captured from — pure wording.
+add_executable(test_micrate test_micrate.cpp)
+target_include_directories(test_micrate PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_micrate Qt6::Core Qt6::Test)
+add_test(NAME MicRateTests COMMAND test_micrate)
 
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`

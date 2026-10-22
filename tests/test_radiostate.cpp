@@ -1558,23 +1558,71 @@ private slots:
         QCOMPARE(rs.vfoACursor(), 2);
     }
 
-    // --- #AR (auto ref level — checks last char for 'A' = auto) ---
+    // --- #AR (auto ref level — live K4 format ends in 1/0) ---
     void testAutoRefLevelAuto() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::autoRefLevelChanged);
-        rs.parseCATCommand("#AR-200+050A;"); // ends with 'A' → auto
+        QSignalSpy settingsSpy(&rs, &RadioState::autoRefSettingsChanged);
+        rs.parseCATCommand("#AR1210+001;");
         QCOMPARE(rs.autoRefLevel(), true);
         QCOMPARE(spy.count(), 1);
         QCOMPARE(spy.at(0).at(0).toBool(), true);
+        QCOMPARE(settingsSpy.count(), 1);
+        QCOMPARE(settingsSpy.at(0).at(0).toInt(), 12);
+        QCOMPARE(settingsSpy.at(0).at(1).toInt(), 10);
+        QCOMPARE(settingsSpy.at(0).at(2).toInt(), 0);
+        QCOMPARE(settingsSpy.at(0).at(3).toBool(), true);
     }
 
     void testAutoRefLevelManual() {
         RadioState rs;
-        rs.parseCATCommand("#AR-200+050A;"); // auto
+        rs.parseCATCommand("#AR1210+001;");
         QSignalSpy spy(&rs, &RadioState::autoRefLevelChanged);
-        rs.parseCATCommand("#AR-200+050M;"); // manual
+        rs.parseCATCommand("#AR1210+000;");
         QCOMPARE(rs.autoRefLevel(), false);
         QCOMPARE(spy.count(), 1);
+    }
+
+    void testAutoRefLevelUnknownSuffixIgnored() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::autoRefLevelChanged);
+        rs.parseCATCommand("#AR1210+00X;");
+        QCOMPARE(spy.count(), 0);
+    }
+
+    void testAutoRefNegativeOffsetParses() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::autoRefSettingsChanged);
+        rs.parseCATCommand("#AR2009-081;");
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 20);
+        QCOMPARE(spy.at(0).at(1).toInt(), 9);
+        QCOMPARE(spy.at(0).at(2).toInt(), -8);
+        QCOMPARE(spy.at(0).at(3).toBool(), true);
+    }
+
+    void testAutoRefFullFirmwareAveragingRange() {
+        RadioState rs;
+        QSignalSpy settingsSpy(&rs, &RadioState::autoRefSettingsChanged);
+        for (int averaging : {21, 30}) {
+            rs.parseCATCommand(QString("#AR%1%2+001;").arg(averaging).arg(10));
+            QCOMPARE(rs.autoRefLevel(), true);
+            QVERIFY(!settingsSpy.isEmpty());
+            QCOMPARE(settingsSpy.last().at(0).toInt(), averaging);
+        }
+        QCOMPARE(settingsSpy.count(), 2);
+        rs.parseCATCommand("#AR3010+000;");
+        QCOMPARE(rs.autoRefLevel(), false);
+        QCOMPARE(settingsSpy.last().at(0).toInt(), 30);
+    }
+
+    void testAutoRefOutOfRangeIgnored() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::autoRefSettingsChanged);
+        rs.parseCATCommand("#AR3110+001;"); // averaging above 30
+        rs.parseCATCommand("#AR1200+001;"); // debounce below live firmware range
+        rs.parseCATCommand("#AR1210+091;"); // offset above +8
+        QCOMPARE(spy.count(), 0);
     }
 
     void testAutoRefLevelTooShort() {

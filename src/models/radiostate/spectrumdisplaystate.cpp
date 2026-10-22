@@ -28,6 +28,9 @@ void SpectrumDisplayState::reset() {
     vfoACursor = -1;
     vfoBCursor = -1;
     autoRefLevel = -1;
+    autoRefAveraging = 1;
+    autoRefDebounce = 4;
+    autoRefOffset = 0;
     ddcNbMode = -1;
     ddcNbLevel = -1;
 }
@@ -279,15 +282,34 @@ void handleVFB(SpectrumDisplayState &state, RadioState &owner, const QString &cm
 }
 
 void handleAR(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
-    // #AR*********A (or M) — last char is the mode.
-    if (cmd.length() < 12)
+    // #ARaadd+oom: averaging, debounce, signed offset, and AutoRef mode.
+    if (cmd.length() != 11 || (cmd.at(7) != '+' && cmd.at(7) != '-'))
         return;
-    QChar mode = cmd.at(cmd.length() - 1);
-    int newValue = (mode == 'A') ? 1 : 0;
+    bool avgOk = false;
+    bool debounceOk = false;
+    bool offsetOk = false;
+    const int averaging = cmd.mid(3, 2).toInt(&avgOk);
+    const int debounce = cmd.mid(5, 2).toInt(&debounceOk);
+    int offset = cmd.mid(8, 2).toInt(&offsetOk);
+    if (cmd.at(7) == '-')
+        offset = -offset;
+    const QChar mode = cmd.at(10);
+    if (!avgOk || averaging < 1 || averaging > 30 || !debounceOk || debounce < 1 || debounce > 18 || !offsetOk ||
+        offset < -8 || offset > 8 || (mode != '0' && mode != '1'))
+        return;
+    const int newValue = mode == '1' ? 1 : 0;
+
+    const bool settingsChanged = averaging != state.autoRefAveraging || debounce != state.autoRefDebounce ||
+                                 offset != state.autoRefOffset || newValue != state.autoRefLevel;
+    state.autoRefAveraging = averaging;
+    state.autoRefDebounce = debounce;
+    state.autoRefOffset = offset;
     if (newValue != state.autoRefLevel) {
         state.autoRefLevel = newValue;
         emit owner.autoRefLevelChanged(state.autoRefLevel > 0);
     }
+    if (settingsChanged)
+        emit owner.autoRefSettingsChanged(averaging, debounce, offset, newValue > 0);
 }
 
 void handleNB(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {

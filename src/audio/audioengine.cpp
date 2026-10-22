@@ -1,5 +1,6 @@
 #include "audioengine.h"
 #include "audio/audiodecimator.h"       // capture-rate decimation
+#include "audio/micrate.h"              // what the operator is told when a rate is unusable
 #include "audio/audiodeviceselection.h" // which device a stream belongs on
 #include "audio/audiologging.h"
 #include "audio/opusencoder.h"
@@ -286,6 +287,7 @@ bool AudioEngine::setupAudioInput() {
 
     if (inputDevice.isNull()) {
         qCWarning(qk4Audio) << "AudioEngine: No audio input device available";
+        emit micUnavailable(MicRate::noMicrophone());
         return false;
     }
 
@@ -303,16 +305,27 @@ bool AudioEngine::setupAudioInput() {
     QAudioFormat format = m_inputFormat;
     format.setSampleRate(preferred.sampleRate());
 
+    // A rate that is not an exact multiple of 12 kHz goes through the rational resampler instead of
+    // being refused. It used to be refused outright, which meant no capture, no TX audio, and -
+    // because a local PTT press keys the K4 by streaming audio - no transmission whatever. 44.1 kHz
+    // is the default for most consumer audio, so that was a dead PTT for a great many operators.
+    //
+    // The integer path is kept for the rates that already worked. See audioresampler.h for why
+    // 48 kHz and 24 kHz deliberately do not change.
     if (!AudioDecimator::isSupportedRate(format.sampleRate())) {
-        // Rational resampling (16 kHz -> 12 kHz is 4:3, 44.1 kHz is 147:40) is not implemented yet.
-        // Say so plainly and name the rate: silence with no explanation is what made INT-005 take
-        // months to diagnose, and a device we cannot use should not look like a broken radio.
-        qCWarning(qk4Audio,
-                  "AudioEngine: input device \"%s\" runs at %d Hz, which is not a multiple of %d Hz - "
-                  "QK4 cannot resample it yet, so there would be NO TX AUDIO. Choose a different "
-                  "microphone in Options.",
-                  qUtf8Printable(inputDevice.description()), format.sampleRate(), AudioDecimator::OUTPUT_RATE);
-        return false;
+        if (!m_micResampler.configure(format.sampleRate(), AudioDecimator::OUTPUT_RATE)) {
+            qCWarning(qk4Audio,
+                      "AudioEngine: input device \"%s\" reported %d Hz, which cannot be resampled to "
+                      "%d Hz - NO TX AUDIO from it. Choose a different microphone in Options.",
+                      qUtf8Printable(inputDevice.description()), format.sampleRate(), AudioDecimator::OUTPUT_RATE);
+            // ...and to the operator, not only to the log. This refusal is total - PTT appears dead -
+            // so it is the one audio fault that has to reach the screen.
+            emit micUnavailable(MicRate::problem(format.sampleRate()));
+            return false;
+        }
+        qCInfo(qk4Audio, "AudioEngine: input device \"%s\" runs at %d Hz; resampling %d/%d to %d Hz",
+               qUtf8Printable(inputDevice.description()), format.sampleRate(), m_micResampler.interpolation(),
+               m_micResampler.decimation(), AudioDecimator::OUTPUT_RATE);
     }
 
     if (!inputDevice.isFormatSupported(format)) {
@@ -321,14 +334,23 @@ bool AudioEngine::setupAudioInput() {
                   "It reports %d..%d Hz. Choose a different microphone in Options.",
                   qUtf8Printable(inputDevice.description()), format.sampleRate(), format.channelCount(),
                   inputDevice.minimumSampleRate(), inputDevice.maximumSampleRate());
+        emit micUnavailable(MicRate::micWouldNotOpen(inputDevice.description()));
         return false;
     }
 
     m_micSampleRate = format.sampleRate();
     m_micDecimationFactor = AudioDecimator::factorFor(m_micSampleRate);
-    qCDebug(qk4Audio, "AudioEngine: mic device \"%s\" prefers %d Hz %d ch; capturing at %d Hz mono Float, %d:1 to %d",
+    // The conversion named as whichever one is actually running. This printed "%d:1" with
+    // m_micDecimationFactor unconditionally, which read as "0:1" on the resampler path - the factor
+    // is legitimately zero there, but a log line saying a decimation factor of zero is how someone
+    // loses an afternoon to a conversion that was working.
+    const QString conversion =
+        (m_micDecimationFactor > 0)
+            ? QStringLiteral("%1:1").arg(m_micDecimationFactor)
+            : QStringLiteral("resampled %1/%2").arg(m_micResampler.interpolation()).arg(m_micResampler.decimation());
+    qCDebug(qk4Audio, "AudioEngine: mic device \"%s\" prefers %d Hz %d ch; capturing at %d Hz mono Float, %s to %d",
             qUtf8Printable(inputDevice.description()), preferred.sampleRate(), preferred.channelCount(),
-            m_micSampleRate, m_micDecimationFactor, AudioDecimator::OUTPUT_RATE);
+            m_micSampleRate, qUtf8Printable(conversion), AudioDecimator::OUTPUT_RATE);
 
     m_activeMicDeviceId = inputDevice.id();
     m_audioSource = new QAudioSource(inputDevice, format, this);
@@ -582,6 +604,12 @@ void AudioEngine::openMic() {
     if (!m_audioSourceDevice) {
         qCWarning(qk4Audio, "AudioEngine: failed to start microphone device (QAudioSource error %d) - NO TX AUDIO",
                   static_cast<int>(m_audioSource->error()));
+        QString name;
+        for (const QAudioDevice &device : QMediaDevices::audioInputs()) {
+            if (device.id() == m_activeMicDeviceId)
+                name = device.description();
+        }
+        emit micUnavailable(MicRate::micWouldNotOpen(name));
         return;
     }
 
@@ -617,6 +645,9 @@ void AudioEngine::closeMic() {
 void AudioEngine::flushMicBuffer() {
     m_micBuffer.clear();
     m_micReadOffset = 0;
+    // The resampler's filter history is part of the half-buffered audio being discarded here. Left
+    // in place it would carry the tail of the departing source into the first samples of the next.
+    m_micResampler.reset();
 }
 
 const QByteArray &AudioEngine::resampleTo12k(const QByteArray &input, int factor) {
@@ -628,6 +659,20 @@ const QByteArray &AudioEngine::resampleTo12k(const QByteArray &input, int factor
 
     m_resampleBuf12k.resize(outputCount * static_cast<int>(sizeof(float)));
     AudioDecimator::decimate(inputSamples, inputCount, factor, reinterpret_cast<float *>(m_resampleBuf12k.data()));
+    return m_resampleBuf12k;
+}
+
+const QByteArray &AudioEngine::rationalResampleTo12k(const QByteArray &input) {
+    const float *inputSamples = reinterpret_cast<const float *>(input.constData());
+    const int inputCount = static_cast<int>(input.size() / sizeof(float));
+
+    // maxOutputFor is deliberately generous: the exact count depends on the phase carried in from
+    // the previous block, so the buffer is sized to the bound and then trimmed to what was written.
+    const int capacity = m_micResampler.maxOutputFor(inputCount);
+    m_resampleBuf12k.resize(capacity * static_cast<int>(sizeof(float)));
+    const int produced =
+        m_micResampler.process(inputSamples, inputCount, reinterpret_cast<float *>(m_resampleBuf12k.data()));
+    m_resampleBuf12k.resize(produced * static_cast<int>(sizeof(float)));
     return m_resampleBuf12k;
 }
 
@@ -677,6 +722,20 @@ void AudioEngine::onMicDataReady() {
                 m_firstEmptyPollMs = now;
             } else if (!m_micSilenceReported && now - m_firstEmptyPollMs > MIC_SILENCE_WARN_MS) {
                 m_micSilenceReported = true;
+
+                // ON SCREEN, not only here. A local PTT press keys the K4 by streaming audio, so a
+                // microphone delivering nothing is a PTT button that does nothing at all - and an
+                // operator with no explanation reports a dead radio rather than acting on it.
+                //
+                // QK4 CANNOT RECOVER FROM THE LIKELIEST CAUSE, which is why the message names a
+                // restart. Qt snapshots a device's preferredFormat() when it first enumerates and
+                // never refreshes it for a format-only change; macOS fires no device-list
+                // notification for one, so nothing invalidates the cache. Measured 2026-10-18: a
+                // process running while a device moved from 16 kHz to 8 kHz reported 16 kHz for its
+                // whole life, while a process started afterwards read 8 kHz at once. Re-opening the
+                // device here would re-open it at the stale rate, so there is nothing to attempt.
+                emit micUnavailable(MicRate::micDeliveringNothing());
+
                 const QAudioFormat actual = m_audioSource ? m_audioSource->format() : QAudioFormat();
                 qCWarning(qk4Audio,
                           "AudioEngine: microphone has delivered NO audio for %lld ms while transmitting - "
@@ -706,10 +765,11 @@ void AudioEngine::onMicDataReady() {
         return;
     }
 
-    // Resample from 48kHz to 12kHz (writes into pre-allocated member buffer)
-    // The factor for the rate the microphone actually opened at, NOT assumed - see
-    // audio/audiodecimator.h.
-    const QByteArray &data12k = resampleTo12k(data48k, m_micDecimationFactor);
+    // Down to the K4's 12 kHz, by whichever path this device's rate needs. The factor is the rate
+    // the microphone actually opened at, NOT assumed - see audio/audiodecimator.h - and is zero
+    // exactly when the resampler is carrying the stream instead.
+    const QByteArray &data12k =
+        (m_micDecimationFactor > 0) ? resampleTo12k(data48k, m_micDecimationFactor) : rationalResampleTo12k(data48k);
     bufferAndEmitTxFrames(data12k, m_micGain.load(std::memory_order_relaxed));
 }
 
@@ -872,9 +932,11 @@ void AudioEngine::setPttActive(bool active) {
         m_txPeakSinceKey = 0; // qk4.audio.tx running peak is per transmission
         openMic();            // Idempotent — see openMic() WHY comment
         // Flush partial-frame tail from previous transmission so it can't leak
-        // into this one's first frame.
+        // into this one's first frame. The resampler's filter history is the same hazard one stage
+        // earlier, so it is cleared with it.
         m_micBuffer.clear();
         m_micReadOffset = 0;
+        m_micResampler.reset();
     }
     // PTT release: leave mic open. Next frames will be dropped by the
     // pttActive check at the top of onMicDataReady.
