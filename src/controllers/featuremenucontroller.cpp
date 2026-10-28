@@ -227,6 +227,14 @@ FeatureMenuController::FeatureMenuController(RadioState *radioState, ConnectionC
         m_connection->sendCAT(prefix + "/;");
     });
 
+    connect(m_bar, &FeatureMenuBar::nrResetRequested, this, [this]() {
+        // NRS~ restarts the SSNR noise estimator (undocumented in the K4 CAT reference; announced by
+        // Elecraft). Best results come from resetting while tuned to a frequency with only noise.
+        if (m_bar->currentNrEngine() != FeatureMenuBar::Ssnr)
+            return;
+        m_connection->sendCAT(m_radioState->bSetEnabled() ? "NRS$~;" : "NRS~;");
+    });
+
     // === RadioState echoes → refresh the bar while it's visible ===
     connect(m_radioState, &RadioState::processingChanged, this, &FeatureMenuController::refreshCurrentFeature);
     connect(m_radioState, &RadioState::processingChangedB, this, &FeatureMenuController::refreshCurrentFeature);
