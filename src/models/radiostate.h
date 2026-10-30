@@ -566,7 +566,7 @@ public:
 
     // XVTR per-band config — backed by m_xvtrBandState.
     const QVector<XvtrBandConfig> &xvtrBands() const { return m_xvtrBandState.bands; }
-    int xvtrBandSelect() const { return m_xvtrBandState.currentSelect; }
+    int xvtrBandSelect() const { return reportedOr(m_xvtrBandState.currentSelect, XvtrBandConfig::Unknown, 1); }
 
     // Optimistic setters for Text Decode
     void setTextDecodeMode(int mode);

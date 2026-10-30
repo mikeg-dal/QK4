@@ -183,7 +183,8 @@ QPushButton *BandPopupWidget::createXvtrCell(int bandIndex) {
     if (m_radioState && bandIndex >= 1 && bandIndex <= m_radioState->xvtrBands().size()) {
         const XvtrBandConfig &cfg = m_radioState->xvtrBands().at(bandIndex - 1);
         if (cfg.configured()) {
-            freqLine = QString::number(cfg.rfMhz);
+            if (cfg.rfMhz != XvtrBandConfig::Unknown)
+                freqLine = QString::number(cfg.rfMhz);
             enabled = true;
         }
     }
@@ -211,7 +212,8 @@ void BandPopupWidget::refreshXvtrCellLabels() {
         if (m_radioState && n - 1 < m_radioState->xvtrBands().size()) {
             const XvtrBandConfig &cfg = m_radioState->xvtrBands().at(n - 1);
             if (cfg.configured()) {
-                freqLine = QString::number(cfg.rfMhz);
+                if (cfg.rfMhz != XvtrBandConfig::Unknown)
+                    freqLine = QString::number(cfg.rfMhz);
                 enabled = true;
             }
         }
