@@ -32,7 +32,7 @@ enum class AntennaCfgVariant { MainRx, SubRx, Tx };
  * connect(popup, &AntennaCfgPopupWidget::configChanged, this, [](bool displayAll, QVector<bool> mask) {
  *     // Build and send ACM command
  * });
- * popup->showAboveButton(triggerButton);
+ * popup->showAboveWidget(openButtonRow);
  * @endcode
  */
 class AntennaCfgPopupWidget : public K4PopupBase {

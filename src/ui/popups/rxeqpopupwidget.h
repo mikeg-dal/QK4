@@ -77,7 +77,7 @@ private:
  * connect(popup, &RxEqPopupWidget::flatRequested, this, []() {
  *     // Reset all bands to 0
  * });
- * popup->showAboveButton(triggerButton);
+ * popup->showAboveWidget(openButtonRow);
  * @endcode
  */
 class RxEqPopupWidget : public K4PopupBase {

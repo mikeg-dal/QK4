@@ -202,7 +202,7 @@ void PopupManager::toggleBand() {
     const bool wasVisible = m_bandPopup->isVisibleOrJustHidden();
     closeOwnedPopups();
     if (!wasVisible) {
-        m_bandPopup->showAboveButton(m_bottomMenuBar->bandButton());
+        m_bandPopup->showAboveWidget(m_bottomMenuBar);
         m_bottomMenuBar->setBandActive(true);
     }
 }
@@ -213,7 +213,7 @@ void PopupManager::toggleDisplay() {
     const bool wasVisible = m_displayPopup->isVisibleOrJustHidden();
     closeOwnedPopups();
     if (!wasVisible) {
-        m_displayPopup->showAboveButton(m_bottomMenuBar->displayButton());
+        m_displayPopup->showAboveWidget(m_bottomMenuBar);
         m_bottomMenuBar->setDisplayActive(true);
     }
 }
@@ -224,7 +224,7 @@ void PopupManager::toggleFn() {
     const bool wasVisible = m_fnPopup->isVisibleOrJustHidden();
     closeOwnedPopups();
     if (!wasVisible) {
-        m_fnPopup->showAboveButton(m_bottomMenuBar->fnButton());
+        m_fnPopup->showAboveWidget(m_bottomMenuBar);
         m_bottomMenuBar->setFnActive(true);
     }
 }
@@ -248,7 +248,7 @@ void PopupManager::openSoftwareList() {
     if (!m_bottomMenuBar)
         return;
     m_softwareListPopup->setVersions(m_radioState->firmwareVersions());
-    m_softwareListPopup->showAboveButton(m_bottomMenuBar->fnButton());
+    m_softwareListPopup->showAboveWidget(m_bottomMenuBar);
 }
 
 void PopupManager::closeOwnedPopups() {
@@ -310,7 +310,7 @@ void PopupManager::toggleMainRx() {
     const bool wasVisible = m_mainRxRow->isVisibleOrJustHidden();
     closeOwnedPopups();
     if (!wasVisible) {
-        m_mainRxRow->showAboveButton(m_bottomMenuBar->mainRxButton());
+        m_mainRxRow->showAboveWidget(m_bottomMenuBar);
         m_bottomMenuBar->setMainRxActive(true);
     }
 }
@@ -321,7 +321,7 @@ void PopupManager::toggleSubRx() {
     const bool wasVisible = m_subRxRow->isVisibleOrJustHidden();
     closeOwnedPopups();
     if (!wasVisible) {
-        m_subRxRow->showAboveButton(m_bottomMenuBar->subRxButton());
+        m_subRxRow->showAboveWidget(m_bottomMenuBar);
         m_bottomMenuBar->setSubRxActive(true);
     }
 }
@@ -332,7 +332,7 @@ void PopupManager::toggleTx() {
     const bool wasVisible = m_txRow->isVisibleOrJustHidden();
     closeOwnedPopups();
     if (!wasVisible) {
-        m_txRow->showAboveButton(m_bottomMenuBar->txButton());
+        m_txRow->showAboveWidget(m_bottomMenuBar);
         m_bottomMenuBar->setTxActive(true);
     }
 }
@@ -577,7 +577,7 @@ void PopupManager::wireEqPopups() {
 
         // Re-show the EQ popup after dialog closes
         if (m_bottomMenuBar) {
-            m_rxEqPopup->showAboveButton(m_bottomMenuBar->mainRxButton());
+            m_rxEqPopup->showAboveWidget(m_bottomMenuBar);
         }
 
         if (ok) {
@@ -650,7 +650,7 @@ void PopupManager::wireEqPopups() {
 
         // Re-show the EQ popup after dialog closes
         if (m_bottomMenuBar) {
-            m_txEqPopup->showAboveButton(m_bottomMenuBar->txButton());
+            m_txEqPopup->showAboveWidget(m_bottomMenuBar);
         }
 
         if (ok) {
@@ -917,7 +917,18 @@ void PopupManager::wireKeyingWeightPopup() {
     });
 }
 
+bool PopupManager::closedByItsKey(K4PopupBase *popup) {
+    // WHY isVisibleOrJustHidden: the press on the row key reaches the popup's click-away filter
+    // first and closes it, then the key fires. Reading isVisible() would reopen it every time.
+    if (!popup->isVisibleOrJustHidden())
+        return false;
+    popup->hidePopup();
+    return true;
+}
+
 void PopupManager::showRxEqAbove(ButtonRowLane lane) {
+    if (closedByItsKey(m_rxEqPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     m_rxEqPopup->setAllBands(m_radioState->rxEqBands());
     if (anchor)
@@ -925,6 +936,8 @@ void PopupManager::showRxEqAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showTxEqAbove(ButtonRowLane lane) {
+    if (closedByItsKey(m_txEqPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     m_txEqPopup->setAllBands(m_radioState->txEqBands());
     if (anchor)
@@ -932,6 +945,8 @@ void PopupManager::showTxEqAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showLineOutAbove(ButtonRowLane lane) {
+    if (closedByItsKey(m_lineOutPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     m_lineOutPopup->setLeftLevel(m_radioState->lineOutLeft());
     m_lineOutPopup->setRightLevel(m_radioState->lineOutRight());
@@ -941,6 +956,8 @@ void PopupManager::showLineOutAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showLineInAbove(ButtonRowLane lane) {
+    if (closedByItsKey(m_lineInPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     m_lineInPopup->setSoundCardLevel(m_radioState->lineInSoundCard());
     m_lineInPopup->setLineInJackLevel(m_radioState->lineInJack());
@@ -950,6 +967,8 @@ void PopupManager::showLineInAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showMicInputAbove(ButtonRowLane lane) {
+    if (closedByItsKey(m_micInputPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     m_micInputPopup->setCurrentInput(m_radioState->micInput());
     if (anchor)
@@ -957,6 +976,8 @@ void PopupManager::showMicInputAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showMicConfigAbove(ButtonRowLane lane) {
+    if (closedByItsKey(m_micConfigPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     const int input = m_radioState->micInput();
     if (input == 2) // LINE IN only — no mic config
@@ -976,6 +997,8 @@ void PopupManager::showMicConfigAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showVoxGainAbove(ButtonRowLane lane) {
+    if (m_voxPopup->popupMode() == VoxPopupWidget::VoxGain && closedByItsKey(m_voxPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     const bool isDataMode = (m_radioState->mode() == RadioState::DATA || m_radioState->mode() == RadioState::DATA_R);
     m_voxPopup->setPopupMode(VoxPopupWidget::VoxGain);
@@ -987,6 +1010,8 @@ void PopupManager::showVoxGainAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showAntiVoxAbove(ButtonRowLane lane) {
+    if (m_voxPopup->popupMode() == VoxPopupWidget::AntiVox && closedByItsKey(m_voxPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     m_voxPopup->setPopupMode(VoxPopupWidget::AntiVox);
     m_voxPopup->setValue(m_radioState->antiVox());
@@ -996,6 +1021,8 @@ void PopupManager::showAntiVoxAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showSsbBwAbove(ButtonRowLane lane) {
+    if (closedByItsKey(m_ssbBwPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     m_ssbBwPopup->setEssbEnabled(m_radioState->essbEnabled());
     const int bw = m_radioState->ssbTxBw();
@@ -1006,6 +1033,8 @@ void PopupManager::showSsbBwAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showKeyingWeightAbove(ButtonRowLane lane) {
+    if (closedByItsKey(m_keyingWeightPopup))
+        return;
     QWidget *anchor = anchorForLane(lane);
     const int weight = m_radioState->keyingWeight();
     if (weight >= 90 && weight <= 125)

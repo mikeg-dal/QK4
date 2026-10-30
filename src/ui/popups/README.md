@@ -1,10 +1,10 @@
 # ui/popups/
 
-Popup widgets and their base class. Every popup here inherits from `K4PopupBase`, which lives in this directory.
+Popup widgets and their base class. Every popup here inherits from `K4PopupBase`, which lives in this directory. Two popups outside it inherit it too: `ui/widgets/featuremenubar` (ATTN / NB / NR / NOTCH) and `ui/widgets/nethealthpopup` (network metrics).
 
 ## Files
 
-- `k4popupbase` — base class for every popup. Handles window flags, translucent background, placement above the trigger button, drop shadow and background painting, Escape and the `closed()` signal.
+- `k4popupbase` — base class for every popup. Handles window flags, translucent background, placement (card centred directly above its anchor, clamped only at a screen edge), drop shadow and background painting, the `closed()` signal, and closing on click-away, Escape, its anchor going, the window moving or changing state and the app going inactive.
 
 The popups, grouped by trigger. `rg -l ': public K4PopupBase' src/ui/popups` lists them.
 

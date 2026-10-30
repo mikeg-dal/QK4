@@ -22,6 +22,7 @@ class VoxPopupWidget;
 class SsbBwPopupWidget;
 class KeyingWeightPopupWidget;
 class SoftwareListPopupWidget;
+class K4PopupBase;
 class QTimer;
 class QWidget;
 
@@ -111,7 +112,8 @@ public:
     // Secondary popups (RX/TX EQ, line in/out, mic input/config, VOX
     // gain & anti-VOX, SSB TX bandwidth, CW keying weight). Callers pass
     // the ButtonRowLane they're currently in; PopupManager resolves the
-    // anchor internally.
+    // anchor internally. Each opens centred directly above its row and
+    // closes when the row does; pressing the same key again closes it.
     void showRxEqAbove(ButtonRowLane lane);
     void showTxEqAbove(ButtonRowLane lane);
     void showLineOutAbove(ButtonRowLane lane);
@@ -170,6 +172,9 @@ private:
     SsbBwPopupWidget *m_ssbBwPopup;
     KeyingWeightPopupWidget *m_keyingWeightPopup;
     SoftwareListPopupWidget *m_softwareListPopup;
+
+    // True (and the popup closed) when the popup was open: its own key was pressed again.
+    static bool closedByItsKey(K4PopupBase *popup);
 
     void wireDisplayPopup();
     void wireEqPopups();

@@ -24,17 +24,20 @@ public:
     explicit AntennaConfigController(RadioState *radioState, ConnectionController *connection, QWidget *parentWidget,
                                      QObject *parent = nullptr);
 
-    // Task-level show API. The TRIGGER widget (a button-row popup) is the
-    // anchor for showAboveWidget(); the caller passes it in because the
-    // trigger lives outside this controller's ownership.
+    // Task-level toggle API: opens centred directly above the anchor (the
+    // open button-row popup), or closes when the ANT CFG key is pressed
+    // again. The caller passes the anchor in because it lives outside
+    // this controller's ownership; the popup closes when the anchor hides.
     void showMainRxPopupAbove(QWidget *trigger);
     void showSubRxPopupAbove(QWidget *trigger);
     void showTxPopupAbove(QWidget *trigger);
 
-    // Hide all three popups (used by MainWindow's closeAllPopups).
+    // Hide all three popups (MainWindow's closeAllPopups and the disconnect reset).
     void closeAll();
 
 private:
+    static void toggleAbove(AntennaCfgPopupWidget *popup, QWidget *anchor);
+
     RadioState *m_radioState;           // injected, not owned
     ConnectionController *m_connection; // injected, not owned
 

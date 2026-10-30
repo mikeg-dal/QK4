@@ -67,18 +67,24 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
 }
 
 void AntennaConfigController::showMainRxPopupAbove(QWidget *trigger) {
-    if (trigger)
-        m_mainRxPopup->showAboveWidget(trigger);
+    toggleAbove(m_mainRxPopup, trigger);
 }
 
 void AntennaConfigController::showSubRxPopupAbove(QWidget *trigger) {
-    if (trigger)
-        m_subRxPopup->showAboveWidget(trigger);
+    toggleAbove(m_subRxPopup, trigger);
 }
 
 void AntennaConfigController::showTxPopupAbove(QWidget *trigger) {
-    if (trigger)
-        m_txPopup->showAboveWidget(trigger);
+    toggleAbove(m_txPopup, trigger);
+}
+
+void AntennaConfigController::toggleAbove(AntennaCfgPopupWidget *popup, QWidget *anchor) {
+    // The ANT CFG key's press reaches the popup's click-away filter first and closes it; reading
+    // isVisible() would reopen it, so a second press on the key would never close it.
+    if (popup->isVisibleOrJustHidden())
+        popup->hidePopup();
+    else if (anchor)
+        popup->showAboveWidget(anchor);
 }
 
 void AntennaConfigController::closeAll() {

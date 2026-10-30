@@ -295,8 +295,12 @@ rg -o 'class\s+(\w+)\s*:\s*public\s+K4PopupBase' -r '$1' src
 - Window flags `Qt::Tool | Qt::FramelessWindowHint`, translucent background, strong focus.
 - Draws the drop shadow (`K4Styles::drawDropShadow`, `ShadowLayers` layers) and the
   `PopupBackground` fill.
-- Positions itself above a trigger and keeps itself on screen.
-- Closes on Escape and on a mouse press outside its window (app-wide event filter on `qApp`).
+- Shows its card centred directly above an anchor widget, one `ShadowMargin` above it, in one
+  `move()` + `show()`. The screen's available geometry is the only thing that moves it: sideways at
+  a screen edge, below the anchor when there is no room above (`placeCard()`).
+- Closes on a mouse press outside it, Escape anywhere in the app, its anchor hiding or being
+  destroyed, the anchor's window moving, resizing or changing state, and the application going
+  inactive (an app-wide event filter on `qApp` while shown).
 - Emits `closed()` when hidden.
 
 ### API
@@ -304,8 +308,9 @@ rg -o 'class\s+(\w+)\s*:\s*public\s+K4PopupBase' -r '$1' src
 | Member | Purpose |
 |---|---|
 | `K4PopupBase(QWidget *parent)` | Sets flags, translucency, focus policy |
-| `showAboveButton(QWidget *trigger)` | Show centred above the trigger's parent |
-| `showAboveWidget(QWidget *ref)` | Show above a reference widget |
+| `showAboveWidget(QWidget *anchor)` | Show centred directly above `anchor`; closes when it goes. Pass the widget the popup belongs over: `m_bottomMenuBar` for the bar's family, the open row popup for a row's sub-popup (its card, not its shadow, is used), the key for a lone key |
+| `placeCard(anchor, card, available)` *(static)* | The placement rule as pure geometry, for tests |
+| `cardGlobalRect()` | The visible card in global coordinates |
 | `hidePopup()` | Hide and emit `closed()` |
 | `isVisibleOrJustHidden()` | True while visible or just closed by the click-away filter. Toggle handlers read this, not `isVisible()`, so the dismissing click does not reopen the popup |
 | signal `closed()` | Hidden by `hidePopup()`, Escape or click-away |
@@ -422,7 +427,7 @@ MyPopupController::MyPopupController(RadioState *state, ConnectionController *co
         if (m_popup->isVisibleOrJustHidden())
             m_popup->hidePopup();
         else
-            m_popup->showAboveButton(m_trigger);
+            m_popup->showAboveWidget(m_trigger);
     });
 }
 ```
@@ -452,11 +457,15 @@ rules): make the button checkable, give it a sheet with a `QPushButton:checked` 
 
 ### Checklist
 
-1. Inherit `K4PopupBase`.
-2. Implement `contentSize()`; the base adds shadow margins.
+1. Inherit `K4PopupBase`. Never a `Qt::Popup` of your own: Qt closes it on the outside press and,
+   where the platform replays that press (Windows, X11), hands it to the trigger, which reopens it.
+2. Implement `contentSize()`; the base adds shadow margins. If it changes (a key appears), call
+   `initPopup()` again before the show.
 3. Lay out with `contentMargins()`.
 4. Call `initPopup()` last.
 5. Use `K4Styles` tokens and helpers; never draw a shadow yourself.
+6. Open and close from a toggle that reads `isVisibleOrJustHidden()`, and close the popup in the
+   disconnect reset (`MainWindow::resetUiForDisconnect`).
 
 ---
 

@@ -1,12 +1,15 @@
 #include "ui/popups/k4popupbase.h"
 #include "ui/styling/k4styles.h"
 #include <QApplication>
+#include <QGuiApplication>
 #include <QEvent>
 #include <QHideEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScreen>
+
+#include <algorithm>
 
 namespace {
 // Grace period after a hide during which isVisibleOrJustHidden() stays true,
@@ -19,6 +22,14 @@ K4PopupBase::K4PopupBase(QWidget *parent) : QWidget(parent) {
     setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground);
     setFocusPolicy(Qt::StrongFocus);
+
+    // WHY: on macOS a Qt::Tool window "will disappear when the application is inactive" and comes
+    // back with it (Qt::WindowType). Close it instead, so switching back to QK4 does not bring back
+    // a popup nobody asked for. Other platforms leave it on screen over the other application.
+    connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+        if (state != Qt::ApplicationActive && isVisible())
+            hidePopup();
+    });
 }
 
 QMargins K4PopupBase::contentMargins() const {
@@ -44,65 +55,59 @@ QRect K4PopupBase::contentRect() const {
     return QRect(K4Styles::Dimensions::ShadowMargin, K4Styles::Dimensions::ShadowMargin, cs.width(), cs.height());
 }
 
-void K4PopupBase::showAboveButton(QWidget *triggerButton) {
-    showAboveWidget(triggerButton);
+QRect K4PopupBase::anchorGlobalRect(const QWidget *anchor) {
+    // WHY: a popup's window is mostly transparent shadow. Placing against it would leave a
+    // sub-popup a whole shadow margin higher than one placed against a key.
+    const auto *popupAnchor = qobject_cast<const K4PopupBase *>(anchor);
+    const QRect local = popupAnchor ? popupAnchor->contentRect() : anchor->rect();
+    return QRect(anchor->mapToGlobal(local.topLeft()), local.size());
 }
 
-void K4PopupBase::showAboveWidget(QWidget *referenceWidget) {
-    if (!referenceWidget)
+QRect K4PopupBase::cardGlobalRect() const {
+    return anchorGlobalRect(this);
+}
+
+QPoint K4PopupBase::placeCard(const QRect &anchor, const QSize &card, const QRect &available) {
+    const int gap = K4Styles::Dimensions::ShadowMargin; // only the shadow lies between card and anchor
+
+    int x = anchor.x() + (anchor.width() - card.width()) / 2;
+    int y = anchor.y() - gap - card.height();
+
+    // Screen edges only. Sideways first; a card wider than the screen keeps its left edge on it.
+    const int maxX = available.x() + available.width() - card.width();
+    x = std::max(available.x(), std::min(x, maxX));
+    // No room above: the same gap below the anchor, then held on screen.
+    if (y < available.y())
+        y = anchor.y() + anchor.height() + gap;
+    const int maxY = available.y() + available.height() - card.height();
+    y = std::max(available.y(), std::min(y, maxY));
+    return {x, y};
+}
+
+void K4PopupBase::showAboveWidget(QWidget *anchor) {
+    if (!anchor)
         return;
 
-    // Ensure our geometry is set before positioning
-    adjustSize();
+    m_anchor = anchor;
+    m_anchorWindow = anchor->window();
 
-    // Get the reference widget's parent (typically button bar) for centering
-    QWidget *parentBar = referenceWidget->parentWidget();
-    if (!parentBar)
-        parentBar = referenceWidget;
+    const QRect anchorRect = anchorGlobalRect(anchor);
+    const QScreen *screen = QGuiApplication::screenAt(anchorRect.center());
+    if (!screen)
+        screen = anchor->screen();
 
-    // Get global positions
-    QPoint barGlobal = parentBar->mapToGlobal(QPoint(0, 0));
-    QPoint refGlobal = referenceWidget->mapToGlobal(QPoint(0, 0));
+    // initPopup() fixed the size from contentSize(), so it is final here: one move, then one show,
+    // and no first frame at a default position.
+    const int sm = K4Styles::Dimensions::ShadowMargin;
+    const QPoint card = placeCard(anchorRect, contentSize(), screen->availableGeometry());
+    move(card.x() - sm, card.y() - sm);
 
-    int barCenterX = barGlobal.x() + parentBar->width() / 2;
-
-    // Content dimensions (use calculated size, not widget height() which may not be realized)
-    QSize cs = contentSize();
-    int sm = K4Styles::Dimensions::ShadowMargin;
-    int totalHeight = cs.height() + 2 * sm;
-
-    // Center content area above the parent bar (account for shadow margin offset)
-    int popupX = barCenterX - cs.width() / 2 - sm;
-
-    // Position popup so its bottom edge (including shadow margin) is at the top of the reference widget
-    int popupY = refGlobal.y() - totalHeight;
-
-    // Ensure popup stays on screen
-    QRect screenGeom = referenceWidget->screen()->availableGeometry();
-
-    // Check left edge
-    if (popupX < screenGeom.left() - K4Styles::Dimensions::ShadowMargin) {
-        popupX = screenGeom.left() - K4Styles::Dimensions::ShadowMargin;
-    }
-    // Check right edge
-    else if (popupX + width() > screenGeom.right() + K4Styles::Dimensions::ShadowMargin) {
-        popupX = screenGeom.right() + K4Styles::Dimensions::ShadowMargin - width();
-    }
-
-    // Check top edge (if popup would go off top of screen)
-    if (popupY < screenGeom.top() - K4Styles::Dimensions::ShadowMargin) {
-        popupY = screenGeom.top() - K4Styles::Dimensions::ShadowMargin;
-    }
-
-    // Position the popup - move after show to override Qt's popup positioning
-    move(popupX, popupY);
+    // Watch application-wide events while shown (see eventFilter). Removed again in hideEvent().
+    qApp->removeEventFilter(this); // a re-show must not install it twice
+    qApp->installEventFilter(this);
     show();
-    move(popupX, popupY); // Move again after show in case Qt repositioned it
     raise();
     setFocus();
-    // Watch application-wide mouse presses so a click outside the popup
-    // dismisses it (click-away). Removed again in hideEvent().
-    qApp->installEventFilter(this);
 }
 
 void K4PopupBase::hidePopup() {
@@ -116,26 +121,59 @@ bool K4PopupBase::isVisibleOrJustHidden() const {
 
 void K4PopupBase::hideEvent(QHideEvent *event) {
     QWidget::hideEvent(event);
+    if (event->spontaneous()) {
+        // The window system unmapped us (the main window was minimised): "after receiving a
+        // spontaneous hide event, a widget is still considered visible" (QWidget::hideEvent), so
+        // it would map again on restore. Close for real once this event has been handled.
+        QMetaObject::invokeMethod(this, &K4PopupBase::hidePopup, Qt::QueuedConnection);
+        return;
+    }
     qApp->removeEventFilter(this);
     m_hiddenTimer.restart();
     emit closed();
 }
 
 bool K4PopupBase::eventFilter(QObject *watched, QEvent *event) {
-    // Click-away dismissal: a mouse press anywhere outside this popup's
-    // window closes it. The press is not consumed — it still reaches its
-    // target, so clicking another control works in the same gesture. The
-    // toggle handlers' isVisibleOrJustHidden() guard absorbs the case where
-    // that target is the popup's own trigger button.
+    // Nothing here consumes the event: a press outside still reaches its target, so clicking
+    // another control works in the same gesture. The toggle handlers' isVisibleOrJustHidden()
+    // guard absorbs the case where that target is the popup's own trigger.
     //
-    // WHY an app-wide filter, not WindowDeactivate: these popups are Qt::Tool
-    // windows parented to the main window, so Qt keeps them "active" whenever
-    // the main window is active — WindowDeactivate never fires for an in-app
-    // click. A position test against a global mouse press is the reliable way.
-    if (event->type() == QEvent::MouseButtonPress && isVisible()) {
+    // WHY an app-wide filter, not WindowDeactivate: these popups are Qt::Tool windows parented to
+    // the main window, so Qt keeps them "active" whenever the main window is active —
+    // WindowDeactivate never fires for an in-app click. A position test against a global mouse
+    // press is the reliable way. The same filter sees the anchor's and its window's events, so
+    // nothing has to remember to close a popup when what it hangs from goes away.
+    if (!isVisible())
+        return QWidget::eventFilter(watched, event);
+
+    switch (event->type()) {
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonDblClick: {
         const QPoint globalPos = static_cast<QMouseEvent *>(event)->globalPosition().toPoint();
         if (!frameGeometry().contains(globalPos))
             hidePopup();
+        break;
+    }
+    case QEvent::KeyPress:
+        // Escape anywhere in the app, not only with the popup focused: a Qt::Tool window does not
+        // always hold the keyboard. Not consumed, so Escape still reaches the main window too.
+        if (static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape)
+            hidePopup();
+        break;
+    case QEvent::Hide:
+        if (watched == m_anchor || watched == m_anchorWindow)
+            hidePopup();
+        break;
+    case QEvent::Move:
+    case QEvent::Resize:
+    case QEvent::WindowStateChange:
+        // A top-level Qt::Tool window does not follow its parent: left open it would float where
+        // the anchor used to be. Minimise, maximise and fullscreen arrive as WindowStateChange.
+        if (watched == m_anchorWindow)
+            hidePopup();
+        break;
+    default:
+        break;
     }
     return QWidget::eventFilter(watched, event);
 }
@@ -169,9 +207,9 @@ void K4PopupBase::paintEvent(QPaintEvent *event) {
 }
 
 void K4PopupBase::paintCompactRowFrame(QPainter &painter, const QRect &contentRect,
-                                       std::initializer_list<const QWidget *> delimitedWidgets) const {
-    constexpr int DelimiterInset = 7;  // Gap between a delimiter's ends and the frame's top/bottom
-    constexpr int DelimiterOffset = 3; // Half the row's 6 px spacing, past the widget's inclusive right()
+                                       std::initializer_list<const QWidget *> delimitedWidgets, int rowSpacing) const {
+    constexpr int DelimiterInset = 7;           // Gap between a delimiter's ends and the frame's top/bottom
+    const int delimiterOffset = rowSpacing / 2; // Mid-gap, past the widget's inclusive right()
 
     painter.setBrush(K4Styles::buttonGradient(contentRect.top(), contentRect.bottom()));
     painter.setPen(QPen(K4Styles::borderColor(), 1));
@@ -182,7 +220,7 @@ void K4PopupBase::paintCompactRowFrame(QPainter &painter, const QRect &contentRe
     const int lineBottom = contentRect.bottom() - DelimiterInset;
     for (const QWidget *widget : delimitedWidgets) {
         if (widget && widget->isVisible()) {
-            const int x = widget->geometry().right() + DelimiterOffset;
+            const int x = widget->geometry().right() + delimiterOffset;
             painter.drawLine(x, lineTop, x, lineBottom);
         }
     }
