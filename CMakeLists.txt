@@ -382,6 +382,7 @@ set(HEADERS
     src/models/radiostate/modefilterstate.h
     src/models/radiostate/processingstate.h
     src/models/radiostate/qskcontrolstate.h
+    src/models/radiostate/reportedflag.h
     src/models/radiostate/textdecodestate.h
     src/models/radiostate/xvtrbandstate.h
     src/models/menumodel.h

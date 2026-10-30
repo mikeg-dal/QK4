@@ -19,6 +19,7 @@ The subsystem structs composing `RadioState` (`ls src/models/radiostate/*.h` lis
 | `qskcontrolstate.{h,cpp}` | QSK enable + per-mode TX→RX delay | SD |
 | `powerstate.{h,cpp}` | K4 remote power on/off — `PS1` = on, `PS0` = off | PS |
 | `xvtrbandstate.{h,cpp}` | Per-XVTR-band transverter configuration (12 bands) | XVN, XVM, XVR, XVI, XVO |
+| `reportedflag.h` | `ReportedFlag`: an on/off field that is unknown until the radio reports it, so its first report (even "off") always emits | — |
 
 ## File layout per subsystem
 
