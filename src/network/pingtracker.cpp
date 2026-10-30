@@ -21,7 +21,11 @@ qint64 PingTracker::answer(QStringView pong, qint64 nowMs) {
         return -1;
     const QStringView keyText = pong.sliced(4).trimmed();
     std::size_t match = 0; // a bare PONG answers the oldest ping
-    if (!keyText.isEmpty()) {
+    if (keyText.isEmpty()) {
+        // Resync after a lost reply; see kFastRttMs.
+        while (m_count >= 2 && m_lastRttMs >= 0 && m_lastRttMs < kFastRttMs)
+            dropOldest(1);
+    } else {
         bool ok = false;
         const qint64 key = keyText.toLongLong(&ok);
         if (!ok)
@@ -35,6 +39,7 @@ qint64 PingTracker::answer(QStringView pong, qint64 nowMs) {
     }
     const qint64 rtt = nowMs - m_sent[match].atMs;
     dropOldest(match + 1);
+    m_lastRttMs = rtt;
     return rtt;
 }
 

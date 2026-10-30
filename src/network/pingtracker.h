@@ -20,7 +20,10 @@ public:
     // two outstanding means the link is already gone; the bound only stops unbounded growth.
     static constexpr std::size_t kMaxOutstanding = 16;
 
-    void reset() { m_count = 0; }
+    void reset() {
+        m_count = 0;
+        m_lastRttMs = -1;
+    }
 
     // A PING<key>; was written at nowMs.
     void pingSent(qint64 key, qint64 nowMs);
@@ -43,6 +46,16 @@ private:
 
     std::array<Sent, kMaxOutstanding> m_sent{}; // oldest first
     std::size_t m_count = 0;
+
+    // The K4's PONG is bare ("PONG;", bench 2026-10-30), so replies pair with pings only by order and
+    // one lost reply would leave every later round trip measured from the ping before its own: a
+    // permanent ~1000 ms reading on a 1 ms link (seen after a long transmit). With a newer ping out,
+    // the oldest is a full ping interval old; on a link whose last round trip was under
+    // kFastRttMs that ping's reply is not coming, so it is dropped as lost before pairing. A link
+    // that slows gradually raises m_lastRttMs past the bound first, so real round trips longer than
+    // the interval are still reported in full.
+    static constexpr qint64 kFastRttMs = 500;
+    qint64 m_lastRttMs = -1;
 };
 
 #endif // PINGTRACKER_H

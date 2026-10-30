@@ -22,6 +22,31 @@ private slots:
         QCOMPARE(t.onCatPayload(u"PONG1001;", 2500), qint64(1500));
     }
 
+    // The K4's reply is a bare "PONG;" (bench 2026-10-30). On a fast link, one lost reply must not
+    // leave every later round trip measured from the ping before its own: the stale ping is dropped
+    // and the next PONG reads the real ~1 ms, not ~1000 ms (seen once after a long transmit).
+    void bareFastLinkRecoversFromALostReply() {
+        PingTracker t;
+        t.pingSent(1, 0);
+        QCOMPARE(t.onCatPayload(u"PONG;", 1), qint64(1)); // fast link established
+        t.pingSent(2, 1000);                              // its reply is lost
+        t.pingSent(3, 2000);
+        QCOMPARE(t.onCatPayload(u"PONG;", 2001), qint64(1));
+        QCOMPARE(t.outstanding(), std::size_t(0));
+        t.pingSent(4, 3000);
+        QCOMPARE(t.onCatPayload(u"PONG;", 3001), qint64(1));
+    }
+
+    // Without a fast round trip measured first, a bare PONG still answers the oldest ping, so a link
+    // that is slow from the start reads its full round trip (TRN-003 is not undone by the resync).
+    void bareSlowLinkStillReadsInFull() {
+        PingTracker t;
+        t.pingSent(1, 0);
+        t.pingSent(2, 1000);
+        QCOMPARE(t.onCatPayload(u"PONG;", 1300), qint64(1300));
+        QCOMPARE(t.onCatPayload(u"PONG;", 2300), qint64(1300));
+    }
+
     // TRN-003: the K4 bundles several replies in one CAT packet; a PONG that is not first counts.
     void pongBundledAfterOtherRepliesIsFound() {
         PingTracker t;
