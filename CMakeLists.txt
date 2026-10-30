@@ -274,6 +274,7 @@ set(SOURCES
     src/ui/styling/k4styles.cpp
     src/ui/styling/k4glyphs.cpp
     src/ui/popups/k4popupbase.cpp
+    src/ui/popups/popupdismissal.cpp
     src/ui/widgets/kpa1500minipanel.cpp
     src/ui/overlays/sidecontroloverlay.cpp
     src/ui/overlays/monoverlay.cpp
@@ -441,6 +442,7 @@ set(HEADERS
     src/ui/styling/k4constants.h
     src/utils/windowfit.h
     src/ui/popups/k4popupbase.h
+    src/ui/popups/popupdismissal.h
     src/ui/widgets/kpa1500minipanel.h
     src/ui/overlays/sidecontroloverlay.h
     src/ui/overlays/monoverlay.h

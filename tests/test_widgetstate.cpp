@@ -5,6 +5,8 @@
 // behind the dialog's back. Rendered offscreen.
 
 #include "ui/dialogs/macrodialog.h"
+#include "ui/overlays/baloverlay.h"
+#include "ui/overlays/monoverlay.h"
 #include "ui/overlays/dxspotoverlay.h"
 #include "ui/popups/confirmpopup.h"
 #include "ui/popups/displaypopupwidget.h"
@@ -180,6 +182,63 @@ private slots:
         panel->setPower(1.5, LevelsState::PowerRange::Xvtr);
         QCOMPARE(pwr->primaryLabel(), QString("DLY"));
         QCOMPARE(pwr->alternateLabel(), QString("mW"));
+    }
+
+    // --- SideControlPanel MON / BAL overlays ---
+
+    // MON and BAL close like every popup (PopupDismissal): a press anywhere else, Escape, the window
+    // resizing. They used to close only on their own key. Pressing that key again must still close
+    // them: the press closes the overlay by click-away before the key's clicked() fires, which would
+    // otherwise open it again.
+    void monBalOverlaysCloseOnAClickElsewhere() {
+        QWidget host;
+        host.resize(400, 900);
+        auto *panel = new SideControlPanel(&host);
+        panel->move(0, 0);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        auto *mon = panel->findChild<MonOverlay *>();
+        auto *bal = panel->findChild<BalOverlay *>();
+        QPushButton *monKey = buttonWithText(panel, "MON");
+        QPushButton *balKey = buttonWithText(panel, "BAL");
+        QPushButton *normKey = buttonWithText(panel, "NORM");
+        QVERIFY(mon && bal && monKey && balKey && normKey);
+        const auto nextGesture = []() { QTest::qWait(300); }; // past the reopen guard
+
+        // Its own key opens it, and pressing the key again closes it rather than reopening it.
+        QTest::mouseClick(monKey, Qt::LeftButton);
+        QVERIFY(mon->isVisible());
+        QTest::mouseClick(monKey, Qt::LeftButton);
+        QTest::qWait(50);
+        QVERIFY2(!mon->isVisible(), "the second press on MON reopened the overlay");
+
+        // A press inside keeps it (the wheel adjusts it); a press on any other key closes it.
+        nextGesture();
+        QTest::mouseClick(monKey, Qt::LeftButton);
+        QVERIFY(mon->isVisible());
+        QTest::mouseClick(mon, Qt::LeftButton, {}, mon->rect().center());
+        QVERIFY(mon->isVisible());
+        QTest::mouseClick(normKey, Qt::LeftButton);
+        QVERIFY2(!mon->isVisible(), "a press outside MON left it open");
+
+        // Escape anywhere in the window.
+        nextGesture();
+        QTest::mouseClick(balKey, Qt::LeftButton);
+        QVERIFY(bal->isVisible());
+        QTest::keyClick(&host, Qt::Key_Escape);
+        QVERIFY(!bal->isVisible());
+
+        // The other overlay's key switches from one to the other in a single press.
+        nextGesture();
+        QTest::mouseClick(balKey, Qt::LeftButton);
+        QVERIFY(bal->isVisible());
+        QTest::mouseClick(monKey, Qt::LeftButton);
+        QVERIFY(!bal->isVisible());
+        QVERIFY(mon->isVisible());
+
+        // The window resizing may move the keys it covers.
+        host.resize(420, 900);
+        QTRY_VERIFY(!mon->isVisible());
     }
 
     // --- FeatureMenuBar NB filter ---

@@ -1,24 +1,19 @@
 #include "ui/popups/k4popupbase.h"
+#include "ui/popups/popupdismissal.h"
 #include "ui/styling/k4styles.h"
 #include <QApplication>
 #include <QGuiApplication>
-#include <QEvent>
 #include <QHideEvent>
 #include <QKeyEvent>
-#include <QMouseEvent>
 #include <QPainter>
 #include <QScreen>
 
 #include <algorithm>
 
-namespace {
-// Grace period after a hide during which isVisibleOrJustHidden() stays true,
-// so the click that dismissed the popup via click-away is not re-read as a
-// request to reopen it. Long enough to span one button press→release.
-const int ReopenGuardMs = 250;
-} // namespace
-
-K4PopupBase::K4PopupBase(QWidget *parent) : QWidget(parent) {
+K4PopupBase::K4PopupBase(QWidget *parent)
+    : QWidget(parent), m_dismissal(new PopupDismissal(
+                           this, [this]() { hidePopup(); },
+                           [this](const QPoint &globalPos) { return pressIsInAChildPopup(globalPos); })) {
     setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground);
     setFocusPolicy(Qt::StrongFocus);
@@ -30,6 +25,12 @@ K4PopupBase::K4PopupBase(QWidget *parent) : QWidget(parent) {
         if (state != Qt::ApplicationActive && isVisible())
             hidePopup();
     });
+}
+
+K4PopupBase::~K4PopupBase() {
+    // WHY: m_dismissal is a child, deleted only after ~QWidget, which still sends events. Stop its
+    // app-wide filter now so it cannot call hidePopup() on a popup already half destroyed.
+    m_dismissal->stop();
 }
 
 QMargins K4PopupBase::contentMargins() const {
@@ -88,9 +89,6 @@ void K4PopupBase::showAboveWidget(QWidget *anchor) {
     if (!anchor)
         return;
 
-    m_anchor = anchor;
-    m_anchorWindow = anchor->window();
-
     const QRect anchorRect = anchorGlobalRect(anchor);
     const QScreen *screen = QGuiApplication::screenAt(anchorRect.center());
     if (!screen)
@@ -102,9 +100,8 @@ void K4PopupBase::showAboveWidget(QWidget *anchor) {
     const QPoint card = placeCard(anchorRect, contentSize(), screen->availableGeometry());
     move(card.x() - sm, card.y() - sm);
 
-    // Watch application-wide events while shown (see eventFilter). Removed again in hideEvent().
-    qApp->removeEventFilter(this); // a re-show must not install it twice
-    qApp->installEventFilter(this);
+    // Watch application-wide events while shown (PopupDismissal). Stopped again in hideEvent().
+    m_dismissal->watch(anchor);
     show();
     raise();
     setFocus();
@@ -115,8 +112,12 @@ void K4PopupBase::hidePopup() {
     // closed() signal is emitted by hideEvent()
 }
 
+QWidget *K4PopupBase::anchor() const {
+    return m_dismissal->anchor();
+}
+
 bool K4PopupBase::isVisibleOrJustHidden() const {
-    return isVisible() || (m_hiddenTimer.isValid() && m_hiddenTimer.elapsed() < ReopenGuardMs);
+    return m_dismissal->isVisibleOrJustHidden();
 }
 
 bool K4PopupBase::closeIfOpenForToggle() {
@@ -135,8 +136,7 @@ void K4PopupBase::hideEvent(QHideEvent *event) {
         QMetaObject::invokeMethod(this, &K4PopupBase::hidePopup, Qt::QueuedConnection);
         return;
     }
-    qApp->removeEventFilter(this);
-    m_hiddenTimer.restart();
+    m_dismissal->stop();
     emit closed();
 }
 
@@ -162,51 +162,6 @@ bool K4PopupBase::pressIsInAChildPopup(const QPoint &globalPos) const {
         }
     }
     return false;
-}
-
-bool K4PopupBase::eventFilter(QObject *watched, QEvent *event) {
-    // Nothing here consumes the event: a press outside still reaches its target, so clicking
-    // another control works in the same gesture. The toggle handlers' isVisibleOrJustHidden()
-    // guard absorbs the case where that target is the popup's own trigger.
-    //
-    // WHY an app-wide filter, not WindowDeactivate: these popups are Qt::Tool windows parented to
-    // the main window, so Qt keeps them "active" whenever the main window is active —
-    // WindowDeactivate never fires for an in-app click. A position test against a global mouse
-    // press is the reliable way. The same filter sees the anchor's and its window's events, so
-    // nothing has to remember to close a popup when what it hangs from goes away.
-    if (!isVisible())
-        return QWidget::eventFilter(watched, event);
-
-    switch (event->type()) {
-    case QEvent::MouseButtonPress:
-    case QEvent::MouseButtonDblClick: {
-        const QPoint globalPos = static_cast<QMouseEvent *>(event)->globalPosition().toPoint();
-        if (!frameGeometry().contains(globalPos) && !pressIsInAChildPopup(globalPos))
-            hidePopup();
-        break;
-    }
-    case QEvent::KeyPress:
-        // Escape anywhere in the app, not only with the popup focused: a Qt::Tool window does not
-        // always hold the keyboard. Not consumed, so Escape still reaches the main window too.
-        if (static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape)
-            hidePopup();
-        break;
-    case QEvent::Hide:
-        if (watched == m_anchor || watched == m_anchorWindow)
-            hidePopup();
-        break;
-    case QEvent::Move:
-    case QEvent::Resize:
-    case QEvent::WindowStateChange:
-        // A top-level Qt::Tool window does not follow its parent: left open it would float where
-        // the anchor used to be. Minimise, maximise and fullscreen arrive as WindowStateChange.
-        if (watched == m_anchorWindow)
-            hidePopup();
-        break;
-    default:
-        break;
-    }
-    return QWidget::eventFilter(watched, event);
 }
 
 void K4PopupBase::keyPressEvent(QKeyEvent *event) {

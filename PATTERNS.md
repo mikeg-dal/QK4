@@ -299,8 +299,11 @@ rg -o 'class\s+(\w+)\s*:\s*public\s+K4PopupBase' -r '$1' src
   `move()` + `show()`. The screen's available geometry is the only thing that moves it: sideways at
   a screen edge, below the anchor when there is no room above (`placeCard()`).
 - Closes on a mouse press outside it, Escape anywhere in the app, its anchor hiding or being
-  destroyed, the anchor's window moving, resizing or changing state, and the application going
-  inactive (an app-wide event filter on `qApp` while shown).
+  destroyed, the anchor's window moving, resizing or changing state (an app-wide event filter on
+  `qApp` while shown, `PopupDismissal` in `src/ui/popups/popupdismissal.h`), and the application
+  going inactive. The MON / BAL side overlays (`SideControlOverlay`) are child widgets, not
+  `K4PopupBase`, but close by the same `PopupDismissal` rule; reuse it for anything else that
+  should close like a popup rather than copying the filter.
 - Emits `closed()` when hidden.
 
 ### API

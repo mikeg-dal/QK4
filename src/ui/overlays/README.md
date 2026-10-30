@@ -5,7 +5,7 @@ Widgets that paint on top of other widgets. Not popups — overlays are not self
 ## Files
 
 - `menuoverlay` — Full-screen MEDF menu overlay. Driven by `MenuController`.
-- `sidecontroloverlay` — Base class for the two mini overlays below.
+- `sidecontroloverlay` — Base class for the two mini overlays below. Child widgets over the side panel's knob keys, closed by their own key and by the popup rule (`ui/popups/popupdismissal`): a press outside, Escape, the panel hiding, the window moving or resizing. `showOverGroup()` refuses to reopen during the press that just closed it, so the panel's toggle on `isVisible()` cannot reopen it.
 - `monoverlay` / `baloverlay` — MON / BAL side-control mini overlays.
 - `mousevfoindicator` — small cursor-follow badge on the panadapter. Colours itself cyan (VFO A) or green (VFO B) while the pointer is over it. Purely visual: no CAT, no RadioState.
 - `dxspotoverlay` — DX cluster spots painted onto the panadapter. Clicking a spot label emits the frequency for click-to-tune (left → VFO A, right → VFO B).

@@ -1,10 +1,10 @@
 #ifndef K4POPUPBASE_H
 #define K4POPUPBASE_H
 
-#include <QElapsedTimer>
-#include <QPointer>
 #include <initializer_list>
 #include <QWidget>
+
+class PopupDismissal;
 
 /**
  * @brief Base class for QK4 popup widgets.
@@ -39,6 +39,7 @@ class K4PopupBase : public QWidget {
 
 public:
     explicit K4PopupBase(QWidget *parent = nullptr);
+    ~K4PopupBase() override;
 
     /**
      * @brief Show the popup directly above @p anchor, its card centred horizontally on it.
@@ -52,7 +53,8 @@ public:
      *
      * While shown the popup closes itself on: a mouse press outside it, Escape, the anchor being
      * hidden or destroyed, the anchor's window moving, resizing or changing state (minimise,
-     * fullscreen), and the application going inactive.
+     * fullscreen) — the PopupDismissal rule, shared with the side overlays — and the application
+     * going inactive.
      */
     void showAboveWidget(QWidget *anchor);
 
@@ -71,7 +73,7 @@ public:
     QRect cardGlobalRect() const;
 
     /** @brief The widget the popup was last shown above, or null once it is destroyed. */
-    QWidget *anchor() const { return m_anchor; }
+    QWidget *anchor() const;
 
     /**
      * @brief Hide the popup and emit closed() signal.
@@ -174,16 +176,12 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
-    // Application-wide filter, installed on qApp while shown and removed on hide: closes the popup
-    // on a press outside it, Escape, and the anchor or its window going away (see showAboveWidget).
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
-    // Restarted on every hide; powers isVisibleOrJustHidden().
-    QElapsedTimer m_hiddenTimer;
     bool pressIsInAChildPopup(const QPoint &globalPos) const;
-    QPointer<QWidget> m_anchor;       // what the popup is shown above; it closes when this goes
-    QPointer<QWidget> m_anchorWindow; // the anchor's top-level window, watched for move/resize/state
+    // Watches application-wide while shown (from showAboveWidget() to hide): closes the popup on a
+    // press outside it, Escape, and the anchor or its window going away. Owns the reopen guard.
+    PopupDismissal *m_dismissal;
 };
 
 #endif // K4POPUPBASE_H

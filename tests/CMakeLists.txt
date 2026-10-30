@@ -715,6 +715,7 @@ add_executable(test_sidecontrolpanel
     ${CMAKE_SOURCE_DIR}/src/network/kpa1500antennas.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/dualcontrolbutton.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/overlays/sidecontroloverlay.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/popupdismissal.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/overlays/monoverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/overlays/baloverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
@@ -737,6 +738,7 @@ add_executable(test_widgetstate
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/dualcontrolbutton.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/featuremenubar.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/overlays/sidecontroloverlay.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/popupdismissal.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/overlays/monoverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/overlays/baloverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/popups/k4popupbase.cpp
@@ -785,6 +787,7 @@ set(QK4_POPUP_TEST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/network/kpa1500antennas.cpp
     ${CMAKE_SOURCE_DIR}/src/network/networkmetrics.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/popups/k4popupbase.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/popupdismissal.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/popups/antennacfgpopup.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/popups/buttonrowpopup.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/popups/confirmpopup.cpp

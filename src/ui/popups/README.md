@@ -5,6 +5,7 @@ Popup widgets and their base class. Every popup here inherits from `K4PopupBase`
 ## Files
 
 - `k4popupbase` — base class for every popup. Handles window flags, translucent background, placement (card centred directly above its anchor, clamped only at a screen edge), drop shadow and background painting, the `closed()` signal, and closing on click-away, Escape, its anchor going, the window moving or changing state and the app going inactive.
+- `popupdismissal` — `PopupDismissal`, the rule for when a popup closes by itself: an application-wide event filter, installed while shown, that closes it on a press outside it, Escape, its anchor or the anchor's window hiding, and that window moving, resizing or changing state; plus the short reopen guard behind `isVisibleOrJustHidden()`. Used by `K4PopupBase` and by the side overlays in `ui/overlays/sidecontroloverlay`.
 
 The popups, grouped by trigger. `rg -l ': public K4PopupBase' src/ui/popups` lists them.
 
