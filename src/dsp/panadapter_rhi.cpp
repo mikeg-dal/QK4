@@ -1317,7 +1317,7 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
     // #AVG over the last n frames, in power (PowerAverager). A span or tier change alters the cropped
     // bin count and restarts the average: the next n frames build it up again, so nothing from the
     // old resolution is blended in.
-    m_traceAverager.add(m_rawSpectrum, m_currentSpectrum);
+    m_traceAverager.addEased(m_rawSpectrum, m_currentSpectrum);
 
     // The radio reports the noise floor it measured, in the same dBm the bins are meant to be in
     // once RhiUtils::K4_DBM_OFFSET is applied. Comparing the two is a free check that the offset is

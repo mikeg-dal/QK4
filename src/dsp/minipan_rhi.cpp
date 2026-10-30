@@ -700,7 +700,7 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerHz, i
         m_spectrum[i] = static_cast<quint8>(bins[i]) - SpectrumScale::K4_MINIPAN_DBM_OFFSET;
 
     // #AVG over the last n frames, in power, like the main pan (PowerAverager)
-    m_averager.add(m_spectrum, m_smoothedSpectrum);
+    m_averager.addEased(m_spectrum, m_smoothedSpectrum);
 
     m_waterfallNeedsUpdate = true;
     update();

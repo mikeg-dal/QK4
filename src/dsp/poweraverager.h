@@ -30,6 +30,15 @@ public:
     // length()), in dBm, to out. A frame with a different bin count restarts the average.
     void add(const QVector<float> &frameDbm, QVector<float> &outDbm);
 
+    // For the drawn trace: add() the frame, then move shownDbm halfway (TraceEase) toward the average,
+    // in dB. A plain n-frame average jumps when a loud frame enters or leaves the window, which reads
+    // as a stutter at 15 frames a second (bench 2026-10-30, voice); easing in dB softens the steps
+    // and still settles fast (a 60 dB drop is within 1 dB after 6 frames, no long tail). At length 1
+    // (#AVG 1) the frame is shown as it arrives, like the K4. A bin-count change shows the average
+    // directly. The waterfall uses add(): its rows need no easing.
+    void addEased(const QVector<float> &frameDbm, QVector<float> &shownDbm);
+    static constexpr float TraceEase = 0.5f;
+
     int framesHeld() const { return m_count; }
 
 private:
@@ -37,11 +46,12 @@ private:
 
     int m_length = 1;
     int m_bins = 0;
-    int m_count = 0;        // frames held, <= m_length
-    int m_head = 0;         // ring slot the next frame goes into
-    int m_sinceSum = 0;     // frames since the running sums were recomputed from the ring
-    QVector<double> m_ring; // m_length x m_bins linear powers, oldest overwritten
-    QVector<double> m_sum;  // per-bin sum of the frames held
+    int m_count = 0;          // frames held, <= m_length
+    int m_head = 0;           // ring slot the next frame goes into
+    int m_sinceSum = 0;       // frames since the running sums were recomputed from the ring
+    QVector<double> m_ring;   // m_length x m_bins linear powers, oldest overwritten
+    QVector<double> m_sum;    // per-bin sum of the frames held
+    QVector<float> m_average; // addEased's scratch: the n-frame average before easing
 };
 
 #endif // DSP_POWERAVERAGER_H

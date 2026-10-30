@@ -67,3 +67,17 @@ void PowerAverager::add(const QVector<float> &frameDbm, QVector<float> &outDbm) 
         outDbm[i] = static_cast<float>(10.0 * std::log10(mean));
     }
 }
+
+void PowerAverager::addEased(const QVector<float> &frameDbm, QVector<float> &shownDbm) {
+    if (m_length == 1) {
+        shownDbm = frameDbm;
+        return;
+    }
+    add(frameDbm, m_average);
+    if (shownDbm.size() != m_average.size()) {
+        shownDbm = m_average;
+        return;
+    }
+    for (qsizetype i = 0; i < m_average.size(); ++i)
+        shownDbm[i] += TraceEase * (m_average[i] - shownDbm[i]);
+}

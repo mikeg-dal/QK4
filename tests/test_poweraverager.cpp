@@ -74,6 +74,33 @@ private slots:
         QCOMPARE(out, frame({-100.0f, -100.0f, -100.0f}));
     }
 
+    // The drawn trace eases toward the n-frame average so a loud frame entering or leaving the window
+    // does not jump (the stutter seen on voice), yet a stopped 60 dB carrier is still within 1 dB of
+    // the noise 6 frames after the average lets it go - no long tail.
+    void easedTraceSoftensStepsWithoutATail() {
+        PowerAverager a;
+        a.setLength(3);
+        QVector<float> shown;
+        for (int i = 0; i < 6; ++i)
+            a.addEased(frame({-110.0f}), shown);
+        a.addEased(frame({-50.0f}), shown); // one loud frame
+        const float firstStep = shown[0];
+        QVERIFY2(firstStep < -60.0f, qPrintable(QString::number(firstStep))); // softened, not a full jump
+        for (int i = 0; i < 2; ++i)
+            a.addEased(frame({-110.0f}), shown);
+        for (int i = 0; i < 6; ++i) // the average has dropped the loud frame; the trace follows
+            a.addEased(frame({-110.0f}), shown);
+        QVERIFY2(std::abs(shown[0] + 110.0f) < 1.0f, qPrintable(QString::number(shown[0])));
+    }
+
+    void easedTraceAtLengthOneIsTheFrame() {
+        PowerAverager a;
+        QVector<float> shown;
+        a.addEased(frame({-100.0f}), shown);
+        a.addEased(frame({-60.0f}), shown);
+        QCOMPARE(shown, frame({-60.0f}));
+    }
+
     void lengthIsClampedAndChangingItRestarts() {
         PowerAverager a;
         a.setLength(0);
