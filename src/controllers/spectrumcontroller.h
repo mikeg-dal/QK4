@@ -53,7 +53,8 @@ public:
 public slots:
     void onSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
                         qint32 sampleRate, float noiseFloor);
-    void onMiniSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount);
+    void onMiniSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
+                            int spanHz);
     void updatePanadapterPassbands();
     void updateTxMarkers();
     void checkAndHideMiniPanB();

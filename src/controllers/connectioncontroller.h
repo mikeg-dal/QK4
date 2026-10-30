@@ -58,7 +58,8 @@ signals:
     void catResponseReceived(const QString &response);
     void spectrumDataReceived(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
                               qint32 sampleRate, float noiseFloor);
-    void miniSpectrumDataReceived(int receiver, const QByteArray &payload, int binsOffset, int binCount);
+    void miniSpectrumDataReceived(int receiver, const QByteArray &payload, int binsOffset, int binCount,
+                                  qint64 centerFreq, int spanHz);
 
 private slots:
     void onStateChanged(TcpClient::ConnectionState state);

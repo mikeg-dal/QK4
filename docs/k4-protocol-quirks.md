@@ -353,6 +353,32 @@ A second tracker in QK4 would move the scale independently of the radio's own sc
 
 ---
 
+## 15. MiniPAN frames carry the PAN header, and its "sample rate" is the span
+
+Measured 2026-10-30 on K4D SN1641 (port 9205, WWV 10 MHz; Main in CW with FA 10,000,000 and pitch
+500, Sub in DATA-A on 10,131,000). Every MiniPAN payload (type 3) was 1051 bytes:
+
+```
+byte  0     type (3)              byte  5-6   u16 LE data length = 1024
+byte  1     version               byte 11-18  int64 LE centre, Hz
+byte  2     sequence              byte 19-22  int32 LE span, kHz: 3 in CW, 12 in DATA-A
+byte  3     pan type              byte 23-26  int32 LE, positive 192-319, meaning unknown
+byte  4     receiver (0/1)        byte 27..   1024 bins
+```
+
+That is the PAN layout (section 9), with two fields read differently: the int32 at 19 is the
+mini-pan's own span (not a tier rate), and the one at 23 is not a noise floor. The centre is the
+frequency in the middle of the span: **dial + CW pitch in CW** (10,000,500), the dial in DATA-A.
+
+QK4 once read MiniPAN as a 5-byte header and drew header bytes 5..26 as bins, hidden by a 75-bin
+trim at each edge, and assumed a 2 kHz / 10 kHz span. The passband was drawn about a third too wide.
+
+**Where QK4 relies on it:** `Protocol::processPacket` (`K4Protocol::MiniPanPacket`, which aliases
+the PAN offsets) emits the centre, the span in Hz and the bins from 27, and drops a frame shorter than
+its data length or with no span.
+
+---
+
 ## How to extend this document
 
 Add a new section only when a behavior satisfies **all** of:

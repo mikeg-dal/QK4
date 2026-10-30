@@ -128,11 +128,21 @@ void Protocol::processPacket(const QByteArray &payload) {
     case K4Protocol::MiniPAN: {
         // MiniPAN packet structure - see K4Protocol::MiniPanPacket namespace for offset definitions
         using namespace K4Protocol::MiniPanPacket;
-        if (payload.size() > HEADER_SIZE) {
-            int receiver = static_cast<quint8>(payload[RECEIVER_OFFSET]);
-            int binCount = payload.size() - BINS_OFFSET;
-            emit miniSpectrumDataReady(receiver, payload, BINS_OFFSET, binCount);
+        if (payload.size() <= HEADER_SIZE)
+            break;
+        const auto *data = reinterpret_cast<const uchar *>(payload.constData());
+        const int binCount = qFromLittleEndian<quint16>(data + DATA_LENGTH_OFFSET);
+        const qint32 spanKHz = qFromLittleEndian<qint32>(data + SPAN_KHZ_OFFSET);
+        // The header states how many bins follow; a frame that does not carry them, or that states
+        // no span, cannot be drawn on a frequency axis.
+        if (binCount <= 0 || HEADER_SIZE + binCount > payload.size() || spanKHz <= 0 || spanKHz > MAX_SPAN_KHZ) {
+            qCDebug(lcCatRx) << "MiniPAN frame dropped: data length" << binCount << "span" << spanKHz << "kHz, payload"
+                             << payload.size();
+            break;
         }
+        const int receiver = data[RECEIVER_OFFSET];
+        const qint64 centerFreq = qFromLittleEndian<qint64>(data + CENTER_FREQ_OFFSET);
+        emit miniSpectrumDataReady(receiver, payload, BINS_OFFSET, binCount, centerFreq, spanKHz * 1000);
         break;
     }
     default:

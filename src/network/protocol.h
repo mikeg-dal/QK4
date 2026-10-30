@@ -66,15 +66,24 @@ constexpr int BINS_OFFSET = 27;        // Compressed bin data starts here
 constexpr int HEADER_SIZE = 27;        // Minimum packet size before bins
 } // namespace PanPacket
 
-// MiniPAN packet byte offsets (Type 0x03)
+// MiniPAN packet byte offsets (Type 0x03).
+//
+// WHY the PAN layout: a MiniPAN frame carries the same 27-byte header as a PAN frame (measured
+// 2026-10-30 on K4D SN1641, docs/k4-protocol-quirks.md section 15): u16 LE data length at 5 (1024),
+// int64 LE centre at 11, 1024 bins from 27. Two fields mean something different:
+//   - the int32 at 19 is the mini-pan's span in kHz (3 in CW, 12 in DATA-A), not a tier rate;
+//   - the int32 at 23 is not a noise floor (positive, 192-319, meaning unknown) and is ignored.
+// The centre is the frequency in the middle of the span: dial + CW pitch in CW, the dial in DATA-A.
+// The old 5-byte header drew bytes 5..26 as bins; a 75-bin trim at each edge hid them.
 namespace MiniPanPacket {
-constexpr int TYPE_OFFSET = 0;
-constexpr int VERSION_OFFSET = 1;
-constexpr int SEQUENCE_OFFSET = 2;
-constexpr int RESERVED_OFFSET = 3;
-constexpr int RECEIVER_OFFSET = 4; // 0=Main, 1=Sub
-constexpr int BINS_OFFSET = 5;     // Mini PAN data starts here
-constexpr int HEADER_SIZE = 5;
+constexpr int RECEIVER_OFFSET = PanPacket::RECEIVER_OFFSET;       // 0=Main, 1=Sub
+constexpr int DATA_LENGTH_OFFSET = PanPacket::DATA_LENGTH_OFFSET; // uint16 LE, bin count
+constexpr int CENTER_FREQ_OFFSET = PanPacket::CENTER_FREQ_OFFSET; // int64 LE, Hz
+constexpr int SPAN_KHZ_OFFSET = PanPacket::SAMPLE_RATE_OFFSET;    // int32 LE, kHz
+constexpr int BINS_OFFSET = PanPacket::BINS_OFFSET;
+constexpr int HEADER_SIZE = PanPacket::HEADER_SIZE;
+// Sanity bound on the span field, far above any measured value: keeps kHz x 1000 inside an int.
+constexpr qint32 MAX_SPAN_KHZ = 1000;
 } // namespace MiniPanPacket
 
 // Audio packet byte offsets (Type 0x01)
@@ -139,7 +148,9 @@ signals:
     // receiver: 0 = Main (VFO A), 1 = Sub (VFO B)
     void spectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
                            qint32 sampleRate, float noiseFloor);
-    void miniSpectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount);
+    // centerFreq is the frequency at the middle of the bins (Hz), spanHz the width they cover.
+    void miniSpectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
+                               int spanHz);
     void catResponseReceived(const QString &response);
     void packetReceived(quint8 type, const QByteArray &payload);
 

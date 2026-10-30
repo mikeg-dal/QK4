@@ -679,7 +679,8 @@ void SpectrumController::onSpectrumData(int receiver, const QByteArray &payload,
     }
 }
 
-void SpectrumController::onMiniSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount) {
+void SpectrumController::onMiniSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount,
+                                            qint64 /*centerFreq*/, int /*spanHz*/) {
     // binsOffset and binCount come off the wire; never view bytes past the payload.
     if (SpectrumGeometry::usableBinCount(payload.size(), binsOffset, binCount, std::numeric_limits<int>::max()) == 0)
         return;
