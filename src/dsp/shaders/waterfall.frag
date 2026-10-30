@@ -15,7 +15,11 @@ layout(std140, binding = 0) uniform buf {
     float spanHz;           // Display span in Hz
     float visibleFraction;  // Rows drawn / rows stored (vertex stage)
     float storedRows;       // Rows in the texture; 0.0 disables the V snap
-    float padding;
+    float colorLow;         // Palette position = clamp((texel - colorLow) * colorGain, 0, 1)
+    float colorGain;
+    float pad0;
+    float pad1;
+    float pad2;
 };
 
 void main() {
@@ -46,6 +50,12 @@ void main() {
     if (storedRows > 0.0)
         texV = (floor(texV * storedRows) + 0.5) / storedRows;
 
-    float dbValue = texture(waterfallTex, vec2(texU, texV)).r;
-    outColor = texture(colorLutTex, vec2(dbValue, 0.5));
+    // The texel is the bin's level (dBm + K4_DBM_OFFSET, as a normalised byte), not a palette
+    // position, so the colour window applies here and moves the whole history when it changes.
+    // WaterfallGeometry::colorUniformsFor sets it and shaderFractionFor mirrors this line.
+    float level = texture(waterfallTex, vec2(texU, texV)).r;
+    // Byte 0 is "no data" (rows not yet written, a cleared history): palette position 0 under any
+    // window, even one whose bottom edge sits below the byte's own -162 dBm.
+    float palettePos = level < 0.5 / 255.0 ? 0.0 : clamp((level - colorLow) * colorGain, 0.0, 1.0);
+    outColor = texture(colorLutTex, vec2(palettePos, 0.5));
 }

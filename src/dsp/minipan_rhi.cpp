@@ -424,12 +424,15 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
     // shows its whole buffer — the quad's own texcoords already stop one row short of the row being
     // written.
     //
-    // WHY storedRows is 0.0 (the second-to-last field): that opts out of waterfall.frag's V snap.
+    // WHY storedRows is 0.0 (the seventh field): that opts out of waterfall.frag's V snap.
     // The panadapter draws one stored row per device pixel, where snapping removes a blend of two
     // moments in time. The mini-pan instead spreads a fixed WATERFALL_HISTORY across whatever
     // height it happens to have, so when that height is under WATERFALL_HISTORY px it is
     // downsampling — and there the linear blend is a cheap box filter, while snapping would drop
     // rows outright. Revisit once the diagnostic reports this widget's px-per-row.
+    //
+    // colorLow 0 and colorGain 1 pass the texel through: the mini-pan still stores palette positions
+    // (its own normalizeDb), not levels as the panadapter does.
     float scrollOffset = static_cast<float>(m_waterfallWriteRow) / WATERFALL_HISTORY;
     RhiUtils::WaterfallUniforms waterfallUniforms = {scrollOffset,
                                                      static_cast<float>(TEXTURE_WIDTH),
@@ -437,6 +440,10 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
                                                      static_cast<float>(TEXTURE_WIDTH),
                                                      static_cast<float>(TEXTURE_WIDTH),
                                                      1.0f,
+                                                     0.0f,
+                                                     0.0f,
+                                                     1.0f,
+                                                     0.0f,
                                                      0.0f,
                                                      0.0f};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);

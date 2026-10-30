@@ -1,4 +1,6 @@
+#include "dsp/waterfallcolorlut.h"
 #include "dsp/waterfallgeometry.h"
+#include "dsp/spectrumscale.h"
 #include <QSet>
 #include <QtTest>
 
@@ -22,7 +24,42 @@ private slots:
     void inFlightRowIsNeverSampled();
     void mappingIsOntoAndOrdered();
     void mappingHoldsAcrossTheRingWrap();
+
+    // Colour window (WaterfallGeometry::colorWindowFor and the shader mirror).
+    void noiseAtRefIsMidBlueNotBlack();
+    void oldRefScaleWindowDrewNoiseBlack();
+    void higherColorRangeIsBrighter();
+    void unknownColorRangeUsesDefault();
+    void shaderMirrorMatchesPaletteFraction();
+    void storedByteEncodesTheRadiosLevel();
+    void noDataDrawsAtPaletteBottomUnderAnyWindow();
 };
+
+namespace {
+struct Rgb {
+    int r, g, b;
+};
+
+// The real table the waterfall draws with, at the position the shader would sample (nearest entry).
+Rgb lutAt(float fraction) {
+    QVector<quint8> lut;
+    RhiUtils::generateWaterfallColorLUT(lut);
+    const int i = qBound(0, static_cast<int>(std::lround(fraction * (RhiUtils::COLOR_LUT_SIZE - 1))),
+                         RhiUtils::COLOR_LUT_SIZE - 1);
+    return Rgb{lut[i * 4 + 0], lut[i * 4 + 1], lut[i * 4 + 2]};
+}
+
+bool isBlue(const Rgb &c) {
+    return c.b >= 100 && c.r == 0 && c.g < c.b;
+}
+
+// Through the GPU path: the byte stored for a level, then the shader's colour uniforms.
+float drawnFraction(float dbm, float refDbm, int colorRangeDb) {
+    const auto window = WaterfallGeometry::colorWindowFor(refDbm, colorRangeDb);
+    return WaterfallGeometry::shaderFractionFor(WaterfallGeometry::storedByteFor(dbm),
+                                                WaterfallGeometry::colorUniformsFor(window));
+}
+} // namespace
 
 void TestWaterfallGeometry::visibleRowsFollowsPixelHeight() {
     QCOMPARE(WaterfallGeometry::visibleRowsFor(770.0f, 2048, 64), 770);
@@ -127,6 +164,107 @@ void TestWaterfallGeometry::mappingHoldsAcrossTheRingWrap() {
         QCOMPARE(WaterfallGeometry::rowForPixel(visible - 1, visible, writeRow, visible, stored),
                  (writeRow - 1 + stored) % stored);
     }
+}
+
+// The K4 shows band noise as mid-blue speckle at its #WBS14 with AutoRef parking REF on the noise.
+// Noise a few dB above REF, and its usual +-6 dB excursions, must land in the palette's blue band —
+// never in the black dead zone below 0.10 that used to swallow it.
+void TestWaterfallGeometry::noiseAtRefIsMidBlueNotBlack() {
+    for (float ref : {-129.0f, -110.0f, -95.0f}) {
+        const float noise = ref + 3.0f;
+        const float f = drawnFraction(noise, ref, 14);
+        QVERIFY2(f > 0.10f, qPrintable(QString("noise at %1 is in the black zone (%2)").arg(noise).arg(f)));
+        const Rgb mid = lutAt(f);
+        QVERIFY2(isBlue(mid), qPrintable(QString("noise drawn %1,%2,%3").arg(mid.r).arg(mid.g).arg(mid.b)));
+        // A noise peak stays blue-ish (no green/yellow), a noise trough is darker but the peak is not.
+        const Rgb peak = lutAt(drawnFraction(noise + 6.0f, ref, 14));
+        QVERIFY(peak.r == 0 && peak.b >= mid.b);
+        QVERIFY(lutAt(drawnFraction(noise - 6.0f, ref, 14)).b < mid.b);
+    }
+    // A carrier 20 dB over the noise reaches the warm end, as WWV does on the K4.
+    const Rgb carrier = lutAt(drawnFraction(-110.0f + 23.0f, -110.0f, 14));
+    QVERIFY(carrier.r == 255);
+}
+
+// The regression this fixes: palette = REF..REF+SCALE (80 dB) put the same noise at ~0.04.
+void TestWaterfallGeometry::oldRefScaleWindowDrewNoiseBlack() {
+    const float ref = -110.0f;
+    const float oldFraction = SpectrumScale::normalizedForDb(ref + 3.0f, ref, ref + 80.0f);
+    const Rgb old = lutAt(oldFraction);
+    QCOMPARE(old.r + old.g + old.b, 0);
+    QVERIFY(drawnFraction(ref + 3.0f, ref, 14) > oldFraction + 0.25f);
+}
+
+// K4 manual rev D6, WTR CLRS: "A higher number will use brighter colors for a given amount of
+// waterfall signal intensity."
+void TestWaterfallGeometry::higherColorRangeIsBrighter() {
+    const float ref = -110.0f;
+    for (float dbm = ref - 20.0f; dbm <= ref + 40.0f; dbm += 1.0f) {
+        for (int wbs = 5; wbs < 30; ++wbs) {
+            const float lo = WaterfallGeometry::paletteFractionFor(dbm, WaterfallGeometry::colorWindowFor(ref, wbs));
+            const float hi =
+                WaterfallGeometry::paletteFractionFor(dbm, WaterfallGeometry::colorWindowFor(ref, wbs + 1));
+            QVERIFY(hi >= lo);
+        }
+    }
+    QVERIFY(drawnFraction(ref, ref, 30) > drawnFraction(ref, ref, 5));
+}
+
+void TestWaterfallGeometry::unknownColorRangeUsesDefault() {
+    const auto def = WaterfallGeometry::colorWindowFor(-110.0f, WaterfallGeometry::DefaultColorRangeDb);
+    for (int bad : {-1, 0, 4, 31, 100}) {
+        const auto w = WaterfallGeometry::colorWindowFor(-110.0f, bad);
+        QCOMPARE(w.lowDbm, def.lowDbm);
+        QCOMPARE(w.spanDb, def.spanDb);
+    }
+    // The hypothesis, stated as numbers so a change to it is a deliberate test edit.
+    const auto w = WaterfallGeometry::colorWindowFor(-110.0f, 14);
+    QCOMPARE(w.lowDbm, -124.0f);
+    QCOMPARE(w.spanDb, WaterfallGeometry::PaletteSpanDb);
+}
+
+// storedByteFor + colorUniformsFor + the shader line must agree with the direct dBm mapping, to
+// within the byte's 1 dB step, for every REF and colour range the radio can send.
+void TestWaterfallGeometry::shaderMirrorMatchesPaletteFraction() {
+    const float tolerance = 0.5f / WaterfallGeometry::PaletteSpanDb + 1e-4f;
+    for (int ref = -160; ref <= 50; ref += 7) {
+        for (int wbs = 5; wbs <= 30; wbs += 5) {
+            const auto window = WaterfallGeometry::colorWindowFor(static_cast<float>(ref), wbs);
+            for (float dbm = -161.0f; dbm <= 93.0f; dbm += 0.37f) {
+                const float direct = WaterfallGeometry::paletteFractionFor(dbm, window);
+                const float drawn = drawnFraction(dbm, static_cast<float>(ref), wbs);
+                QVERIFY2(
+                    std::abs(direct - drawn) <= tolerance,
+                    qPrintable(
+                        QString("ref %1 wbs %2 dbm %3: %4 vs %5").arg(ref).arg(wbs).arg(dbm).arg(direct).arg(drawn)));
+            }
+        }
+    }
+}
+
+void TestWaterfallGeometry::storedByteEncodesTheRadiosLevel() {
+    // The K4's own encoding: byte = dBm + K4_DBM_OFFSET.
+    QCOMPARE(int(WaterfallGeometry::storedByteFor(-110.0f)), 52);
+    QCOMPARE(int(WaterfallGeometry::storedByteFor(-110.4f)), 52);
+    QCOMPARE(int(WaterfallGeometry::storedByteFor(-109.6f)), 52);
+    QCOMPARE(int(WaterfallGeometry::storedByteFor(93.0f)), 255);
+    QCOMPARE(int(WaterfallGeometry::storedByteFor(500.0f)), 255);
+    // Real data never collides with "no data".
+    QCOMPARE(int(WaterfallGeometry::storedByteFor(-162.0f)), 1);
+    QCOMPARE(int(WaterfallGeometry::storedByteFor(-500.0f)), 1);
+}
+
+void TestWaterfallGeometry::noDataDrawsAtPaletteBottomUnderAnyWindow() {
+    for (int ref = -200; ref <= 50; ref += 10) {
+        for (int wbs = 5; wbs <= 30; ++wbs) {
+            const auto u = WaterfallGeometry::colorUniformsFor(WaterfallGeometry::colorWindowFor(ref, wbs));
+            QCOMPARE(WaterfallGeometry::shaderFractionFor(WaterfallGeometry::NoDataByte, u), 0.0f);
+        }
+    }
+    // The mini-pan's pass-through uniforms leave a stored palette position unchanged.
+    const WaterfallGeometry::ColorUniforms passThrough;
+    QCOMPARE(WaterfallGeometry::shaderFractionFor(255, passThrough), 1.0f);
+    QVERIFY(std::abs(WaterfallGeometry::shaderFractionFor(128, passThrough) - 128.0f / 255.0f) < 1e-6f);
 }
 
 QTEST_MAIN(TestWaterfallGeometry)

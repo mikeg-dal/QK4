@@ -13,7 +13,11 @@ layout(std140, binding = 0) uniform buf {
     float spanHz;           // Display span in Hz
     float visibleFraction;  // Rows drawn / rows stored
     float storedRows;       // Rows in the texture; 0.0 disables the V snap
-    float padding;
+    float colorLow;         // Palette position = clamp((texel - colorLow) * colorGain, 0, 1)
+    float colorGain;
+    float pad0;
+    float pad1;
+    float pad2;
 };
 
 void main() {

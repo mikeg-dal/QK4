@@ -1,5 +1,8 @@
 #include "waterfallgeometry.h"
 
+#include "dsp/spectrumscale.h"
+#include "models/radiostate/spectrumdisplaystate.h"
+
 #include <QtGlobal>
 #include <cmath>
 
@@ -50,6 +53,38 @@ int rowForPixel(int pixel, int pixelCount, int writeRow, int visibleRows, int st
     if (row < 0)
         row += storedRows;
     return row;
+}
+
+ColorWindow colorWindowFor(float refDbm, int colorRangeDb) {
+    const bool known = colorRangeDb >= SpectrumDisplayLimits::WaterfallColorRangeMin &&
+                       colorRangeDb <= SpectrumDisplayLimits::WaterfallColorRangeMax;
+    const float range = static_cast<float>(known ? colorRangeDb : DefaultColorRangeDb);
+    return ColorWindow{refDbm - range, PaletteSpanDb};
+}
+
+float paletteFractionFor(float dbm, const ColorWindow &window) {
+    if (window.spanDb <= 0.0f)
+        return 0.0f;
+    return qBound(0.0f, (dbm - window.lowDbm) / window.spanDb, 1.0f);
+}
+
+quint8 storedByteFor(float dbm) {
+    const long byte = std::lround(dbm + SpectrumScale::K4_DBM_OFFSET);
+    return static_cast<quint8>(qBound(static_cast<long>(NoDataByte) + 1, byte, 255L));
+}
+
+ColorUniforms colorUniformsFor(const ColorWindow &window) {
+    if (window.spanDb <= 0.0f)
+        return ColorUniforms{};
+    // In texel units: the byte for lowDbm, normalised as the GPU normalises an R8 texel (/255).
+    return ColorUniforms{(window.lowDbm + SpectrumScale::K4_DBM_OFFSET) / 255.0f, 255.0f / window.spanDb};
+}
+
+float shaderFractionFor(quint8 storedByte, const ColorUniforms &uniforms) {
+    if (storedByte == NoDataByte)
+        return 0.0f;
+    const float v = static_cast<float>(storedByte) / 255.0f;
+    return qBound(0.0f, (v - uniforms.colorLow) * uniforms.colorGain, 1.0f);
 }
 
 } // namespace WaterfallGeometry

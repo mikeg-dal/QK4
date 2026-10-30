@@ -177,6 +177,11 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
         m_panA.pad->setScale(scale);
         m_panB.pad->setScale(scale);
     });
+    // #WBS is the LCD's waterfall colour range; QK4 draws what the LCD shows, so both pans use it.
+    connect(m_radioState, &RadioState::waterfallColorRangeChanged, this, [this](int db) {
+        m_panA.pad->setWaterfallColorRange(db);
+        m_panB.pad->setWaterfallColorRange(db);
+    });
     connect(m_radioState, &RadioState::spanChanged, this, [this](int spanHz) { m_panA.pad->setSpan(spanHz); });
     connect(m_radioState, &RadioState::spanBChanged, this, [this](int spanHz) { m_panB.pad->setSpan(spanHz); });
     connect(m_radioState, &RadioState::waterfallHeightChanged, this, [this](int percent) {

@@ -54,6 +54,8 @@ public:
     void setGridEnabled(bool enabled);
     void setRefLevel(int level);
     void setScale(int scale); // 10-150, affects display gain/range
+    // #WBS, 5-30 dB: the waterfall's brightness (WaterfallGeometry::colorWindowFor). -1 = unknown.
+    void setWaterfallColorRange(int db);
     void setSpan(int spanHz);
     void setWaterfallHeight(int percent); // 0-100: percentage of display for waterfall
     int span() const { return m_spanHz; }
@@ -128,7 +130,6 @@ private:
     void logRenderGeometry(const QSize &outputSize);
 
     // Coordinate helpers
-    float normalizeDb(float db) const;
     qint64 displayCenterHz() const;
     float freqToNormalized(qint64 freq) const;
     qint64 xToFreq(int x, int w) const;
@@ -277,6 +278,7 @@ private:
     int m_scale = SpectrumDisplayLimits::ScaleDefault; // 10-150
     float m_minDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault);
     float m_maxDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault + SpectrumDisplayLimits::ScaleDefault);
+    int m_waterfallColorRange = -1; // #WBS dB; -1 until the radio reports it
     // WHY a fixed value: layout only, until the radio's #WFH arrives (setWaterfallHeight); the
     // radio's height replaces it on every connect, as the RadioState sentinel guarantees an emit.
     float m_spectrumRatio = 0.30f;

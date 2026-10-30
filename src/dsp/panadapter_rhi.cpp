@@ -963,9 +963,21 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     float tierSpanHz = m_waterfallTierSpanHz > 0 ? m_waterfallTierSpanHz : static_cast<float>(m_spanHz);
     float spanHz = static_cast<float>(m_spanHz);
     // Layout comes from RhiUtils so it cannot drift from the shaders or from the mini-pan.
-    RhiUtils::WaterfallUniforms waterfallUniforms = {
-        scrollOffset, binCount,        static_cast<float>(m_textureWidth),     tierSpanHz,
-        spanHz,       visibleFraction, static_cast<float>(m_waterfallHistory), 0.0f};
+    // The colour window follows REF and the radio's #WBS live; the stored rows are levels.
+    const WaterfallGeometry::ColorUniforms color = WaterfallGeometry::colorUniformsFor(
+        WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_waterfallColorRange));
+    RhiUtils::WaterfallUniforms waterfallUniforms = {scrollOffset,
+                                                     binCount,
+                                                     static_cast<float>(m_textureWidth),
+                                                     tierSpanHz,
+                                                     spanHz,
+                                                     visibleFraction,
+                                                     static_cast<float>(m_waterfallHistory),
+                                                     color.colorLow,
+                                                     color.colorGain,
+                                                     0.0f,
+                                                     0.0f,
+                                                     0.0f};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
     if (!m_currentSpectrum.isEmpty()) {
@@ -1379,12 +1391,11 @@ void PanadapterRhiWidget::updateWaterfallData() {
     if (row >= 0 && row < m_rowTierSpanHz.size())
         m_rowTierSpanHz[row] = m_waterfallTierSpanHz;
 
-    // Copy raw bins (no interpolation - GPU handles it)
-    for (int i = 0; i < specSize; ++i) {
-        float normalized = normalizeDb(source[i]);
-        m_waterfallData[row * m_textureWidth + offset + i] =
-            static_cast<quint8>(qBound(0, static_cast<int>(normalized * 255), 255));
-    }
+    // Levels, not palette positions: waterfall.frag applies the colour window (REF, #WBS) when it
+    // draws, so the history recolours when either changes instead of keeping the REF it was
+    // captured under. No interpolation here — the GPU handles it.
+    for (int i = 0; i < specSize; ++i)
+        m_waterfallData[row * m_textureWidth + offset + i] = WaterfallGeometry::storedByteFor(source[i]);
 }
 
 void PanadapterRhiWidget::logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz) {
@@ -1464,18 +1475,6 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
                                          outputSize.width(), outputSize.height(), devicePixelRatioF(), m_spectrumRatio,
                                          waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
                                          visibleBins, pxPerBin)));
-}
-
-float PanadapterRhiWidget::normalizeDb(float db) const {
-    // One implementation for the spectrum trace, the waterfall and the scale labels. They disagreed
-    // before — the labels described a plain dBm axis while the trace had a drifting noise-floor
-    // offset applied — so the axis could not be read. Routing all three through the same function
-    // is what keeps them honest.
-    //
-    // Only the lower bound is clamped: bins stronger than m_maxDb return > 1.0 so the spectrum-fill
-    // shader (peakY = 1.0 - value) lets the trace climb to the chart's top edge instead of
-    // flat-topping. The waterfall byte-cast path re-clamps via qBound(0, ..., 255), so it stays safe.
-    return SpectrumScale::normalizedForDb(db, m_minDb, m_maxDb);
 }
 
 qint64 PanadapterRhiWidget::displayCenterHz() const {
@@ -1611,6 +1610,7 @@ void PanadapterRhiWidget::clear() {
     // last radio's. The split (m_spectrumRatio) is kept: it is layout, and #WFH replaces it.
     m_refLevel = SpectrumDisplayLimits::RefLevelDefault;
     m_scale = SpectrumDisplayLimits::ScaleDefault;
+    m_waterfallColorRange = -1;
     updateDbRangeFromRefAndScale();
 
     // Diagnostics restart with the next session's data.
@@ -1642,6 +1642,14 @@ void PanadapterRhiWidget::setRefLevel(int level) {
     if (m_refLevel != level) {
         m_refLevel = level;
         updateDbRangeFromRefAndScale();
+        update();
+    }
+}
+
+void PanadapterRhiWidget::setWaterfallColorRange(int db) {
+    // Out-of-range values (the -1 sentinel) fall back inside WaterfallGeometry::colorWindowFor.
+    if (m_waterfallColorRange != db) {
+        m_waterfallColorRange = db;
         update();
     }
 }

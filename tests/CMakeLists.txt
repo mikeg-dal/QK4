@@ -310,6 +310,7 @@ add_test(NAME AudioUpsamplerTests COMMAND test_audioupsampler)
 # Waterfall row/pixel mapping: which stored row each screen pixel samples, mirroring the shaders.
 add_executable(test_waterfallgeometry test_waterfallgeometry.cpp
     ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/spectrumscale.cpp
 )
 target_include_directories(test_waterfallgeometry PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_waterfallgeometry Qt6::Core Qt6::Test)
