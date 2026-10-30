@@ -407,6 +407,8 @@ void PopupManager::wireDisplayPopup() {
     auto adjustWaterfallHeight = [this](int delta) {
         const bool isExt = m_displayPopup->isExtEnabled() && !m_displayPopup->isLcdEnabled();
         const int current = isExt ? m_radioState->waterfallHeightExt() : m_radioState->waterfallHeight();
+        if (current < 0)
+            return; // the radio has not reported a height yet — nothing to step from
         const int next = qBound(10, current + delta, 90);
         const QString cmd =
             isExt ? QString("#HWFH%1;").arg(next, 2, 10, QChar('0')) : QString("#WFH%1;").arg(next, 2, 10, QChar('0'));
@@ -471,7 +473,7 @@ void PopupManager::wireDisplayPopup() {
             return;
         const bool vfoA = m_displayPopup->isVfoAEnabled();
         const bool vfoB = m_displayPopup->isVfoBEnabled();
-        if (vfoA) {
+        if (vfoA && m_radioState->refLevel() != SpectrumDisplayLimits::RefLevelUnknown) {
             const int newLevel = qBound(SpectrumDisplayLimits::RefLevelMin, m_radioState->refLevel() + delta,
                                         SpectrumDisplayLimits::RefLevelMax);
             if (newLevel != m_radioState->refLevel()) {
@@ -479,7 +481,7 @@ void PopupManager::wireDisplayPopup() {
                 m_connection->sendCAT(QString("#REF%1;").arg(newLevel));
             }
         }
-        if (vfoB) {
+        if (vfoB && m_radioState->refLevelB() != SpectrumDisplayLimits::RefLevelUnknown) {
             const int newLevel = qBound(SpectrumDisplayLimits::RefLevelMin, m_radioState->refLevelB() + delta,
                                         SpectrumDisplayLimits::RefLevelMax);
             if (newLevel != m_radioState->refLevelB()) {

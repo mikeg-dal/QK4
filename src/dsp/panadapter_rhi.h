@@ -10,6 +10,7 @@
 #include <QVector>
 #include <memory>
 #include "dsp/spectrumgeometry.h"
+#include "models/radiostate/spectrumdisplaystate.h"
 #include "utils/bandplan.h"
 #include "utils/wheelaccumulator.h"
 
@@ -40,8 +41,6 @@ public:
     int ifShift() const { return m_ifShift; }
     float spectrumRatio() const { return m_spectrumRatio; }
 
-    void setDbRange(float minDb, float maxDb);
-    void setSpectrumRatio(float ratio);
     void setTunedFrequency(qint64 freq);
     void setFilterBandwidth(int bwHz);
     void setMode(const QString &mode);
@@ -271,13 +270,17 @@ private:
     int m_fskMarkTone = 915; // FSK Mark-Tone (user-configurable from K4 front panel)
     int m_rttyShift = 170;   // Fixed 170 Hz shift between Mark and Space
 
-    // Display settings
-    float m_minDb = -138.0f;
-    float m_maxDb = -58.0f;
+    // Display settings. The dB window is always [m_refLevel, m_refLevel + m_scale]
+    // (updateDbRangeFromRefAndScale); these are the values before the radio's first #REF / #SCL,
+    // and clear() returns to them so a reconnect never inherits the last session's window.
+    int m_refLevel = SpectrumDisplayLimits::RefLevelDefault;
+    int m_scale = SpectrumDisplayLimits::ScaleDefault; // 10-150
+    float m_minDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault);
+    float m_maxDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault + SpectrumDisplayLimits::ScaleDefault);
+    // WHY a fixed value: layout only, until the radio's #WFH arrives (setWaterfallHeight); the
+    // radio's height replaces it on every connect, as the RadioState sentinel guarantees an emit.
     float m_spectrumRatio = 0.30f;
     bool m_gridEnabled = true;
-    int m_refLevel = -110;
-    int m_scale = 75; // 10-150, default 75 (neutral)
     int m_spanHz = 10000;
     bool m_notchEnabled = false;
     int m_notchPitchHz = 0;

@@ -5,8 +5,8 @@
 #include <QtGlobal>
 
 void SpectrumDisplayState::reset() {
-    refLevel = -110;
-    refLevelB = -110;
+    refLevel = SpectrumDisplayLimits::RefLevelUnknown;
+    refLevelB = SpectrumDisplayLimits::RefLevelUnknown;
     spanHz = 0;
     spanHzB = 0;
     scale = -1;
@@ -18,8 +18,8 @@ void SpectrumDisplayState::reset() {
     displayModeExt = -1;
     displayFps = 30;
     waterfallColor = -1;
-    waterfallHeight = 50;
-    waterfallHeightExt = 50;
+    waterfallHeight = -1;
+    waterfallHeightExt = -1;
     averaging = -1;
     peakMode = -1;
     fixedTune = -1;

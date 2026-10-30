@@ -90,8 +90,7 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     // Main panadapter for VFO A (left side) - QRhiWidget with Metal/DirectX/Vulkan
     m_panA.pad = new PanadapterRhiWidget(m_spectrumContainer);
     m_panA.pad->setObjectName("A");
-    // dB range set via setScale()/setRefLevel() from radio's #SCL/#REF values
-    m_panA.pad->setSpectrumRatio(0.35f);
+    // dB range and spectrum/waterfall split follow the radio's #SCL/#REF/#WFH (wired below)
     m_panA.pad->setGridEnabled(true);
     // Primary VFO A uses default cyan passband
     // Secondary VFO B uses green passband
@@ -114,8 +113,7 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     // Sub panadapter for VFO B (right side) - QRhiWidget with Metal/DirectX/Vulkan
     m_panB.pad = new PanadapterRhiWidget(m_spectrumContainer);
     m_panB.pad->setObjectName("B");
-    // dB range set via setScale()/setRefLevel() from radio's #SCL/#REF$ values
-    m_panB.pad->setSpectrumRatio(0.35f);
+    // dB range and spectrum/waterfall split follow the radio's #SCL/#REF$/#WFH (wired below)
     m_panB.pad->setGridEnabled(true);
     // Primary VFO B uses green passband
     m_panB.pad->setPassbandColor(vfoBPassbandAlpha);

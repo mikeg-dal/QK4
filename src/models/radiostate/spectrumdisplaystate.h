@@ -11,6 +11,10 @@ namespace SpectrumDisplayLimits {
 // #REF / #REF$ — bottom of the window, dBm.
 constexpr int RefLevelMin = -200;
 constexpr int RefLevelMax = 50;
+// Before the radio has reported a REF (and after reset()): outside the legal range, so the first
+// #REF always emits, and anything that steps REF has nothing to step from.
+constexpr int RefLevelUnknown = -999;
+// The panadapter's window before the radio's first #REF / #SCL. Display only — never sent.
 constexpr int RefLevelDefault = -110;
 // #SCL — height of the window, dB (global).
 constexpr int ScaleMin = 10;
@@ -27,9 +31,9 @@ constexpr int ScaleDefault = 75;
 // These all belong to the panadapter display subsystem. They were
 // spread across RadioState as ~20 sentinel-init ints.
 struct SpectrumDisplayState {
-    // #REF / #REF$ — Ref level (dBm), default -110
-    int refLevel = -110;
-    int refLevelB = -110;
+    // #REF / #REF$ — Ref level (dBm). RefLevelUnknown until the radio reports one.
+    int refLevel = SpectrumDisplayLimits::RefLevelUnknown;
+    int refLevelB = SpectrumDisplayLimits::RefLevelUnknown;
 
     // #SPN / #SPN$ — panadapter span in Hz. Init 0 to force first emit.
     int spanHz = 0;
@@ -49,8 +53,8 @@ struct SpectrumDisplayState {
     int displayModeExt = -1;     // #HDSM
     int displayFps = 30;         // #FPS 12-30
     int waterfallColor = -1;     // #WFC 0-4
-    int waterfallHeight = 50;    // #WFH 0-100%
-    int waterfallHeightExt = 50; // #HWFH 0-100%
+    int waterfallHeight = -1;    // #WFH 0-100%
+    int waterfallHeightExt = -1; // #HWFH 0-100%
     int averaging = -1;          // #AVG 1-20
     int peakMode = -1;           // #PKM 0/1 — int to preserve -1 sentinel
     int fixedTune = -1;          // #FXT 0=track, 1=fixed

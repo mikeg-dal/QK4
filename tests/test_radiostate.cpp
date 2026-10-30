@@ -1514,7 +1514,6 @@ private slots:
     }
 
     // --- #WFH / #HWFH (waterfall height, 0-100) ---
-    // WHY value=60 not 50: default m_waterfallHeight = 50, so 50 is no-change.
     void testWaterfallHeightParses() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::waterfallHeightChanged);
@@ -1525,8 +1524,37 @@ private slots:
 
     void testWaterfallHeightExtParses() {
         RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::waterfallHeightExtChanged);
         rs.parseCATCommand("#HWFH075;");
         QCOMPARE(rs.waterfallHeightExt(), 75);
+        QCOMPARE(spy.count(), 1);
+        // #HWFH is the external display's height; the LCD's is untouched.
+        QCOMPARE(rs.waterfallHeight(), -1);
+    }
+
+    // The RDY dump forms from a K4D capture (2026-10-30), the range edges, and rejections.
+    void testWaterfallHeightRangeAndMalformed() {
+        RadioState rs;
+        rs.parseCATCommand("#WFH60;");
+        rs.parseCATCommand("#HWFH65;");
+        QCOMPARE(rs.waterfallHeight(), 60);
+        QCOMPARE(rs.waterfallHeightExt(), 65);
+        rs.parseCATCommand("#WFH0;");
+        QCOMPARE(rs.waterfallHeight(), 0);
+        rs.parseCATCommand("#WFH100;");
+        QCOMPARE(rs.waterfallHeight(), 100);
+
+        QSignalSpy spy(&rs, &RadioState::waterfallHeightChanged);
+        QSignalSpy extSpy(&rs, &RadioState::waterfallHeightExtChanged);
+        rs.parseCATCommand("#WFH101;");
+        rs.parseCATCommand("#WFH-1;");
+        rs.parseCATCommand("#WFH;");
+        rs.parseCATCommand("#HWFH101;");
+        rs.parseCATCommand("#HWFH;");
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(extSpy.count(), 0);
+        QCOMPARE(rs.waterfallHeight(), 100);
+        QCOMPARE(rs.waterfallHeightExt(), 65);
     }
 
     // --- #AVG (averaging, 1-20) ---
@@ -1712,8 +1740,32 @@ private slots:
 
     void testRefLevelBParses() {
         RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::refLevelBChanged);
         rs.parseCATCommand("#REF$-100;");
         QCOMPARE(rs.refLevelB(), -100);
+        QCOMPARE(spy.count(), 1);
+        // #REF$ belongs to the Sub pan only.
+        QCOMPARE(rs.refLevel(), SpectrumDisplayLimits::RefLevelUnknown);
+    }
+
+    // The RDY dump form from a K4D capture (2026-10-30), the range edges, and rejections.
+    void testRefLevelRangeAndMalformed() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-129;");
+        QCOMPARE(rs.refLevel(), -129);
+        rs.parseCATCommand("#REF-200;");
+        QCOMPARE(rs.refLevel(), -200);
+        rs.parseCATCommand("#REF50;");
+        QCOMPARE(rs.refLevel(), 50);
+
+        QSignalSpy spy(&rs, &RadioState::refLevelChanged);
+        rs.parseCATCommand("#REF-201;"); // below range
+        rs.parseCATCommand("#REF51;");   // above range
+        rs.parseCATCommand("#REF;");     // GET form, no value
+        rs.parseCATCommand("#REFxx;");   // not a number
+        rs.parseCATCommand("#REF50;");   // unchanged
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(rs.refLevel(), 50);
     }
 
     // --- #SPN / #SPN$ (span Hz, 1..999999, via handleIntPair) ---
@@ -3032,8 +3084,10 @@ private slots:
         // Display
         QCOMPARE(rs.scale(), -1);
         QCOMPARE(rs.averaging(), -1);
-        QCOMPARE(rs.refLevel(), -110); // special sentinel (dBm)
-        QCOMPARE(rs.refLevelB(), -110);
+        QCOMPARE(rs.refLevel(), SpectrumDisplayLimits::RefLevelUnknown); // outside -200..50
+        QCOMPARE(rs.refLevelB(), SpectrumDisplayLimits::RefLevelUnknown);
+        QCOMPARE(rs.waterfallHeight(), -1);
+        QCOMPARE(rs.waterfallHeightExt(), -1);
         // Balance uses -99 (outside valid -50..+50)
         QCOMPARE(rs.balanceMode(), -1);
         QCOMPARE(rs.balanceOffset(), -99);
@@ -3225,19 +3279,45 @@ private slots:
         QCOMPARE(rs.lpaTemperatureC(), -1);
     }
 
-    // Defaults-with-special-values check: a handful of fields use non-negative
-    // sentinels (default 50, 30, 1000, etc.) that could collide with legal
-    // values. Lock in the exact default so a regression changes it visibly.
-    void testNonNegativeSentinelDefaults() {
+    // SPEC-002: REF and the waterfall height used to reset to real values (-110 dBm, 50 %), so a
+    // radio reporting exactly those after a reconnect was swallowed by the change guard and the
+    // panadapter kept the previous session's REF or QK4's own split. Each must now emit after
+    // reset(), including when the value equals the one held before the reset.
+    void testRefAndWaterfallHeightEmitAfterReset() {
         RadioState rs;
-        // waterfallHeight default = 50 (mid-range, legal value 0-100).
-        // Any CAT update with WFH050; is no-op.
-        QSignalSpy spy(&rs, &RadioState::waterfallHeightChanged);
-        rs.parseCATCommand("#WFH050;"); // same as default
-        QCOMPARE(spy.count(), 0);
-        // displayFps default = 30, waterfallHeightExt default = 50 —
-        // these are documented in reset() and protected by testWaterfallHeightParses
-        // using a value ≠ 50.
+        rs.parseCATCommand("#REF-110;");
+        rs.parseCATCommand("#REF$-110;");
+        rs.parseCATCommand("#WFH50;");
+        rs.parseCATCommand("#HWFH50;");
+        rs.reset();
+
+        QSignalSpy refSpy(&rs, &RadioState::refLevelChanged);
+        QSignalSpy refBSpy(&rs, &RadioState::refLevelBChanged);
+        QSignalSpy wfhSpy(&rs, &RadioState::waterfallHeightChanged);
+        QSignalSpy hwfhSpy(&rs, &RadioState::waterfallHeightExtChanged);
+        rs.parseCATCommand("#REF-110;");
+        rs.parseCATCommand("#REF$-110;");
+        rs.parseCATCommand("#WFH50;");
+        rs.parseCATCommand("#HWFH50;");
+        QCOMPARE(refSpy.count(), 1);
+        QCOMPARE(refSpy.at(0).at(0).toInt(), -110);
+        QCOMPARE(refBSpy.count(), 1);
+        QCOMPARE(refBSpy.at(0).at(0).toInt(), -110);
+        QCOMPARE(wfhSpy.count(), 1);
+        QCOMPARE(wfhSpy.at(0).at(0).toInt(), 50);
+        QCOMPARE(hwfhSpy.count(), 1);
+        QCOMPARE(hwfhSpy.at(0).at(0).toInt(), 50);
+    }
+
+    // The same on a fresh instance: the very first report emits whatever its value.
+    void testRefAndWaterfallHeightFirstReportEmits() {
+        RadioState rs;
+        QSignalSpy refSpy(&rs, &RadioState::refLevelChanged);
+        QSignalSpy wfhSpy(&rs, &RadioState::waterfallHeightChanged);
+        rs.parseCATCommand("#REF-110;");
+        rs.parseCATCommand("#WFH50;");
+        QCOMPARE(refSpy.count(), 1);
+        QCOMPARE(wfhSpy.count(), 1);
     }
 };
 

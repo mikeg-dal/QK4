@@ -142,8 +142,9 @@ protected:
     }
 
 private:
-    float m_minDb = -138.0f;
-    float m_maxDb = -58.0f;
+    // Always set by the panadapter (setDbRange) before the first paint.
+    float m_minDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault);
+    float m_maxDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault + SpectrumDisplayLimits::ScaleDefault);
     bool m_useSUnits = false;
     int m_topReserved = 0;
 };
@@ -1515,20 +1516,6 @@ int PanadapterRhiWidget::calculateGridInterval(int spanHz) const {
 }
 
 // Configuration setters
-void PanadapterRhiWidget::setDbRange(float minDb, float maxDb) {
-    m_minDb = minDb;
-    m_maxDb = maxDb;
-    updateDbmScaleOverlay(); // Update overlay labels when range changes
-    update();
-}
-
-void PanadapterRhiWidget::setSpectrumRatio(float ratio) {
-    m_spectrumRatio = qBound(0.1f, ratio, 0.9f);
-    updateDbmScaleOverlay();  // Resize dBm scale to match new spectrum area
-    updateFreqScaleOverlay(); // Reposition frequency labels at boundary
-    update();
-}
-
 void PanadapterRhiWidget::setWaterfallHeight(int percent) {
     // Waterfall height percentage: 50% means 50% waterfall, 50% spectrum
     // Spectrum ratio = (100 - waterfallHeight) / 100
@@ -1619,6 +1606,12 @@ void PanadapterRhiWidget::clear() {
     m_txMarkerVisible = false;
     m_fskMarkTone = 915;
     m_rttyShift = 170;
+
+    // The next session's #REF / #SCL set the window again; until then show the default, not the
+    // last radio's. The split (m_spectrumRatio) is kept: it is layout, and #WFH replaces it.
+    m_refLevel = SpectrumDisplayLimits::RefLevelDefault;
+    m_scale = SpectrumDisplayLimits::ScaleDefault;
+    updateDbRangeFromRefAndScale();
 
     // Diagnostics restart with the next session's data.
     m_calibDelta = 0.0f;
