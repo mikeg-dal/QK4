@@ -1,5 +1,6 @@
 // TcpClient against loopback fake radios on the unencrypted port's protocol: a SHA-384 password
 // hash, then framed packets. Nothing here connects to a real radio.
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -37,6 +38,15 @@ public:
     }
     QByteArray received(qsizetype i) const { return m_received.value(i); }
     QTcpSocket *socket(qsizetype i) const { return m_sockets.value(i); }
+
+    // The keys of every PING<key>; the client has sent on connection i, in order.
+    QStringList pingKeys(qsizetype i) const {
+        static const QRegularExpression ping(QStringLiteral("PING(\\d+);"));
+        QStringList keys;
+        for (const QRegularExpressionMatch &m : ping.globalMatch(QString::fromLatin1(m_received.value(i))))
+            keys.append(m.captured(1));
+        return keys;
+    }
 
     // What the K4 does once it accepts the hash: start talking. Any packet completes authentication.
     void answer(qsizetype i, const QString &cat = QStringLiteral("RDY;")) {
@@ -159,6 +169,47 @@ private slots:
         QTRY_COMPARE(client.connectionState(), TcpClient::Connected);
         client.sendRaw(QByteArrayLiteral("AUDIO"));
         QTRY_VERIFY(radio.received(0).endsWith("AUDIO"));
+        client.disconnectFromHost();
+    }
+
+    // TRN-003. A ping goes out every second, so a round trip longer than that must still be timed
+    // from its own ping. The old timer restarted on every ping: 1.3 s read as about 0.3 s.
+    void roundTripLongerThanThePingIntervalIsReportedInFull() {
+        FakeRadio radio;
+        QVERIFY(radio.listen());
+        TcpClient client;
+        QSignalSpy latency(&client, &TcpClient::latencyChanged);
+
+        client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
+        QTRY_COMPARE(radio.connectionCount(), 1);
+        radio.answer(0);
+        QTRY_COMPARE(client.connectionState(), TcpClient::Connected);
+        QTRY_COMPARE_WITH_TIMEOUT(radio.pingKeys(0).size(), 2, 3000);
+        QTest::qWait(300);
+        const QString firstKey = radio.pingKeys(0).first();
+        radio.answer(0, QStringLiteral("PONG%1;").arg(firstKey));
+        QTRY_COMPARE(latency.size(), 1);
+        QVERIFY2(latency.first().first().toInt() >= 1200, qPrintable(latency.first().first().toString()));
+        client.disconnectFromHost();
+    }
+
+    // TRN-003. The K4 can bundle a PONG after other replies in one CAT packet. The old code matched
+    // PONG only at the start of a payload and measured nothing.
+    void pongBundledAfterOtherRepliesIsMeasured() {
+        FakeRadio radio;
+        QVERIFY(radio.listen());
+        TcpClient client;
+        QSignalSpy latency(&client, &TcpClient::latencyChanged);
+
+        client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
+        QTRY_COMPARE(radio.connectionCount(), 1);
+        radio.answer(0);
+        QTRY_COMPARE(client.connectionState(), TcpClient::Connected);
+        QTRY_COMPARE_WITH_TIMEOUT(radio.pingKeys(0).size(), 1, 3000);
+        radio.answer(0, QStringLiteral("FA00014074000;PONG%1;").arg(radio.pingKeys(0).first()));
+        QTRY_COMPARE(latency.size(), 1);
+        QVERIFY(latency.first().first().toInt() >= 0);
+        QVERIFY(latency.first().first().toInt() < 1000);
         client.disconnectFromHost();
     }
 };

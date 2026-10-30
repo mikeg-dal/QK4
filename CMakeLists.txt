@@ -155,6 +155,7 @@ set(SOURCES
     src/controllers/cwcontroller.cpp
     src/controllers/transmitcontroller.cpp
     src/network/tcpclient.cpp
+    src/network/pingtracker.cpp
     src/network/kzegress.cpp
     src/utils/rtscheduling.cpp
     src/utils/rtsemaphore.cpp
@@ -337,6 +338,7 @@ set(HEADERS
     src/controllers/memorybuttonscontroller.h
     src/controllers/cwcontroller.h
     src/network/tcpclient.h
+    src/network/pingtracker.h
     src/network/kzegress.h
     src/utils/latencyhistogram.h
     src/utils/rtscheduling.h

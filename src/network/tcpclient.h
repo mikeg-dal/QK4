@@ -8,6 +8,7 @@
 #include <QTimer>
 #include <atomic>
 #include "connect_failure.h"
+#include "pingtracker.h"
 #include "protocol.h"
 #include "utils/latencyhistogram.h"
 
@@ -142,7 +143,10 @@ private:
     std::uint64_t m_kzLatencyLogged = 0; // samples covered by the last summary
     int m_pingTicks = 0;
 
-    QElapsedTimer m_pingElapsed;
+    // One monotonic clock per session, started when it reaches Connected; every PING's send time
+    // and every PONG's arrival are read from it. See PingTracker for why not a timer per ping.
+    QElapsedTimer m_linkClock;
+    PingTracker m_pings;
     int m_latencyMs = -1;
     QString m_startupMacro; // Sent before RDY so state dump reflects macro changes
 };

@@ -425,10 +425,17 @@ add_executable(test_tcpclient test_tcpclient.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tcpclient.cpp
     ${CMAKE_SOURCE_DIR}/src/network/protocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/kzegress.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/pingtracker.cpp
 )
 target_include_directories(test_tcpclient PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tcpclient Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TcpClientTests COMMAND test_tcpclient)
+
+# PING/PONG round-trip bookkeeping: pure, no socket.
+add_executable(test_pingtracker test_pingtracker.cpp ${CMAKE_SOURCE_DIR}/src/network/pingtracker.cpp)
+target_include_directories(test_pingtracker PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_pingtracker Qt6::Core Qt6::Test)
+add_test(NAME PingTrackerTests COMMAND test_pingtracker)
 
 # KZ egress: the lock-free queue from the CW keying threads to the I/O thread, its wake-up across a
 # moveToThread, and the latency histogram the I/O thread keeps.

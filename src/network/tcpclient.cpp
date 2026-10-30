@@ -369,6 +369,8 @@ void TcpClient::setState(ConnectionState state) {
             m_kzLatency.reset();
             m_kzLatencyLogged = 0;
             m_pingTicks = 0;
+            m_pings.reset();
+            m_linkClock.start();
         } else if (prev == Connected) {
             logKzLatency();
         }
@@ -554,9 +556,9 @@ void TcpClient::onAuthTimeout() {
 
 void TcpClient::onPingTimer() {
     if (m_state.load(std::memory_order_acquire) == Connected) {
-        qint64 epoch = QDateTime::currentSecsSinceEpoch();
+        const qint64 epoch = QDateTime::currentSecsSinceEpoch();
         sendCAT(QString("PING%1;").arg(epoch));
-        m_pingElapsed.start();
+        m_pings.pingSent(epoch, m_linkClock.elapsed());
         // WHY on the ping: it is the I/O thread's only steady tick, and a summary a minute is plenty.
         if (++m_pingTicks * K4Protocol::PING_INTERVAL_MS >= 60'000) {
             m_pingTicks = 0;
@@ -566,8 +568,11 @@ void TcpClient::onPingTimer() {
 }
 
 void TcpClient::onCatResponse(const QString &response) {
-    if (response.startsWith("PONG")) {
-        m_latencyMs = static_cast<int>(m_pingElapsed.elapsed());
+    if (m_state.load(std::memory_order_acquire) != Connected)
+        return;
+    const qint64 rtt = m_pings.onCatPayload(response, m_linkClock.elapsed());
+    if (rtt >= 0) {
+        m_latencyMs = static_cast<int>(rtt);
         emit latencyChanged(m_latencyMs);
     }
 }
