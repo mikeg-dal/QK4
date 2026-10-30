@@ -31,7 +31,7 @@ never moved to another top-level window; implement it before doing that.
 - `rhi_utils.h` — Shared RHI helpers: shader loading, the uniform-block structs shared with the shaders, overlay staging.
 - `waterfallcolorlut.h` — The waterfall's 256-entry colour table (`RhiUtils::generateWaterfallColorLUT`). Qt Core only, so `test_waterfallgeometry` can check colours against the real table.
 - `shaders/` — Vulkan-style GLSL (`#version 440`), compiled at build time to `.qsb` by `qt6_add_shaders()` in `CMakeLists.txt` and loaded from `:/shaders/src/dsp/shaders/*.qsb`.
-  - `spectrum_fill.{vert,frag}` — the panadapter's filled spectrum trace.
+  - `spectrum_fill.{vert,frag}` — the panadapter's filled spectrum trace. Opaque (0.9) all the way down: the band noise is drawn at the bottom, so nothing fades there. `SpectrumGeometry::fillAlphaFor` mirrors its alpha for `test_spectrumgeometry`.
   - `spectrum.{vert,frag}` — the mini-pan's spectrum trace.
   - `waterfall.{vert,frag}` — the waterfall, in both widgets.
   - `overlay.{vert,frag}` — flat-colour overlay geometry (passband, markers, grid lines), in both widgets.

@@ -52,6 +52,12 @@ int usableBinCount(qsizetype payloadSize, int binsOffset, int binCount, int maxB
 // uneven gaps. Returns gridIntervalHz for degenerate input.
 int frequencyLabelStepHz(int gridIntervalHz, int spanHz, double widthPx, double widestLabelPx, double gapPx);
 
+// Opacity spectrum_fill.frag gives a pixel — a mirror of its alpha lines, kept in sync by hand
+// (shaders cannot be unit tested). y and peakY are in the fill quad's texture space, 0 at the top
+// and 1 at the bottom; the trace is at peakY. Below the trace the fill is 0.9 opaque at every
+// height: there is no fade towards the bottom, which is where the band noise is drawn.
+float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, float glowAlpha);
+
 } // namespace SpectrumGeometry
 
 #endif // SPECTRUMGEOMETRY_H

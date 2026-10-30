@@ -30,6 +30,7 @@ private slots:
 
     void frequencyLabelsTakeOneEvenStep();
     void frequencyLabelStepIsTheSmallestThatFits();
+    void fillIsOpaqueDownToTheBottomEdge();
 };
 
 void TestSpectrumGeometry::modeParsesRadioStateSpelling() {
@@ -194,6 +195,19 @@ void TestSpectrumGeometry::frequencyLabelStepIsTheSmallestThatFits() {
             }
         }
     }
+}
+
+// The band noise sits at the bottom of the spectrum. The fill used to fade there to 10% alpha, which
+// made the noise nearly invisible; below the trace it must be as opaque at the bottom as anywhere.
+// Values are the panadapter's glow uniforms (width 0.04, intensity 0.8, cyan alpha 1.0).
+void TestSpectrumGeometry::fillIsOpaqueDownToTheBottomEdge() {
+    for (float peakY = 0.0f; peakY <= 0.98f; peakY += 0.02f) {
+        for (float y = peakY + 0.01f; y <= 1.0f; y += 0.005f)
+            QVERIFY2(fillAlphaFor(y, peakY, 0.04f, 0.8f, 1.0f) >= 0.9f,
+                     qPrintable(QString("peak %1 y %2").arg(peakY).arg(y)));
+    }
+    // Well above the trace and its glow nothing is drawn.
+    QCOMPARE(fillAlphaFor(0.1f, 0.9f, 0.04f, 0.8f, 1.0f), 0.0f);
 }
 
 QTEST_APPLESS_MAIN(TestSpectrumGeometry)

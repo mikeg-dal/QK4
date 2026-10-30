@@ -1,5 +1,7 @@
 #include "spectrumgeometry.h"
 
+#include <cmath>
+
 namespace SpectrumGeometry {
 
 Mode modeFromString(const QString &mode) {
@@ -100,6 +102,19 @@ int frequencyLabelStepHz(int gridIntervalHz, int spanHz, double widthPx, double 
                 return static_cast<int>(step);
         }
     }
+}
+
+float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, float glowAlpha) {
+    const float distFromPeak = y - peakY;
+    if (distFromPeak < -glowWidth * 2.0f)
+        return 0.0f; // discarded above the trace and its glow
+    // smoothstep(-0.002, 0.002, distFromPeak)
+    const float t = qBound(0.0f, (distFromPeak + 0.002f) / 0.004f, 1.0f);
+    const float fillMask = t * t * (3.0f - 2.0f * t);
+    const float glowDist = std::abs(distFromPeak);
+    float glow = std::exp(-glowDist / glowWidth) * glowIntensity;
+    glow = qMax(glow, std::exp(-glowDist / (glowWidth * 0.3f)) * glowIntensity * 0.5f);
+    return qMax(0.9f * fillMask, glow * glowAlpha);
 }
 
 } // namespace SpectrumGeometry

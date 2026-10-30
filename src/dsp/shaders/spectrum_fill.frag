@@ -72,12 +72,13 @@ void main() {
     // Add glow (additive blending for bright halo effect)
     finalColor += glowColor.rgb * glow;
 
-    // Alpha: fill alpha where filled, glow alpha where glowing
+    // Alpha: fill alpha where filled, glow alpha where glowing. Mirrored by
+    // SpectrumGeometry::fillAlphaFor.
+    //
+    // WHY no fade towards the bottom: a fade over the lowest 12% (down to 10% alpha) used to sit
+    // exactly where AutoRef puts the band noise, so the noise was nearly invisible. The K4 draws
+    // that noise at full strength.
     float finalAlpha = max(0.9 * fillMask, glow * glowColor.a);
-
-    // Bottom fade - gentle transition at noise floor
-    float bottomFade = 1.0 - smoothstep(0.88, 0.98, currentY);
-    finalAlpha *= max(bottomFade, 0.1);
 
     // Clamp to prevent over-saturation
     finalColor = clamp(finalColor, 0.0, 1.0);
