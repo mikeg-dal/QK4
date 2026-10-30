@@ -243,6 +243,10 @@ ctest --test-dir build-tests --output-on-failure
 
 Application settings are under **Tools → Settings…** (on macOS, **QK4 → Settings…**), which opens the **Options** dialog.
 
+Left-click **M1–M4** to play a stored message once, or right-click to repeat it, equivalent to holding
+the corresponding button on the K4. The repeat delay uses the radio's **MENU → Message Repeat Interval**
+setting. Click **REC** to cancel playback.
+
 ## Reporting a Bug: Log Files
 
 QK4 can write a log file that shows what it was doing when something went wrong. It is off until you turn it on:

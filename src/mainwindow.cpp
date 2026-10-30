@@ -1381,7 +1381,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
     }
 
     // Panadapter resize events handled by SpectrumController's eventFilter.
-    // Memory button right-clicks (REC/STORE/RCL) handled by
+    // Memory button right-clicks (M1-M4/REC/STORE/RCL) handled by
     // MemoryButtonsController's own eventFilter.
 
     // RIT / XIT label clicks + wheel routed to RitXitController.
