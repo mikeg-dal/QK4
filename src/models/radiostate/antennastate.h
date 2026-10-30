@@ -1,6 +1,8 @@
 #ifndef MODELS_RADIOSTATE_ANTENNASTATE_H
 #define MODELS_RADIOSTATE_ANTENNASTATE_H
 
+#include "reportedflag.h"
+
 #include <QMap>
 #include <QString>
 #include <QVector>
@@ -21,16 +23,17 @@ struct AntennaState {
     QMap<int, QString> antennaNames; // ACN: antenna 1-7 display names
 
     // ACM — Main RX mask: which antennas to offer in the main RX popup
-    // displayAll=true lets the user pick from all; false limits to masked.
-    bool mainRxDisplayAll = true;
+    // displayAll=true lets the user pick from all; false limits to masked. Unknown until the radio
+    // reports it (the getters read unknown as true), so the first ACM/ACS/ACT always emits.
+    ReportedFlag mainRxDisplayAll;
     bool mainRxAntMask[7] = {false, false, false, false, false, false, false};
 
     // ACS — Sub RX mask
-    bool subRxDisplayAll = true;
+    ReportedFlag subRxDisplayAll;
     bool subRxAntMask[7] = {false, false, false, false, false, false, false};
 
     // ACT — TX mask (only 3 TX antennas on the K4)
-    bool txDisplayAll = true;
+    ReportedFlag txDisplayAll;
     bool txAntMask[3] = {false, false, false};
 
     void reset();

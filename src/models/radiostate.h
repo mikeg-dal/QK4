@@ -468,7 +468,7 @@ public:
     void setTxEqBands(const QVector<int> &bands);
 
     // Antenna Configuration Masks (ACM/ACS/ACT) — backed by m_antennaState.
-    bool mainRxDisplayAll() const { return m_antennaState.mainRxDisplayAll; }
+    bool mainRxDisplayAll() const { return m_antennaState.mainRxDisplayAll.valueOr(true); }
     bool mainRxAntEnabled(int index) const {
         return (index >= 0 && index < 7) ? m_antennaState.mainRxAntMask[index] : false;
     }
@@ -476,7 +476,7 @@ public:
         return QVector<bool>(m_antennaState.mainRxAntMask, m_antennaState.mainRxAntMask + 7);
     }
 
-    bool subRxDisplayAll() const { return m_antennaState.subRxDisplayAll; }
+    bool subRxDisplayAll() const { return m_antennaState.subRxDisplayAll.valueOr(true); }
     bool subRxAntEnabled(int index) const {
         return (index >= 0 && index < 7) ? m_antennaState.subRxAntMask[index] : false;
     }
@@ -484,7 +484,7 @@ public:
         return QVector<bool>(m_antennaState.subRxAntMask, m_antennaState.subRxAntMask + 7);
     }
 
-    bool txDisplayAll() const { return m_antennaState.txDisplayAll; }
+    bool txDisplayAll() const { return m_antennaState.txDisplayAll.valueOr(true); }
     bool txAntEnabled(int index) const { return (index >= 0 && index < 3) ? m_antennaState.txAntMask[index] : false; }
     QVector<bool> txAntMask() const { return QVector<bool>(m_antennaState.txAntMask, m_antennaState.txAntMask + 3); }
 
