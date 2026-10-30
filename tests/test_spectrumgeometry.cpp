@@ -31,6 +31,7 @@ private slots:
     void frequencyLabelsTakeOneEvenStep();
     void frequencyLabelStepIsTheSmallestThatFits();
     void fillIsOpaqueDownToTheBottomEdge();
+    void avgOneDrawsEveryFrameAsItArrives();
 };
 
 void TestSpectrumGeometry::modeParsesRadioStateSpelling() {
@@ -208,6 +209,24 @@ void TestSpectrumGeometry::fillIsOpaqueDownToTheBottomEdge() {
     }
     // Well above the trace and its glow nothing is drawn.
     QCOMPARE(fillAlphaFor(0.1f, 0.9f, 0.04f, 0.8f, 1.0f), 0.0f);
+}
+
+// #AVG 1 means no averaging on the K4; QK4 must not smooth either, or the noise grass sits about one
+// S-unit low (bench 2026-10-30). Higher levels smooth, more with each level, and stay in (0, 1].
+void TestSpectrumGeometry::avgOneDrawsEveryFrameAsItArrives() {
+    const EmaAlphas one = emaAlphasFor(1);
+    QCOMPARE(one.attack, 1.0f);
+    QCOMPARE(one.decay, 1.0f);
+    QCOMPARE(emaAlphasFor(0).attack, 1.0f); // clamped up to 1
+    float prevAttack = 1.0f, prevDecay = 1.0f;
+    for (int level = 2; level <= 20; ++level) {
+        const EmaAlphas a = emaAlphasFor(level);
+        QVERIFY(a.attack > 0.0f && a.attack < prevAttack);
+        QVERIFY(a.decay > 0.0f && a.decay < prevDecay);
+        prevAttack = a.attack;
+        prevDecay = a.decay;
+    }
+    QCOMPARE(emaAlphasFor(25).attack, emaAlphasFor(20).attack); // clamped down to 20
 }
 
 QTEST_APPLESS_MAIN(TestSpectrumGeometry)

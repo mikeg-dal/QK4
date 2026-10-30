@@ -1,6 +1,7 @@
 #include "panadapter_rhi.h"
 #include "logging/logcategories.h"
 #include "dsp/bandplanstrip.h"
+#include "dsp/spectrumgeometry.h"
 #include "dsp/spectrumscale.h"
 #include "dsp/waterfallgeometry.h"
 #include "models/radiostate/spectrumdisplaystate.h"
@@ -1704,13 +1705,13 @@ void PanadapterRhiWidget::setAmplitudeUnits(bool useSUnits) {
 }
 
 void PanadapterRhiWidget::setAveraging(int level) {
-    level = qBound(1, level, 20);
+    level = std::clamp(level, 1, 20);
     if (m_averagingLevel == level)
         return;
     m_averagingLevel = level;
-    float t = (level - 1) / 19.0f;
-    m_attackAlpha = 0.52f - t * 0.22f; // 0.52 → 0.30
-    m_decayAlpha = 0.34f - t * 0.24f;  // 0.34 → 0.10
+    const SpectrumGeometry::EmaAlphas alphas = SpectrumGeometry::emaAlphasFor(level);
+    m_attackAlpha = alphas.attack;
+    m_decayAlpha = alphas.decay;
 }
 
 // Secondary VFO setters

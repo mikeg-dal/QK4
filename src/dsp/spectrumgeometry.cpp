@@ -1,5 +1,6 @@
 #include "spectrumgeometry.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace SpectrumGeometry {
@@ -115,6 +116,14 @@ float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, f
     float glow = std::exp(-glowDist / glowWidth) * glowIntensity;
     glow = qMax(glow, std::exp(-glowDist / (glowWidth * 0.3f)) * glowIntensity * 0.5f);
     return qMax(0.9f * fillMask, glow * glowAlpha);
+}
+
+EmaAlphas emaAlphasFor(int avgLevel) {
+    const int level = std::clamp(avgLevel, 1, 20);
+    if (level == 1)
+        return {1.0f, 1.0f};
+    const float t = static_cast<float>(level - 1) / 19.0f;
+    return {0.52f - t * 0.22f, 0.34f - t * 0.24f}; // 0.52 -> 0.30, 0.34 -> 0.10
 }
 
 } // namespace SpectrumGeometry
