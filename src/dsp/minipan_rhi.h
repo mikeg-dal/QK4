@@ -168,9 +168,9 @@ private:
     int m_bandwidthHz = 10000;
 
     // Display averaging (K4 #AVG control, 1-20)
-    int m_averagingLevel = 1;
-    float m_attackAlpha = 0.52f;
-    float m_decayAlpha = 0.34f;
+    int m_averagingLevel = -1; // until the radio reports #AVG; see PanadapterRhiWidget
+    float m_attackAlpha = 1.0f;
+    float m_decayAlpha = 1.0f;
 
     // Filter passband visualization
     int m_filterBw = 2400;

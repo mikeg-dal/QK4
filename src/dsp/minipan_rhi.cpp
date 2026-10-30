@@ -1,4 +1,5 @@
 #include "minipan_rhi.h"
+#include "dsp/spectrumgeometry.h"
 #include "logging/logcategories.h"
 #include "panadapter_constants.h"
 #include "dashgeometry.h"
@@ -752,6 +753,7 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins) {
 }
 
 void MiniPanRhiWidget::clear() {
+    m_averagingLevel = -1; // the next session's #AVG always applies
     m_spectrum.clear();
     m_smoothedSpectrum.clear();
     m_waterfallWriteRow = 0;
@@ -859,13 +861,14 @@ void MiniPanRhiWidget::setCwPitch(int pitchHz) {
 }
 
 void MiniPanRhiWidget::setAveraging(int level) {
-    level = qBound(1, level, 20);
+    level = std::clamp(level, 1, 20);
     if (m_averagingLevel == level)
         return;
     m_averagingLevel = level;
-    float t = (level - 1) / 19.0f;
-    m_attackAlpha = 0.52f - t * 0.22f; // 0.52 → 0.30
-    m_decayAlpha = 0.34f - t * 0.24f;  // 0.34 → 0.10
+    // One rule for both pans (Rule 1): no smoothing at #AVG 1, as on the K4.
+    const SpectrumGeometry::EmaAlphas alphas = SpectrumGeometry::emaAlphasFor(level);
+    m_attackAlpha = alphas.attack;
+    m_decayAlpha = alphas.decay;
 }
 
 void MiniPanRhiWidget::mousePressEvent(QMouseEvent *event) {

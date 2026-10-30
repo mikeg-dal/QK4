@@ -1572,6 +1572,7 @@ void PanadapterRhiWidget::clear() {
     // is not blended with the last one before it.
     m_currentSpectrum.clear();
     m_rawSpectrum.clear();
+    m_averagingLevel = -1; // the next session's #AVG always applies
     m_tierSpectrum.clear();
     m_tierRawSpectrum.clear();
     m_lastTierSampleRate = 0;

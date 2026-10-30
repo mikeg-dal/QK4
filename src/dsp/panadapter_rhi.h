@@ -319,9 +319,11 @@ private:
     QColor m_txMarkerColor{255, 60, 60, 160}; // Translucent red
 
     // Display averaging (K4 #AVG control, 1-20)
-    int m_averagingLevel = 1;
-    float m_attackAlpha = 0.52f;
-    float m_decayAlpha = 0.34f;
+    // -1 until the radio reports #AVG, so its first report always applies (a legal default here
+    // swallowed #AVG1 and left the old smoothing on). Unsmoothed until then.
+    int m_averagingLevel = -1;
+    float m_attackAlpha = 1.0f;
+    float m_decayAlpha = 1.0f;
 
     WheelAccumulator m_wheelAccumulator;
 
