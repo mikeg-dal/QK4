@@ -37,10 +37,17 @@ void main() {
     float binIndex = tierU * binCount;
     float binOffset = floor((textureWidth - binCount) / 2.0);
 
-    // Nearest-neighbor: truncate to get bin, add 0.5 to sample center of texel
-    float texU = (binOffset + floor(binIndex) + 0.5) / textureWidth;
+    // Blend the two nearest bins (the sampler is Linear). Bin i's centre stays at i + 0.5, where the
+    // old nearest-bin snap drew it, so nothing moves sideways. WHY: at narrow spans a bin is several
+    // pixels wide, and the snap drew each one as a hard-edged block (~6 px at 14 MHz, bench
+    // 2026-10-30) where the K4 front panel shows a smooth waterfall even at #AVG 1. The blend is of
+    // levels, before the palette, so it never invents a colour between two unrelated hues.
+    // Clamped to the outer bin centres so the edges never blend with the empty texels beside the
+    // bins (they read as "no data").
+    float binPos = clamp(binIndex, 0.5, binCount - 0.5);
+    float texU = (binOffset + binPos) / textureWidth;
 
-    // Snap V to a texel centre, the vertical twin of the texU floor() above. A V landing between
+    // Snap V to a texel centre (time is not blended, unlike frequency above). A V landing between
     // two rows makes Linear filtering return a blend of two different moments in time, which is
     // the vertical smear. Snapping also makes any rows-per-pixel ratio unblended, not just 1:1.
     // Composes with the ring wrap: Repeat addressing handles a snapped coordinate past 1.0 the

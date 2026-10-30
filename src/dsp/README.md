@@ -123,12 +123,15 @@ one line of shader math is the entire difference between them:
 
 - `spectrum_fill.frag` → `texU = (binOffset + u * binCount + 0.5) / textureWidth`. Not floored, so
   samples land between texel centres and hardware bilinear blends adjacent bins — a smooth trace.
-- `waterfall.frag` → `texU = (binOffset + floor(binIndex) + 0.5) / textureWidth`. The `floor()`
-  snaps to an exact texel centre, where bilinear returns that texel unchanged, so the waterfall is
-  effectively nearest-neighbour and keeps hard bin edges (`8ad70ea`). That `floor()` also fixes a
-  C++ integer vs GLSL float division mismatch that blurred 5/8/11 kHz spans.
-- `waterfall.frag` → `texV = (floor(texV * storedRows) + 0.5) / storedRows`, the vertical twin of
-  the above. A V between two rows makes bilinear blend **two different moments in time**, which is
+- `waterfall.frag` → `texU = (binOffset + clamp(binIndex, 0.5, binCount - 0.5)) / textureWidth`.
+  Also not floored: bilinear blends the two nearest bins, with bin i's centre at i + 0.5 and the
+  edges clamped to the outer bin centres so they never blend with the empty texels. It was
+  nearest-neighbour from `8ad70ea` (hard bin edges) until 2026-10-30, when at narrow spans each bin
+  drew as a ~6 px block while the K4 front panel looks smooth even at #AVG 1. The `floor()` on
+  `binOffset` (both shaders) stays: it matches the C++ integer division that centres the bins and
+  fixed a blur at 5/8/11 kHz spans.
+- `waterfall.frag` → `texV = (floor(texV * storedRows) + 0.5) / storedRows`. Time is snapped, not
+  blended: a V between two rows makes bilinear blend **two different moments in time**, which is
   the vertical smear; snapping is also what makes any rows-per-pixel ratio unblended rather than
   only 1:1. `storedRows` of 0 opts out — the mini-pan passes that, because it spreads a fixed
   100-row buffer over its own height and may be downsampling, where the blend is a useful box
