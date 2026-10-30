@@ -2,34 +2,27 @@
 #include "ui/styling/k4styles.h"
 #include <QHBoxLayout>
 #include <QPainter>
-#include <QApplication>
-#include <QScreen>
-#include <QKeyEvent>
+#include <QPushButton>
 #include <QWheelEvent>
 
 namespace {
-const int ContentHeight = 52; // Height of content area (was setFixedHeight)
-const int ContentMargin = 12; // Horizontal margin inside content
+// The visible card hugs the row: this much frame around the keys horizontally and vertically.
+const int CardPaddingH = 8;
+const int CardPaddingV = 4;
+const int RowSpacing = 8;
 } // namespace
 
-FeatureMenuBar::FeatureMenuBar(QWidget *parent) : QWidget(parent) {
-    setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
-    setAttribute(Qt::WA_TranslucentBackground);
-    setFocusPolicy(Qt::StrongFocus);
+FeatureMenuBar::FeatureMenuBar(QWidget *parent) : K4PopupBase(parent) {
     setupUi();
-    hide(); // Hidden by default
+    initPopup();
 }
 
 void FeatureMenuBar::setupUi() {
-    // Height includes shadow margins on top and bottom
-    setFixedHeight(ContentHeight + 2 * K4Styles::Dimensions::ShadowMargin);
-
     auto *layout = new QHBoxLayout(this);
-    // Margins include shadow space on all sides
-    layout->setContentsMargins(
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8,
-        K4Styles::Dimensions::ShadowMargin + ContentMargin, K4Styles::Dimensions::ShadowMargin + 8);
-    layout->setSpacing(8);
+    // Card = the keys plus a thin frame; the base's shadow margin surrounds it.
+    const int sm = K4Styles::Dimensions::ShadowMargin;
+    layout->setContentsMargins(sm + CardPaddingH, sm + CardPaddingV, sm + CardPaddingH, sm + CardPaddingV);
+    layout->setSpacing(RowSpacing);
 
     // Title — non-interactive label across all features.
     m_titleLabel = new QPushButton("ATTENUATOR", this);
@@ -80,7 +73,7 @@ void FeatureMenuBar::setupUi() {
     m_incrementBtn->setCursor(Qt::PointingHandCursor);
     m_incrementBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
 
-    // Layout - compact, no stretches (popup is centered by showAboveWidget)
+    // Layout - compact, no stretches (the base centres the card on its anchor)
     layout->addWidget(m_titleLabel, 0, Qt::AlignVCenter);
     layout->addWidget(m_toggleBtn, 0, Qt::AlignVCenter);
     layout->addWidget(m_nrEngineBtn, 0, Qt::AlignVCenter);
@@ -97,73 +90,19 @@ void FeatureMenuBar::setupUi() {
     connect(m_nrEngineBtn, &QPushButton::clicked, this, &FeatureMenuBar::nrEngineToggleRequested);
 }
 
-void FeatureMenuBar::showForFeature(Feature feature) {
+void FeatureMenuBar::showForFeature(Feature feature, QWidget *anchor) {
     m_currentFeature = feature;
     updateForFeature();
-    // Force layout recalculation before showing (extra button changes width)
-    layout()->activate();
-    adjustSize(); // Calculate proper size for content
-
-    // Position above reference widget if set
-    if (m_referenceWidget) {
-        showAboveWidget(m_referenceWidget);
-    } else {
-        update();
-        show();
-        setFocus();
-    }
+    // The width follows the feature (NB's FILTER key, NR's engine key): size before the one show.
+    initPopup();
+    showAboveWidget(anchor);
 }
 
-void FeatureMenuBar::showAboveWidget(QWidget *referenceWidget) {
-    if (!referenceWidget)
-        return;
-
-    m_referenceWidget = referenceWidget;
-
-    // Force size calculation
-    layout()->activate();
-    adjustSize();
-
-    // Get the reference widget's global position
-    QPoint refGlobal = referenceWidget->mapToGlobal(QPoint(0, 0));
-    int refCenterX = refGlobal.x() + referenceWidget->width() / 2;
-
-    // Content width (widget width minus shadow margins)
-    int contentWidth = width() - 2 * K4Styles::Dimensions::ShadowMargin;
-
-    // Center content area horizontally above reference widget (account for shadow margin)
-    int popupX = refCenterX - contentWidth / 2 - K4Styles::Dimensions::ShadowMargin;
-    // Position popup so its bottom edge (including shadow margin) is 4px above the reference widget
-    int popupY = refGlobal.y() - height() - 4;
-
-    // Ensure popup stays on screen
-    QRect screenGeom = referenceWidget->screen()->availableGeometry();
-    if (popupX < screenGeom.left() - K4Styles::Dimensions::ShadowMargin) {
-        popupX = screenGeom.left() - K4Styles::Dimensions::ShadowMargin;
-    } else if (popupX + width() > screenGeom.right() + K4Styles::Dimensions::ShadowMargin) {
-        popupX = screenGeom.right() + K4Styles::Dimensions::ShadowMargin - width();
-    }
-    if (popupY < screenGeom.top() - K4Styles::Dimensions::ShadowMargin) {
-        // If not enough room above, show below instead
-        popupY = refGlobal.y() + referenceWidget->height() + 4 - K4Styles::Dimensions::ShadowMargin;
-    }
-
-    move(popupX, popupY);
-    show();
-    setFocus();
-    update();
-}
-
-void FeatureMenuBar::hideMenu() {
-    hide();
-}
-
-void FeatureMenuBar::keyPressEvent(QKeyEvent *event) {
-    if (event->key() == Qt::Key_Escape) {
-        hideMenu();
-    } else {
-        QWidget::keyPressEvent(event);
-    }
+QSize FeatureMenuBar::contentSize() const {
+    // The row's own width — keys hidden for this feature drop out — without the shadow margins.
+    const int sm = K4Styles::Dimensions::ShadowMargin;
+    layout()->invalidate();
+    return QSize(layout()->sizeHint().width() - 2 * sm, K4Styles::Dimensions::ButtonHeightMedium + 2 * CardPaddingV);
 }
 
 void FeatureMenuBar::wheelEvent(QWheelEvent *event) {
@@ -228,11 +167,6 @@ void FeatureMenuBar::setValue(int value) {
     m_valueLabel->setText(QString::number(value) + m_valueUnit);
 }
 
-void FeatureMenuBar::setValueUnit(const QString &unit) {
-    m_valueUnit = unit;
-    setValue(m_value); // Refresh display
-}
-
 void FeatureMenuBar::setNbFilter(int filter) {
     m_nbFilter = qBound(0, filter, 2);
     m_extraBtn->setText(nbFilterText(m_nbFilter));
@@ -243,47 +177,8 @@ QString FeatureMenuBar::nbFilterText(int filter) {
     return QString::fromLatin1(filterNames[qBound(0, filter, 2)]);
 }
 
-void FeatureMenuBar::paintEvent(QPaintEvent *event) {
-    Q_UNUSED(event)
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    // Calculate tight bounding box from actual widget geometry
-    int left = m_titleLabel->geometry().left() - 8;
-    int right = m_incrementBtn->geometry().right() + 8;
-    int top = m_titleLabel->geometry().top() - 4;
-    int bottom = m_titleLabel->geometry().bottom() + 4;
-    QRect contentRect(left, top, right - left, bottom - top + 1);
-
-    // Draw drop shadow
-    K4Styles::drawDropShadow(painter, contentRect, 8);
-
-    // Gradient background (matches ControlGroupWidget style)
-    QLinearGradient grad = K4Styles::buttonGradient(contentRect.top(), contentRect.bottom());
-
-    // Draw rounded rectangle with border around content area only
-    painter.setBrush(grad);
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    painter.drawRoundedRect(contentRect, 8, 8);
-
-    // Draw vertical delimiter lines between widget groups
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    int lineTop = contentRect.top() + 7;
-    int lineBottom = contentRect.bottom() - 7;
-
-    // Helper to draw delimiter after a widget
-    auto drawDelimiter = [&](QWidget *widget) {
-        if (widget && widget->isVisible()) {
-            int x = widget->geometry().right() + 4; // 4px after widget (half of spacing)
-            painter.drawLine(x, lineTop, x, lineBottom);
-        }
-    };
-
-    // Draw delimiters after each section
-    drawDelimiter(m_titleLabel);  // After title
-    drawDelimiter(m_toggleBtn);   // After OFF/ON
-    drawDelimiter(m_nrEngineBtn); // After LMS/NR+ (only visible for NrAdjust)
-    drawDelimiter(m_extraBtn);    // After FILTER NONE (only visible for NB)
-    drawDelimiter(m_valueLabel);  // After value
-    // No delimiter after +/- buttons (they're at the end now)
+void FeatureMenuBar::paintContent(QPainter &painter, const QRect &contentRect) {
+    // Delimiters after each group; none after the +/- pair at the end. Hidden keys draw none.
+    paintCompactRowFrame(painter, contentRect, {m_titleLabel, m_toggleBtn, m_nrEngineBtn, m_extraBtn, m_valueLabel},
+                         RowSpacing);
 }

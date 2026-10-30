@@ -188,7 +188,7 @@ private slots:
         QWidget host;
         auto *bar = new FeatureMenuBar(&host);
         bar->setNbFilter(2);
-        bar->showForFeature(FeatureMenuBar::NbLevel);
+        bar->showForFeature(FeatureMenuBar::NbLevel, &host);
         QVERIFY(buttonWithText(bar, "FILTER\nWIDE"));
         QVERIFY(!buttonWithText(bar, "FILTER\nNONE"));
     }

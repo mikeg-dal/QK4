@@ -1,16 +1,22 @@
 #ifndef FEATUREMENUBAR_H
 #define FEATUREMENUBAR_H
 
-#include <QWidget>
-#include <QPushButton>
+#include "ui/popups/k4popupbase.h"
 #include "utils/wheelaccumulator.h"
+
+class QPushButton;
 
 /**
  * @brief Popup control bar for the ATTN / NB / NR / MANUAL NOTCH features. Shows a toggle, +/-
  *        buttons, value readout, and an extra feature-specific button (e.g., NB filter cycle).
  *        Works in BSET mode by routing CAT with `$` suffix for Sub RX.
+ *
+ * A K4PopupBase like every other popup: placement, click-away, Escape and the reopen guard come
+ * from the base. It was a hand-made Qt::Popup until 2026-10, which Qt closes on an outside press and
+ * then replays that press to the widget under it (Qt::WA_NoMouseReplay) — so a second press on the
+ * ATTN key closed the bar and the replayed press opened it again.
  */
-class FeatureMenuBar : public QWidget {
+class FeatureMenuBar : public K4PopupBase {
     Q_OBJECT
 
 public:
@@ -19,16 +25,13 @@ public:
 
     explicit FeatureMenuBar(QWidget *parent = nullptr);
 
-    void showForFeature(Feature feature);
-    void showAboveWidget(QWidget *referenceWidget); // Position popup above a reference widget
-    void hideMenu();
+    // Switch to @p feature, size for it, and show centred directly above @p anchor.
+    void showForFeature(Feature feature, QWidget *anchor);
     Feature currentFeature() const { return m_currentFeature; }
-    bool isMenuVisible() const { return isVisible(); }
 
     // State updates
     void setFeatureEnabled(bool enabled);
     void setValue(int value);
-    void setValueUnit(const QString &unit);
     void setNbFilter(int filter); // 0=NONE, 1=NARROW, 2=WIDE
 
     // NR engine selection (only meaningful when currentFeature() == NrAdjust)
@@ -43,8 +46,8 @@ signals:
     void nrEngineToggleRequested(); // LMS/NR+ engine button clicked (NR ADJUST only)
 
 protected:
-    void paintEvent(QPaintEvent *event) override;
-    void keyPressEvent(QKeyEvent *event) override;
+    QSize contentSize() const override;
+    void paintContent(QPainter &painter, const QRect &contentRect) override;
     void wheelEvent(QWheelEvent *event) override;
 
 private:
@@ -64,8 +67,7 @@ private:
     NrEngine m_nrEngine = Lms;
     int m_value = 0;
     QString m_valueUnit;
-    int m_nbFilter = 0;                   // 0=NONE, 1=NARROW, 2=WIDE
-    QWidget *m_referenceWidget = nullptr; // Widget to position relative to
+    int m_nbFilter = 0; // 0=NONE, 1=NARROW, 2=WIDE
     WheelAccumulator m_wheelAccumulator;
 };
 

@@ -113,18 +113,29 @@ FeatureMenuController::FeatureMenuController(RadioState *radioState, ConnectionC
 }
 
 void FeatureMenuController::toggleFeature(FeatureMenuBar::Feature feature, QWidget *anchor) {
-    if (m_bar->isMenuVisible() && m_bar->currentFeature() == feature) {
-        m_bar->hideMenu();
+    // WHY isVisibleOrJustHidden: the press on the feature's key reaches the bar's click-away filter
+    // first and closes it, and only then does the key fire. Reading isVisible() here would reopen
+    // the bar on every second press. Another feature's key switches the bar to that feature.
+    if (m_bar->isVisibleOrJustHidden() && m_bar->currentFeature() == feature) {
+        m_bar->hidePopup();
         return;
     }
+    if (!anchor)
+        return;
     syncBarFromState(feature);
-    m_bar->showForFeature(feature);
-    if (anchor)
-        m_bar->showAboveWidget(anchor);
+    m_bar->showForFeature(feature, anchor);
+}
+
+void FeatureMenuController::close() {
+    m_bar->hidePopup();
+}
+
+bool FeatureMenuController::isVisible() const {
+    return m_bar->isVisible();
 }
 
 void FeatureMenuController::refreshCurrentFeature() {
-    if (!m_bar->isMenuVisible())
+    if (!m_bar->isVisible())
         return;
     syncBarFromState(m_bar->currentFeature());
 }

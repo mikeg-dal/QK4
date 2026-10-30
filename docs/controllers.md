@@ -104,7 +104,7 @@ Grouped by concern:
 ### Popup-family
 - **PopupManager** — owns 16 popups and the `MacroDialog`: band, display, Fn, macro dialog, 3 button rows (Main/Sub/Tx), RX EQ, TX EQ, line in/out, mic input/config, VOX, SSB BW, keying weight, software list. Also wires RX-row button label state observers.
 - **ModePopupController** — mode selector popup
-- **FeatureMenuController** — ATTN/NB/NR/NOTCH feature menu bar (`FeatureMenuBar`, a widget, not a popup)
+- **FeatureMenuController** — ATTN/NB/NR/NOTCH feature menu bar (`FeatureMenuBar`, a `K4PopupBase` popup)
 - **AntennaConfigController** — three antenna-config popups (Main RX, Sub RX, TX)
 - **MenuController** — K4 MEDF menu system + overlay
 

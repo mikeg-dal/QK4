@@ -27,8 +27,12 @@ public:
 
     // Toggle the popup for the given feature. If it's already visible for
     // this feature, hide it; otherwise sync state from RadioState and show
-    // it above the given anchor widget (typically m_bottomMenuBar).
+    // it centred directly above the given anchor widget (m_bottomMenuBar).
     void toggleFeature(FeatureMenuBar::Feature feature, QWidget *anchor);
+
+    // Hide the bar (MainWindow's closeAllPopups and the disconnect reset).
+    void close();
+    bool isVisible() const;
 
 private:
     RadioState *m_radioState;           // injected, not owned

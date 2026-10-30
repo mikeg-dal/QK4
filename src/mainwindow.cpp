@@ -1433,6 +1433,8 @@ void MainWindow::closeNonPopupManagerPopups() {
     m_antennaCfgController->closeAll();
     if (m_modePopupController)
         m_modePopupController->close();
+    if (m_featureMenuController)
+        m_featureMenuController->close();
 }
 
 void MainWindow::closeAllPopups() {
