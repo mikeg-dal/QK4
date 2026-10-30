@@ -227,6 +227,11 @@ void TestSpectrumGeometry::avgOneDrawsEveryFrameAsItArrives() {
         prevDecay = a.decay;
     }
     QCOMPARE(emaAlphasFor(25).attack, emaAlphasFor(20).attack); // clamped down to 20
+    // #AVG n averages over about n frames: alpha 2 / (n + 1), symmetric.
+    for (int n : {2, 5, 10, 20}) {
+        QCOMPARE(emaAlphasFor(n).attack, 2.0f / static_cast<float>(n + 1));
+        QCOMPARE(emaAlphasFor(n).decay, emaAlphasFor(n).attack);
+    }
 }
 
 QTEST_APPLESS_MAIN(TestSpectrumGeometry)

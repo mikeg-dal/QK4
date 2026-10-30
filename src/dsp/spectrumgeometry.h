@@ -59,10 +59,11 @@ int frequencyLabelStepHz(int gridIntervalHz, int spanHz, double widthPx, double 
 float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, float glowAlpha);
 
 // Trace smoothing for the radio's #AVG level (1..20, clamped): the EMA weights given to a rising and
-// a falling bin. At #AVG 1 the K4 does not average, so neither does QK4 - every frame is drawn as it
-// arrives (1, 1). Smoothing there flattened the noise grass about one S-unit below where the K4 draws
-// it (bench 2026-10-30). Levels 2..20 keep QK4's approximation of the radio's averaging; whether the
-// K4 already averages the stream at those levels is unmeasured.
+// a falling bin. The K4 does not average the PAN stream at any #AVG (measured 2026-10-30: per-bin
+// frame-to-frame variation identical at AVG 1 and AVG 20), so a client must average itself to look
+// like the K4's screen. #AVG n is read as "average over about n frames": the EMA equivalent of an
+// n-frame moving average, alpha = 2 / (n + 1), the same for rising and falling bins. At #AVG 1 that is
+// 1: every frame drawn as it arrives, as on the K4. The exact K4 rule is unpublished; tune by eye.
 struct EmaAlphas {
     float attack;
     float decay;

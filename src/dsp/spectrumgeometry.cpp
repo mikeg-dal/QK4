@@ -120,10 +120,8 @@ float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, f
 
 EmaAlphas emaAlphasFor(int avgLevel) {
     const int level = std::clamp(avgLevel, 1, 20);
-    if (level == 1)
-        return {1.0f, 1.0f};
-    const float t = static_cast<float>(level - 1) / 19.0f;
-    return {0.52f - t * 0.22f, 0.34f - t * 0.24f}; // 0.52 -> 0.30, 0.34 -> 0.10
+    const float alpha = 2.0f / static_cast<float>(level + 1); // n-frame moving-average equivalent
+    return {alpha, alpha};
 }
 
 } // namespace SpectrumGeometry
