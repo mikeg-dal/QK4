@@ -475,7 +475,7 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
             // Height is a pure function of dBm over [REF, REF + SCALE], as on the panadapter: nothing
             // is subtracted (no noise-floor tracker) and nothing is scaled down.
             const float lineHeight = SpectrumScale::normalizedForDb(peak, m_minDb, m_maxDb) * spectrumHeight;
-            const float y = qMax(0.0f, spectrumHeight - lineHeight);
+            const float y = (std::max)(0.0f, spectrumHeight - lineHeight);
 
             // Bottom vertex (baseline) - spectrum color with transparency
             vertices.append(static_cast<float>(x));
@@ -530,8 +530,8 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
             const SpectrumGeometry::Passband pb =
                 SpectrumGeometry::passbandFor(m_mode, m_dataSubMode, m_tunedFreq, m_filterBw, m_ifShift,
                                               static_cast<int>(PanadapterConstants::RttyShiftHz));
-            const float passbandX = qBound(0.0f, xFor(pb.lowHz), w);
-            const float rightX = qBound(0.0f, xFor(pb.highHz), w);
+            const float passbandX = std::clamp(xFor(pb.lowHz), 0.0f, w);
+            const float rightX = std::clamp(xFor(pb.highHz), 0.0f, w);
 
             if (rightX > passbandX) {
                 QColor fillColor = m_passbandColor;

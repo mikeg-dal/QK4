@@ -1579,7 +1579,7 @@ qint64 PanadapterRhiWidget::xToFreq(int x, int w) const {
     if (w <= 0)
         return m_centerFreq;
     // Clamp to [0, 1] to prevent runaway acceleration when dragging past edges
-    const double normalized = qBound(0.0, static_cast<double>(x) / static_cast<double>(w), 1.0);
+    const double normalized = std::clamp(static_cast<double>(x) / static_cast<double>(w), 0.0, 1.0);
     return SpectrumGeometry::freqForNormalizedX(normalized, displayCenterHz(), m_spanHz);
 }
 

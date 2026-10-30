@@ -377,7 +377,7 @@ private slots:
 
         p.parse(buildTestPacket(frame));
 
-        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.size(), 1);
         const QList<QVariant> args = spy.at(0);
         QCOMPARE(args.at(0).toInt(), 0);                       // Main
         QCOMPARE(args.at(1).toByteArray(), frame);             // payload
@@ -392,7 +392,7 @@ private slots:
         QSignalSpy spy(&p, &Protocol::miniSpectrumDataReady);
         p.parse(buildTestPacket(QByteArray::fromHex(kMiniPanDataFrameHex)));
 
-        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.size(), 1);
         const QList<QVariant> args = spy.at(0);
         QCOMPARE(args.at(0).toInt(), 1); // Sub
         QCOMPARE(args.at(2).toInt(), 27);
@@ -406,7 +406,7 @@ private slots:
         Protocol p;
         QSignalSpy spy(&p, &Protocol::miniSpectrumDataReady);
         p.parse(buildTestPacket(QByteArray::fromHex(kMiniPanCwFrameHex).left(27 + 1000)));
-        QCOMPARE(spy.count(), 0);
+        QCOMPARE(spy.size(), 0);
     }
 
     void testMiniPanFrameWithNoSpanIsDropped() {
@@ -415,14 +415,14 @@ private slots:
         QByteArray frame = QByteArray::fromHex(kMiniPanCwFrameHex);
         qToLittleEndian<qint32>(0, reinterpret_cast<uchar *>(frame.data() + 19));
         p.parse(buildTestPacket(frame));
-        QCOMPARE(spy.count(), 0);
+        QCOMPARE(spy.size(), 0);
     }
 
     void testMiniPanHeaderOnlyIsIgnored() {
         Protocol p;
         QSignalSpy spy(&p, &Protocol::miniSpectrumDataReady);
         p.parse(buildTestPacket(QByteArray::fromHex(kMiniPanCwFrameHex).left(27)));
-        QCOMPARE(spy.count(), 0);
+        QCOMPARE(spy.size(), 0);
     }
 
     void testUnknownPacketType() {
