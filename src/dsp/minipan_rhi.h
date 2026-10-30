@@ -5,6 +5,7 @@
 #include <QRhiWidget>
 #include <rhi/qrhi.h>
 #include <QColor>
+#include <QElapsedTimer>
 #include <QLabel>
 #include <QTimer>
 #include <QVector>
@@ -188,6 +189,10 @@ private:
     // Frequency axis of the latest MiniPAN frame; 0 until the first one arrives.
     qint64 m_centerHz = 0;
     int m_spanHz = 0;
+    // Overlays are centred on the dial plus the frame's learned offset, so they stay fixed while
+    // tuning and only the data moves (SpectrumGeometry::DialLockedAxis). m_clock times dial changes.
+    SpectrumGeometry::DialLockedAxis m_overlayAxis;
+    QElapsedTimer m_clock;
 
     // Display averaging (K4 #AVG control, 1-20)
     int m_averagingLevel = -1; // until the radio reports #AVG; see PanadapterRhiWidget

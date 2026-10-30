@@ -137,4 +137,13 @@ float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, f
     return qMax(0.9f * fillMask, glow * glowAlpha);
 }
 
+void DialLockedAxis::frameArrived(qint64 frameCenterHz, qint64 dialHz, qint64 nowMs) {
+    if (dialHz <= 0)
+        return;
+    if (!m_known || nowMs - m_dialChangedMs >= SettleMs) {
+        m_offsetHz = frameCenterHz - dialHz;
+        m_known = true;
+    }
+}
+
 } // namespace SpectrumGeometry

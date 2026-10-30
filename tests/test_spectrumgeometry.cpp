@@ -41,6 +41,10 @@ private slots:
     void frequencyLabelsTakeOneEvenStep();
     void frequencyLabelStepIsTheSmallestThatFits();
     void fillIsOpaqueDownToTheBottomEdge();
+
+    void miniPanOverlaysStayPutWhileTuning();
+    void miniPanOverlaysLearnTheCwOffsetOnceSettled();
+    void miniPanOverlaysUseTheFrameUntilAnOffsetIsKnown();
 };
 
 void TestSpectrumGeometry::modeParsesRadioStateSpelling() {
@@ -286,6 +290,49 @@ void TestSpectrumGeometry::fillIsOpaqueDownToTheBottomEdge() {
     }
     // Well above the trace and its glow nothing is drawn.
     QCOMPARE(fillAlphaFor(0.1f, 0.9f, 0.04f, 0.8f, 1.0f), 0.0f);
+}
+
+// Bench 2026-10-30: the mini-pan's markers slid while tuning, because they were placed on the last
+// frame's centre and frames lag the dial. Locked to the dial, a marker at the dial stays at the same
+// x for every dial value, whatever the lagging frames say.
+void TestSpectrumGeometry::miniPanOverlaysStayPutWhileTuning() {
+    DialLockedAxis axis;
+    const int span = 3000;
+    axis.dialChanged(0);
+    axis.frameArrived(14'200'000, 14'200'000, 0); // first frame sets the offset (0)
+    const float settledX = normalizedXFor(14'200'000, axis.centerFor(14'200'000, 14'200'000), span);
+    qint64 dial = 14'200'000;
+    for (int step = 1; step <= 50; ++step) {
+        const qint64 now = step * 20; // knob turning every 20 ms
+        dial += 10;
+        axis.dialChanged(now);
+        axis.frameArrived(dial - 200, dial, now); // the frame is still 20 steps behind
+        QCOMPARE(normalizedXFor(dial, axis.centerFor(dial, dial - 200), span), settledX);
+    }
+}
+
+// In CW the frame is centred off the dial (on the pitch side). The offset is learned from a frame
+// that arrives after the dial has been still for SettleMs; frames during tuning do not move it.
+void TestSpectrumGeometry::miniPanOverlaysLearnTheCwOffsetOnceSettled() {
+    DialLockedAxis axis;
+    axis.dialChanged(0);
+    axis.frameArrived(7'030'500, 7'030'000, 0); // CW: frame 500 Hz above the dial
+    QCOMPARE(axis.centerFor(7'030'000, 0), qint64(7'030'500));
+    axis.dialChanged(1000);
+    axis.frameArrived(7'029'000, 7'030'100, 1000 + DialLockedAxis::SettleMs - 1); // stale frame mid-tune
+    QCOMPARE(axis.centerFor(7'030'100, 0), qint64(7'030'600));                    // offset unchanged
+    axis.frameArrived(7'030'350, 7'030'100, 1000 + DialLockedAxis::SettleMs);     // settled; mode now DATA-ish
+    QCOMPARE(axis.centerFor(7'030'100, 0), qint64(7'030'350));
+}
+
+void TestSpectrumGeometry::miniPanOverlaysUseTheFrameUntilAnOffsetIsKnown() {
+    DialLockedAxis axis;
+    QCOMPARE(axis.centerFor(14'000'000, 14'001'000), qint64(14'001'000));
+    axis.frameArrived(14'001'000, 0, 0); // dial not reported yet: nothing learned
+    QCOMPARE(axis.centerFor(14'000'000, 14'001'000), qint64(14'001'000));
+    axis.frameArrived(14'001'000, 14'000'000, 0);
+    axis.reset();
+    QCOMPARE(axis.centerFor(14'000'000, 14'002'000), qint64(14'002'000));
 }
 
 QTEST_APPLESS_MAIN(TestSpectrumGeometry)

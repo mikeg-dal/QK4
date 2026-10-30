@@ -16,6 +16,7 @@
 #include <cmath>
 
 MiniPanRhiWidget::MiniPanRhiWidget(QWidget *parent) : QRhiWidget(parent) {
+    m_clock.start();
     setFixedHeight(K4Styles::Dimensions::VfoPanelHeight);
     setMinimumWidth(180);
     setMaximumWidth(200);
@@ -549,11 +550,15 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
 
     if (m_gpu.overlayLinePipeline && m_gpu.overlayTrianglePipeline) {
         QRhiGraphicsPipeline *triangles = m_gpu.overlayTrianglePipeline.get();
-        // Every overlay is placed by absolute frequency on the frame's own axis, with the same rules
-        // as the panadapter (SpectrumGeometry). Nothing is drawn until both the axis (first frame)
-        // and the dial are known.
+        // Every overlay is placed by absolute frequency with the same rules as the panadapter
+        // (SpectrumGeometry), on an axis centred at the dial plus the frame's learned offset, so the
+        // overlays stay put while tuning and the data moves beneath them (DialLockedAxis). Nothing is
+        // drawn until both the axis (first frame) and the dial are known.
         const bool axisKnown = m_spanHz > 0 && m_tunedFreq > 0;
-        auto xFor = [&](qint64 freqHz) { return SpectrumGeometry::normalizedXFor(freqHz, m_centerHz, m_spanHz) * w; };
+        const qint64 overlayCenterHz = m_overlayAxis.centerFor(m_tunedFreq, m_centerHz);
+        auto xFor = [&](qint64 freqHz) {
+            return SpectrumGeometry::normalizedXFor(freqHz, overlayCenterHz, m_spanHz) * w;
+        };
 
         // Filter passband (full height)
         if (axisKnown && m_filterBw > 0 && m_gpu.passbandSrb) {
@@ -693,6 +698,7 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerHz, i
         updateFrequencyLabels();
     }
     m_centerHz = centerHz;
+    m_overlayAxis.frameArrived(centerHz, m_tunedFreq, m_clock.elapsed());
 
     // MiniPAN bins: 1 byte = 1 dB, dBm = byte - K4_MINIPAN_DBM_OFFSET (measured; see spectrumscale.h).
     m_spectrum.resize(bins.size());
@@ -727,6 +733,7 @@ void MiniPanRhiWidget::clear() {
     m_centerHz = 0;
     m_spanHz = 0;
     m_tunedFreq = 0;
+    m_overlayAxis.reset();
     m_filterBw = 2400;
     m_ifShift = 50;
 
@@ -802,6 +809,7 @@ void MiniPanRhiWidget::setDataSubMode(int subMode) {
 void MiniPanRhiWidget::setTunedFrequency(qint64 freqHz) {
     if (m_tunedFreq != freqHz) {
         m_tunedFreq = freqHz;
+        m_overlayAxis.dialChanged(m_clock.elapsed());
         update();
     }
 }

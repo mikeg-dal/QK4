@@ -38,7 +38,7 @@ qint64 markerFreqHz(qint64 tunedFreqHz, int ifShiftDecaHz, Mode mode);
 
 // Horizontal position of a frequency on a display spanning spanHz around centerHz: 0 at the left
 // edge, 1 at the right, unclamped so callers can tell off-screen from on-screen. 0 for a span <= 0.
-// The panadapter passes its display centre (displayCenterHz), the mini-pan its MiniPAN frame's centre.
+// The panadapter passes its display centre (displayCenterHz), the mini-pan DialLockedAxis::centerFor.
 float normalizedXFor(qint64 freqHz, qint64 centerHz, int spanHz);
 
 // The inverse: the frequency at normalised position x (not clamped). centerHz for a span <= 0.
@@ -73,6 +73,34 @@ int frequencyLabelStepHz(int gridIntervalHz, int spanHz, double widthPx, double 
 // and 1 at the bottom; the trace is at peakY. Below the trace the fill is 0.9 opaque at every
 // height: there is no fade towards the bottom, which is where the band noise is drawn.
 float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, float glowAlpha);
+
+// Where the mini-pan's overlays (passband, marker, notch, RTTY tone) are centred, relative to the
+// dial. The MiniPAN frame header carries the frame's own centre, but frames lag the dial: QK4 learns
+// a new dial at once and the radio's frame for it arrives later. Placing the overlays on the last
+// frame's centre made them slide while tuning and jump back when the frame caught up. Instead the
+// frame's offset from the dial (0, or the CW pitch side in CW) is learned only from frames that
+// arrive after the dial has been still for SettleMs, and the overlays sit at dial + offset: fixed on
+// screen while the data moves beneath them. Times are caller-supplied milliseconds (testable).
+class DialLockedAxis {
+public:
+    static constexpr qint64 SettleMs = 300;
+
+    // The dial changed (or was first reported).
+    void dialChanged(qint64 nowMs) { m_dialChangedMs = nowMs; }
+    // A frame centred on frameCenterHz arrived while the dial reads dialHz. The first frame always
+    // sets the offset; later ones only once the dial has settled.
+    void frameArrived(qint64 frameCenterHz, qint64 dialHz, qint64 nowMs);
+    // Centre for the overlays at this dial; the frame's own centre until an offset is known.
+    qint64 centerFor(qint64 dialHz, qint64 lastFrameCenterHz) const {
+        return m_known ? dialHz + m_offsetHz : lastFrameCenterHz;
+    }
+    void reset() { *this = DialLockedAxis{}; }
+
+private:
+    qint64 m_offsetHz = 0;
+    qint64 m_dialChangedMs = 0;
+    bool m_known = false;
+};
 
 } // namespace SpectrumGeometry
 
