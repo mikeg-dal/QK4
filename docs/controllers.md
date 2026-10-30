@@ -114,7 +114,7 @@ Grouped by concern:
 - **BandNavigationController** — band-popup selection → BN CAT + band-stack logic
 - **SideControlScrollController** — SideControlPanel scroll-wheel handlers (WPM/pitch/mic/comp/power QRP-QRO/delay/BW/HI/LO/SHIFT/RF gain/squelch); shared HI/LO filter-edge math
 - **RightSideController** — RightSidePanel button click → CAT / FeatureMenu / ModePopup / Macro dispatch. B-SET-aware APF + RATE + KHZ routing.
-- **MemoryButtonsController** — M1-M4 / REC / STORE / RCL message-memory button dispatch. Primary left-click sends SW17/51/18/52/19/20/34; right-click on REC/STORE/RCL sends alt SW137/138/139 (BANK / AF REC / AF PLAY) via installed event filter.
+- **MemoryButtonsController** — M1-M4 / REC / STORE / RCL message-memory button dispatch. Primary left-click sends SW17/51/18/52/19/20/34; right-click on M1-M4 sends hold SW162/163/164/165 (repeat), and on REC/STORE/RCL sends alt SW137/138/139 (BANK / AF REC / AF PLAY) via installed event filter.
 
 ### Display / indicator (RadioState → widget)
 - **StatusBarController** — top status bar (clock, readings, K4+KPA status) and the power button's remote power-off `ConfirmPopup`
