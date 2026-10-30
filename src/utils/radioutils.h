@@ -147,6 +147,13 @@ struct FilterEdgeLimits {
     bool isLocked;
 };
 
+/// BW and IS limits of the K4's receive filter in K4 mode `mdCode` (the MD digit) with DATA sub-mode
+/// `dataSubMode` (DT, consulted only in DATA and DATA-R), measured on a K4 (the Programmer's
+/// Reference gives no ranges): BW 50-5000 Hz, but 150-800 Hz in FSK D (DT2) and 50-200 Hz in PSK D
+/// (DT3); IS 300 Hz up to 2000 Hz in CW and CW-R, 3000 Hz otherwise; IS fixed in AM, FM, FSK D and
+/// PSK D. The one table every BW / SHFT / HI / LO control reads.
+FilterEdgeLimits filterLimits(int mdCode, int dataSubMode);
+
 /// One HI or LO scroll tick (`steps` x 20 Hz) applied to a filter while the OPPOSITE edge stays put.
 /// The moved edge is recomputed from the fixed edge and the clamped bandwidth, and IS is derived from
 /// those two edges. Returns nullopt when the tick changes nothing or when honouring the IS limit would

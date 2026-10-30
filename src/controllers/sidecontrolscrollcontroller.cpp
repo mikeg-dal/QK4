@@ -8,7 +8,11 @@
 
 #include <QChar>
 #include <QString>
-#include <QtGlobal>
+
+namespace {
+// The K4 front panel's BW knob step.
+constexpr int kBandwidthStepHz = 50;
+} // namespace
 
 SideControlScrollController::SideControlScrollController(RadioState *radioState, ConnectionController *connection,
                                                          SideControlPanel *panel, QObject *parent)
@@ -79,32 +83,21 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
         m_connection->sendCAT(QString("SD0%1%2;").arg(modeChar).arg(newDelay, 3, 10, QChar('0')));
     });
 
-    // Group 2: BW/HI and SHFT/LO
-    // BW command uses 10Hz units (divide by 10)
+    // Group 2: BW/HI and SHFT/LO. With B SET on they adjust VFO B, within VFO B's limits.
     connect(m_panel, &SideControlPanel::bandwidthChanged, this, [this](int delta) {
-        bool bSet = m_radioState->bSetEnabled();
-        int currentBw = bSet ? m_radioState->filterBandwidthB() : m_radioState->filterBandwidth();
-
-        // Mode-specific BW limits (Hz)
-        int bwMin = 50, bwMax = 5000;
-        RadioState::Mode mode = m_radioState->mode();
-        if (mode == RadioState::DATA || mode == RadioState::DATA_R) {
-            int subMode = bSet ? m_radioState->dataSubModeB() : m_radioState->dataSubMode();
-            if (subMode == 2) { // FSK-D
-                bwMin = 150;
-                bwMax = 800;
-            } else if (subMode == 3) { // PSK-D
-                bwMax = 200;
-            }
-        }
-
-        int newBw = qBound(bwMin, currentBw + (delta * 50), bwMax);
+        const bool bSet = m_radioState->bSetEnabled();
+        const RadioUtils::FilterEdgeLimits limits = targetFilterLimits();
+        const auto bwHz =
+            RadioUtils::stepWithin(bSet ? m_radioState->filterBandwidthB() : m_radioState->filterBandwidth(),
+                                   delta * kBandwidthStepHz, limits.bwMinDah * 10, limits.bwMaxDah * 10);
+        if (!bwHz)
+            return;
         QString cmd = bSet ? "BW$" : "BW";
-        m_connection->sendCAT(QString("%1%2;").arg(cmd).arg(newBw / 10, 4, 10, QChar('0')));
+        m_connection->sendCAT(QString("%1%2;").arg(cmd).arg(*bwHz / 10, 4, 10, QChar('0')));
         if (bSet) {
-            m_radioState->setFilterBandwidthB(newBw);
+            m_radioState->setFilterBandwidthB(*bwHz);
         } else {
-            m_radioState->setFilterBandwidth(newBw);
+            m_radioState->setFilterBandwidth(*bwHz);
         }
     });
 
@@ -112,27 +105,20 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
             [this](int delta) { applyFilterEdgeChange(/*adjustHi=*/true, delta); });
 
     connect(m_panel, &SideControlPanel::shiftChanged, this, [this](int delta) {
-        bool bSet = m_radioState->bSetEnabled();
-        RadioState::Mode mode = m_radioState->mode();
-
-        // IS is locked in certain modes — ignore scroll
-        if (mode == RadioState::AM || mode == RadioState::FM)
+        const bool bSet = m_radioState->bSetEnabled();
+        const RadioUtils::FilterEdgeLimits limits = targetFilterLimits();
+        if (limits.isLocked)
             return;
-        if (mode == RadioState::DATA || mode == RadioState::DATA_R) {
-            int subMode = bSet ? m_radioState->dataSubModeB() : m_radioState->dataSubMode();
-            if (subMode == 2 || subMode == 3)
-                return; // FSK-D, PSK-D: IS locked
-        }
-
-        int currentShift = bSet ? m_radioState->ifShiftB() : m_radioState->ifShift();
-        int isMax = (mode == RadioState::CW || mode == RadioState::CW_R) ? 200 : 300;
-        int newShift = qBound(30, currentShift + delta, isMax);
+        const auto shift = RadioUtils::stepWithin(bSet ? m_radioState->ifShiftB() : m_radioState->ifShift(), delta,
+                                                  limits.isMinDah, limits.isMaxDah);
+        if (!shift)
+            return;
         QString prefix = bSet ? "IS$" : "IS";
-        m_connection->sendCAT(QString("%1+%2;").arg(prefix).arg(newShift, 4, 10, QChar('0')));
+        m_connection->sendCAT(QString("%1+%2;").arg(prefix).arg(*shift, 4, 10, QChar('0')));
         if (bSet) {
-            m_radioState->setIfShiftB(newShift);
+            m_radioState->setIfShiftB(*shift);
         } else {
-            m_radioState->setIfShift(newShift);
+            m_radioState->setIfShift(*shift);
         }
     });
 
@@ -172,33 +158,22 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
     });
 }
 
+RadioUtils::FilterEdgeLimits SideControlScrollController::targetFilterLimits() const {
+    return RadioUtils::filterLimits(m_radioState->filterTargetMode(), m_radioState->filterTargetDataSubMode());
+}
+
 void SideControlScrollController::applyFilterEdgeChange(bool adjustHi, int delta) {
     // HI and LO adjust filter edges while keeping the OPPOSITE edge fixed.
     // Both BW and IS must change. Work in decahertz (dah) to avoid rounding
     // drift. Step is 2 dah (20 Hz) per scroll tick — keeps IS on-grid.
-    bool bSet = m_radioState->bSetEnabled();
-    RadioState::Mode mode = m_radioState->mode();
-    int bwDah = (bSet ? m_radioState->filterBandwidthB() : m_radioState->filterBandwidth()) / 10;
-    int isDah = bSet ? m_radioState->ifShiftB() : m_radioState->ifShift();
-
-    // Mode-specific BW limits (dah) and IS-locked flag
-    int bwMinDah = 5, bwMaxDah = 500;
-    bool isLocked = false;
-    if (mode == RadioState::DATA || mode == RadioState::DATA_R) {
-        int subMode = bSet ? m_radioState->dataSubModeB() : m_radioState->dataSubMode();
-        if (subMode == 2) { // FSK-D: BW 150-800Hz, IS locked
-            bwMinDah = 15;
-            bwMaxDah = 80;
-            isLocked = true;
-        } else if (subMode == 3) { // PSK-D: BW 50-200Hz, IS locked
-            bwMaxDah = 20;
-            isLocked = true;
-        }
-    }
-
-    const int isMaxDah = (mode == RadioState::CW || mode == RadioState::CW_R) ? 200 : 300;
-    const auto next =
-        RadioUtils::filterAfterEdgeStep({bwDah, isDah}, adjustHi, delta, {bwMinDah, bwMaxDah, 30, isMaxDah, isLocked});
+    const bool bSet = m_radioState->bSetEnabled();
+    const int bwHz = bSet ? m_radioState->filterBandwidthB() : m_radioState->filterBandwidth();
+    const int isDah = bSet ? m_radioState->ifShiftB() : m_radioState->ifShift();
+    if (bwHz < 0 || isDah < 0)
+        return; // not reported yet
+    const RadioUtils::FilterEdgeLimits limits = targetFilterLimits();
+    const bool isLocked = limits.isLocked;
+    const auto next = RadioUtils::filterAfterEdgeStep({bwHz / 10, isDah}, adjustHi, delta, limits);
     if (!next)
         return;
     const int newBwDah = next->bwDah;

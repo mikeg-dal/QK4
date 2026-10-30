@@ -263,6 +263,10 @@ public:
     bool bSetEnabled() const { return m_rxTxMeterState.bSetEnabled; }
     void setBSetEnabled(bool enabled);
     void toggleBSet() { setBSetEnabled(!m_rxTxMeterState.bSetEnabled); }
+    // Mode and DATA sub-mode of the receiver B SET points the filter controls at: VFO B's while
+    // B SET is on, VFO A's otherwise. Their limits must come from the receiver they adjust.
+    Mode filterTargetMode() const { return bSetEnabled() ? modeB() : mode(); }
+    int filterTargetDataSubMode() const { return bSetEnabled() ? dataSubModeB() : dataSubMode(); }
 
     // Streaming Latency (SL command)
     int streamingLatency() const { return m_dataControlState.streamingLatency; }

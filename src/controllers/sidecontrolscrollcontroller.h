@@ -1,6 +1,8 @@
 #ifndef SIDECONTROLSCROLLCONTROLLER_H
 #define SIDECONTROLSCROLLCONTROLLER_H
 
+#include "utils/radioutils.h"
+
 #include <QObject>
 
 class RadioState;
@@ -31,8 +33,10 @@ private:
     // Shared between highCutChanged and lowCutChanged. When adjustHi is true,
     // the upper filter edge moves (HI cut); when false, the lower edge moves
     // (LO cut). Both update BW + IS together, respecting mode-specific limits
-    // and the IS-locked flag for FSK-D / PSK-D data submodes.
+    // and the IS-locked flag (AM, FM, FSK D, PSK D).
     void applyFilterEdgeChange(bool adjustHi, int delta);
+    // BW / IS limits of the receiver the filter knobs adjust (VFO B while B SET is on).
+    RadioUtils::FilterEdgeLimits targetFilterLimits() const;
 
     RadioState *m_radioState;           // injected, not owned
     ConnectionController *m_connection; // injected, not owned

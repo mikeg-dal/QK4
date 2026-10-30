@@ -111,6 +111,24 @@ private slots:
         QVERIFY(!rs.isQrpMode());
     }
 
+    // With B SET on, the filter knobs adjust VFO B, so their limits must come from VFO B's mode and
+    // DATA sub-mode - they came from VFO A's (APP-004).
+    void testFilterTargetFollowsBSet() {
+        RadioState rs;
+        rs.parseCATCommand("MD2;"); // A: USB
+        rs.parseCATCommand("DT0;");
+        rs.parseCATCommand("MD$6;"); // B: DATA
+        rs.parseCATCommand("DT$2;"); // FSK D
+        QCOMPARE(rs.filterTargetMode(), RadioState::USB);
+        QCOMPARE(rs.filterTargetDataSubMode(), 0);
+        rs.parseCATCommand("BS1;");
+        QVERIFY(rs.bSetEnabled());
+        QCOMPARE(rs.filterTargetMode(), RadioState::DATA);
+        QCOMPARE(rs.filterTargetDataSubMode(), 2);
+        rs.parseCATCommand("BS0;");
+        QCOMPARE(rs.filterTargetMode(), RadioState::USB);
+    }
+
     // Filter position (FP/FP$ — uses handleIntPair helper)
     void testFilterPositionA() {
         RadioState rs;

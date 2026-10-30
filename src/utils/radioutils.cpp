@@ -12,7 +12,33 @@ namespace {
 // Where the knob crosses between QRP and QRO: the top of QRP and the first QRO step above it.
 constexpr int kQrpTopW = RF_POWER_TENTHS_MAX / 10;
 constexpr int kQroAboveQrpW = kQrpTopW + 1;
+
+// Receive-filter limits in decahertz, measured on a K4 (filterLimits()).
+constexpr int kBwMinDah = 5;     // 50 Hz
+constexpr int kBwMaxDah = 500;   // 5000 Hz
+constexpr int kFskBwMinDah = 15; // FSK D: 150 Hz
+constexpr int kFskBwMaxDah = 80; // FSK D: 800 Hz
+constexpr int kPskBwMaxDah = 20; // PSK D: 200 Hz
+constexpr int kIsMinDah = 30;    // 300 Hz
+constexpr int kIsMaxDah = 300;   // 3000 Hz
+constexpr int kCwIsMaxDah = 200; // CW, CW-R: 2000 Hz
 } // namespace
+
+FilterEdgeLimits filterLimits(int mdCode, int dataSubMode) {
+    const bool cw = (mdCode == 3 || mdCode == 7);
+    const bool data = (mdCode == 6 || mdCode == 9);
+    const bool amOrFm = (mdCode == 4 || mdCode == 5);
+    FilterEdgeLimits limits = {kBwMinDah, kBwMaxDah, kIsMinDah, cw ? kCwIsMaxDah : kIsMaxDah, amOrFm};
+    if (data && dataSubMode == 2) { // FSK D
+        limits.bwMinDah = kFskBwMinDah;
+        limits.bwMaxDah = kFskBwMaxDah;
+        limits.isLocked = true;
+    } else if (data && dataSubMode == 3) { // PSK D
+        limits.bwMaxDah = kPskBwMaxDah;
+        limits.isLocked = true;
+    }
+    return limits;
+}
 
 std::optional<int> stepWithin(int current, int steps, int min, int max) {
     if (current < 0)

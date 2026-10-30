@@ -449,6 +449,47 @@ private slots:
     void testTemp_warnThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(60), 140); }
     void testTemp_critThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(75), 167); }
 
+    // filterLimits - the one BW/IS table for the filter knobs (APP-004).
+    void testFilterLimits_voiceAndCw() {
+        const auto usb = RadioUtils::filterLimits(2, -1);
+        QCOMPARE(usb.bwMinDah, 5);
+        QCOMPARE(usb.bwMaxDah, 500);
+        QCOMPARE(usb.isMinDah, 30);
+        QCOMPARE(usb.isMaxDah, 300);
+        QVERIFY(!usb.isLocked);
+        for (const int cw : {3, 7}) {
+            QCOMPARE(RadioUtils::filterLimits(cw, -1).isMaxDah, 200);
+            QVERIFY(!RadioUtils::filterLimits(cw, -1).isLocked);
+        }
+    }
+    void testFilterLimits_amAndFmFixIs() {
+        QVERIFY(RadioUtils::filterLimits(4, -1).isLocked);
+        QVERIFY(RadioUtils::filterLimits(5, -1).isLocked);
+    }
+    void testFilterLimits_dataSubModes() {
+        for (const int data : {6, 9}) {
+            const auto fsk = RadioUtils::filterLimits(data, 2);
+            QCOMPARE(fsk.bwMinDah, 15);
+            QCOMPARE(fsk.bwMaxDah, 80);
+            QVERIFY(fsk.isLocked);
+            const auto psk = RadioUtils::filterLimits(data, 3);
+            QCOMPARE(psk.bwMinDah, 5);
+            QCOMPARE(psk.bwMaxDah, 20);
+            QVERIFY(psk.isLocked);
+            for (const int afData : {-1, 0, 1}) {
+                QCOMPARE(RadioUtils::filterLimits(data, afData).bwMaxDah, 500);
+                QVERIFY(!RadioUtils::filterLimits(data, afData).isLocked);
+            }
+        }
+    }
+    // DT outside DATA is not the operating mode ("the returned value may not be valid").
+    void testFilterLimits_dataSubModeIgnoredOutsideData() {
+        for (const int md : {1, 2, 3, 7}) {
+            QCOMPARE(RadioUtils::filterLimits(md, 2).bwMaxDah, 500);
+            QVERIFY(!RadioUtils::filterLimits(md, 3).isLocked);
+        }
+    }
+
     // Knob limits come from the K4 (APP-003): KS 8-100, CW 25-95 x10 Hz, SQ 0-40. The knobs stopped
     // at 50 WPM, went past 950 Hz to 990 (CW99 is out of range) and stopped squelch at 29.
     void testKeyerSpeed_stepsPastFifty() { QCOMPARE(RadioUtils::nextKeyerSpeed(50, 1), std::optional<int>(51)); }
