@@ -494,6 +494,32 @@ if(APPLE)
     # plain add_executable(). Without it checkPermission() logs "Could not find permission plugin"
     # and the microphone - and with it PTT - is refused.
     qt_import_plugins(${PROJECT_NAME} INCLUDE Qt6::QDarwinMicrophonePermissionPlugin)
+    # WHY: the plugin's request half (the code that makes macOS show its prompt) is a separate
+    # object, linked only through -u _QDarwinMicrophonePermissionRequest, which Qt adds when its
+    # finalizer finds NSMicrophoneUsageDescription in the Info.plist. Same finalizer as above, so a
+    # plain add_executable() never gets it: checkPermission() works, but requestPermission() falls
+    # to Qt's stub, which logs "Could not request QMicrophonePermission ... usage description" and
+    # answers Denied without asking. An existing grant hid it; once macOS dropped the grant there
+    # was no way to get it back (2026-10-30). Check with: nm QK4 | grep "(Request) requestPermission"
+    target_link_options(${PROJECT_NAME} PRIVATE "-Wl,-u,_QDarwinMicrophonePermissionRequest")
+    # WHY: the linker signs only the executable, leaving the bundle's Info.plist unbound
+    # ("Info.plist=not bound" in codesign -dvvv). macOS privacy then cannot tie the app to its
+    # NSMicrophoneUsageDescription: it refuses the microphone without a prompt and never lists QK4
+    # under Privacy & Security > Microphone, so PTT sends nothing (2026-10-30). Signing the bundle
+    # binds it. Packaging re-signs after this (scripts/macos-bundle.sh ad-hoc, then _build-macos.yml
+    # with the Developer ID), so release builds are unaffected.
+    # WHY a certificate where one exists: macOS keeps Local Network and Microphone grants per signing
+    # identity. An ad-hoc identity is the binary's hash, so every rebuild is a new app that has lost
+    # both grants (connect fails "Host unreachable", no prompt). A certificate's identity (team +
+    # bundle id) survives rebuilds. Set QK4_CODESIGN_IDENTITY to e.g. "Apple Development"; the
+    # default "-" (ad-hoc) still binds the Info.plist for machines without one.
+    set(QK4_CODESIGN_IDENTITY "-" CACHE STRING
+        "codesign identity for local macOS builds (\"-\" = ad-hoc; e.g. \"Apple Development\")")
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND codesign --force --sign "${QK4_CODESIGN_IDENTITY}" "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>"
+        COMMENT "Signing the app bundle (${QK4_CODESIGN_IDENTITY}) so macOS binds its Info.plist"
+        VERBATIM
+    )
 elseif(WIN32)
     # Configure Windows version resource file
     configure_file(
