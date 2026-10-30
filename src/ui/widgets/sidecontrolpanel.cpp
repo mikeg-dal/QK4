@@ -644,6 +644,9 @@ void SideControlPanel::resetToDefaults() {
     m_monOverlay->hide();
     m_balOverlay->hide();
 
+    // B SET's Sub RX colours on BW / SHIFT go with the radio.
+    setActiveReceiver(false);
+
     // Knob / filter values
     setBandwidth(0);
     setShift(0);

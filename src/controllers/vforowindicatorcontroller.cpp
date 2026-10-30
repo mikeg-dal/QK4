@@ -97,8 +97,10 @@ void VfoRowIndicatorController::reset() {
                                     .arg(K4Styles::Dimensions::FontSizeReadout);
     m_labels.splitLabel->setText("SPLIT OFF");
     m_labels.splitLabel->setStyleSheet(amberButton);
+    // B SET hid SPLIT; with it reset, SPLIT shows again (as onBSetChanged(false) would).
     if (m_labels.bSetLabel)
         m_labels.bSetLabel->setVisible(false);
+    m_labels.splitLabel->setVisible(true);
     m_labels.msgBankLabel->setText("MSG: I");
     m_labels.msgBankLabel->setStyleSheet(amberButton);
     m_labels.atuLabel->setStyleSheet(largeBoldColor(K4Styles::Colors::TextSecondary));
