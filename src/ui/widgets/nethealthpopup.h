@@ -1,8 +1,9 @@
 #ifndef NETHEALTHPOPUP_H
 #define NETHEALTHPOPUP_H
 
-#include <QWidget>
 #include <deque>
+
+#include "ui/popups/k4popupbase.h"
 
 #include "network/networkmetrics.h"
 
@@ -15,23 +16,17 @@ class QMouseEvent;
  *        drop-shadowed dark card. Repaints on its own timer while visible so the traces
  *        scroll live; reads NetworkMetrics history getters on the main thread (no locking).
  *
- * Positioning is owned here (updatePosition): anchored above its trigger widget and clamped to
- * all four screen edges so it never clips, including the fullscreen bottom-edge case.
+ * A K4PopupBase: placed centred above the LED (below it when the window is at the top of the
+ * screen), closed by a click on it or outside it, Escape, and everything else the base watches.
  */
-class NetHealthPopup : public QWidget {
+class NetHealthPopup : public K4PopupBase {
     Q_OBJECT
 public:
     explicit NetHealthPopup(NetworkMetrics *metrics, QWidget *parent = nullptr);
 
-    // Place the card above `anchor` (flipping below / clamping to the visible screen as needed).
-    void updatePosition(QWidget *anchor);
-
-signals:
-    // Emitted when the user clicks the popup to dismiss it; the owner tears it down.
-    void dismissed();
-
 protected:
-    void paintEvent(QPaintEvent *event) override;
+    QSize contentSize() const override;
+    void paintContent(QPainter &painter, const QRect &contentRect) override;
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;

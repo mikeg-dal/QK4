@@ -12,7 +12,7 @@ Top-level app widgets that aren't popups, pages, overlays, dialogs, or styling i
 
 ### Menu bars + panels
 - `bottommenubar` — MENU, Fn, DISPLAY, BAND, MAIN RX, SUB RX, TX, and PTT at the far right.
-- `featuremenubar` — +/- control bar for ATTN / NB / NR / MANUAL NOTCH, built from `ControlGroupWidget`s.
+- `featuremenubar` — +/- control bar for ATTN / NB / NR / MANUAL NOTCH. A `K4PopupBase` (not a `Qt::Popup`), centred above the bottom menu bar.
 - `sidecontrolpanel` — left panel: the six knob keys in three groups (WPM/PTCH or MIC/CMP by mode, PWR/DLY; BW/HI, SHFT/LO; M.RF/M.SQL, S.SQL/S.RF), the TX function keys (TUNE, XMIT, ATU TUNE, VOX, ANT, RX ANT), MON / NORM / BAL with their overlays, and the ? and globe (Server Manager) icons.
 - `rightsidepanel` — right panel: the function key grids (PRE/ATTN … MODE/ALT, PF 1–4, FREQ ENT … SUB/DIVERSITY) and the KPA1500 mini-panel slot. The memory keys are not here; see `memorykeyrow`. As narrow as the left panel; wider, with the card's height reserved, only while the KPA1500 is enabled (`setKpa1500SlotReserved`).
 - `kpa1500minipanel` — KPA1500 status + button slab for the right side panel.
@@ -21,13 +21,13 @@ Top-level app widgets that aren't popups, pages, overlays, dialogs, or styling i
 
 ### Small controls
 - `dualcontrolbutton` — custom split-button for paired controls (the six knob keys): fixed `KnobButtonWidth`×`KnobButtonHeight`. The size is a fixed maintainer choice, not measured from the text; `measuredHeight` is the text's minimum, checked by a test.
-- `controlgroupwidget` — labelled +/- control with an optional AUTO toggle. Used in `FeatureMenuBar`.
+- `controlgroupwidget` — labelled +/- control with an optional AUTO toggle.
 - `togglegroupwidget` — pair toggle (e.g. APF on/off + bandwidth) with a third `bothClicked` region between the two buttons.
 - `displaymenubutton` — dual-line nav button inside `DisplayPopupWidget`, one per DISPLAY choice.
 
 ### Status bar
 - `nethealthwidget` — TCP health LED for the top status bar.
-- `nethealthpopup` — frameless hover popup plotting the last 10 s of network metrics as three independently auto-scaled sparklines (RTT / JIT / BUF).
+- `nethealthpopup` — `K4PopupBase` popup, opened and closed by a click on the LED, plotting the last 10 s of network metrics as three independently auto-scaled sparklines (RTT / JIT / BUF).
 - `icontextlabel` — icon-plus-value composite used across the top status bar.
 - `powerstatusbutton` — power icon that doubles as connection/power-state indicator and the click target for K4 remote power-off.
 

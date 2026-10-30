@@ -371,7 +371,6 @@ constexpr int ChartValueColumnWidth = 100;  // Left column: legend label + curre
 constexpr int ChartLineWidth = 2;           // Sparkline trace stroke width
 constexpr int ChartPlotMargin = 4;          // Inset between a row's plot area and its edges
 constexpr int ChartLegendDotSize = 6;       // Diameter of the series legend dot
-constexpr int ChartPopupGap = 4;            // Gap between the popup card and its anchor widget
 constexpr int ChartScaleTickLen = 5;        // Length of the left-edge scale tick marks
 
 // =============================================================================
