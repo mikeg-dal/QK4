@@ -79,6 +79,9 @@ QByteArray setNoiseBlanker(int level, bool on, int filterWidth = -1);
 // Not the receiver noise blanker, which is NB / NB$. Out-of-range modes are clamped.
 QByteArray ddcNoiseBlanker(int mode);
 
+// #AVGnn - panadapter averaging, 01..20 frames (K4 reference: SET/RESP #AVGnn;). Clamped.
+QByteArray averaging(int frames);
+
 // LKn / LK$n - VFO tuning lock, per VFO.
 QByteArray setVfoLock(bool locked, bool subVfo);
 

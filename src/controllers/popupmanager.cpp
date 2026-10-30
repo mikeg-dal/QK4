@@ -402,15 +402,20 @@ void PopupManager::wireDisplayPopup() {
     connect(m_displayPopup, &DisplayPopupWidget::catCommandRequested, this,
             [this](const QString &cmd) { m_connection->sendCAT(cmd); });
 
-    // Averaging control +/- → local only (our smoothing differs from K4's).
-    connect(m_displayPopup, &DisplayPopupWidget::averagingIncrementRequested, this, [this]() {
-        const int next = qMin(m_radioState->averaging() + 1, 20);
-        m_radioState->setAveraging(next);
-    });
-    connect(m_displayPopup, &DisplayPopupWidget::averagingDecrementRequested, this, [this]() {
-        const int next = qMax(m_radioState->averaging() - 1, 1);
-        m_radioState->setAveraging(next);
-    });
+    // Averaging control +/- → the radio, like every other DISPLAY setting. WHY: the K4 owns #AVG and
+    // reports it in every connection dump, which QK4 always applies; a value kept only in QK4 was
+    // overwritten by the radio's on each connect (bench 2026-10-30). QK4 averages the same way the
+    // K4 does (mean power over n frames, PowerAverager), so one value serves both screens. Applied
+    // locally too so the trace changes at once; the radio's echo is then a no-op.
+    auto requestAveraging = [this](int frames) {
+        frames = qBound(1, frames, 20);
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::averaging(frames)));
+        m_radioState->setAveraging(frames);
+    };
+    connect(m_displayPopup, &DisplayPopupWidget::averagingIncrementRequested, this,
+            [this, requestAveraging]() { requestAveraging(m_radioState->averaging() + 1); });
+    connect(m_displayPopup, &DisplayPopupWidget::averagingDecrementRequested, this,
+            [this, requestAveraging]() { requestAveraging(m_radioState->averaging() - 1); });
 
     // DDC NB key → next panadapter NB mode (OFF → ON → AUTO), from the mode the radio last reported.
     connect(m_displayPopup, &DisplayPopupWidget::ddcNbModeCycleRequested, this, [this]() {

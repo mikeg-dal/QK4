@@ -267,6 +267,10 @@ QByteArray ddcNoiseBlanker(int mode) {
     return QString("#NB$%1;").arg(qBound(0, mode, 2)).toUtf8();
 }
 
+QByteArray averaging(int frames) {
+    return QString("#AVG%1;").arg(qBound(1, frames, 20), 2, 10, QLatin1Char('0')).toUtf8();
+}
+
 QByteArray setVfoLock(bool locked, bool subVfo) {
     return QString("LK%1%2;").arg(subVfo ? "$" : "").arg(locked ? 1 : 0).toUtf8();
 }

@@ -281,6 +281,20 @@ private slots:
         }
     }
 
+    void theAveragingFrameIsTwoDigitsAndWhatRadioStateParses() {
+        // #AVGnn, 01..20 (K4 reference). What the DISPLAY popup's AVG +/- sends, so the radio keeps
+        // the value and its connection dump no longer resets QK4's averaging.
+        QCOMPARE(CatFrames::averaging(1), QByteArray("#AVG01;"));
+        QCOMPARE(CatFrames::averaging(20), QByteArray("#AVG20;"));
+        QCOMPARE(CatFrames::averaging(0), QByteArray("#AVG01;"));
+        QCOMPARE(CatFrames::averaging(21), QByteArray("#AVG20;"));
+        for (int frames : {3, 1, 20}) {
+            RadioState rs;
+            rs.parseCATCommand(QString::fromLatin1(CatFrames::averaging(frames)));
+            QCOMPARE(rs.averaging(), frames);
+        }
+    }
+
     void theKeyerPaddleFrameCarriesAllThreeFields() {
         QCOMPARE(CatFrames::keyerPaddle('B', 'R', 95), QByteArray("KPBR095;"));
         QCOMPARE(CatFrames::keyerPaddle('A', 'N', 125), QByteArray("KPAN125;"));
