@@ -20,9 +20,11 @@ private slots:
     void aClearDuringEditLeavesEditMode();
     void rowsFollowValueUpdatesAndTheXvtrSelector();
     void onlyReadOnlyRowsShowTheLock();
+    void searchKeyPressedAgainClosesTheSearchBox();
 
 private:
     static void sendMenu(MenuModel &model);
+    static QPushButton *buttonLabelled(const MenuOverlayWidget &overlay, const QString &text);
     static QStringList rowTexts(const MenuOverlayWidget &overlay);
     static bool hasButtonLabelled(const MenuOverlayWidget &overlay, const QString &text);
 };
@@ -44,6 +46,13 @@ QStringList TestMenuOverlay::rowTexts(const MenuOverlayWidget &overlay) {
         }
     }
     return rows;
+}
+
+QPushButton *TestMenuOverlay::buttonLabelled(const MenuOverlayWidget &overlay, const QString &text) {
+    const auto buttons = overlay.findChildren<QPushButton *>();
+    const auto it =
+        std::find_if(buttons.cbegin(), buttons.cend(), [&](const QPushButton *b) { return b->text() == text; });
+    return it == buttons.cend() ? nullptr : *it;
 }
 
 bool TestMenuOverlay::hasButtonLabelled(const MenuOverlayWidget &overlay, const QString &text) {
@@ -128,6 +137,73 @@ void TestMenuOverlay::onlyReadOnlyRowsShowTheLock() {
         locks << row->findChildren<QLabel *>(Qt::FindDirectChildrenOnly).at(1)->text();
     }
     QCOMPARE(locks, (QStringList{QString(), QString::fromUtf8("\xF0\x9F\x94\x92")}));
+}
+
+// The search box is a Qt::Popup. A press outside it closes it, and where the platform's
+// ReplayMousePressOutsidePopup hint is set (Windows, X11) Qt then replays that press to the widget
+// under it - here the search key itself, which opened the box again. A press on the search key
+// must close the box without that replay (Qt::WA_NoMouseReplay on the popup as it closes); a press
+// anywhere else keeps the replay, so it still works whatever it landed on.
+//
+// The offscreen platform answers true to the hint but cannot grab the mouse for a popup ("This
+// plugin does not support grabbing the keyboard"), and Qt replays only after a successful grab, so
+// the reopen itself cannot be seen here. The press is delivered to the popup, as the grab delivers
+// it on Windows and X11, and the test reads the attribute that decides the replay as the box closes.
+void TestMenuOverlay::searchKeyPressedAgainClosesTheSearchBox() {
+    MenuModel model;
+    MenuOverlayWidget overlay(&model);
+    sendMenu(model);
+    overlay.resize(800, 600);
+    overlay.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&overlay));
+    QPushButton *search = buttonLabelled(overlay, QString::fromUtf8("\xF0\x9F\x94\x8D")); // the magnifier key
+    QVERIFY(search);
+    QWidget *box = nullptr;
+    for (QWidget *w : overlay.findChildren<QWidget *>()) {
+        if (w->windowType() == Qt::Popup)
+            box = w;
+    }
+    QVERIFY(box);
+
+    // Whether Qt will replay the closing press, read the moment the box closes.
+    struct ReplayAtClose : QObject {
+        bool closed = false;
+        bool noReplay = false;
+        bool eventFilter(QObject *watched, QEvent *event) override {
+            if (event->type() == QEvent::Hide) {
+                closed = true;
+                noReplay = static_cast<QWidget *>(watched)->testAttribute(Qt::WA_NoMouseReplay);
+            }
+            return false;
+        }
+    };
+    const auto pressOnBoxAt = [box](const QPoint &global) {
+        QTest::mousePress(box, Qt::LeftButton, {}, box->mapFromGlobal(global));
+    };
+
+    // The search key, pressed while the box is open: closed, and not replayed to the key.
+    QTest::mouseClick(search, Qt::LeftButton);
+    QTRY_VERIFY(box->isVisible());
+    ReplayAtClose onKey;
+    box->installEventFilter(&onKey);
+    pressOnBoxAt(search->mapToGlobal(search->rect().center()));
+    QTest::mouseRelease(search, Qt::LeftButton, {}, search->rect().center());
+    box->removeEventFilter(&onKey);
+    QVERIFY(onKey.closed);
+    QVERIFY2(onKey.noReplay, "the press on the search key would be replayed to it and reopen the box");
+    QTest::qWait(50);
+    QVERIFY(!box->isVisible());
+
+    // Anywhere else: closed, and replayed as usual.
+    QTest::qWait(300);
+    QTest::mouseClick(search, Qt::LeftButton);
+    QTRY_VERIFY(box->isVisible());
+    ReplayAtClose elsewhere;
+    box->installEventFilter(&elsewhere);
+    pressOnBoxAt(overlay.mapToGlobal(QPoint(20, 20)));
+    box->removeEventFilter(&elsewhere);
+    QVERIFY(elsewhere.closed);
+    QVERIFY2(!elsewhere.noReplay, "a press away from the search key lost its replay");
 }
 
 QTEST_MAIN(TestMenuOverlay)

@@ -322,6 +322,8 @@ void MenuOverlayWidget::createSearchPopup() {
 
     connect(m_searchInput, &QLineEdit::textChanged, this, &MenuOverlayWidget::onSearchTextChanged);
 
+    // Sees the press that closes the box (see eventFilter).
+    m_searchPopup->installEventFilter(this);
     m_searchPopup->hide();
 }
 
@@ -505,6 +507,19 @@ void MenuOverlayWidget::wheelEvent(QWheelEvent *event) {
 }
 
 bool MenuOverlayWidget::eventFilter(QObject *watched, QEvent *event) {
+    // WHY: the search box is a Qt::Popup. A press outside it closes it, and where the platform's
+    // ReplayMousePressOutsidePopup hint is set (Windows, X11; not macOS) Qt then replays the press
+    // to the widget under it. On the search key that replay is a second click, which opened the box
+    // it had just closed. Qt::WA_NoMouseReplay, set on the popup while it handles that press, keeps
+    // the press from being replayed; a press anywhere else is still replayed, so it works where it
+    // lands. Qt clears the attribute before each new mouse event, so it only ever covers this press.
+    if (watched == m_searchPopup && event->type() == QEvent::MouseButtonPress) {
+        const QPoint globalPos = static_cast<QMouseEvent *>(event)->globalPosition().toPoint();
+        const QRect searchKey(m_searchBtn->mapToGlobal(QPoint(0, 0)), m_searchBtn->size());
+        if (searchKey.contains(globalPos))
+            m_searchPopup->setAttribute(Qt::WA_NoMouseReplay);
+        return false; // the popup still handles the press: it closes itself
+    }
     // Intercept wheel events from scroll area to move selection instead of scrolling
     if (event->type() == QEvent::Wheel && (watched == m_scrollArea || watched == m_scrollArea->viewport())) {
         auto *wheelEvent = static_cast<QWheelEvent *>(event);
