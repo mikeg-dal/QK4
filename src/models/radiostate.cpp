@@ -310,6 +310,10 @@ void RadioState::setRefLevelB(int level) {
     SpectrumDisplayHandlers::setRefLevelB(m_spectrumDisplayState, *this, level);
 }
 
+std::optional<int> RadioState::stepRefLevel(bool vfoB, int steps) {
+    return SpectrumDisplayHandlers::stepRefLevel(m_spectrumDisplayState, *this, vfoB, steps);
+}
+
 void RadioState::setSpanHzB(int spanHz) {
     SpectrumDisplayHandlers::setSpanHzB(m_spectrumDisplayState, *this, spanHz);
 }

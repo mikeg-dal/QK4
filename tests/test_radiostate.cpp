@@ -1768,6 +1768,72 @@ private slots:
         QCOMPARE(rs.refLevel(), 50);
     }
 
+    // --- REF +/- (Ctrl+Wheel and the Display popup, SPEC-003) ---
+    // Ctrl+Wheel used to send #REF and move only the panadapter, so every step started again from
+    // the stale RadioState::refLevel(): two steps of +1 sent the same level twice.
+    void testStepRefLevelAccumulates() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-129;");
+        QSignalSpy spy(&rs, &RadioState::refLevelChanged);
+        QCOMPARE(rs.stepRefLevel(false, +1), std::optional<int>(-128));
+        QCOMPARE(rs.stepRefLevel(false, +1), std::optional<int>(-127));
+        QCOMPARE(rs.stepRefLevel(false, -3), std::optional<int>(-130));
+        QCOMPARE(rs.refLevel(), -130);
+        QCOMPARE(spy.count(), 3);
+        QCOMPARE(spy.at(2).at(0).toInt(), -130);
+    }
+
+    void testStepRefLevelSubIsSeparate() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-129;");
+        rs.parseCATCommand("#REF$-120;");
+        QSignalSpy mainSpy(&rs, &RadioState::refLevelChanged);
+        QSignalSpy subSpy(&rs, &RadioState::refLevelBChanged);
+        QCOMPARE(rs.stepRefLevel(true, +2), std::optional<int>(-118));
+        QCOMPARE(rs.refLevelB(), -118);
+        QCOMPARE(rs.refLevel(), -129);
+        QCOMPARE(mainSpy.count(), 0);
+        QCOMPARE(subSpy.count(), 1);
+    }
+
+    // A client #REF during AutoRef freezes the radio's tracking (docs/k4-protocol-quirks.md §13).
+    void testStepRefLevelRefusedInAutoRef() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-129;");
+        rs.parseCATCommand("#AR1201+041;");
+        QSignalSpy spy(&rs, &RadioState::refLevelChanged);
+        QCOMPARE(rs.stepRefLevel(false, +1), std::nullopt);
+        QCOMPARE(rs.stepRefLevel(true, +1), std::nullopt);
+        QCOMPARE(rs.refLevel(), -129);
+        QCOMPARE(spy.count(), 0);
+        rs.parseCATCommand("#AR1201+040;"); // manual again
+        QCOMPARE(rs.stepRefLevel(false, +1), std::optional<int>(-128));
+    }
+
+    // Before the radio reports a REF there is nothing to step from; a guess would be sent as a real
+    // REF.
+    void testStepRefLevelRefusedBeforeFirstRef() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::refLevelChanged);
+        QCOMPARE(rs.stepRefLevel(false, +1), std::nullopt);
+        QCOMPARE(rs.stepRefLevel(true, -1), std::nullopt);
+        QCOMPARE(rs.refLevel(), SpectrumDisplayLimits::RefLevelUnknown);
+        QCOMPARE(spy.count(), 0);
+        rs.parseCATCommand("#REF-110;");
+        rs.reset();
+        QCOMPARE(rs.stepRefLevel(false, +1), std::nullopt);
+    }
+
+    void testStepRefLevelClampsAndStopsAtLimits() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-198;");
+        QCOMPARE(rs.stepRefLevel(false, -5), std::optional<int>(SpectrumDisplayLimits::RefLevelMin));
+        QCOMPARE(rs.stepRefLevel(false, -1), std::nullopt); // already at the floor — nothing to send
+        rs.parseCATCommand("#REF49;");
+        QCOMPARE(rs.stepRefLevel(false, +5), std::optional<int>(SpectrumDisplayLimits::RefLevelMax));
+        QCOMPARE(rs.stepRefLevel(false, +1), std::nullopt);
+    }
+
     // --- #SPN / #SPN$ (span Hz, 1..999999, via handleIntPair) ---
     void testSpanParses() {
         RadioState rs;

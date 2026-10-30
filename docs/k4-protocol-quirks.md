@@ -312,7 +312,8 @@ could change REF while AutoRef was on. QK4 had parsed `#AR` against an invented 
 - `SpectrumDisplayHandlers::handleAR` (`src/models/radiostate/spectrumdisplaystate.cpp`) keeps only
   the mode. QK4 follows the offset by applying the published `#REF`, so it never reads the offset.
 - `PopupManager`'s REF ± lambda and the two Ctrl+Wheel `refLevelScrolled` handlers in
-  `SpectrumController` do nothing while `RadioState::autoRefLevel()` is true.
+  `SpectrumController` both step REF through `RadioState::stepRefLevel()`, which refuses while
+  AutoRef is on (and before the radio has reported a REF).
 - The AUTO button in `DisplayPopupWidget` sends `#AR/;` and waits for the radio's `#AR` to set its
   state.
 - Tests: the `testAutoRef*` cases in `tests/test_radiostate.cpp` use the radio's own strings.

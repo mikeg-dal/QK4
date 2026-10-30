@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <QVector>
 #include <functional>
+#include <optional>
 
 #include "radiostate/antennastate.h"
 #include "radiostate/audioeffectsstate.h"
@@ -330,6 +331,11 @@ public:
     // Panadapter REF level (Sub)
     int refLevelB() const { return m_spectrumDisplayState.refLevelB; }
     void setRefLevelB(int level);
+
+    // Step Main's or Sub's REF by `steps` dB and apply it optimistically; returns the level to send
+    // as #REF / #REF$, or nothing (AutoRef on, no REF reported yet, at the limit). Every REF +/- in
+    // the UI goes through here so the next step starts from the level just sent.
+    std::optional<int> stepRefLevel(bool vfoB, int steps);
 
     // Panadapter span (Sub, from #SPN$ command, in Hz)
     int spanHzB() const { return m_spectrumDisplayState.spanHzB; }

@@ -357,6 +357,22 @@ void setRefLevelB(SpectrumDisplayState &state, RadioState &owner, int level) {
     }
 }
 
+std::optional<int> stepRefLevel(SpectrumDisplayState &state, RadioState &owner, bool sub, int steps) {
+    if (state.autoRefLevel > 0)
+        return std::nullopt;
+    const int current = sub ? state.refLevelB : state.refLevel;
+    if (current == SpectrumDisplayLimits::RefLevelUnknown)
+        return std::nullopt;
+    const int next = qBound(SpectrumDisplayLimits::RefLevelMin, current + steps, SpectrumDisplayLimits::RefLevelMax);
+    if (next == current)
+        return std::nullopt;
+    if (sub)
+        setRefLevelB(state, owner, next);
+    else
+        setRefLevel(state, owner, next);
+    return next;
+}
+
 void setSpanHzB(SpectrumDisplayState &state, RadioState &owner, int spanHz) {
     if (spanHz > 0 && spanHz != state.spanHzB) {
         state.spanHzB = spanHz;

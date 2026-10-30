@@ -3,6 +3,8 @@
 
 #include <QString>
 
+#include <optional>
+
 class RadioState;
 
 // Ranges and defaults for the K4's panadapter amplitude window, shared by the CAT parser and every
@@ -103,6 +105,12 @@ void setRefLevel(SpectrumDisplayState &state, RadioState &owner, int level);
 void setScale(SpectrumDisplayState &state, RadioState &owner, int scale);
 void setSpanHz(SpectrumDisplayState &state, RadioState &owner, int spanHz);
 void setRefLevelB(SpectrumDisplayState &state, RadioState &owner, int level);
+// Moves Main's (sub = false) or Sub's REF by `steps` dB within the legal range and applies it
+// optimistically. Returns the new level for the caller to send as #REF / #REF$, or nothing when
+// there is nothing to send: AutoRef is on (a client #REF freezes the radio's tracking —
+// docs/k4-protocol-quirks.md §13), the radio has not reported a REF yet, or the level is at its
+// limit.
+std::optional<int> stepRefLevel(SpectrumDisplayState &state, RadioState &owner, bool sub, int steps);
 void setSpanHzB(SpectrumDisplayState &state, RadioState &owner, int spanHz);
 void setMiniPanAEnabled(SpectrumDisplayState &state, RadioState &owner, bool enabled);
 void setMiniPanBEnabled(SpectrumDisplayState &state, RadioState &owner, bool enabled);

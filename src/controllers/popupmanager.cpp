@@ -465,29 +465,17 @@ void PopupManager::wireDisplayPopup() {
     connect(m_displayPopup, &DisplayPopupWidget::scaleIncrementRequested, this, [adjustScale]() { adjustScale(+1); });
     connect(m_displayPopup, &DisplayPopupWidget::scaleDecrementRequested, this, [adjustScale]() { adjustScale(-1); });
 
-    // Ref level +/- (per-VFO, 1 dB step, SpectrumDisplayLimits range).
+    // Ref level +/- (per-VFO, 1 dB step). RadioState applies the step and refuses it in AutoRef — a
+    // #REF sent then freezes the radio's tracking (docs/k4-protocol-quirks.md §13) — or before the
+    // radio has reported a REF. Same path as Ctrl+Wheel in SpectrumController.
     auto adjustRefLevel = [this](int delta) {
-        // WHY: a #REF sent during AutoRef is accepted silently and freezes the radio's tracking while it
-        // still reports AutoRef on (bench 2026-10-19). Same rule as Ctrl+Wheel in SpectrumController.
-        if (m_radioState->autoRefLevel())
-            return;
-        const bool vfoA = m_displayPopup->isVfoAEnabled();
-        const bool vfoB = m_displayPopup->isVfoBEnabled();
-        if (vfoA && m_radioState->refLevel() != SpectrumDisplayLimits::RefLevelUnknown) {
-            const int newLevel = qBound(SpectrumDisplayLimits::RefLevelMin, m_radioState->refLevel() + delta,
-                                        SpectrumDisplayLimits::RefLevelMax);
-            if (newLevel != m_radioState->refLevel()) {
-                m_radioState->setRefLevel(newLevel);
-                m_connection->sendCAT(QString("#REF%1;").arg(newLevel));
-            }
+        if (m_displayPopup->isVfoAEnabled()) {
+            if (const auto level = m_radioState->stepRefLevel(false, delta))
+                m_connection->sendCAT(QString("#REF%1;").arg(*level));
         }
-        if (vfoB && m_radioState->refLevelB() != SpectrumDisplayLimits::RefLevelUnknown) {
-            const int newLevel = qBound(SpectrumDisplayLimits::RefLevelMin, m_radioState->refLevelB() + delta,
-                                        SpectrumDisplayLimits::RefLevelMax);
-            if (newLevel != m_radioState->refLevelB()) {
-                m_radioState->setRefLevelB(newLevel);
-                m_connection->sendCAT(QString("#REF$%1;").arg(newLevel));
-            }
+        if (m_displayPopup->isVfoBEnabled()) {
+            if (const auto level = m_radioState->stepRefLevel(true, delta))
+                m_connection->sendCAT(QString("#REF$%1;").arg(*level));
         }
     };
     connect(m_displayPopup, &DisplayPopupWidget::refLevelIncrementRequested, this,

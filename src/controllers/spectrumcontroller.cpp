@@ -547,17 +547,12 @@ void SpectrumController::adjustScaleFromWheel(int steps) {
 }
 
 void SpectrumController::adjustRefLevelFromWheel(bool vfoB, int steps) {
-    // Blocked while AutoRef is active: see docs/k4-protocol-quirks.md §13.
-    if (!m_connectionController->isConnected() || m_radioState->autoRefLevel())
+    if (!m_connectionController->isConnected())
         return;
-    int currentRef = vfoB ? m_radioState->refLevelB() : m_radioState->refLevel();
-    if (currentRef < SpectrumDisplayLimits::RefLevelMin)
-        currentRef = SpectrumDisplayLimits::RefLevelDefault; // not yet received
-    const int newRef =
-        qBound(SpectrumDisplayLimits::RefLevelMin, currentRef + steps, SpectrumDisplayLimits::RefLevelMax);
-    m_connectionController->sendCAT(QString(vfoB ? "#REF$%1;" : "#REF%1;").arg(newRef));
-    // Optimistic update
-    pan(vfoB).pad->setRefLevel(newRef);
+    // RadioState applies the step (refused in AutoRef — docs/k4-protocol-quirks.md §13), so the next
+    // wheel step starts from this one; the pad follows through refLevelChanged / refLevelBChanged.
+    if (const auto level = m_radioState->stepRefLevel(vfoB, steps))
+        m_connectionController->sendCAT(QString(vfoB ? "#REF$%1;" : "#REF%1;").arg(*level));
 }
 
 void SpectrumController::updateBandPlan(bool vfoB) {
