@@ -28,6 +28,22 @@ namespace WaterfallGeometry {
 // height that lands on the panel's grid, so it keeps 1. Below 1.5 is 1.
 int devicePxPerRowFor(qreal framebufferPixelsPerPanelPixel);
 
+// Rows added to V (waterfall.vert's rowShift uniform) so that each devicePxPerRow-tall row covers
+// exactly the device pixels of one physical pixel, not half of one and half of the next.
+//
+// Rows are counted up from the waterfall's bottom edge, but the panel's pixels are counted down
+// from the top of the framebuffer: physical pixel n is framebuffer rows n*k .. n*k+k-1. Whether the
+// two grids agree depends on where the widget sits. At DPR 3 (macOS 2x times a 1.5 interface
+// scale) a widget whose bottom edge is at logical y 377 ends at framebuffer row 1131 — odd — so
+// unshifted 2-pixel rows straddle physical pixels and the twinkle is back.
+//
+// viewportBottomFramebufferRow is the framebuffer row just below the waterfall (its bottom edge,
+// counted from the top of the window). Returns -(that row mod k) / k: 0 when the grids agree, else a
+// shift that starts the bottom row early, leaving a partial row of the next-older history under it.
+// That extra row means one more stored row is on screen; visibleRowsFor's clamp does not know, so
+// the caller must keep visibleRows <= storedRows - 2 whenever this is non-zero.
+float rowShiftFor(qint64 viewportBottomFramebufferRow, int devicePxPerRow);
+
 // Rows to draw for a waterfall this tall, one row per devicePxPerRow device pixels, clamped to what
 // is stored less the row reserved for the write head. pxPerRow above devicePxPerRow means a clamp
 // bit and the blur is back.
@@ -54,7 +70,8 @@ float visibleFractionFor(int visibleRows, int storedRows);
 // pixel 0 is the bottom of the waterfall (oldest). viewportHeightPx is the waterfall viewport's
 // height in device pixels, which is fractional in general (924 px x 0.6 = 554.4); the pixels drawn
 // are those whose centre lies inside it.
-int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows, int storedRows);
+int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows, int storedRows,
+                float rowShift = 0.0f);
 
 // ---- Colour: which dBm lands where in the waterfall palette ----------------------------------
 //

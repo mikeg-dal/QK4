@@ -41,16 +41,17 @@ constexpr float K4_DBM_OFFSET = SpectrumScale::K4_DBM_OFFSET;
 //
 // Must match the std140 block in BOTH shader files.
 struct WaterfallUniforms {
-    float scrollOffset;     // oldest visible row, as a fraction of stored rows
-    float binCount;         // bins written per row
-    float textureWidth;     // texture width, for centring the bins
-    float tierSpanHz;       // bandwidth those bins cover
-    float spanHz;           // bandwidth on display
-    float visibleFraction;  // rows drawn / rows stored; 1.0 to show the whole buffer
-    float storedRows;       // rows in the texture, for the V snap; 0.0 disables snapping
-    float colorLow;         // palette position = clamp((texel - colorLow) * colorGain, 0, 1);
-    float colorGain;        //   WaterfallGeometry::colorUniformsFor. 0 and 1 pass the texel through.
-    float pad0, pad1, pad2; // std140: the block is a whole number of 16-byte rows
+    float scrollOffset;    // oldest visible row, as a fraction of stored rows
+    float binCount;        // bins written per row
+    float textureWidth;    // texture width, for centring the bins
+    float tierSpanHz;      // bandwidth those bins cover
+    float spanHz;          // bandwidth on display
+    float visibleFraction; // rows drawn / rows stored; 1.0 to show the whole buffer
+    float storedRows;      // rows in the texture, for the V snap; 0.0 disables snapping
+    float colorLow;        // palette position = clamp((texel - colorLow) * colorGain, 0, 1);
+    float colorGain;       //   WaterfallGeometry::colorUniformsFor. 0 and 1 pass the texel through.
+    float rowShift;        // rows added to V so row edges land on physical pixels; 0.0 for none
+    float pad1, pad2;      // std140: the block is a whole number of 16-byte rows
 };
 static_assert(sizeof(WaterfallUniforms) == 48, "must match the std140 block in waterfall.{vert,frag}");
 

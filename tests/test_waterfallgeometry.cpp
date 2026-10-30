@@ -3,6 +3,8 @@
 #include "dsp/spectrumscale.h"
 #include <QSet>
 #include <QtTest>
+#include <algorithm>
+#include <utility>
 
 // The shaders cannot be unit tested, so these assert the arithmetic that feeds them via the mirror
 // in WaterfallGeometry::rowForPixel. The property that matters is that the visible pixels map onto
@@ -31,6 +33,8 @@ private slots:
     void fractionalViewportStaysOneToOne();
     void oneDevicePxRowsShareAPhysicalPixelUnderDownscale();
     void twoDevicePxRowsScrollByWholePhysicalPixels();
+    void rowShiftFollowsTheFramebufferParity();
+    void shiftedRowsLandOnPhysicalPixelsAtDpr3();
 
     // Colour window (WaterfallGeometry::colorWindowFor and the shader mirror).
     void noiseAtRefIsMidBlueNotBlack();
@@ -200,11 +204,17 @@ void TestWaterfallGeometry::visibleRowsCountsPhysicalPixels() {
 // every whole pixel inside the viewport still resolves to exactly one row, in order, at every
 // scroll position — so the fractional height is not what twinkles.
 void TestWaterfallGeometry::fractionalViewportStaysOneToOne() {
-    const int stored = 2048, visible = 554;
-    for (int writeRow : {0, 1, 300, 1493, 2047}) {
-        const int oldest = WaterfallGeometry::oldestVisibleRow(writeRow, visible, stored);
-        for (int px = 0; px < visible; ++px)
-            QCOMPARE(WaterfallGeometry::rowForPixel(px, 554.4f, writeRow, visible, stored), (oldest + px) % stored);
+    const int stored = 2048;
+    // DPR 2: 554.4 px for 554 rows. DPR 3 at Mike's 150% interface scale: 831.6 px for 832 rows
+    // (pxPerRow 0.9995) — 832 pixel centres lie inside 831.6, so that is still one row per pixel.
+    for (const auto &[viewport, visible] : {std::pair{554.4f, 554}, std::pair{831.6f, 832}}) {
+        QCOMPARE(WaterfallGeometry::visibleRowsFor(viewport, stored, 64), visible);
+        for (int writeRow : {0, 1, 300, 1493, 2047}) {
+            const int oldest = WaterfallGeometry::oldestVisibleRow(writeRow, visible, stored);
+            for (int px = 0; px < visible; ++px)
+                QCOMPARE(WaterfallGeometry::rowForPixel(px, viewport, writeRow, visible, stored),
+                         (oldest + px) % stored);
+        }
     }
 }
 
@@ -244,6 +254,48 @@ void TestWaterfallGeometry::twoDevicePxRowsScrollByWholePhysicalPixels() {
         // Newest complete row on the top physical pixel.
         QCOMPARE(WaterfallGeometry::rowForPixel(2 * physicalPixels - 1, viewport, writeRow, visible, stored),
                  (writeRow - 1 + stored) % stored);
+    }
+}
+
+void TestWaterfallGeometry::rowShiftFollowsTheFramebufferParity() {
+    QCOMPARE(WaterfallGeometry::rowShiftFor(1386, 2), 0.0f);
+    QCOMPARE(WaterfallGeometry::rowShiftFor(1131, 2), -0.5f);
+    QCOMPARE(WaterfallGeometry::rowShiftFor(1131, 1), 0.0f);
+    QCOMPARE(WaterfallGeometry::rowShiftFor(10, 3), -1.0f / 3.0f);
+}
+
+// Mike's session, 2026-10-30: DPR 3, waterfall 831.6 px, 7680x4320 framebuffer on a 4K panel (two
+// framebuffer rows per physical pixel). For a widget whose bottom edge is at an even and at an odd
+// framebuffer row, every physical pixel the waterfall covers completely shows one row, the newest
+// complete row is at the top, the write head is never drawn, and one step later every physical
+// pixel holds what the one above it held.
+void TestWaterfallGeometry::shiftedRowsLandOnPhysicalPixelsAtDpr3() {
+    const int stored = 2048, k = 2;
+    const float viewport = 831.6f;
+    const int pixels = 832; // pixel centres inside the viewport
+    for (qint64 bottomRow : {qint64{1386}, qint64{1131}}) {
+        const float shift = WaterfallGeometry::rowShiftFor(bottomRow, k);
+        int visible = WaterfallGeometry::visibleRowsFor(viewport, stored, 64, k);
+        if (shift != 0.0f)
+            visible = (std::min)(visible, stored - 2);
+        // Physical pixel of device pixel i (0 = bottom): framebuffer row bottomRow - 1 - i, halved.
+        auto physicalOf = [&](int i) { return (bottomRow - 1 - i) / k; };
+
+        for (int writeRow : {0, 1, 900, 2047}) {
+            const int next = (writeRow + 1) % stored;
+            auto row = [&](int i, int w) {
+                return WaterfallGeometry::rowForPixel(i, viewport, w, visible, stored, shift);
+            };
+            for (int i = 0; i < pixels; ++i) {
+                QVERIFY(row(i, writeRow) != writeRow);
+                if (i + 1 < pixels && physicalOf(i + 1) == physicalOf(i))
+                    QCOMPARE(row(i + 1, writeRow), row(i, writeRow));
+                // Rigid scroll: the pixel k below now shows this pixel's row.
+                if (i >= k)
+                    QCOMPARE(row(i - k, next), row(i, writeRow));
+            }
+            QCOMPARE(row(pixels - 1, writeRow), (writeRow - 1 + stored) % stored);
+        }
     }
 }
 

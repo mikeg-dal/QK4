@@ -16,6 +16,15 @@ int devicePxPerRowFor(qreal framebufferPixelsPerPanelPixel) {
     return static_cast<int>(whole);
 }
 
+float rowShiftFor(qint64 viewportBottomFramebufferRow, int devicePxPerRow) {
+    if (devicePxPerRow <= 1)
+        return 0.0f;
+    qint64 phase = viewportBottomFramebufferRow % devicePxPerRow;
+    if (phase < 0)
+        phase += devicePxPerRow;
+    return -static_cast<float>(phase) / static_cast<float>(devicePxPerRow);
+}
+
 int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int devicePxPerRow) {
     if (storedRows <= 0)
         return 0;
@@ -48,14 +57,16 @@ float visibleFractionFor(int visibleRows, int storedRows) {
     return static_cast<float>(visibleRows) / static_cast<float>(storedRows);
 }
 
-int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows, int storedRows) {
+int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows, int storedRows, float rowShift) {
     if (storedRows <= 0 || viewportHeightPx <= 0.0f)
         return 0;
 
-    // waterfall.vert: V = t * visibleFraction + scrollOffset, t at the pixel's centre.
+    // waterfall.vert: V = t * visibleFraction + scrollOffset + rowShift / storedRows, t at the
+    // pixel's centre.
     const float t = (static_cast<float>(pixel) + 0.5f) / viewportHeightPx;
     const float v = t * visibleFractionFor(visibleRows, storedRows) +
-                    scrollOffsetFor(oldestVisibleRow(writeRow, visibleRows, storedRows), storedRows);
+                    scrollOffsetFor(oldestVisibleRow(writeRow, visibleRows, storedRows), storedRows) +
+                    rowShift / static_cast<float>(storedRows);
 
     // waterfall.frag: snap to a texel centre, then Repeat addressing wraps the ring.
     int row = static_cast<int>(std::floor(v * static_cast<float>(storedRows))) % storedRows;

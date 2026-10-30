@@ -945,6 +945,17 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     updateDevicePxPerRow();
     m_visibleRows =
         WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS, m_devicePxPerRow);
+    // Row edges onto the panel's pixel grid. The waterfall's bottom edge is this widget's bottom
+    // edge (QRhi viewports are bottom-left), placed in the window's framebuffer: the window's own
+    // origin is a whole number of points, so it never shifts the grid; the widget's position inside
+    // it does whenever DPR is not a multiple of the row height (DPR 3 with QK4 at 150%).
+    const qint64 waterfallBottomRow = std::llround(static_cast<double>(mapTo(window(), QPoint(0, height())).y()) *
+                                                   static_cast<double>(devicePixelRatioF()));
+    const float rowShift = WaterfallGeometry::rowShiftFor(waterfallBottomRow, m_devicePxPerRow);
+    m_waterfallRowShift = rowShift;
+    // WHY: a shifted window shows a partial row older than the oldest; keep that row off the write head.
+    if (rowShift != 0.0f)
+        m_visibleRows = (std::min)(m_visibleRows, m_waterfallHistory - 2);
 
     // Logged here rather than earlier in the frame: the geometry line reports pxPerRow, which is
     // only meaningful once the visible row count for this frame has been chosen.
@@ -985,7 +996,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                                                      static_cast<float>(m_waterfallHistory),
                                                      color.colorLow,
                                                      color.colorGain,
-                                                     0.0f,
+                                                     rowShift,
                                                      0.0f,
                                                      0.0f};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
@@ -1455,12 +1466,14 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     // so it moves pxPerRow further than resizing the window does. Treat a ratio change as a
     // geometry change or the most direct control over the artifact would go unrecorded.
     const bool haveBins = m_waterfallTierSpanHz > 0.0f && m_waterfallTierBinCount > 0;
-    const bool sameGeometry =
-        outputSize == m_lastLoggedOutputSize && qFuzzyCompare(m_spectrumRatio, m_lastLoggedSpectrumRatio);
+    const bool sameGeometry = outputSize == m_lastLoggedOutputSize &&
+                              qFuzzyCompare(m_spectrumRatio, m_lastLoggedSpectrumRatio) &&
+                              m_waterfallRowShift == m_lastLoggedRowShift;
     if (sameGeometry && (m_geometryLoggedWithBins || !haveBins))
         return;
     m_lastLoggedOutputSize = outputSize;
     m_lastLoggedSpectrumRatio = m_spectrumRatio;
+    m_lastLoggedRowShift = m_waterfallRowShift;
     m_geometryLoggedWithBins = haveBins;
 
     const float waterfallHeightPx = static_cast<float>(outputSize.height()) * (1.0f - m_spectrumRatio);
@@ -1485,12 +1498,13 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     // about, and reads better besides.
     qCDebug(lcSpectrumDiag, "%s",
             qPrintable(QString::asprintf("GEOMETRY    output %dx%d px  dpr %g  framebuffer/panel %.3f  "
-                                         "devicePxPerRow %d  spectrumRatio %g  "
+                                         "devicePxPerRow %d  rowShift %g  spectrumRatio %g  "
                                          "waterfall %.1f px  rows %d/%d visible/stored  "
                                          "pxPerRow %.4f (%s)  visibleBins %.0f  pxPerBin %.2f",
                                          outputSize.width(), outputSize.height(), devicePixelRatioF(),
-                                         m_framebufferPerPanel, m_devicePxPerRow, m_spectrumRatio, waterfallHeightPx,
-                                         m_visibleRows, m_waterfallHistory, pxPerRow, verdict, visibleBins, pxPerBin)));
+                                         m_framebufferPerPanel, m_devicePxPerRow, m_waterfallRowShift, m_spectrumRatio,
+                                         waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
+                                         visibleBins, pxPerBin)));
 }
 
 void PanadapterRhiWidget::updateDevicePxPerRow() {

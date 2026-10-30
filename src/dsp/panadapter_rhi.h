@@ -250,6 +250,9 @@ private:
     // WaterfallGeometry::devicePxPerRowFor for why a half-pixel scroll step twinkles.
     int m_devicePxPerRow = 1;
     qreal m_framebufferPerPanel = 1.0;
+    // V shift that puts row edges on the panel's pixel grid (WaterfallGeometry::rowShiftFor).
+    float m_waterfallRowShift = 0.0f;
+    float m_lastLoggedRowShift = 0.0f;
     // What m_devicePxPerRow was derived from. Querying the OS enumerates display modes, so it runs
     // only when one of these changes, not per frame. The pointer is compared, never dereferenced.
     const QScreen *m_panelScaleScreen = nullptr;

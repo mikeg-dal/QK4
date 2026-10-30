@@ -17,7 +17,7 @@ layout(std140, binding = 0) uniform buf {
     float storedRows;       // Rows in the texture; 0.0 disables the V snap
     float colorLow;         // Palette position = clamp((texel - colorLow) * colorGain, 0, 1)
     float colorGain;
-    float pad0;
+    float rowShift;         // Rows added to V so row edges land on physical pixels (vertex stage)
     float pad1;
     float pad2;
 };
