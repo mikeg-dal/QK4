@@ -53,8 +53,9 @@ void ButtonRowDispatcher::onMainRxClicked(int index) {
         m_connection->sendCAT(QString("GT%1;").arg(next));
         break;
     }
-    case 5: // APF — toggle (Main RX)
-        m_connection->sendCAT("AP/;");
+    case 5: // APF — toggle (Main RX); "N/A" outside CW, as on the K4
+        if (RadioUtils::apfAvailable(static_cast<int>(m_radioState->mode())))
+            m_connection->sendCAT("AP/;");
         break;
     case 6: // TEXT DECODE — open window for Main RX
         m_textDecode->showMainRx();
@@ -80,8 +81,9 @@ void ButtonRowDispatcher::onMainRxRightClicked(int index) {
         m_connection->sendCAT(current == RadioState::AGC_Off ? "GT1;" : "GT0;");
         break;
     }
-    case 5: // APF — cycle bandwidth (Main RX)
-        m_connection->sendCAT("AP+;");
+    case 5: // APF — cycle bandwidth (Main RX); "N/A" outside CW
+        if (RadioUtils::apfAvailable(static_cast<int>(m_radioState->mode())))
+            m_connection->sendCAT("AP+;");
         break;
     default:
         break;
@@ -113,8 +115,9 @@ void ButtonRowDispatcher::onSubRxClicked(int index) {
         m_connection->sendCAT(QString("GT$%1;").arg(next));
         break;
     }
-    case 5: // APF — toggle (Sub RX)
-        m_connection->sendCAT("AP$/;");
+    case 5: // APF — toggle (Sub RX); "N/A" outside CW
+        if (RadioUtils::apfAvailable(static_cast<int>(m_radioState->modeB())))
+            m_connection->sendCAT("AP$/;");
         break;
     case 6: // TEXT DECODE — open window for Sub RX
         m_textDecode->showSubRx();
@@ -140,8 +143,9 @@ void ButtonRowDispatcher::onSubRxRightClicked(int index) {
         m_connection->sendCAT(current == RadioState::AGC_Off ? "GT$1;" : "GT$0;");
         break;
     }
-    case 5: // APF — cycle bandwidth (Sub RX)
-        m_connection->sendCAT("AP$+;");
+    case 5: // APF — cycle bandwidth (Sub RX); "N/A" outside CW
+        if (RadioUtils::apfAvailable(static_cast<int>(m_radioState->modeB())))
+            m_connection->sendCAT("AP$+;");
         break;
     default:
         break;

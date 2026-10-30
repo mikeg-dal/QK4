@@ -34,6 +34,26 @@
 
 namespace {
 
+QString apfLabel(bool enabled, int width) {
+    if (!enabled)
+        return "OFF";
+    static const char *bwNames[] = {"30Hz", "50Hz", "150Hz"};
+    return bwNames[qBound(0, width, 2)];
+}
+
+// RX row keys 5 (APF) and 6 (TEXT DECODE) follow the receiver's mode as on the K4: where the radio has
+// no APF (outside CW) or no text decoder (outside CW/DATA) the key reads "N/A" with nothing under it.
+void setModeDependentRxKeys(ButtonRowPopup *row, int mdCode, bool apfOn, int apfWidth) {
+    if (RadioUtils::apfAvailable(mdCode))
+        row->setButtonLabel(5, "APF", apfLabel(apfOn, apfWidth));
+    else
+        row->setButtonLabel(5, "N/A", QString(), false);
+    if (RadioUtils::textDecodeSetAllowed(mdCode))
+        row->setButtonLabel(6, "TEXT", "DECODE", false);
+    else
+        row->setButtonLabel(6, "N/A", QString(), false);
+}
+
 void setAgcButtonLabel(ButtonRowPopup *row, int agcSpeed) {
     row->setButtonLabel(4, RadioUtils::agcLabel(agcSpeed), RadioUtils::agcActive(agcSpeed) ? "ON" : "OFF");
 }
@@ -1003,20 +1023,26 @@ void PopupManager::wireRxRowButtonLabels() {
 
     // APF (button 5, per-VFO). Also forwards to the VFO APF indicator —
     // same state drives both.
-    auto apfLabel = [](bool enabled, int width) -> QString {
-        if (!enabled)
-            return "OFF";
-        static const char *bwNames[] = {"30Hz", "50Hz", "150Hz"};
-        return bwNames[qBound(0, width, 2)];
+    auto refreshMain = [this]() {
+        setModeDependentRxKeys(m_mainRxRow, static_cast<int>(m_radioState->mode()), m_radioState->apfEnabled(),
+                               m_radioState->apfBandwidth());
     };
-    connect(m_radioState, &RadioState::apfChanged, this, [this, apfLabel](bool enabled, int width) {
-        m_mainRxRow->setButtonLabel(5, "APF", apfLabel(enabled, width));
+    auto refreshSub = [this]() {
+        setModeDependentRxKeys(m_subRxRow, static_cast<int>(m_radioState->modeB()), m_radioState->apfEnabledB(),
+                               m_radioState->apfBandwidthB());
+    };
+    connect(m_radioState, &RadioState::apfChanged, this, [this, refreshMain](bool enabled, int width) {
+        refreshMain();
         if (m_vfoA)
             m_vfoA->setApf(enabled, width);
     });
-    connect(m_radioState, &RadioState::apfBChanged, this, [this, apfLabel](bool enabled, int width) {
-        m_subRxRow->setButtonLabel(5, "APF", apfLabel(enabled, width));
+    connect(m_radioState, &RadioState::apfBChanged, this, [this, refreshSub](bool enabled, int width) {
+        refreshSub();
         if (m_vfoB)
             m_vfoB->setApf(enabled, width);
     });
+    connect(m_radioState, &RadioState::modeChanged, this, refreshMain);
+    connect(m_radioState, &RadioState::modeBChanged, this, refreshSub);
+    refreshMain();
+    refreshSub();
 }

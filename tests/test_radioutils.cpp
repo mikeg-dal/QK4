@@ -359,6 +359,14 @@ private slots:
             QVERIFY2(!RadioUtils::textDecodeSetAllowed(md), qPrintable(QString::number(md)));
     }
 
+    // apfAvailable — APF exists only in CW / CW-R; elsewhere the RX row key reads "N/A"
+    void testApf_onlyCw() {
+        QVERIFY(RadioUtils::apfAvailable(3));
+        QVERIFY(RadioUtils::apfAvailable(7));
+        for (int md : {0, 1, 2, 4, 5, 6, 9})
+            QVERIFY2(!RadioUtils::apfAvailable(md), qPrintable(QString::number(md)));
+    }
+
     // isValidIpv4 — strict dotted-quad
     void testIpv4_simple() { QVERIFY(RadioUtils::isValidIpv4("192.168.1.10")); }
     void testIpv4_zeros() { QVERIFY(RadioUtils::isValidIpv4("0.0.0.0")); }

@@ -255,6 +255,10 @@ bool textDecodeSetAllowed(int mdCode) {
     return mdCode == 3 || mdCode == 7 || mdCode == 6 || mdCode == 9;
 }
 
+bool apfAvailable(int mdCode) {
+    return mdCode == 3 || mdCode == 7;
+}
+
 bool catMovesLockedVfo(const QString &command, bool lockA, bool lockB) {
     const int moved = vfosMovedByCat(command);
     return ((moved & VfoA) && lockA) || ((moved & VfoB) && lockB);

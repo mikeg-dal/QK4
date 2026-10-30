@@ -161,6 +161,10 @@ enum VfoMask { VfoNone = 0, VfoA = 1, VfoB = 2 };
 /// 1 = on", and nothing defined in AM/FM. So TD is a decode command only in CW and DATA; in any other
 /// mode a TD1 would arm the two-tone generator and the next PTT would transmit two tones.
 bool textDecodeSetAllowed(int mdCode);
+
+/// Whether the K4's APF (audio peaking filter, AP / AP$) exists in K4 mode `mdCode`: CW and CW-R only.
+/// In every other mode the K4's RX row shows the key as "N/A" and it does nothing.
+bool apfAvailable(int mdCode);
 int vfosMovedByCat(const QString &command);
 
 /// True when `command` would move a VFO that is locked (LK for A, LK$ for B, each on its own). Every
