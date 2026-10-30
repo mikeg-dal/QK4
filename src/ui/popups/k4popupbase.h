@@ -181,6 +181,7 @@ protected:
 private:
     // Restarted on every hide; powers isVisibleOrJustHidden().
     QElapsedTimer m_hiddenTimer;
+    bool pressIsInAChildPopup(const QPoint &globalPos) const;
     QPointer<QWidget> m_anchor;       // what the popup is shown above; it closes when this goes
     QPointer<QWidget> m_anchorWindow; // the anchor's top-level window, watched for move/resize/state
 };

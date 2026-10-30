@@ -140,6 +140,30 @@ void K4PopupBase::hideEvent(QHideEvent *event) {
     emit closed();
 }
 
+// A popup opened from this one (a row's SSB BW, VOX, EQ...) sits outside this popup's frame, but a
+// press on its - / + is not a click away from the row: closing the row would close the sub-popup
+// with it (bench 2026-10-30). A press lands "in a child" when it hits a visible K4PopupBase whose
+// anchor chain - anchor, the anchor's window, that popup's anchor, and so on - leads back here.
+bool K4PopupBase::pressIsInAChildPopup(const QPoint &globalPos) const {
+    for (QWidget *top : QApplication::topLevelWidgets()) {
+        auto *popup = qobject_cast<K4PopupBase *>(top);
+        if (!popup || popup == this || !popup->isVisible() || !popup->frameGeometry().contains(globalPos))
+            continue;
+        // Walk up the anchors; bounded so a malformed cycle cannot spin.
+        const K4PopupBase *link = popup;
+        for (int depth = 0; link && depth < 8; ++depth) {
+            QWidget *anchor = link->anchor();
+            if (!anchor)
+                break;
+            QWidget *anchorWindow = anchor->window();
+            if (anchorWindow == this)
+                return true;
+            link = qobject_cast<const K4PopupBase *>(anchorWindow);
+        }
+    }
+    return false;
+}
+
 bool K4PopupBase::eventFilter(QObject *watched, QEvent *event) {
     // Nothing here consumes the event: a press outside still reaches its target, so clicking
     // another control works in the same gesture. The toggle handlers' isVisibleOrJustHidden()
@@ -157,7 +181,7 @@ bool K4PopupBase::eventFilter(QObject *watched, QEvent *event) {
     case QEvent::MouseButtonPress:
     case QEvent::MouseButtonDblClick: {
         const QPoint globalPos = static_cast<QMouseEvent *>(event)->globalPosition().toPoint();
-        if (!frameGeometry().contains(globalPos))
+        if (!frameGeometry().contains(globalPos) && !pressIsInAChildPopup(globalPos))
             hidePopup();
         break;
     }

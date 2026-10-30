@@ -392,6 +392,27 @@ private slots:
         QVERIFY2(!vox.isVisible(), "the VOX popup stayed up with nothing under it");
     }
 
+    // Pressing - / + on a row's sub-popup is not a click away from the row: both stay open
+    // (bench 2026-10-30, SSB TX BANDWIDTH closed itself and the TX row on every press).
+    void pressInASubPopupKeepsItsRowOpen() {
+        Host host;
+        QVERIFY(host.exposed());
+        ButtonRowPopup row(&host.window);
+        row.showAboveWidget(host.bar);
+        VoxPopupWidget vox(&host.window);
+        vox.showAboveWidget(&row);
+        QVERIFY(vox.isVisible());
+        QPushButton *plus = nullptr;
+        for (QPushButton *b : vox.findChildren<QPushButton *>()) {
+            if (b->text() == QStringLiteral("+"))
+                plus = b;
+        }
+        QVERIFY(plus);
+        QTest::mouseClick(plus, Qt::LeftButton);
+        QVERIFY2(row.isVisible(), "the row closed on a press inside its own sub-popup");
+        QVERIFY2(vox.isVisible(), "the sub-popup closed on a press on its own + key");
+    }
+
     // A Qt::Tool window does not follow its parent: after a move it would hang where the key was.
     void popupClosesWhenTheWindowMovesResizesOrChangesState() {
         Host host;
