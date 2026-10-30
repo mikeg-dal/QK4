@@ -1417,7 +1417,7 @@ void PanadapterRhiWidget::updateWaterfallData() {
     // its colour as the history scrolls, as on the K4. A live window recoloured the whole waterfall
     // on every ~1 dB AutoRef step, which read as a flicker over the history.
     const WaterfallGeometry::ColorWindow window =
-        WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_waterfallColorRange);
+        WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_scale, m_waterfallColorRange);
     for (int i = 0; i < specSize; ++i)
         m_waterfallData[row * m_textureWidth + offset + i] = WaterfallGeometry::capturedByteFor(source[i], window);
 }

@@ -59,7 +59,7 @@ the K4 sent them (`byte = dBm + K4_DBM_OFFSET`, 0 reserved for "no data"), and `
 places a level in the palette with two uniforms, `colorLow` and `colorGain`. The palette itself
 (`waterfallcolorlut.h`) is unchanged.
 
-The window is `WaterfallGeometry::colorWindowFor(REF, #WBS)`: bottom of the palette at
+The window is `WaterfallGeometry::colorWindowFor(REF, SCALE, #WBS)`: bottom of the palette at
 `REF - #WBS`, top `PaletteSpanDb` (40 dB) above it. That is a **hypothesis**, documented and pinned
 by tests in that one function so it can be corrected from K4 screenshots without touching anything
 else. What it rests on: the K4 manual says a higher WTR CLRS (`#WBS`, 5-30) "will use brighter colors

@@ -75,11 +75,13 @@ int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows
     return row;
 }
 
-ColorWindow colorWindowFor(float refDbm, int colorRangeDb) {
+ColorWindow colorWindowFor(float refDbm, int scaleDb, int colorRangeDb) {
     const bool known = colorRangeDb >= SpectrumDisplayLimits::WaterfallColorRangeMin &&
                        colorRangeDb <= SpectrumDisplayLimits::WaterfallColorRangeMax;
     const float range = static_cast<float>(known ? colorRangeDb : DefaultColorRangeDb);
-    return ColorWindow{refDbm - ColorRangeBaseFactor * range, PaletteSpanDb};
+    const bool scaleKnown = scaleDb >= SpectrumDisplayLimits::ScaleMin && scaleDb <= SpectrumDisplayLimits::ScaleMax;
+    const float scale = static_cast<float>(scaleKnown ? scaleDb : SpectrumDisplayLimits::ScaleDefault);
+    return ColorWindow{refDbm - scale * range / ColorRangeDivisor, scale};
 }
 
 float paletteFractionFor(float dbm, const ColorWindow &window) {

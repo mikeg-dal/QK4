@@ -81,27 +81,17 @@ int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows
 // or of the radio's colour range recolours the whole history at once, and no row is quantised
 // against whatever REF happened to be current when it was captured.
 //
-// THE HYPOTHESIS (not measured — correct it here, nowhere else, once K4 screenshots exist):
-//   bottom of the palette = REF - colourRange   (colourRange = #WBS, 5..30 dB)
-//   top of the palette    = bottom + PaletteSpanDb
-// The K4 manual (rev D6, DISPLAY → WTR CLRS) says only that a higher number "will use brighter
-// colors for a given amount of waterfall signal intensity". Lowering the bottom edge by #WBS does
-// exactly that, and it ties the palette to REF, which AutoRef parks on the average noise. With the
-// K4's 14 dB and a 40 dB span, noise a few dB above REF lands at about 0.4 of QK4's palette — mid
-// blue, with its downward excursions dark and its peaks light blue — which is what the K4 photos
-// of WWV (2026-10-30) show; a carrier 20 dB up reaches orange. The previous mapping (palette =
-// REF..REF+SCALE, 80 dB) put the same noise at about 0.05, which the palette draws black.
-//
-// GUESSES: PaletteSpanDb (fitted by eye to two phone photos) and DefaultColorRangeDb (the value on
-// Mike's K4D; the K4's factory default is unknown). That #WBS moves the bottom edge rather than
-// scaling the span is itself the hypothesis.
-constexpr float PaletteSpanDb = 84.0f;
-// The palette's bottom sits ColorRangeBaseFactor x #WBS dB below REF. Fitted 2026-10-30 to three
-// levels in Mike's K4 photo against QK4's own palette (unchanged): noise ~-103 dBm in the blue band
-// (~0.37), WWV sidebands ~-75 green/yellow-green (~0.70), carrier ~-55 red (~0.94), REF -106, #WBS
-// 14. The previous REF - #WBS over 40 dB drew the sidebands red. A higher #WBS lowers the bottom and
-// so brightens everything, as the K4 manual says of WTR CLRS.
-constexpr float ColorRangeBaseFactor = 2.0f;
+// THE COLOUR WINDOW, fitted to Mike's K4D (photos 2026-10-30, WWV, AutoRef, #WBS 14, SCALE 25/50/80;
+// correct it here, nowhere else):
+//   span   = SCALE                         (the palette covers the spectrum's dB range)
+//   bottom = REF - SCALE x #WBS / ColorRangeDivisor
+// The K4's waterfall is brighter at a smaller SCALE (25: blue with green speckle; 50: royal blue;
+// 80: blue, WWV sidebands green, carrier red), so its window scales with SCALE, and a higher #WBS
+// lowers the bottom, brightening everything (manual rev D6, WTR CLRS: "a higher number will use
+// brighter colors"). Noise a few dB above REF lands at about 0.47 / 0.41 / 0.39 of QK4's palette at
+// SCALE 25 / 50 / 80, matching the photos. Unverified: the #WBS term (all photos were at 14) and
+// DefaultColorRangeDb (Mike's radio's value; the factory default is unknown).
+constexpr float ColorRangeDivisor = 40.0f;
 constexpr int DefaultColorRangeDb = 14;
 
 struct ColorWindow {
@@ -111,7 +101,7 @@ struct ColorWindow {
 
 // The window for a panadapter at refDbm with the radio's colour range (#WBS). A colour range outside
 // 5..30 (the -1 sentinel before the radio reports one) uses DefaultColorRangeDb.
-ColorWindow colorWindowFor(float refDbm, int colorRangeDb);
+ColorWindow colorWindowFor(float refDbm, int scaleDb, int colorRangeDb);
 
 // Palette position 0..1 for a level — what waterfall.frag computes. Mirror only; must be kept in sync
 // with the shader by hand, like rowForPixel.

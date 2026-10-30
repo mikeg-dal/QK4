@@ -389,7 +389,7 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
         // Palette positions fixed at capture under the colour window in effect now, by the
         // panadapter's rule (REF and #WBS), so a row keeps its colour as it scrolls.
         const WaterfallGeometry::ColorWindow window =
-            WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_waterfallColorRange);
+            WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_scale, m_waterfallColorRange);
         for (int i = 0; i < TEXTURE_WIDTH; ++i) {
             // Average downsampling for waterfall
             int startBin = static_cast<int>(static_cast<float>(i) / TEXTURE_WIDTH * dataSize);

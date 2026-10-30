@@ -45,6 +45,7 @@ private slots:
     void storedByteEncodesTheRadiosLevel();
     void noDataDrawsAtPaletteBottomUnderAnyWindow();
     void capturedRowsKeepTheirColourWhenRefSteps();
+    void smallerScaleIsBrighterLikeTheK4();
 };
 
 namespace {
@@ -66,8 +67,8 @@ bool isBlue(const Rgb &c) {
 }
 
 // Through the GPU path: the byte stored for a level, then the shader's colour uniforms.
-float drawnFraction(float dbm, float refDbm, int colorRangeDb) {
-    const auto window = WaterfallGeometry::colorWindowFor(refDbm, colorRangeDb);
+float drawnFraction(float dbm, float refDbm, int colorRangeDb, int scaleDb = 80) {
+    const auto window = WaterfallGeometry::colorWindowFor(refDbm, scaleDb, colorRangeDb);
     return WaterfallGeometry::shaderFractionFor(WaterfallGeometry::storedByteFor(dbm),
                                                 WaterfallGeometry::colorUniformsFor(window));
 }
@@ -339,9 +340,10 @@ void TestWaterfallGeometry::higherColorRangeIsBrighter() {
     const float ref = -110.0f;
     for (float dbm = ref - 20.0f; dbm <= ref + 40.0f; dbm += 1.0f) {
         for (int wbs = 5; wbs < 30; ++wbs) {
-            const float lo = WaterfallGeometry::paletteFractionFor(dbm, WaterfallGeometry::colorWindowFor(ref, wbs));
+            const float lo =
+                WaterfallGeometry::paletteFractionFor(dbm, WaterfallGeometry::colorWindowFor(ref, 80, wbs));
             const float hi =
-                WaterfallGeometry::paletteFractionFor(dbm, WaterfallGeometry::colorWindowFor(ref, wbs + 1));
+                WaterfallGeometry::paletteFractionFor(dbm, WaterfallGeometry::colorWindowFor(ref, 80, wbs + 1));
             QVERIFY(hi >= lo);
         }
     }
@@ -349,25 +351,25 @@ void TestWaterfallGeometry::higherColorRangeIsBrighter() {
 }
 
 void TestWaterfallGeometry::unknownColorRangeUsesDefault() {
-    const auto def = WaterfallGeometry::colorWindowFor(-110.0f, WaterfallGeometry::DefaultColorRangeDb);
+    const auto def = WaterfallGeometry::colorWindowFor(-110.0f, 80, WaterfallGeometry::DefaultColorRangeDb);
     for (int bad : {-1, 0, 4, 31, 100}) {
-        const auto w = WaterfallGeometry::colorWindowFor(-110.0f, bad);
+        const auto w = WaterfallGeometry::colorWindowFor(-110.0f, 80, bad);
         QCOMPARE(w.lowDbm, def.lowDbm);
         QCOMPARE(w.spanDb, def.spanDb);
     }
     // The hypothesis, stated as numbers so a change to it is a deliberate test edit.
-    const auto w = WaterfallGeometry::colorWindowFor(-110.0f, 14);
+    const auto w = WaterfallGeometry::colorWindowFor(-110.0f, 80, 14);
     QCOMPARE(w.lowDbm, -138.0f); // REF - 2 x #WBS
-    QCOMPARE(w.spanDb, WaterfallGeometry::PaletteSpanDb);
+    QCOMPARE(w.spanDb, 80.0f);   // span = SCALE
 }
 
 // storedByteFor + colorUniformsFor + the shader line must agree with the direct dBm mapping, to
 // within the byte's 1 dB step, for every REF and colour range the radio can send.
 void TestWaterfallGeometry::shaderMirrorMatchesPaletteFraction() {
-    const float tolerance = 0.5f / WaterfallGeometry::PaletteSpanDb + 1e-4f;
+    const float tolerance = 0.5f / 80.0f + 1e-4f; // one byte step over an 80 dB (SCALE 80) span
     for (int ref = -160; ref <= 50; ref += 7) {
         for (int wbs = 5; wbs <= 30; wbs += 5) {
-            const auto window = WaterfallGeometry::colorWindowFor(static_cast<float>(ref), wbs);
+            const auto window = WaterfallGeometry::colorWindowFor(static_cast<float>(ref), 80, wbs);
             for (float dbm = -161.0f; dbm <= 93.0f; dbm += 0.37f) {
                 const float direct = WaterfallGeometry::paletteFractionFor(dbm, window);
                 const float drawn = drawnFraction(dbm, static_cast<float>(ref), wbs);
@@ -395,7 +397,7 @@ void TestWaterfallGeometry::storedByteEncodesTheRadiosLevel() {
 void TestWaterfallGeometry::noDataDrawsAtPaletteBottomUnderAnyWindow() {
     for (int ref = -200; ref <= 50; ref += 10) {
         for (int wbs = 5; wbs <= 30; ++wbs) {
-            const auto u = WaterfallGeometry::colorUniformsFor(WaterfallGeometry::colorWindowFor(ref, wbs));
+            const auto u = WaterfallGeometry::colorUniformsFor(WaterfallGeometry::colorWindowFor(ref, 80, wbs));
             QCOMPARE(WaterfallGeometry::shaderFractionFor(WaterfallGeometry::NoDataByte, u), 0.0f);
         }
     }
@@ -412,7 +414,7 @@ void TestWaterfallGeometry::capturedRowsKeepTheirColourWhenRefSteps() {
     using namespace WaterfallGeometry;
     const ColorUniforms passThrough{};
     for (float ref : {-130.0f, -110.0f, -106.0f}) {
-        const ColorWindow window = colorWindowFor(ref, 14);
+        const ColorWindow window = colorWindowFor(ref, 80, 14);
         for (float dbm = ref - 20.0f; dbm <= ref + 40.0f; dbm += 0.5f) {
             const quint8 byte = capturedByteFor(dbm, window);
             QVERIFY(byte != NoDataByte);
@@ -422,7 +424,27 @@ void TestWaterfallGeometry::capturedRowsKeepTheirColourWhenRefSteps() {
     // The same noise level captured before and after a 1 dB REF step stores different bytes: only the
     // new row changes colour, because the uniforms no longer follow REF.
     const float noise = -104.0f;
-    QVERIFY(capturedByteFor(noise, colorWindowFor(-106.0f, 14)) != capturedByteFor(noise, colorWindowFor(-107.0f, 14)));
+    QVERIFY(capturedByteFor(noise, colorWindowFor(-106.0f, 80, 14)) !=
+            capturedByteFor(noise, colorWindowFor(-107.0f, 80, 14)));
+}
+
+// Mike's K4 photos of WWV at #WBS 14 (2026-10-30): the K4's waterfall is brighter at a smaller
+// SCALE - 25: blue with green speckle; 50: royal blue; 80: blue, sidebands green, carrier red.
+// Noise a few dB above REF climbs the palette as SCALE shrinks, and its +6 dB peaks reach green
+// only at SCALE 25.
+void TestWaterfallGeometry::smallerScaleIsBrighterLikeTheK4() {
+    const float ref = -108.0f, noise = ref + 3.0f;
+    const float at25 = drawnFraction(noise, ref, 14, 25);
+    const float at50 = drawnFraction(noise, ref, 14, 50);
+    const float at80 = drawnFraction(noise, ref, 14, 80);
+    QVERIFY(at25 > at50 && at50 > at80);
+    QVERIFY(isBlue(lutAt(at50)) && isBlue(lutAt(at80)));
+    const Rgb peak25 = lutAt(drawnFraction(noise + 6.0f, ref, 14, 25));
+    QVERIFY2(peak25.g >= 128,
+             qPrintable(QString("SCALE 25 noise peak %1,%2,%3").arg(peak25.r).arg(peak25.g).arg(peak25.b)));
+    const Rgb peak80 = lutAt(drawnFraction(noise + 6.0f, ref, 14, 80));
+    QVERIFY(peak80.g < 128);
+    QCOMPARE(WaterfallGeometry::colorWindowFor(ref, 25, 14).spanDb, 25.0f);
 }
 
 QTEST_MAIN(TestWaterfallGeometry)
