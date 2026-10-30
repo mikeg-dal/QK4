@@ -86,6 +86,13 @@ struct EmaAlphas {
 };
 EmaAlphas emaAlphasFor(int avgLevel);
 
+// One EMA step on a bin, averaged in POWER, not in dB: alpha x the new power + (1 - alpha) x the
+// previous power, back to dB. Averaging dB values pulls noise down (for noise the mean of the dB
+// readings sits ~2.5 dB under the dB of the mean power) and flattens its peaks; at #AVG 3 QK4's
+// noise grass came out about half as tall and 2-3 dB lower than the K4's (bench 2026-10-30).
+// alpha >= 1 returns the new value unchanged (#AVG 1).
+float averagePowerDb(float previousDb, float newDb, float alpha);
+
 } // namespace SpectrumGeometry
 
 #endif // SPECTRUMGEOMETRY_H

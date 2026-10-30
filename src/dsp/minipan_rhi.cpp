@@ -667,13 +667,13 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerHz, i
     for (int i = 0; i < bins.size(); ++i)
         m_spectrum[i] = static_cast<quint8>(bins[i]) - SpectrumScale::K4_MINIPAN_DBM_OFFSET;
 
-    // Apply asymmetric EMA smoothing (attack fast, decay slow)
+    // #AVG smoothing, averaged in power like the main pan (SpectrumGeometry::averagePowerDb)
     if (m_smoothedSpectrum.size() != m_spectrum.size()) {
         m_smoothedSpectrum = m_spectrum;
     } else {
         for (int i = 0; i < m_spectrum.size(); ++i) {
             float alpha = (m_spectrum[i] > m_smoothedSpectrum[i]) ? m_attackAlpha : m_decayAlpha;
-            m_smoothedSpectrum[i] = alpha * m_spectrum[i] + (1.0f - alpha) * m_smoothedSpectrum[i];
+            m_smoothedSpectrum[i] = SpectrumGeometry::averagePowerDb(m_smoothedSpectrum[i], m_spectrum[i], alpha);
         }
     }
 

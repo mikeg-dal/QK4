@@ -42,6 +42,7 @@ private slots:
     void frequencyLabelStepIsTheSmallestThatFits();
     void fillIsOpaqueDownToTheBottomEdge();
     void avgOneDrawsEveryFrameAsItArrives();
+    void averagingIsInPowerNotDb();
 };
 
 void TestSpectrumGeometry::modeParsesRadioStateSpelling() {
@@ -310,6 +311,17 @@ void TestSpectrumGeometry::avgOneDrawsEveryFrameAsItArrives() {
         QCOMPARE(emaAlphasFor(n).attack, 2.0f / static_cast<float>(n + 1));
         QCOMPARE(emaAlphasFor(n).decay, emaAlphasFor(n).attack);
     }
+}
+
+// #AVG averages power, as a spectrum analyser does: averaging the dB values pulled the noise grass
+// ~2.5 dB low and flattened it (bench 2026-10-30, #AVG 3).
+void TestSpectrumGeometry::averagingIsInPowerNotDb() {
+    QCOMPARE(averagePowerDb(-100.0f, -90.0f, 1.0f), -90.0f);                    // #AVG 1: the new frame
+    QVERIFY(std::abs(averagePowerDb(-100.0f, -100.0f, 0.5f) + 100.0f) < 1e-4f); // steady stays put
+    // Half of 1e-10 mW and 1e-9 mW is 5.5e-10 mW = -92.6 dBm, not the dB mean -95.
+    QVERIFY(std::abs(averagePowerDb(-100.0f, -90.0f, 0.5f) - (-92.596f)) < 0.01f);
+    // Very low levels do not underflow.
+    QVERIFY(std::abs(averagePowerDb(-400.0f, -400.0f, 0.3f) + 400.0f) < 1e-3f);
 }
 
 QTEST_APPLESS_MAIN(TestSpectrumGeometry)

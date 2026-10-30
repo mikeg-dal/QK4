@@ -1296,7 +1296,7 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
     } else {
         for (int i = 0; i < m_tierRawSpectrum.size(); ++i) {
             float alpha = (m_tierRawSpectrum[i] > m_tierSpectrum[i]) ? attackAlpha : decayAlpha;
-            m_tierSpectrum[i] = alpha * m_tierRawSpectrum[i] + (1.0f - alpha) * m_tierSpectrum[i];
+            m_tierSpectrum[i] = SpectrumGeometry::averagePowerDb(m_tierSpectrum[i], m_tierRawSpectrum[i], alpha);
         }
     }
     m_waterfallTierBinCount = totalBins;
@@ -1329,7 +1329,7 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
             m_currentSpectrum = resampleLinear(m_currentSpectrum, m_rawSpectrum.size());
         for (int i = 0; i < m_rawSpectrum.size(); ++i) {
             float alpha = (m_rawSpectrum[i] > m_currentSpectrum[i]) ? attackAlpha : decayAlpha;
-            m_currentSpectrum[i] = alpha * m_rawSpectrum[i] + (1.0f - alpha) * m_currentSpectrum[i];
+            m_currentSpectrum[i] = SpectrumGeometry::averagePowerDb(m_currentSpectrum[i], m_rawSpectrum[i], alpha);
         }
     }
 
