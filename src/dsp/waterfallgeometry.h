@@ -95,7 +95,13 @@ int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows
 // GUESSES: PaletteSpanDb (fitted by eye to two phone photos) and DefaultColorRangeDb (the value on
 // Mike's K4D; the K4's factory default is unknown). That #WBS moves the bottom edge rather than
 // scaling the span is itself the hypothesis.
-constexpr float PaletteSpanDb = 40.0f;
+constexpr float PaletteSpanDb = 84.0f;
+// The palette's bottom sits ColorRangeBaseFactor x #WBS dB below REF. Fitted 2026-10-30 to three
+// levels in Mike's K4 photo against QK4's own palette (unchanged): noise ~-103 dBm in the blue band
+// (~0.37), WWV sidebands ~-75 green/yellow-green (~0.70), carrier ~-55 red (~0.94), REF -106, #WBS
+// 14. The previous REF - #WBS over 40 dB drew the sidebands red. A higher #WBS lowers the bottom and
+// so brightens everything, as the K4 manual says of WTR CLRS.
+constexpr float ColorRangeBaseFactor = 2.0f;
 constexpr int DefaultColorRangeDb = 14;
 
 struct ColorWindow {

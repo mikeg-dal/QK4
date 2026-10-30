@@ -315,9 +315,13 @@ void TestWaterfallGeometry::noiseAtRefIsMidBlueNotBlack() {
         QVERIFY(peak.r == 0 && peak.b >= mid.b);
         QVERIFY(lutAt(drawnFraction(noise - 6.0f, ref, 14)).b < mid.b);
     }
-    // A carrier 20 dB over the noise reaches the warm end, as WWV does on the K4.
-    const Rgb carrier = lutAt(drawnFraction(-110.0f + 23.0f, -110.0f, 14));
-    QVERIFY(carrier.r == 255);
+    // The fit to Mike's K4 photo of WWV (2026-10-30, REF -106, #WBS 14): the sidebands (~-75 dBm)
+    // are green / yellow-green, not red, and only the carrier (~-55 dBm) reaches red.
+    const Rgb sideband = lutAt(drawnFraction(-75.0f, -106.0f, 14));
+    QVERIFY2(sideband.g == 255 && sideband.r < 128,
+             qPrintable(QString("sideband %1,%2,%3").arg(sideband.r).arg(sideband.g).arg(sideband.b)));
+    const Rgb carrier = lutAt(drawnFraction(-55.0f, -106.0f, 14));
+    QVERIFY2(carrier.r == 255, qPrintable(QString("carrier %1,%2,%3").arg(carrier.r).arg(carrier.g).arg(carrier.b)));
 }
 
 // The regression this fixes: palette = REF..REF+SCALE (80 dB) put the same noise at ~0.04.
@@ -353,7 +357,7 @@ void TestWaterfallGeometry::unknownColorRangeUsesDefault() {
     }
     // The hypothesis, stated as numbers so a change to it is a deliberate test edit.
     const auto w = WaterfallGeometry::colorWindowFor(-110.0f, 14);
-    QCOMPARE(w.lowDbm, -124.0f);
+    QCOMPARE(w.lowDbm, -138.0f); // REF - 2 x #WBS
     QCOMPARE(w.spanDb, WaterfallGeometry::PaletteSpanDb);
 }
 

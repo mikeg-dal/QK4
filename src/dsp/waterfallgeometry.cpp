@@ -79,7 +79,7 @@ ColorWindow colorWindowFor(float refDbm, int colorRangeDb) {
     const bool known = colorRangeDb >= SpectrumDisplayLimits::WaterfallColorRangeMin &&
                        colorRangeDb <= SpectrumDisplayLimits::WaterfallColorRangeMax;
     const float range = static_cast<float>(known ? colorRangeDb : DefaultColorRangeDb);
-    return ColorWindow{refDbm - range, PaletteSpanDb};
+    return ColorWindow{refDbm - ColorRangeBaseFactor * range, PaletteSpanDb};
 }
 
 float paletteFractionFor(float dbm, const ColorWindow &window) {
