@@ -171,16 +171,30 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     wirePan(true);
 
     // RadioState display properties → panadapter configuration
-    connect(m_radioState, &RadioState::refLevelChanged, this, [this](int level) { m_panA.pad->setRefLevel(level); });
-    connect(m_radioState, &RadioState::refLevelBChanged, this, [this](int level) { m_panB.pad->setRefLevel(level); });
+    // WHY the mini-pans follow their receiver's REF and SCALE: the K4 has no mini-pan REF/SCALE of
+    // its own (the Programmer's Reference lists only #MP / #MP$), and with the measured MiniPAN
+    // calibration the mini-pan's noise lands at that same REF (median -112 dBm against REF -110 on
+    // the K4D, 2026-10-30), so the panadapter's window puts it on the bottom edge as it does there.
+    connect(m_radioState, &RadioState::refLevelChanged, this, [this](int level) {
+        m_panA.pad->setRefLevel(level);
+        m_vfoA->setMiniPanRefLevel(level);
+    });
+    connect(m_radioState, &RadioState::refLevelBChanged, this, [this](int level) {
+        m_panB.pad->setRefLevel(level);
+        m_vfoB->setMiniPanRefLevel(level);
+    });
     connect(m_radioState, &RadioState::scaleChanged, this, [this](int scale) {
         m_panA.pad->setScale(scale);
         m_panB.pad->setScale(scale);
+        m_vfoA->setMiniPanScale(scale);
+        m_vfoB->setMiniPanScale(scale);
     });
-    // #WBS is the LCD's waterfall colour range; QK4 draws what the LCD shows, so both pans use it.
+    // #WBS is the LCD's waterfall colour range; QK4 draws what the LCD shows, so every pan uses it.
     connect(m_radioState, &RadioState::waterfallColorRangeChanged, this, [this](int db) {
         m_panA.pad->setWaterfallColorRange(db);
         m_panB.pad->setWaterfallColorRange(db);
+        m_vfoA->setMiniPanWaterfallColorRange(db);
+        m_vfoB->setMiniPanWaterfallColorRange(db);
     });
     connect(m_radioState, &RadioState::spanChanged, this, [this](int spanHz) { m_panA.pad->setSpan(spanHz); });
     connect(m_radioState, &RadioState::spanBChanged, this, [this](int spanHz) { m_panB.pad->setSpan(spanHz); });

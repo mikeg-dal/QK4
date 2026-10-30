@@ -7,6 +7,7 @@
 #include <QHBoxLayout>
 #include <QStackedWidget>
 #include <QColor>
+#include "models/radiostate/spectrumdisplaystate.h"
 
 class MiniPanRhiWidget;
 class TxMeterWidget;
@@ -61,6 +62,9 @@ public:
     void setMiniPanPassbandColor(const QColor &color);
     void setMiniPanWaterfallHeight(int percent);
     void setMiniPanAveraging(int level);
+    void setMiniPanRefLevel(int level);
+    void setMiniPanScale(int scale);
+    void setMiniPanWaterfallColorRange(int db);
 
     // Access to mini-pan (may return nullptr if not yet created)
     MiniPanRhiWidget *miniPan() const { return m_miniPan; }
@@ -133,6 +137,9 @@ private:
     QColor m_pendingPassbandColor;
     int m_pendingWaterfallHeight = -1; // -1 = unset, use MiniPan default
     int m_pendingAveraging = 1;
+    int m_pendingRefLevel = SpectrumDisplayLimits::RefLevelDefault;
+    int m_pendingScale = SpectrumDisplayLimits::ScaleDefault;
+    int m_pendingWaterfallColorRange = -1; // #WBS; -1 until the radio reports it
 };
 
 #endif // VFOWIDGET_H

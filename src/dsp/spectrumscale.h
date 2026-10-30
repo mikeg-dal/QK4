@@ -26,6 +26,16 @@ namespace SpectrumScale {
 // the noise down) drew everything 16 dB high.
 constexpr float K4_DBM_OFFSET = 162.0f;
 
+// MiniPAN bin byte -> dBm: dBm = byte - K4_MINIPAN_DBM_OFFSET, 1 byte = 1 dB like PAN but a different
+// zero. Measured 2026-10-30 on K4D SN1641, Main in CW (pitch 500, 200 Hz filter) on the WWV 10 MHz
+// carrier, 3 kHz mini-pan: the frame's peak byte against SMH read at the same moment (nearest frame,
+// within 30 ms), ten pairs over two 20 s captures. Peak byte - SMH came out 110, 114, 119, 119, 120,
+// 120, 122, 122, 122, 123: median 120, mean 119, spread 13 dB. WWV was fading and SMH is one sample,
+// so single pairs scatter; 118 is the rounded centre of the measurements (a second alignment of the
+// same captures gave 109-123, median 118.5). Treat the constant as +-2 dB, a single frame as +-8 dB.
+// Byte 0 (dBm -118) is the floor: much of the mini-pan's noise arrives as 0.
+constexpr float K4_MINIPAN_DBM_OFFSET = 118.0f;
+
 // S9 and the width of one S-unit, in dBm/dB.
 constexpr float S9_DBM = -73.0f;
 constexpr float DB_PER_S_UNIT = 6.0f;

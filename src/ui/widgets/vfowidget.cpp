@@ -299,6 +299,9 @@ void VFOWidget::showMiniPan() {
         if (m_pendingWaterfallHeight >= 0)
             m_miniPan->setWaterfallHeight(m_pendingWaterfallHeight);
         m_miniPan->setAveraging(m_pendingAveraging);
+        m_miniPan->setRefLevel(m_pendingRefLevel);
+        m_miniPan->setScale(m_pendingScale);
+        m_miniPan->setWaterfallColorRange(m_pendingWaterfallColorRange);
 
         // Connect mini-pan click to show normal view and emit signal
         connect(m_miniPan, &MiniPanRhiWidget::clicked, this, [this]() {
@@ -365,6 +368,24 @@ void VFOWidget::setMiniPanAveraging(int level) {
         m_miniPan->setAveraging(level);
 }
 
+void VFOWidget::setMiniPanRefLevel(int level) {
+    m_pendingRefLevel = level;
+    if (m_miniPan)
+        m_miniPan->setRefLevel(level);
+}
+
+void VFOWidget::setMiniPanScale(int scale) {
+    m_pendingScale = scale;
+    if (m_miniPan)
+        m_miniPan->setScale(scale);
+}
+
+void VFOWidget::setMiniPanWaterfallColorRange(int db) {
+    m_pendingWaterfallColorRange = db;
+    if (m_miniPan)
+        m_miniPan->setWaterfallColorRange(db);
+}
+
 void VFOWidget::resetToDefaults() {
     setFrequency(QString());
     setSMeterValue(0);
@@ -384,6 +405,11 @@ void VFOWidget::resetToDefaults() {
     setMiniPanFilterBandwidth(2400);
     setMiniPanIfShift(50);
     setMiniPanTunedFrequency(0);
+    // The mini-pan's clear() already reset its own window; the next creation must not reapply
+    // the last session's.
+    m_pendingRefLevel = SpectrumDisplayLimits::RefLevelDefault;
+    m_pendingScale = SpectrumDisplayLimits::ScaleDefault;
+    m_pendingWaterfallColorRange = -1;
     setMiniPanNotchFilter(false, 0);
 }
 

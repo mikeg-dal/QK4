@@ -9,6 +9,7 @@
 #include <QVector>
 #include <memory>
 #include "dsp/spectrumgeometry.h"
+#include "models/radiostate/spectrumdisplaystate.h"
 #include "ui/styling/k4constants.h"
 
 // Compact Mini-Pan widget for VFO area using Qt RHI
@@ -44,6 +45,12 @@ public:
     void setIfShift(int shift);
     void setAveraging(int level); // 1-20: K4 #AVG display averaging
 
+    // Amplitude: the receiver's #REF (dBm, bottom of the trace) and the shared #SCL (dB, its height),
+    // and #WBS for the waterfall's colours — the panadapter's window and rules.
+    void setRefLevel(int level);
+    void setScale(int scale);
+    void setWaterfallColorRange(int db);
+
 signals:
     void clicked(); // Emitted when user clicks to toggle back to normal view
 
@@ -64,8 +71,7 @@ private:
     void updateFrequencyLabels();
     void positionFrequencyLabels();
 
-    // Data processing
-    float normalizeDb(float db) const;
+    void updateDbRange();
 
     // RHI resources
     QRhi *m_rhi = nullptr;
@@ -146,10 +152,13 @@ private:
     // Color LUT (256 RGBA entries)
     QVector<quint8> m_colorLUT;
 
-    // Display settings
-    float m_minDb = -1.0f;
-    float m_maxDb = 4.0f;
-    float m_smoothedBaseline = 0.0f;
+    // Amplitude window: the receiver's own [REF, REF + SCALE] (#REF or #REF$, and #SCL), as on the
+    // panadapter. Defaults only until the radio reports them.
+    int m_refLevel = SpectrumDisplayLimits::RefLevelDefault;
+    int m_scale = SpectrumDisplayLimits::ScaleDefault;
+    int m_waterfallColorRange = -1; // #WBS dB; -1 until the radio reports it
+    float m_minDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault);
+    float m_maxDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault + SpectrumDisplayLimits::ScaleDefault);
     float m_spectrumRatio = 0.40f; // 40% spectrum, 60% waterfall
 
     // Spectrum line color — default to the VFO A cyan theme; caller may override.

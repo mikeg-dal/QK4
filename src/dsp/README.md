@@ -68,9 +68,10 @@ K4's 14 dB, noise lands at about 0.4 of the palette (mid blue, dark troughs, lig
 the K4's own screen; the old REF..REF+SCALE mapping put it at about 0.05, which the palette draws
 black. The 40 dB span and the default of 14 dB before the radio reports `#WBS` are guesses.
 
-Because rows hold levels, a change of REF (AutoRef stepping) or `#WBS` recolours the whole history at
-once; no row is quantised against the REF current when it was captured. The mini-pan shares the
-shader but still stores palette positions and passes `colorLow` 0, `colorGain` 1.
+Rows store the palette position under the window in effect when they were captured
+(`WaterfallGeometry::capturedByteFor`) and the shader passes them through (`colorLow` 0,
+`colorGain` 1), so an AutoRef step or a `#WBS` change recolours only new rows. The mini-pan does the
+same with its receiver's REF and the shared `#WBS`.
 
 S-units follow the amateur convention — S9 = -73 dBm, 6 dB per unit, round decades above S9 — and
 are drawn at their true dBm positions rather than at even divisions of the widget. Labels outside
@@ -82,6 +83,22 @@ Label density follows the space available: neighbouring labels stay at least
 REF, the waterfall share, the window size and the font size all change the step (5, 10, 20 … dB)
 with no extra wiring. The tick sits after each label, and DX spot labels keep out of the column
 (`PanadapterRhiWidget::amplitudeAxisWidthPx()`, measured from the label font).
+
+## Mini-pan amplitude
+
+The mini-pan uses the panadapter's rules with its own byte zero: MiniPAN bins are 1 dB per byte,
+`dBm = byte - SpectrumScale::K4_MINIPAN_DBM_OFFSET` (118), measured against `SMH` on the WWV carrier
+(the pairs and their 13 dB scatter are in `spectrumscale.h` and pinned by `test_spectrumscale`).
+Byte 0 (-118 dBm) is the floor; much of the noise arrives as 0.
+
+Its window is its receiver's `[REF, REF + SCALE]` — `#REF` for Main, `#REF$` for Sub, the shared
+`#SCL` — through `SpectrumScale::normalizedForDb`, and its waterfall colours come from
+`WaterfallGeometry::colorWindowFor` with the same REF and `#WBS`. The K4 has no mini-pan REF or SCALE
+of its own (the Programmer's Reference lists only `#MP` / `#MP$`), and with the measured offset the
+mini-pan's noise sits at that REF (median -112 dBm against REF -110 on the K4D, 2026-10-30), so it
+lands on the bottom edge as on the panadapter. As there, nothing is subtracted: the old mini-pan read
+`byte / 10` over a fixed window and removed a smoothed per-frame minimum, the tracker this README
+forbids. Smoothing is `SpectrumGeometry::emaAlphasFor`, the panadapter's.
 
 `K4_DBM_OFFSET` (162, in `spectrumscale.h`) was measured against the radio's own dBm meter (`SMH`)
 on a steady carrier, at two span tiers; the comment there has the numbers. The bins are power per
@@ -115,8 +132,9 @@ There is no Lanczos. A 6-tap Lanczos-3 kernel existed briefly (`050eb4f`) and wa
 hardware bilinear in `f274687` — equivalent quality on a wide texture, less shader complexity.
 
 Neither axis stores anything downsampled: rows are one K4 frame each and hold all 1024 tier bins, so
-resampling on resize cannot recover detail that is not there. The mini-pan is the opposite — it
-averages 1024 bins into a 512-wide texture (`minipan_rhi.cpp`), and genuinely does discard data.
+resampling on resize cannot recover detail that is not there. The mini-pan averages its 1024 bins
+into a 512-wide texture (`minipan_rhi.cpp`); that loses nothing, because every MiniPAN frame captured
+(1192 of them, 2026-10-30) carries 512 values each sent twice.
 
 ## Ownership
 

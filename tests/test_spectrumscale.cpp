@@ -28,6 +28,30 @@ private slots:
         }
     }
 
+    // K4_MINIPAN_DBM_OFFSET pinned to its bench pairs (2026-10-30, WWV 10 MHz in CW, 3 kHz mini-pan,
+    // peak MiniPAN byte vs SMH within 30 ms). WWV was fading, so single pairs scatter over 13 dB: the
+    // median must sit within 2 dB of the radio and every pair within 8 dB. byte / 10, the old reading,
+    // misses every pair by over 50 dB.
+    void miniPanByteOffsetMatchesTheRadiosDbmMeter() {
+        struct Pair {
+            int peakByte;
+            int smhDbm;
+        };
+        const Pair pairs[] = {{53, -66}, {65, -54}, {55, -67}, {65, -55}, {64, -56},  // capture 1
+                              {60, -50}, {70, -52}, {64, -50}, {71, -52}, {63, -59}}; // capture 2
+        QVector<float> errors;
+        for (const Pair &p : pairs) {
+            const float dbm = static_cast<float>(p.peakByte) - SpectrumScale::K4_MINIPAN_DBM_OFFSET;
+            const float error = dbm - static_cast<float>(p.smhDbm);
+            QVERIFY2(std::abs(error) <= 8.0f,
+                     qPrintable(QStringLiteral("byte %1 -> %2 dBm, radio %3").arg(p.peakByte).arg(dbm).arg(p.smhDbm)));
+            errors.append(error);
+        }
+        std::sort(errors.begin(), errors.end());
+        const float median = (errors[4] + errors[5]) / 2.0f;
+        QVERIFY2(std::abs(median) <= 2.0f, qPrintable(QStringLiteral("median error %1 dB").arg(median)));
+    }
+
     void convertsSMeterReadingsToDbm() {
         // RadioState encodes the K4's SM bars as S0..S9 directly, and anything stronger as
         // 9.0 + dBoverS9/10 - so S9+20 arrives as 11.0. Treating that as an S-unit would clamp it

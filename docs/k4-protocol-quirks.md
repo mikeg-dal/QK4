@@ -373,9 +373,15 @@ frequency in the middle of the span: **dial + CW pitch in CW** (10,000,500), the
 QK4 once read MiniPAN as a 5-byte header and drew header bytes 5..26 as bins, hidden by a 75-bin
 trim at each edge, and assumed a 2 kHz / 10 kHz span. The passband was drawn about a third too wide.
 
+**Amplitude:** 1 byte = 1 dB, **dBm = byte − 118** — not PAN's 162. Peak byte on the WWV carrier
+against `SMH` (section 14) read at the same moment gave 110–123 over ten pairs (median 120; the
+carrier was fading). Byte 0 is the floor, about −118 dBm, and much of the noise arrives as 0. Every
+frame carries 512 values, each sent twice.
+
 **Where QK4 relies on it:** `Protocol::processPacket` (`K4Protocol::MiniPanPacket`, which aliases
 the PAN offsets) emits the centre, the span in Hz and the bins from 27, and drops a frame shorter than
-its data length or with no span.
+its data length or with no span. `MiniPanRhiWidget` draws the bins over that centre and span and
+converts them with `SpectrumScale::K4_MINIPAN_DBM_OFFSET`.
 
 ---
 

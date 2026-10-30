@@ -1,5 +1,7 @@
 #include "minipan_rhi.h"
 #include "dsp/spectrumgeometry.h"
+#include "dsp/spectrumscale.h"
+#include "dsp/waterfallgeometry.h"
 #include "logging/logcategories.h"
 #include "panadapter_constants.h"
 #include "dashgeometry.h"
@@ -384,6 +386,10 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
         // Resample spectrum to texture width
         int dataSize = m_smoothedSpectrum.size();
         int row = m_waterfallWriteRow;
+        // Palette positions fixed at capture under the colour window in effect now, by the
+        // panadapter's rule (REF and #WBS), so a row keeps its colour as it scrolls.
+        const WaterfallGeometry::ColorWindow window =
+            WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_waterfallColorRange);
         for (int i = 0; i < TEXTURE_WIDTH; ++i) {
             // Average downsampling for waterfall
             int startBin = static_cast<int>(static_cast<float>(i) / TEXTURE_WIDTH * dataSize);
@@ -396,11 +402,8 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
             for (int j = startBin; j < endBin; ++j) {
                 sum += m_smoothedSpectrum[j];
             }
-            float avgDb = sum / count;
-
-            float normalized = normalizeDb(avgDb);
-            m_waterfallData[row * TEXTURE_WIDTH + i] =
-                static_cast<quint8>(qBound(0, static_cast<int>(normalized * 255), 255));
+            const float avgDbm = sum / count;
+            m_waterfallData[row * TEXTURE_WIDTH + i] = WaterfallGeometry::capturedByteFor(avgDbm, window);
         }
 
         QRhiTextureSubresourceUploadDescription rowUpload(
@@ -432,8 +435,8 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
     // downsampling — and there the linear blend is a cheap box filter, while snapping would drop
     // rows outright. Revisit once the diagnostic reports this widget's px-per-row.
     //
-    // colorLow 0 and colorGain 1 pass the texel through: the mini-pan still stores palette positions
-    // (its own normalizeDb), not levels as the panadapter does.
+    // colorLow 0 and colorGain 1 pass the texel through: rows store palette positions fixed at
+    // capture (WaterfallGeometry::capturedByteFor), as the panadapter's do.
     float scrollOffset = static_cast<float>(m_waterfallWriteRow) / WATERFALL_HISTORY;
     RhiUtils::WaterfallUniforms waterfallUniforms = {scrollOffset,
                                                      static_cast<float>(TEXTURE_WIDTH),
@@ -455,35 +458,6 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
         int dataSize = m_smoothedSpectrum.size();
         float scale = static_cast<float>(dataSize) / w;
 
-        // Find smoothed baseline
-        float frameMin = 1.0f;
-        for (int x = 0; x < static_cast<int>(w); ++x) {
-            int startBin = static_cast<int>(x * scale);
-            int endBin = static_cast<int>((x + 1) * scale);
-            startBin = qBound(0, startBin, dataSize - 1);
-            endBin = qBound(startBin + 1, endBin, dataSize);
-
-            float peak = m_smoothedSpectrum[startBin];
-            for (int i = startBin + 1; i < endBin; ++i) {
-                if (m_smoothedSpectrum[i] > peak) {
-                    peak = m_smoothedSpectrum[i];
-                }
-            }
-
-            float normalized = normalizeDb(peak);
-            if (normalized < frameMin) {
-                frameMin = normalized;
-            }
-        }
-
-        // Smooth the baseline
-        const float baselineAlpha = 0.05f;
-        if (m_smoothedBaseline < 0.001f) {
-            m_smoothedBaseline = frameMin;
-        } else {
-            m_smoothedBaseline = baselineAlpha * frameMin + (1.0f - baselineAlpha) * m_smoothedBaseline;
-        }
-
         // Build vertices (triangle strip)
         for (int x = 0; x < static_cast<int>(w); ++x) {
             int startBin = static_cast<int>(x * scale);
@@ -498,10 +472,10 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
                 }
             }
 
-            float normalized = normalizeDb(peak);
-            float adjusted = normalized - m_smoothedBaseline;
-            float lineHeight = adjusted * spectrumHeight * 0.95f;
-            float y = qMax(0.0f, spectrumHeight - lineHeight);
+            // Height is a pure function of dBm over [REF, REF + SCALE], as on the panadapter: nothing
+            // is subtracted (no noise-floor tracker) and nothing is scaled down.
+            const float lineHeight = SpectrumScale::normalizedForDb(peak, m_minDb, m_maxDb) * spectrumHeight;
+            const float y = qMax(0.0f, spectrumHeight - lineHeight);
 
             // Bottom vertex (baseline) - spectrum color with transparency
             vertices.append(static_cast<float>(x));
@@ -688,11 +662,10 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerHz, i
     }
     m_centerHz = centerHz;
 
-    // Decompress MiniPAN data: byte / 10 (different from main panadapter)
+    // MiniPAN bins: 1 byte = 1 dB, dBm = byte - K4_MINIPAN_DBM_OFFSET (measured; see spectrumscale.h).
     m_spectrum.resize(bins.size());
-    for (int i = 0; i < bins.size(); ++i) {
-        m_spectrum[i] = static_cast<quint8>(bins[i]) / 10.0f;
-    }
+    for (int i = 0; i < bins.size(); ++i)
+        m_spectrum[i] = static_cast<quint8>(bins[i]) - SpectrumScale::K4_MINIPAN_DBM_OFFSET;
 
     // Apply asymmetric EMA smoothing (attack fast, decay slow)
     if (m_smoothedSpectrum.size() != m_spectrum.size()) {
@@ -713,7 +686,10 @@ void MiniPanRhiWidget::clear() {
     m_spectrum.clear();
     m_smoothedSpectrum.clear();
     m_waterfallWriteRow = 0;
-    m_smoothedBaseline = 0.0f;
+    m_refLevel = SpectrumDisplayLimits::RefLevelDefault;
+    m_scale = SpectrumDisplayLimits::ScaleDefault;
+    m_waterfallColorRange = -1;
+    updateDbRange();
     m_waterfallData.fill(0);
     m_waterfallNeedsFullClear = true;
 
@@ -734,12 +710,30 @@ void MiniPanRhiWidget::clear() {
     update();
 }
 
-float MiniPanRhiWidget::normalizeDb(float db) const {
-    // WHY: Only the lower bound is clamped. Bins stronger than m_maxDb intentionally return
-    // values > 1.0 so the CPU-rasterized trace can climb to the chart's top edge (qMax pin
-    // on y) instead of flat-topping below it. The waterfall byte-cast path re-clamps via
-    // qBound(0, ..., 255), so it stays safe.
-    return qMax(0.0f, (db - m_minDb) / (m_maxDb - m_minDb));
+void MiniPanRhiWidget::setRefLevel(int level) {
+    if (m_refLevel != level) {
+        m_refLevel = level;
+        updateDbRange();
+        update();
+    }
+}
+
+void MiniPanRhiWidget::setScale(int scale) {
+    if (m_scale != scale && scale >= SpectrumDisplayLimits::ScaleMin && scale <= SpectrumDisplayLimits::ScaleMax) {
+        m_scale = scale;
+        updateDbRange();
+        update();
+    }
+}
+
+void MiniPanRhiWidget::setWaterfallColorRange(int db) {
+    // Out-of-range values (the -1 sentinel) fall back inside WaterfallGeometry::colorWindowFor.
+    m_waterfallColorRange = db;
+}
+
+void MiniPanRhiWidget::updateDbRange() {
+    m_minDb = static_cast<float>(m_refLevel);
+    m_maxDb = static_cast<float>(m_refLevel + m_scale);
 }
 
 void MiniPanRhiWidget::setPassbandColor(const QColor &color) {
