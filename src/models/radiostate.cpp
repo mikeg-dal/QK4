@@ -1126,13 +1126,13 @@ int RadioState::monitorModeCode() const {
 bool RadioState::voxForCurrentMode() const {
     switch (modeClass()) {
     case RadioUtils::ModeClass::CwDirect:
-        return m_audioEffectsState.voxCW;
+        return m_audioEffectsState.voxCW.isOn();
     case RadioUtils::ModeClass::AfData:
-        return m_audioEffectsState.voxData;
+        return m_audioEffectsState.voxData.isOn();
     case RadioUtils::ModeClass::Voice:
         break;
     }
-    return m_audioEffectsState.voxVoice;
+    return m_audioEffectsState.voxVoice.isOn();
 }
 
 int RadioState::delayForCurrentMode() const {

@@ -256,11 +256,12 @@ public:
     int messageBank() const { return m_rxTxMeterState.messageBank; }
 
     // VOX
-    bool voxCW() const { return m_audioEffectsState.voxCW; }
-    bool voxVoice() const { return m_audioEffectsState.voxVoice; }
-    bool voxData() const { return m_audioEffectsState.voxData; }
+    bool voxCW() const { return m_audioEffectsState.voxCW.isOn(); }
+    bool voxVoice() const { return m_audioEffectsState.voxVoice.isOn(); }
+    bool voxData() const { return m_audioEffectsState.voxData.isOn(); }
     bool voxEnabled() const {
-        return m_audioEffectsState.voxCW || m_audioEffectsState.voxVoice || m_audioEffectsState.voxData;
+        return m_audioEffectsState.voxCW.isOn() || m_audioEffectsState.voxVoice.isOn() ||
+               m_audioEffectsState.voxData.isOn();
     }
 
     // QSK (full break-in)
@@ -294,14 +295,15 @@ public:
     // Streaming Latency (SL command)
     int streamingLatency() const { return m_dataControlState.streamingLatency; }
 
-    // Audio Effects (FX command)
-    int afxMode() const { return m_audioEffectsState.afxMode; } // 0=off, 1=delay, 2=pitch-map
+    // Audio Effects (FX command): 0=off, 1=delay, 2=pitch-map
+    int afxMode() const { return reportedOr(m_audioEffectsState.afxMode, AudioEffectsState::Unknown, 0); }
 
-    // Audio Peak Filter (AP/AP$ commands, CW mode only)
-    bool apfEnabled() const { return m_audioEffectsState.apfEnabled; }      // Main RX
-    int apfBandwidth() const { return m_audioEffectsState.apfBandwidth; }   // Main RX: 0=30Hz, 1=50Hz, 2=150Hz
-    bool apfEnabledB() const { return m_audioEffectsState.apfEnabledB; }    // Sub RX
-    int apfBandwidthB() const { return m_audioEffectsState.apfBandwidthB; } // Sub RX: 0=30Hz, 1=50Hz, 2=150Hz
+    // Audio Peak Filter (AP/AP$ commands, CW mode only), Main RX then Sub RX.
+    // Bandwidth: 0=30Hz, 1=50Hz, 2=150Hz.
+    bool apfEnabled() const { return m_audioEffectsState.apfEnabled.isOn(); }
+    int apfBandwidth() const { return reportedOr(m_audioEffectsState.apfBandwidth, AudioEffectsState::Unknown, 0); }
+    bool apfEnabledB() const { return m_audioEffectsState.apfEnabledB.isOn(); }
+    int apfBandwidthB() const { return reportedOr(m_audioEffectsState.apfBandwidthB, AudioEffectsState::Unknown, 0); }
 
     // VFO Lock (LK/LK$ commands)
     bool lockA() const { return m_frequencyVfoState.lockA.isOn(); }
@@ -426,9 +428,17 @@ public:
     // RX Graphic Equalizer (RE command) - 8 bands, -16 to +16 dB
     // Bands: 100, 200, 400, 800, 1200, 1600, 2400, 3200 Hz
     // Note: Main RX and Sub RX share the same EQ settings
-    int rxEqBand(int index) const { return (index >= 0 && index < 8) ? m_audioEffectsState.rxEqBands[index] : 0; }
+    int rxEqBand(int index) const {
+        return (index >= 0 && index < 8)
+                   ? reportedOr(m_audioEffectsState.rxEqBands[index], AudioEffectsState::EqBandUnknown, 0)
+                   : 0;
+    }
     QVector<int> rxEqBands() const {
-        return QVector<int>(m_audioEffectsState.rxEqBands, m_audioEffectsState.rxEqBands + 8);
+        QVector<int> bands;
+        bands.reserve(8);
+        for (int i = 0; i < 8; ++i)
+            bands.append(rxEqBand(i));
+        return bands;
     }
 
     // Optimistic setter for RX EQ bands (radio doesn't echo)
@@ -437,9 +447,17 @@ public:
 
     // TX Graphic Equalizer (TE command) - 8 bands, -16 to +16 dB
     // Bands: 100, 200, 400, 800, 1200, 1600, 2400, 3200 Hz
-    int txEqBand(int index) const { return (index >= 0 && index < 8) ? m_audioEffectsState.txEqBands[index] : 0; }
+    int txEqBand(int index) const {
+        return (index >= 0 && index < 8)
+                   ? reportedOr(m_audioEffectsState.txEqBands[index], AudioEffectsState::EqBandUnknown, 0)
+                   : 0;
+    }
     QVector<int> txEqBands() const {
-        return QVector<int>(m_audioEffectsState.txEqBands, m_audioEffectsState.txEqBands + 8);
+        QVector<int> bands;
+        bands.reserve(8);
+        for (int i = 0; i < 8; ++i)
+            bands.append(txEqBand(i));
+        return bands;
     }
 
     // Optimistic setter for TX EQ bands (radio doesn't echo)
@@ -475,7 +493,7 @@ public:
     // Line Out levels (LO command)
     int lineOutLeft() const { return m_audioEffectsState.lineOutLeft; }
     int lineOutRight() const { return m_audioEffectsState.lineOutRight; }
-    bool lineOutRightEqualsLeft() const { return m_audioEffectsState.lineOutRightEqualsLeft; }
+    bool lineOutRightEqualsLeft() const { return m_audioEffectsState.lineOutRightEqualsLeft.isOn(); }
 
     // Optimistic setters for Line Out
     void setLineOutLeft(int level);
@@ -514,8 +532,8 @@ public:
     int antiVox() const { return m_audioEffectsState.antiVox; } // 0-60
 
     // ESSB and SSB TX Bandwidth (ES command)
-    bool essbEnabled() const { return m_audioEffectsState.essbEnabled; } // 0=SSB, 1=ESSB
-    int ssbTxBw() const { return m_audioEffectsState.ssbTxBw; }          // 30-45 (3.0-4.5 kHz in 100Hz units)
+    bool essbEnabled() const { return m_audioEffectsState.essbEnabled.isOn(); } // 0=SSB, 1=ESSB
+    int ssbTxBw() const { return m_audioEffectsState.ssbTxBw; }                 // 30-45 (3.0-4.5 kHz in 100Hz units)
 
     // Optimistic setters for VOX Gain/Anti-VOX/ESSB
     void setVoxGainVoice(int gain);
