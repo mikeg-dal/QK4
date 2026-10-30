@@ -265,7 +265,7 @@ public:
     }
 
     // QSK (full break-in)
-    bool qskEnabled() const { return m_qskControlState.qskEnabled; }
+    bool qskEnabled() const { return m_qskControlState.qskEnabled.isOn(); }
 
     // K4 remote power state — std::nullopt until the first PS echo arrives,
     // then true (PS1) / false (PS0). See radiostate/powerstate.h.

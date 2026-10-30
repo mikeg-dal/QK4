@@ -1,6 +1,8 @@
 #ifndef MODELS_RADIOSTATE_QSKCONTROLSTATE_H
 #define MODELS_RADIOSTATE_QSKCONTROLSTATE_H
 
+#include "reportedflag.h"
+
 #include <QString>
 
 class RadioState;
@@ -11,7 +13,7 @@ class RadioState;
 //
 // Plain struct — follows Pattern C (see PATTERNS.md → Subsystem State).
 struct QskControlState {
-    bool qskEnabled = false; // CW-mode only; extracted from SD command x flag
+    ReportedFlag qskEnabled; // CW-mode only; extracted from SD command x flag
     int qskDelayCW = -1;     // 0..255 (×10ms)
     int qskDelayVoice = -1;  // LSB / USB / AM / FM
     int qskDelayData = -1;

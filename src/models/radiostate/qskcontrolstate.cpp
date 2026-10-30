@@ -3,7 +3,7 @@
 #include "models/radiostate.h"
 
 void QskControlState::reset() {
-    qskEnabled = false;
+    qskEnabled.reset();
     qskDelayCW = -1;
     qskDelayVoice = -1;
     qskDelayData = -1;
@@ -25,10 +25,8 @@ void handleSD(QskControlState &state, RadioState &owner, const QString &cmd) {
     // QSK enable flag is only meaningful on the CW-mode SD echo.
     if (modeChar == 'C') {
         const bool qskOn = (qskFlag == '1');
-        if (qskOn != state.qskEnabled) {
-            state.qskEnabled = qskOn;
-            emit owner.qskEnabledChanged(state.qskEnabled);
-        }
+        if (state.qskEnabled.set(qskOn))
+            emit owner.qskEnabledChanged(qskOn);
     }
 
     // WHY: only emit qskDelayChanged when the updated bucket matches the
