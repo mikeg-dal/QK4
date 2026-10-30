@@ -24,6 +24,8 @@ public:
     void setValueFaded(bool faded);
     bool isValueFaded() const { return m_valueFaded; }
 
+    QString label() const { return m_label; }
+
 signals:
     void incrementClicked();
     void decrementClicked();

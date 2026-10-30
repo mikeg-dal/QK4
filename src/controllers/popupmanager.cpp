@@ -2,6 +2,7 @@
 
 #include "connectioncontroller.h"
 #include "models/radiostate.h"
+#include "models/radiostate/spectrumdisplaystate.h"
 #include "spectrumcontroller.h"
 #include "ui/popups/bandpopupwidget.h"
 #include "ui/widgets/bottommenubar.h"
@@ -152,6 +153,10 @@ PopupManager::PopupManager(RadioState *radioState, ConnectionController *connect
     connect(m_radioState, &RadioState::ddcNbModeChanged, m_displayPopup, &DisplayPopupWidget::setDdcNbMode);
     connect(m_radioState, &RadioState::ddcNbLevelChanged, m_displayPopup, &DisplayPopupWidget::setDdcNbLevel);
     connect(m_radioState, &RadioState::waterfallHeightChanged, m_displayPopup, &DisplayPopupWidget::setWaterfallHeight);
+    connect(m_radioState, &RadioState::waterfallColorRangeChanged, m_displayPopup,
+            &DisplayPopupWidget::setWaterfallColorRange);
+    connect(m_radioState, &RadioState::waterfallColorRangeExtChanged, m_displayPopup,
+            &DisplayPopupWidget::setWaterfallColorRangeExt);
     connect(m_radioState, &RadioState::waterfallHeightExtChanged, m_displayPopup,
             &DisplayPopupWidget::setWaterfallHeightExt);
     connect(m_radioState, &RadioState::spanChanged, this,
@@ -445,6 +450,28 @@ void PopupManager::wireDisplayPopup() {
             m_displayPopup->setWaterfallHeightExt(next);
         }
     };
+    // WTR CLRS +/- : the radio's waterfall colour range, #WBS (LCD) or #HWBS (EXT), 5-30
+    // (Programmer's Reference D5: "#WBSn; where n is 5 to 30"). Nothing is sent until the radio has
+    // reported a value to step from; the radio's echo (AI5) and the optimistic parse update both
+    // pans and this popup through RadioState.
+    auto adjustWaterfallColorRange = [this](int delta) {
+        const bool isExt = m_displayPopup->isExtEnabled() && !m_displayPopup->isLcdEnabled();
+        const int current = isExt ? m_radioState->waterfallColorRangeExt() : m_radioState->waterfallColorRange();
+        if (current < 0)
+            return;
+        const int next = std::clamp(current + delta, SpectrumDisplayLimits::WaterfallColorRangeMin,
+                                    SpectrumDisplayLimits::WaterfallColorRangeMax);
+        if (next == current)
+            return;
+        const QString cmd = QString(isExt ? "#HWBS%1;" : "#WBS%1;").arg(next);
+        m_connection->sendCAT(cmd);
+        m_radioState->parseCATCommand(cmd);
+    };
+    connect(m_displayPopup, &DisplayPopupWidget::waterfallColorRangeIncrementRequested, this,
+            [adjustWaterfallColorRange]() { adjustWaterfallColorRange(+1); });
+    connect(m_displayPopup, &DisplayPopupWidget::waterfallColorRangeDecrementRequested, this,
+            [adjustWaterfallColorRange]() { adjustWaterfallColorRange(-1); });
+
     connect(m_displayPopup, &DisplayPopupWidget::waterfallHeightIncrementRequested, this,
             [adjustWaterfallHeight]() { adjustWaterfallHeight(+1); });
     connect(m_displayPopup, &DisplayPopupWidget::waterfallHeightDecrementRequested, this,

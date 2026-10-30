@@ -116,6 +116,7 @@ void DisplayPopupWidget::setupTopRow() {
     m_averageControlPage = createAverageControlPage();
     m_nbControlPage = createNbControlPage();
     m_waterfallControlPage = createWaterfallControlPage();
+    m_wtrClrsControlPage = createWtrClrsControlPage();
     m_defaultControlPage = createDefaultControlPage();
 
     m_controlStack->addWidget(m_spanControlPage);
@@ -124,6 +125,7 @@ void DisplayPopupWidget::setupTopRow() {
     m_controlStack->addWidget(m_averageControlPage);
     m_controlStack->addWidget(m_nbControlPage);
     m_controlStack->addWidget(m_waterfallControlPage);
+    m_controlStack->addWidget(m_wtrClrsControlPage);
     m_controlStack->addWidget(m_defaultControlPage);
 
     // Default to SPAN page
@@ -281,6 +283,42 @@ QWidget *DisplayPopupWidget::createWaterfallControlPage() {
     return page;
 }
 
+// WTR CLRS: the radio's waterfall colour range (#WBS / #HWBS, 5-30), the right-click function of the
+// NB / WTR CLRS key as on the K4. QK4 draws its waterfall from this value (WaterfallGeometry::
+// colorWindowFor), so stepping it here changes both screens.
+QWidget *DisplayPopupWidget::createWtrClrsControlPage() {
+    auto *page = new QWidget(this);
+    auto *layout = new QHBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    m_wtrClrsControlGroup = new ControlGroupWidget("WTR CLRS", page);
+    updateWtrClrsControlGroup();
+    connect(m_wtrClrsControlGroup, &ControlGroupWidget::decrementClicked, this,
+            &DisplayPopupWidget::waterfallColorRangeDecrementRequested);
+    connect(m_wtrClrsControlGroup, &ControlGroupWidget::incrementClicked, this,
+            &DisplayPopupWidget::waterfallColorRangeIncrementRequested);
+    layout->addWidget(m_wtrClrsControlGroup);
+    return page;
+}
+
+void DisplayPopupWidget::updateWtrClrsControlGroup() {
+    if (!m_wtrClrsControlGroup)
+        return;
+    const int range = (m_extEnabled && !m_lcdEnabled) ? m_waterfallColorRangeExt : m_waterfallColorRange;
+    m_wtrClrsControlGroup->setValue(range < 0 ? QStringLiteral("--") : QString::number(range));
+}
+
+void DisplayPopupWidget::setWaterfallColorRange(int db) {
+    m_waterfallColorRange = db;
+    updateWtrClrsControlGroup();
+}
+
+void DisplayPopupWidget::setWaterfallColorRangeExt(int db) {
+    m_waterfallColorRangeExt = db;
+    updateWtrClrsControlGroup();
+}
+
 void DisplayPopupWidget::selectDisplayTarget(bool lcd, bool ext) {
     m_lcdEnabled = lcd;
     m_extEnabled = ext;
@@ -289,6 +327,7 @@ void DisplayPopupWidget::selectDisplayTarget(bool lcd, bool ext) {
     // The PAN/display-mode labels and the waterfall height are per-target values.
     updateMenuButtonLabels();
     updateWaterfallControlGroup();
+    updateWtrClrsControlGroup();
 }
 
 void DisplayPopupWidget::updateWaterfallControlGroup() {
@@ -476,7 +515,13 @@ void DisplayPopupWidget::onMenuItemRightClicked(MenuItem item) {
         updateWaterfallControlGroup();
         break;
     }
-    // NbWtrClrs right-click: waterfall color cycling removed (not needed)
+    case NbWtrClrs:
+        // Show the WTR CLRS (waterfall colour range) control page, as the K4's right-click does
+        m_selectedItem = NbWtrClrs;
+        updateMenuButtonStyles();
+        m_controlStack->setCurrentWidget(m_wtrClrsControlPage);
+        updateWtrClrsControlGroup();
+        break;
     case RefLvlScale:
         // Show SCALE control page (right-click on REF LVL/SCALE button)
         m_selectedItem = RefLvlScale;

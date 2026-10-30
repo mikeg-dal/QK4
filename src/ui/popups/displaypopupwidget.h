@@ -56,6 +56,8 @@ public slots:
     // Waterfall height percentage (0-100, default 50 = 50/50 split)
     void setWaterfallHeight(int percent);    // LCD: #WFHxx;
     void setWaterfallHeightExt(int percent); // EXT: #HWFHxx;
+    void setWaterfallColorRange(int db);     // LCD: #WBSn; (WTR CLRS, 5-30)
+    void setWaterfallColorRangeExt(int db);  // EXT: #HWBSn;
 
 signals:
     // Span control signals: + and wheel-up zoom in (narrower span), - and wheel-down zoom out
@@ -81,6 +83,8 @@ signals:
     // Waterfall height control signals
     void waterfallHeightIncrementRequested();
     void waterfallHeightDecrementRequested();
+    void waterfallColorRangeIncrementRequested(); // WTR CLRS +
+    void waterfallColorRangeDecrementRequested(); // WTR CLRS -
 
     // CAT command signal (for MainWindow to forward to TcpClient)
     void catCommandRequested(const QString &cmd);
@@ -150,6 +154,12 @@ private:
 
     // Waterfall height controls
     QWidget *m_waterfallControlPage;
+    QWidget *m_wtrClrsControlPage = nullptr;
+    ControlGroupWidget *m_wtrClrsControlGroup = nullptr;
+    int m_waterfallColorRange = -1;    // LCD #WBS, -1 until the radio reports
+    int m_waterfallColorRangeExt = -1; // EXT #HWBS
+    QWidget *createWtrClrsControlPage();
+    void updateWtrClrsControlGroup();
     ControlGroupWidget *m_waterfallControlGroup;
 
     // Menu buttons

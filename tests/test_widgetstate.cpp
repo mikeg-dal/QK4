@@ -10,6 +10,7 @@
 #include "ui/popups/displaypopupwidget.h"
 #include "ui/styling/k4glyphs.h"
 #include "ui/popups/lineoutpopup.h"
+#include "ui/widgets/controlgroupwidget.h"
 #include "ui/widgets/displaymenubutton.h"
 #include "ui/widgets/dualcontrolbutton.h"
 #include "ui/widgets/featuremenubar.h"
@@ -23,6 +24,7 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -242,6 +244,38 @@ private slots:
         QTest::mouseClick(nbKey, Qt::LeftButton);
         QCOMPARE(cycle.count(), 1);
         QCOMPARE(cat.count(), 0);
+    }
+
+    // WTR CLRS (right-click on NB / WTR CLRS, as on the K4) opens a page for the radio's waterfall
+    // colour range (#WBS): "--" until the radio reports, then its value, and +/- ask to step it.
+    void displayWtrClrsPageStepsTheColourRange() {
+        DisplayPopupWidget popup;
+        DisplayMenuButton *nbKey = nullptr;
+        for (DisplayMenuButton *b : popup.findChildren<DisplayMenuButton *>()) {
+            if (b->alternateText() == QStringLiteral("WTR CLRS"))
+                nbKey = b;
+        }
+        QVERIFY(nbKey);
+        ControlGroupWidget *wtrClrs = nullptr;
+        for (ControlGroupWidget *g : popup.findChildren<ControlGroupWidget *>()) {
+            if (g->label() == QStringLiteral("WTR CLRS"))
+                wtrClrs = g;
+        }
+        QVERIFY(wtrClrs);
+        QCOMPARE(wtrClrs->value(), QStringLiteral("--"));
+        popup.setWaterfallColorRange(14);
+        QCOMPARE(wtrClrs->value(), QStringLiteral("14"));
+
+        QTest::mouseClick(nbKey, Qt::RightButton);
+        auto *stack = popup.findChild<QStackedWidget *>();
+        QVERIFY(stack && stack->currentWidget()->isAncestorOf(wtrClrs));
+
+        QSignalSpy up(&popup, &DisplayPopupWidget::waterfallColorRangeIncrementRequested);
+        QSignalSpy down(&popup, &DisplayPopupWidget::waterfallColorRangeDecrementRequested);
+        emit wtrClrs->incrementClicked();
+        emit wtrClrs->decrementClicked();
+        QCOMPARE(up.count(), 1);
+        QCOMPARE(down.count(), 1);
     }
 
     // --- ConfirmPopup ---
