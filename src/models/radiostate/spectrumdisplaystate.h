@@ -22,6 +22,10 @@ constexpr int RefLevelDefault = -110;
 constexpr int ScaleMin = 10;
 constexpr int ScaleMax = 150;
 constexpr int ScaleDefault = 75;
+// #WBS / #HWBS — waterfall colour range ("WTR CLRS"), dB. A higher number gives brighter colours
+// for the same signal (K4 Operating Manual rev D6, DISPLAY → WTR CLRS).
+constexpr int WaterfallColorRangeMin = 5;
+constexpr int WaterfallColorRangeMax = 30;
 } // namespace SpectrumDisplayLimits
 
 // Panadapter / waterfall / display-related state — all of the K4's
@@ -68,6 +72,10 @@ struct SpectrumDisplayState {
     int ddcNbMode = -1;          // #NB$ 0=off, 1=on, 2=auto
     int ddcNbLevel = -1;         // #NBL$ 0-14
 
+    // #WBS / #HWBS — waterfall colour range, dB (LCD / external monitor).
+    int waterfallColorRange = -1;
+    int waterfallColorRangeExt = -1;
+
     void reset();
 };
 
@@ -89,6 +97,8 @@ void handleFPS(SpectrumDisplayState &state, RadioState &owner, const QString &cm
 void handleWFC(SpectrumDisplayState &state, RadioState &owner, const QString &cmd);
 void handleWFH(SpectrumDisplayState &state, RadioState &owner, const QString &cmd);
 void handleHWFH(SpectrumDisplayState &state, RadioState &owner, const QString &cmd);
+void handleWBS(SpectrumDisplayState &state, RadioState &owner, const QString &cmd);
+void handleHWBS(SpectrumDisplayState &state, RadioState &owner, const QString &cmd);
 void handleAVG(SpectrumDisplayState &state, RadioState &owner, const QString &cmd);
 void handlePKM(SpectrumDisplayState &state, RadioState &owner, const QString &cmd);
 void handleFXT(SpectrumDisplayState &state, RadioState &owner, const QString &cmd);

@@ -370,6 +370,9 @@ public:
     int waterfallColor() const { return m_spectrumDisplayState.waterfallColor; }
     int waterfallHeight() const { return m_spectrumDisplayState.waterfallHeight; }       // #WFHxx
     int waterfallHeightExt() const { return m_spectrumDisplayState.waterfallHeightExt; } // #HWFHxx
+    // #WBSn / #HWBSn — waterfall colour range in dB, LCD / external monitor.
+    int waterfallColorRange() const { return m_spectrumDisplayState.waterfallColorRange; }
+    int waterfallColorRangeExt() const { return m_spectrumDisplayState.waterfallColorRangeExt; }
     int averaging() const { return m_spectrumDisplayState.averaging; }
     bool peakMode() const { return m_spectrumDisplayState.peakMode > 0; }
     int fixedTune() const { return m_spectrumDisplayState.fixedTune; } // #FXT
@@ -620,6 +623,8 @@ signals:
     void waterfallColorChanged(int color);       // #WFC: 0-4
     void waterfallHeightChanged(int percent);    // #WFHxx: LCD 0-100%
     void waterfallHeightExtChanged(int percent); // #HWFHxx: EXT 0-100%
+    void waterfallColorRangeChanged(int db);     // #WBSn: LCD 5-30 dB
+    void waterfallColorRangeExtChanged(int db);  // #HWBSn: EXT 5-30 dB
     void averagingChanged(int value);            // #AVG: 1-20
     void peakModeChanged(bool enabled);          // #PKM: 0/1
     void fixedTuneChanged(int fxt, int fxa);     // #FXT + #FXA combined
@@ -750,7 +755,7 @@ private:
     // VFO link and per-VFO lock (LN / LK / LK$) live on m_frequencyVfoState.
 
     // Panadapter / display state (#REF, #SPN, #SCL, #MP, #DPM, #DSM, #FPS,
-    // #WFC, #WFH, #AVG, #PKM, #FXT, #FXA, #FRZ, #VFA, #VFB, #AR, #NB$,
+    // #WFC, #WFH, #WBS, #AVG, #PKM, #FXT, #FXA, #FRZ, #VFA, #VFB, #AR, #NB$,
     // #NBL$, plus EXT variants) — see models/radiostate/spectrumdisplaystate.h.
     SpectrumDisplayState m_spectrumDisplayState;
 

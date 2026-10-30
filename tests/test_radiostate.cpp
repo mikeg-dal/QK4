@@ -1557,6 +1557,52 @@ private slots:
         QCOMPARE(rs.waterfallHeightExt(), 65);
     }
 
+    // --- #WBS / #HWBS (waterfall colour range, 5-30 dB) ---
+    // The RDY dump forms from a K4D capture (2026-10-30), the range edges, and rejections.
+    void testWaterfallColorRangeParses() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::waterfallColorRangeChanged);
+        QSignalSpy extSpy(&rs, &RadioState::waterfallColorRangeExtChanged);
+        rs.parseCATCommand("#WBS14;");
+        QCOMPARE(rs.waterfallColorRange(), 14);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 14);
+        // #HWBS is the external monitor's range; the LCD's is untouched, and vice versa.
+        QCOMPARE(rs.waterfallColorRangeExt(), -1);
+        QCOMPARE(extSpy.count(), 0);
+        rs.parseCATCommand("#HWBS20;");
+        QCOMPARE(rs.waterfallColorRangeExt(), 20);
+        QCOMPARE(rs.waterfallColorRange(), 14);
+        QCOMPARE(extSpy.count(), 1);
+
+        rs.parseCATCommand("#WBS14;"); // unchanged: no emit
+        QCOMPARE(spy.count(), 1);
+        rs.parseCATCommand("#WBS5;");
+        QCOMPARE(rs.waterfallColorRange(), 5);
+        rs.parseCATCommand("#WBS30;");
+        QCOMPARE(rs.waterfallColorRange(), 30);
+    }
+
+    void testWaterfallColorRangeRejected() {
+        RadioState rs;
+        rs.parseCATCommand("#WBS14;");
+        rs.parseCATCommand("#HWBS14;");
+        QSignalSpy spy(&rs, &RadioState::waterfallColorRangeChanged);
+        QSignalSpy extSpy(&rs, &RadioState::waterfallColorRangeExtChanged);
+        rs.parseCATCommand("#WBS4;");
+        rs.parseCATCommand("#WBS31;");
+        rs.parseCATCommand("#WBS-1;");
+        rs.parseCATCommand("#WBS;");
+        rs.parseCATCommand("#WBSx;");
+        rs.parseCATCommand("#HWBS4;");
+        rs.parseCATCommand("#HWBS31;");
+        rs.parseCATCommand("#HWBS;");
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(extSpy.count(), 0);
+        QCOMPARE(rs.waterfallColorRange(), 14);
+        QCOMPARE(rs.waterfallColorRangeExt(), 14);
+    }
+
     // --- #AVG (averaging, 1-20) ---
     void testAveragingParses() {
         RadioState rs;
@@ -3198,6 +3244,8 @@ private slots:
         rs.parseCATCommand("#SCL080;");
         rs.parseCATCommand("#AVG05;");
         rs.parseCATCommand("#PKM1;");
+        rs.parseCATCommand("#WBS14;");
+        rs.parseCATCommand("#HWBS20;");
         rs.parseCATCommand("DT2;");
         rs.parseCATCommand("DR1;");
         rs.parseCATCommand("TD132;");
@@ -3247,6 +3295,8 @@ private slots:
         QCOMPARE(rs.refLevelB(), SpectrumDisplayLimits::RefLevelUnknown);
         QCOMPARE(rs.waterfallHeight(), -1);
         QCOMPARE(rs.waterfallHeightExt(), -1);
+        QCOMPARE(rs.waterfallColorRange(), -1);
+        QCOMPARE(rs.waterfallColorRangeExt(), -1);
         // Balance uses -99 (outside valid -50..+50)
         QCOMPARE(rs.balanceMode(), -1);
         QCOMPARE(rs.balanceOffset(), -99);
@@ -3274,6 +3324,7 @@ private slots:
         rs.parseCATCommand("MG050;");
         rs.parseCATCommand("AT1;");
         rs.parseCATCommand("#SCL080;");
+        rs.parseCATCommand("#WBS14;");
         rs.parseCATCommand("MN2;");
         rs.parseCATCommand("DT2;");
 
@@ -3302,6 +3353,11 @@ private slots:
         {
             QSignalSpy spy(&rs, &RadioState::scaleChanged);
             rs.parseCATCommand("#SCL080;");
+            QCOMPARE(spy.count(), 1);
+        }
+        {
+            QSignalSpy spy(&rs, &RadioState::waterfallColorRangeChanged);
+            rs.parseCATCommand("#WBS14;"); // same input as before reset — must emit
             QCOMPARE(spy.count(), 1);
         }
         {

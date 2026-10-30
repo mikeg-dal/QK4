@@ -48,7 +48,7 @@ void RadioState::reset() {
 
     // VFO link + lock A/B reset via m_frequencyVfoState.reset() above.
 
-    // Panadapter / display state (REF, SPN, SCL, MP, DPM, DSM, FPS, WFC, WFH,
+    // Panadapter / display state (REF, SPN, SCL, MP, DPM, DSM, FPS, WFC, WFH, WBS,
     // AVG, PKM, FXT, FXA, FRZ, VFA, VFB, AR, NB$, NBL$ + EXT variants).
     m_spectrumDisplayState.reset();
 
@@ -513,6 +513,7 @@ void RadioState::registerCommandHandlers() {
         return [this, fn](const QString &c) { fn(m_spectrumDisplayState, *this, c); };
     };
     m_commandHandlers.append({"#HWFH", spectrumHandler(&SpectrumDisplayHandlers::handleHWFH)});
+    m_commandHandlers.append({"#HWBS", spectrumHandler(&SpectrumDisplayHandlers::handleHWBS)});
     m_commandHandlers.append({"#HDPM", spectrumHandler(&SpectrumDisplayHandlers::handleHDPM)});
     m_commandHandlers.append({"#HDSM", spectrumHandler(&SpectrumDisplayHandlers::handleHDSM)});
     m_commandHandlers.append({"#NBL$", spectrumHandler(&SpectrumDisplayHandlers::handleNBL)});
@@ -528,6 +529,7 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"#FPS", spectrumHandler(&SpectrumDisplayHandlers::handleFPS)});
     m_commandHandlers.append({"#WFC", spectrumHandler(&SpectrumDisplayHandlers::handleWFC)});
     m_commandHandlers.append({"#WFH", spectrumHandler(&SpectrumDisplayHandlers::handleWFH)});
+    m_commandHandlers.append({"#WBS", spectrumHandler(&SpectrumDisplayHandlers::handleWBS)});
     m_commandHandlers.append({"#AVG", spectrumHandler(&SpectrumDisplayHandlers::handleAVG)});
     m_commandHandlers.append({"#PKM", spectrumHandler(&SpectrumDisplayHandlers::handlePKM)});
     m_commandHandlers.append({"#FXT", spectrumHandler(&SpectrumDisplayHandlers::handleFXT)});

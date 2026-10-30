@@ -20,6 +20,8 @@ void SpectrumDisplayState::reset() {
     waterfallColor = -1;
     waterfallHeight = -1;
     waterfallHeightExt = -1;
+    waterfallColorRange = -1;
+    waterfallColorRangeExt = -1;
     averaging = -1;
     peakMode = -1;
     fixedTune = -1;
@@ -202,6 +204,29 @@ void handleHWFH(SpectrumDisplayState &state, RadioState &owner, const QString &c
         state.waterfallHeightExt = height;
         emit owner.waterfallHeightExtChanged(state.waterfallHeightExt);
     }
+}
+
+void handleWBS(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
+    // #WBSn — prefix length 4.
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    const int range = cmd.mid(4).toInt(&ok);
+    if (ok)
+        applyIntInRange(state.waterfallColorRange, range, SpectrumDisplayLimits::WaterfallColorRangeMin,
+                        SpectrumDisplayLimits::WaterfallColorRangeMax, owner, &RadioState::waterfallColorRangeChanged);
+}
+
+void handleHWBS(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
+    // #HWBSn — prefix length 5.
+    if (cmd.length() <= 5)
+        return;
+    bool ok;
+    const int range = cmd.mid(5).toInt(&ok);
+    if (ok)
+        applyIntInRange(state.waterfallColorRangeExt, range, SpectrumDisplayLimits::WaterfallColorRangeMin,
+                        SpectrumDisplayLimits::WaterfallColorRangeMax, owner,
+                        &RadioState::waterfallColorRangeExtChanged);
 }
 
 void handleAVG(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
