@@ -929,23 +929,29 @@ private slots:
     // answered VX; with VXD0. QK4 answered VX1 - VOX on - because it reported on if ANY mode had it.
     void testVxReplyIsForTheCurrentMode_data() {
         QTest::addColumn<QString>("mode");
+        QTest::addColumn<QString>("subMode");
         QTest::addColumn<QString>("expected");
-        QTest::newRow("DATA") << "MD6;" << "VXD0;";
-        QTest::newRow("DATA-R") << "MD9;" << "VXD0;";
-        QTest::newRow("CW") << "MD3;" << "VXC1;";
-        QTest::newRow("CW-R") << "MD7;" << "VXC1;";
-        QTest::newRow("USB") << "MD2;" << "VXV0;";
-        QTest::newRow("AM") << "MD5;" << "VXV0;";
+        QTest::newRow("DATA") << "MD6;" << "DT0;" << "VXD0;";
+        QTest::newRow("DATA-R") << "MD9;" << "DT1;" << "VXD0;";
+        // Direct data is in the C group - VX "m = mode (C = CW/direct data, ...)" (APP-007).
+        QTest::newRow("FSK D") << "MD6;" << "DT2;" << "VXC1;";
+        QTest::newRow("PSK D (DATA-R)") << "MD9;" << "DT3;" << "VXC1;";
+        QTest::newRow("CW") << "MD3;" << "DT2;" << "VXC1;";
+        QTest::newRow("CW-R") << "MD7;" << "DT0;" << "VXC1;";
+        QTest::newRow("USB") << "MD2;" << "DT2;" << "VXV0;";
+        QTest::newRow("AM") << "MD5;" << "DT0;" << "VXV0;";
     }
 
     void testVxReplyIsForTheCurrentMode() {
         QFETCH(QString, mode);
+        QFETCH(QString, subMode);
         QFETCH(QString, expected);
         RadioState rs;
         rs.parseCATCommand("VXC1;");
         rs.parseCATCommand("VXV0;");
         rs.parseCATCommand("VXD0;");
         rs.parseCATCommand(mode);
+        rs.parseCATCommand(subMode);
 
         CatServer server(&rs);
         QVERIFY(server.start(0));

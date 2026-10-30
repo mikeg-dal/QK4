@@ -18,6 +18,19 @@ void DataControlState::reset() {
     dataRateBEchoHold = QDeadlineTimer();
 }
 
+namespace {
+// FSK D and PSK D are direct data, which shares CW's QSK/VOX delay (RadioUtils::ModeClass), so in
+// DATA a DT change can switch the delay in effect - as an MD change can (handleMD).
+void setMainDataSubMode(DataControlState &state, RadioState &owner, int subMode) {
+    const RadioUtils::ModeClass before = owner.modeClass();
+    state.dataSubMode = subMode;
+    emit owner.dataSubModeChanged(subMode);
+    const int delay = owner.delayForCurrentMode();
+    if (owner.modeClass() != before && delay >= 0)
+        emit owner.qskDelayChanged(delay);
+}
+} // namespace
+
 namespace DataControlHandlers {
 
 void handleDT(DataControlState &state, RadioState &owner, const QString &cmd) {
@@ -30,10 +43,8 @@ void handleDT(DataControlState &state, RadioState &owner, const QString &cmd) {
     // Ignore an echoed DT while a recent optimistic SET is still in flight.
     if (!state.dataSubModeEchoHold.hasExpired())
         return;
-    if (subMode != state.dataSubMode) {
-        state.dataSubMode = subMode;
-        emit owner.dataSubModeChanged(state.dataSubMode);
-    }
+    if (subMode != state.dataSubMode)
+        setMainDataSubMode(state, owner, subMode);
 }
 
 void handleDTSub(DataControlState &state, RadioState &owner, const QString &cmd) {
@@ -127,9 +138,8 @@ void handleSL(DataControlState &state, RadioState &owner, const QString &cmd) {
 void setDataSubMode(DataControlState &state, RadioState &owner, int subMode) {
     subMode = qBound(0, subMode, 3);
     if (state.dataSubMode != subMode) {
-        state.dataSubMode = subMode;
         state.dataSubModeEchoHold.setRemainingTime(DataControlState::EchoHoldMs);
-        emit owner.dataSubModeChanged(subMode);
+        setMainDataSubMode(state, owner, subMode);
     }
 }
 

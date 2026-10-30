@@ -22,10 +22,12 @@ VfoRowIndicatorController::VfoRowIndicatorController(RadioState *radioState, Spe
     connect(m_radioState, &RadioState::splitChanged, this, &VfoRowIndicatorController::onSplitChanged);
     connect(m_radioState, &RadioState::bSetChanged, this, &VfoRowIndicatorController::onBSetChanged);
     connect(m_radioState, &RadioState::voxChanged, this, &VfoRowIndicatorController::onVoxChanged);
-    // WHY: VOX state is per-mode-class (VXC/VXV/VXD). When the mode flips,
-    // the displayed VOX color needs to re-resolve from the new mode's VOX
-    // flag even though voxChanged itself didn't fire.
+    // WHY: VOX state is per-mode-class (VXC/VXV/VXD). When the mode or the DATA
+    // sub-mode (FSK D / PSK D are in the C class) flips, the displayed VOX color
+    // needs to re-resolve from the new class's VOX flag even though voxChanged
+    // itself didn't fire.
     connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode) { onVoxChanged(); });
+    connect(m_radioState, &RadioState::dataSubModeChanged, this, [this](int) { onVoxChanged(); });
     connect(m_radioState, &RadioState::qskEnabledChanged, this, &VfoRowIndicatorController::onQskEnabledChanged);
     connect(m_radioState, &RadioState::testModeChanged, this, &VfoRowIndicatorController::onTestModeChanged);
     connect(m_radioState, &RadioState::atuModeChanged, this, &VfoRowIndicatorController::onAtuModeChanged);

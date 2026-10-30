@@ -809,16 +809,8 @@ void PopupManager::wireVoxAndSsbPopups() {
         if (!m_connection->isConnected())
             return;
         // VXmn where m=C/V/D, n=0/1
-        RadioState::Mode mode = m_radioState->mode();
-        QString modeChar;
-        if (mode == RadioState::CW || mode == RadioState::CW_R) {
-            modeChar = "C";
-        } else if (mode == RadioState::DATA || mode == RadioState::DATA_R) {
-            modeChar = "D";
-        } else {
-            modeChar = "V";
-        }
-        m_connection->sendCAT(QString("VX%1%2;").arg(modeChar).arg(enabled ? 1 : 0));
+        const char modeLetter = RadioUtils::modeClassLetter(m_radioState->modeClass());
+        m_connection->sendCAT(QString("VX%1%2;").arg(QLatin1Char(modeLetter)).arg(enabled ? 1 : 0));
     });
     // Connect RadioState to update popup when K4 sends VG/VI/VX response
     connect(m_radioState, &RadioState::voxGainChanged, this, [this](int mode, int gain) {

@@ -70,17 +70,9 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
         const int newDelay = *delay;
         m_radioState->setDelayForCurrentMode(newDelay);
 
-        // SD command format: SDxyzzz where x=QSK flag, y=mode (C/V/D), zzz=delay in 10ms
-        // Determine mode character based on current operating mode
-        QChar modeChar = 'V'; // Default to Voice
-        RadioState::Mode mode = m_radioState->mode();
-        if (mode == RadioState::CW || mode == RadioState::CW_R) {
-            modeChar = 'C';
-        } else if (mode == RadioState::DATA || mode == RadioState::DATA_R) {
-            modeChar = 'D';
-        }
-        // x=0 means use specified delay (not full QSK)
-        m_connection->sendCAT(QString("SD0%1%2;").arg(modeChar).arg(newDelay, 3, 10, QChar('0')));
+        // SDxyzzz: x=0 keeps the delay (not full QSK), y is the mode class letter, zzz in 10 ms.
+        const char modeLetter = RadioUtils::modeClassLetter(m_radioState->modeClass());
+        m_connection->sendCAT(QString("SD0%1%2;").arg(QLatin1Char(modeLetter)).arg(newDelay, 3, 10, QChar('0')));
     });
 
     // Group 2: BW/HI and SHFT/LO. With B SET on they adjust VFO B, within VFO B's limits.

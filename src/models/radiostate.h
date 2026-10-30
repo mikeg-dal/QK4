@@ -22,6 +22,7 @@
 #include "radiostate/spectrumdisplaystate.h"
 #include "radiostate/textdecodestate.h"
 #include "radiostate/xvtrbandstate.h"
+#include "utils/radioutils.h"
 
 /**
  * @brief Central K4 state hub. Parses inbound CAT responses, stores every visible radio property,
@@ -295,6 +296,9 @@ public:
     int monitorLevelForCurrentMode() const;
     // Returns the ML mode code (0/1/2) for the current operating mode
     int monitorModeCode() const;
+    // Settings group (SD / VX letter, ML digit) of VFO A's mode and DATA sub-mode: CW and direct
+    // data (FSK D, PSK D) share one, as on the radio.
+    RadioUtils::ModeClass modeClass() const { return RadioUtils::modeClass(mode(), dataSubMode()); }
 
     // Audio mix routing (MX command) - how main/sub maps to L/R when SUB is on
     int audioMixLeft() const { return m_audioEffectsState.audioMixLeft; }   // MixSource left

@@ -755,16 +755,13 @@ void MainWindow::setupUi() {
 
     // Update MON overlay when RadioState changes
     connect(m_radioState, &RadioState::monitorLevelChanged, m_sideControlPanel, &SideControlPanel::updateMonitorLevel);
-    connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode mode) {
-        // Update MON overlay mode based on current operating mode
-        int monMode = 2; // Default to voice
-        if (mode == RadioState::CW || mode == RadioState::CW_R) {
-            monMode = 0;
-        } else if (mode == RadioState::DATA || mode == RadioState::DATA_R) {
-            monMode = 1;
-        }
-        m_sideControlPanel->updateMonitorMode(monMode);
-    });
+    // WHY dataSubModeChanged too: the ML group follows the mode class, and FSK D / PSK D put DATA
+    // in the CW group (RadioUtils::ModeClass).
+    const auto refreshMonitorMode = [this]() {
+        m_sideControlPanel->updateMonitorMode(m_radioState->monitorModeCode());
+    };
+    connect(m_radioState, &RadioState::modeChanged, this, refreshMonitorMode);
+    connect(m_radioState, &RadioState::dataSubModeChanged, this, refreshMonitorMode);
 
     // Connect balance wheel signal (BL command)
     connect(m_sideControlPanel, &SideControlPanel::balChangeRequested, this, [this](int mode, int offset) {

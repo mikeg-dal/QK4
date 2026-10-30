@@ -316,16 +316,11 @@ QByteArray agcSpeed(int agc) {
 }
 
 QByteArray vox(const RadioState &rs) {
-    switch (rs.mode()) {
-    case RadioState::CW:
-    case RadioState::CW_R:
-        return QString("VXC%1;").arg(rs.voxCW() ? 1 : 0).toUtf8();
-    case RadioState::DATA:
-    case RadioState::DATA_R:
-        return QString("VXD%1;").arg(rs.voxData() ? 1 : 0).toUtf8();
-    default:
-        return QString("VXV%1;").arg(rs.voxVoice() ? 1 : 0).toUtf8();
-    }
+    const RadioUtils::ModeClass modeClass = rs.modeClass();
+    return QString("VX%1%2;")
+        .arg(QLatin1Char(RadioUtils::modeClassLetter(modeClass)))
+        .arg(rs.voxForCurrentMode() ? 1 : 0)
+        .toUtf8();
 }
 
 QByteArray diversity(bool on) {

@@ -34,26 +34,17 @@ void handleSD(QskControlState &state, RadioState &owner, const QString &cmd) {
     // WHY: only emit qskDelayChanged when the updated bucket matches the
     // current operating mode, so UI consumers don't refresh for buckets
     // the user can't see.
-    bool isCurrentMode = false;
-    const RadioState::Mode current = owner.mode();
-    if (modeChar == 'C') {
-        if (state.qskDelayCW != delay) {
-            state.qskDelayCW = delay;
-            isCurrentMode = (current == RadioState::CW || current == RadioState::CW_R);
-        }
-    } else if (modeChar == 'V') {
-        if (state.qskDelayVoice != delay) {
-            state.qskDelayVoice = delay;
-            isCurrentMode = (current == RadioState::LSB || current == RadioState::USB || current == RadioState::AM ||
-                             current == RadioState::FM);
-        }
-    } else if (modeChar == 'D') {
-        if (state.qskDelayData != delay) {
-            state.qskDelayData = delay;
-            isCurrentMode = (current == RadioState::DATA || current == RadioState::DATA_R);
-        }
-    }
-    if (isCurrentMode)
+    int *target = nullptr;
+    if (modeChar == 'C')
+        target = &state.qskDelayCW;
+    else if (modeChar == 'V')
+        target = &state.qskDelayVoice;
+    else if (modeChar == 'D')
+        target = &state.qskDelayData;
+    if (!target || *target == delay)
+        return;
+    *target = delay;
+    if (modeChar == QLatin1Char(RadioUtils::modeClassLetter(owner.modeClass())))
         emit owner.qskDelayChanged(delay);
 }
 

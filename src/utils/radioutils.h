@@ -147,6 +147,53 @@ struct FilterEdgeLimits {
     bool isLocked;
 };
 
+/// Which of the K4's three per-mode settings groups a mode belongs to; SD and VX name them C / V / D,
+/// ML 0 / 2 / 1. Programmer's Reference rev. D5, SD: "C = CW & direct data, V = voice, D = AF data";
+/// VX: "C = CW/direct data"; ML: "In CW/direct-data modes this is the sidetone/alert tone level".
+/// Direct data is DATA in the FSK D (DT2) or PSK D (DT3) sub-mode, keyed like CW, so it shares CW's
+/// delay, VOX and monitor level rather than AF data's.
+enum class ModeClass {
+    CwDirect,
+    Voice,
+    AfData,
+};
+
+/// The class of K4 mode `mdCode` (the MD digit) with DATA sub-mode `dataSubMode` (DT, consulted
+/// only in DATA and DATA-R). Unknown and voice modes are Voice.
+constexpr ModeClass modeClass(int mdCode, int dataSubMode) {
+    if (mdCode == 3 || mdCode == 7) // CW, CW-R
+        return ModeClass::CwDirect;
+    if (mdCode == 6 || mdCode == 9) // DATA, DATA-R
+        return (dataSubMode == 2 || dataSubMode == 3) ? ModeClass::CwDirect : ModeClass::AfData;
+    return ModeClass::Voice;
+}
+
+/// The SD / VX mode letter: C, V or D.
+constexpr char modeClassLetter(ModeClass modeClass) {
+    switch (modeClass) {
+    case ModeClass::CwDirect:
+        return 'C';
+    case ModeClass::AfData:
+        return 'D';
+    case ModeClass::Voice:
+        break;
+    }
+    return 'V';
+}
+
+/// The ML mode digit: 0 (CW and direct data), 1 (AF data) or 2 (voice).
+constexpr int monitorModeCode(ModeClass modeClass) {
+    switch (modeClass) {
+    case ModeClass::CwDirect:
+        return 0;
+    case ModeClass::AfData:
+        return 1;
+    case ModeClass::Voice:
+        break;
+    }
+    return 2;
+}
+
 /// BW and IS limits of the K4's receive filter in K4 mode `mdCode` (the MD digit) with DATA sub-mode
 /// `dataSubMode` (DT, consulted only in DATA and DATA-R), measured on a K4 (the Programmer's
 /// Reference gives no ranges): BW 50-5000 Hz, but 150-800 Hz in FSK D (DT2) and 50-200 Hz in PSK D

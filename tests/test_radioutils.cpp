@@ -449,6 +449,35 @@ private slots:
     void testTemp_warnThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(60), 140); }
     void testTemp_critThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(75), 167); }
 
+    // modeClass - the K4's C / V / D settings groups (APP-007). Direct data (DATA in FSK D or PSK D)
+    // is in the CW group: SD "C = CW & direct data", ML "CW/direct-data modes".
+    void testModeClass_table() {
+        using RadioUtils::ModeClass;
+        struct Row {
+            int md;
+            int dt;
+            ModeClass expected;
+        };
+        const Row rows[] = {
+            {3, -1, ModeClass::CwDirect}, {7, -1, ModeClass::CwDirect}, {6, 2, ModeClass::CwDirect},
+            {6, 3, ModeClass::CwDirect},  {9, 2, ModeClass::CwDirect},  {9, 3, ModeClass::CwDirect},
+            {6, 0, ModeClass::AfData},    {6, 1, ModeClass::AfData},    {9, 0, ModeClass::AfData},
+            {6, -1, ModeClass::AfData},   {1, -1, ModeClass::Voice},    {2, 2, ModeClass::Voice},
+            {4, 3, ModeClass::Voice},     {5, -1, ModeClass::Voice},    {0, -1, ModeClass::Voice},
+        };
+        for (const Row &row : rows)
+            QCOMPARE(RadioUtils::modeClass(row.md, row.dt), row.expected);
+    }
+    void testModeClass_letterAndMonitorCode() {
+        using RadioUtils::ModeClass;
+        QCOMPARE(RadioUtils::modeClassLetter(ModeClass::CwDirect), 'C');
+        QCOMPARE(RadioUtils::modeClassLetter(ModeClass::Voice), 'V');
+        QCOMPARE(RadioUtils::modeClassLetter(ModeClass::AfData), 'D');
+        QCOMPARE(RadioUtils::monitorModeCode(ModeClass::CwDirect), 0);
+        QCOMPARE(RadioUtils::monitorModeCode(ModeClass::AfData), 1);
+        QCOMPARE(RadioUtils::monitorModeCode(ModeClass::Voice), 2);
+    }
+
     // filterLimits - the one BW/IS table for the filter knobs (APP-004).
     void testFilterLimits_voiceAndCw() {
         const auto usb = RadioUtils::filterLimits(2, -1);

@@ -3157,6 +3157,64 @@ private slots:
         QCOMPARE(qskSpy.at(0).at(0).toInt(), 100);
     }
 
+    // Direct data (DATA in FSK D or PSK D) uses the CW group of the per-mode settings - SD "C = CW &
+    // direct data", VX "C = CW/direct data", ML "CW/direct-data modes" - not AF data's (APP-007).
+    void testDirectDataUsesTheCwDelayAndVox() {
+        RadioState rs;
+        rs.parseCATCommand("SD0C050;");
+        rs.parseCATCommand("SD0D120;");
+        rs.parseCATCommand("VXC1;");
+        rs.parseCATCommand("VXD0;");
+        rs.parseCATCommand("MD6;");
+        rs.parseCATCommand("DT2;"); // FSK D
+        QCOMPARE(rs.delayForCurrentMode(), 50);
+        QVERIFY(rs.voxForCurrentMode());
+        QCOMPARE(rs.monitorModeCode(), 0);
+        rs.parseCATCommand("DT3;"); // PSK D
+        QCOMPARE(rs.delayForCurrentMode(), 50);
+        rs.parseCATCommand("DT0;"); // DATA A is AF data
+        QCOMPARE(rs.delayForCurrentMode(), 120);
+        QVERIFY(!rs.voxForCurrentMode());
+        QCOMPARE(rs.monitorModeCode(), 1);
+    }
+
+    void testDirectDataDelaySetterWritesTheCwSlot() {
+        RadioState rs;
+        rs.parseCATCommand("SD0C050;");
+        rs.parseCATCommand("SD0D120;");
+        rs.parseCATCommand("MD9;"); // DATA-R
+        rs.parseCATCommand("DT2;");
+        rs.setDelayForCurrentMode(60);
+        QCOMPARE(rs.qskDelayCW(), 60);
+        QCOMPARE(rs.qskDelayData(), 120);
+    }
+
+    void testDataSubModeClassChangeRefreshesDelay() {
+        RadioState rs;
+        rs.parseCATCommand("SD0C050;");
+        rs.parseCATCommand("SD0D120;");
+        rs.parseCATCommand("MD6;");
+        rs.parseCATCommand("DT0;");
+        QSignalSpy spy(&rs, &RadioState::qskDelayChanged);
+        rs.parseCATCommand("DT2;"); // AF data -> direct data
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 50);
+        rs.parseCATCommand("DT3;"); // still direct data: nothing to refresh
+        QCOMPARE(spy.size(), 1);
+    }
+
+    void testSdForTheCurrentClassEmitsInDirectData() {
+        RadioState rs;
+        rs.parseCATCommand("MD6;");
+        rs.parseCATCommand("DT3;");
+        QSignalSpy spy(&rs, &RadioState::qskDelayChanged);
+        rs.parseCATCommand("SD0D120;"); // AF data's slot: not the one in effect
+        QCOMPARE(spy.size(), 0);
+        rs.parseCATCommand("SD0C070;");
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 70);
+    }
+
     // --- CW pitch bounds (CWnn; nn=pitch/10, range 25-95) ---
     void testCwPitchBelowRangeIgnored() {
         RadioState rs;

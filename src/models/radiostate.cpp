@@ -1107,75 +1107,60 @@ void RadioState::handleER(const QString &cmd) {
 }
 
 // Mode-dispatched accessors/setters.
-// The K4 partitions several settings (monitor level, VOX, QSK/VOX delay) into
-// CW / DATA / Voice buckets; these helpers select the right bucket based on
-// the current operating mode so callers don't reimplement the switch.
+// The K4 partitions several settings (monitor level, VOX, QSK/VOX delay) by mode
+// class (RadioUtils::ModeClass: CW and direct data / AF data / voice); these
+// select the current class's bucket so callers don't reimplement the switch.
 int RadioState::monitorLevelForCurrentMode() const {
-    switch (mode()) {
-    case CW:
-    case CW_R:
+    switch (modeClass()) {
+    case RadioUtils::ModeClass::CwDirect:
         return m_audioEffectsState.monitorLevelCW;
-    case DATA:
-    case DATA_R:
+    case RadioUtils::ModeClass::AfData:
         return m_audioEffectsState.monitorLevelData;
-    default:
-        return m_audioEffectsState.monitorLevelVoice;
+    case RadioUtils::ModeClass::Voice:
+        break;
     }
+    return m_audioEffectsState.monitorLevelVoice;
 }
 
 int RadioState::monitorModeCode() const {
-    switch (mode()) {
-    case CW:
-    case CW_R:
-        return 0;
-    case DATA:
-    case DATA_R:
-        return 1;
-    default:
-        return 2;
-    }
+    return RadioUtils::monitorModeCode(modeClass());
 }
 
 bool RadioState::voxForCurrentMode() const {
-    switch (mode()) {
-    case CW:
-    case CW_R:
+    switch (modeClass()) {
+    case RadioUtils::ModeClass::CwDirect:
         return m_audioEffectsState.voxCW;
-    case DATA:
-    case DATA_R:
+    case RadioUtils::ModeClass::AfData:
         return m_audioEffectsState.voxData;
-    default:
-        return m_audioEffectsState.voxVoice;
+    case RadioUtils::ModeClass::Voice:
+        break;
     }
+    return m_audioEffectsState.voxVoice;
 }
 
 int RadioState::delayForCurrentMode() const {
-    switch (mode()) {
-    case CW:
-    case CW_R:
+    switch (modeClass()) {
+    case RadioUtils::ModeClass::CwDirect:
         return m_qskControlState.qskDelayCW;
-    case DATA:
-    case DATA_R:
+    case RadioUtils::ModeClass::AfData:
         return m_qskControlState.qskDelayData;
-    default:
-        return m_qskControlState.qskDelayVoice;
+    case RadioUtils::ModeClass::Voice:
+        break;
     }
+    return m_qskControlState.qskDelayVoice;
 }
 
 void RadioState::setDelayForCurrentMode(int delay) {
     delay = std::clamp(delay, 0, RadioUtils::QSK_DELAY_MAX);
-    int *target = nullptr;
-    switch (mode()) {
-    case CW:
-    case CW_R:
+    int *target = &m_qskControlState.qskDelayVoice;
+    switch (modeClass()) {
+    case RadioUtils::ModeClass::CwDirect:
         target = &m_qskControlState.qskDelayCW;
         break;
-    case DATA:
-    case DATA_R:
+    case RadioUtils::ModeClass::AfData:
         target = &m_qskControlState.qskDelayData;
         break;
-    default:
-        target = &m_qskControlState.qskDelayVoice;
+    case RadioUtils::ModeClass::Voice:
         break;
     }
     if (*target != delay) {
