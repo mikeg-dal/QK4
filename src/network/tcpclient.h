@@ -101,6 +101,8 @@ private:
     void startPingTimer();
     void stopPingTimer();
     void attemptConnection();
+    enum class Close { Graceful, Abort };
+    void endSession(Close how);
 
     QSslSocket *m_socket;
     Protocol *m_protocol;
@@ -112,7 +114,7 @@ private:
     // sendRaw() calls refused because the session was not Connected, since the last state change.
     // I/O thread only.
     quint64 m_rawDropped = 0;
-    // Bumped by every connectToHost() and disconnectFromHost(), so an asynchronous step started for
+    // Bumped by every connectToHost() and endSession(), so an asynchronous step started for
     // one attempt (the mDNS lookup) can tell that it has since been replaced. I/O thread only.
     quint64 m_attemptId = 0;
 

@@ -138,7 +138,7 @@ void TcpClient::connectToHost(const QString &host, quint16 port, const QString &
             if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
                 qCWarning(lcLinkTcp) << "mDNS resolution failed for" << name << ":" << info.errorString();
                 emit errorOccurred(QString("Could not resolve %1: %2").arg(name, info.errorString()));
-                disconnectFromHost();
+                endSession(Close::Abort);
                 return;
             }
             // Prefer IPv4 — K4, K4D, and K4Z radios only listen on IPv4
@@ -225,7 +225,7 @@ void TcpClient::attemptConnection() {
             emit errorOccurred(QString("TLS unavailable: the active TLS backend (%1) has no PSK "
                                        "support. Reinstall QK4, or connect on the unencrypted port.")
                                    .arg(backend));
-            disconnectFromHost();
+            endSession(Close::Abort);
             return;
         }
         sslConfig.setCiphers(tls12PskCiphers);
@@ -242,12 +242,18 @@ void TcpClient::attemptConnection() {
     m_connectTimer->start(K4Protocol::CONNECTION_TIMEOUT_MS);
 }
 
-// The one way an attempt or a session ends: asked for by the operator, replaced by a new attempt, or
-// ended by a failure that has already been reported.
 void TcpClient::disconnectFromHost() {
+    endSession(Close::Graceful);
+}
+
+// The one way an attempt or a session ends: asked for by the operator, replaced by a new attempt, or
+// ended by a failure that has already been reported. A failure aborts: the K4's disconnect command
+// is a goodbye to a session that is still up, not something to write into one that has failed.
+void TcpClient::endSession(Close how) {
     const ConnectionState was = m_state.load(std::memory_order_acquire);
-    qCDebug(lcLinkTcp) << "disconnectFromHost called, state=" << was << "socket=" << m_socket->state();
-    const bool graceful = was == Connected && m_socket->state() == QAbstractSocket::ConnectedState;
+    qCDebug(lcLinkTcp) << "endSession, state=" << was << "socket=" << m_socket->state();
+    const bool graceful =
+        how == Close::Graceful && was == Connected && m_socket->state() == QAbstractSocket::ConnectedState;
     if (graceful) {
         // WHY first: a KZU the keyer posted on its way out (a straight key held at quit) must
         // reach the K4 before the session ends. The egress wakes this thread through a
@@ -447,7 +453,7 @@ void TcpClient::onSocketDisconnected() {
     const ConnectionState stateNow = m_state.load(std::memory_order_acquire);
     qCDebug(lcLinkTcp) << "Socket disconnected (was state=" << stateNow << "authReceived=" << m_authResponseReceived
                        << ")";
-    // Disconnected already: a teardown disconnectFromHost() started, or a failure already reported.
+    // Disconnected already: a teardown endSession() started, or a failure already reported.
     if (stateNow == Disconnected)
         return;
 
@@ -459,7 +465,7 @@ void TcpClient::onSocketDisconnected() {
     // this failure both socket signals lie the same way — connected() fires when it has not, and the
     // error arrives as RemoteHostClosedError, which normally means it had.
     reportFailure(ConnectFailure::Event::SocketClosed, static_cast<ConnectFailure::Phase>(stateNow));
-    disconnectFromHost();
+    endSession(Close::Abort);
 }
 
 void TcpClient::onReadyRead() {
@@ -510,7 +516,7 @@ void TcpClient::onSocketError(QAbstractSocket::SocketError error) {
                          << "tls=" << m_useTls << "everAnswered=" << m_authResponseReceived << "detail=" << errorMsg;
 
     reportFailure(ConnectFailure::Event::SocketError, static_cast<ConnectFailure::Phase>(stateNow), errorMsg);
-    disconnectFromHost();
+    endSession(Close::Abort);
 }
 
 void TcpClient::onSslErrors(const QList<QSslError> &errors) {
@@ -538,7 +544,7 @@ void TcpClient::onConnectTimeout() {
         // Verified: with nothing at the address, the socket reports neither connected() nor an
         // error - it simply stays in ConnectingState. This timer is the only thing that speaks.
         reportFailure(ConnectFailure::Event::ConnectTimeout, ConnectFailure::Phase::Connecting);
-        disconnectFromHost();
+        endSession(Close::Abort);
     }
 }
 
@@ -550,7 +556,7 @@ void TcpClient::onAuthTimeout() {
         qCWarning(lcLinkTcp) << "Connect attempt failed: phase=Authenticating, socket still up, no data"
                              << "port=" << m_port << "tls=" << m_useTls;
         reportFailure(ConnectFailure::Event::AuthTimeout, ConnectFailure::Phase::Authenticating);
-        disconnectFromHost();
+        endSession(Close::Abort);
     }
 }
 

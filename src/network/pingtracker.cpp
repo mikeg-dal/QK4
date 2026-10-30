@@ -40,6 +40,8 @@ qint64 PingTracker::answer(QStringView pong, qint64 nowMs) {
 
 qint64 PingTracker::onCatPayload(QStringView payload, qint64 nowMs) {
     qint64 rtt = -1;
+    if (m_count == 0) // every CAT packet passes through here; nearly none is a PONG
+        return rtt;
     for (QStringView command : payload.tokenize(QChar(u';'))) {
         command = command.trimmed();
         if (command.startsWith(u"PONG")) {
