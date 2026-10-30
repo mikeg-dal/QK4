@@ -32,6 +32,7 @@ public:
     void showSubRx();
 
 private:
+    void closeWithoutSending(TextDecodeWindow *window);
     RadioState *m_radioState;           // injected, not owned
     ConnectionController *m_connection; // injected, not owned
     TextDecodeWindow *m_mainWindow;     // owned via Qt parent mechanism
