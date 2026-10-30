@@ -41,7 +41,7 @@ void RadioState::handleMD(const QString &cmd) {
 
 1. **Plain structs, not `QObject`.** Only `RadioState` is a `QObject`.
 2. **RadioState is the only emitter.** Handler fns take `RadioState &owner` and emit via `emit owner.xxxChanged(...)`.
-3. **Each subsystem owns a reset().** Called from `RadioState::reset()` on disconnect. Note: reset() does NOT emit signals — controllers wanting reset-state labels must implement their own `reset()`.
+3. **Each subsystem owns a reset().** Called from `RadioState::reset()` on disconnect. It returns every field to its unknown sentinel, so the next session's first report of each always emits and the UI follows the radio's dump. reset() does NOT emit signals — controllers wanting reset-state labels while disconnected implement their own `reset()` — with one exception: `RadioState::reset()` emits `transmitStateChanged(false)` when it was transmitting.
 4. **Each subsystem registers its handlers** into the prefix-keyed dispatch table in `RadioState::registerCommandHandlers()`.
 5. **Public API (getters + signals) stays on `RadioState`.** External callers see a stable surface.
 

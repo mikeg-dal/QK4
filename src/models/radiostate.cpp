@@ -10,6 +10,8 @@ RadioState::RadioState(QObject *parent) : QObject(parent) {
 }
 
 void RadioState::reset() {
+    const bool wasTransmitting = isTransmitting();
+
     // Frequency / VFO / RIT/XIT state — subsystem struct handles split + offsets too.
     m_frequencyVfoState.reset();
     // Data-mode + tuning step + streaming latency.
@@ -66,6 +68,12 @@ void RadioState::reset() {
 
     // Text Decode
     m_textDecodeState.reset();
+
+    // WHY the one signal reset() emits: a link lost mid-transmission never delivers the RX;, so
+    // without this every TX indicator stays red and the TX meters stay up until the next session's
+    // first TX/RX (APP-008). Emitted after the reset so slots read the reset state.
+    if (wasTransmitting)
+        emit transmitStateChanged(false);
 }
 
 void RadioState::parseCATCommand(const QString &command) {

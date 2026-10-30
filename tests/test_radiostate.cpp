@@ -3600,6 +3600,44 @@ private slots:
         QCOMPARE(spy.size(), 1);
     }
 
+    // APP-008: a link lost mid-transmission never delivers RX;. reset() must say the transmission is
+    // over, once, or every TX indicator stays red until the next session.
+    void testResetWhileTransmittingEmitsRx() {
+        RadioState rs;
+        rs.parseCATCommand("TX;");
+        QSignalSpy spy(&rs, &RadioState::transmitStateChanged);
+        rs.reset();
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), false);
+        QCOMPARE(rs.isTransmitting(), false);
+    }
+
+    // reset() emits nothing else — not while receiving, and no other signal while transmitting.
+    void testResetEmitsOnlyTheTransmitEdge() {
+        for (const bool transmitting : {false, true}) {
+            RadioState rs;
+            rs.parseCATCommand("FT1;");
+            rs.parseCATCommand("NB051;");
+            rs.parseCATCommand(transmitting ? "TX;" : "RX;");
+
+            const QMetaObject *meta = rs.metaObject();
+            std::vector<std::unique_ptr<QSignalSpy>> spies;
+            for (int i = meta->methodOffset(); i < meta->methodCount(); ++i) {
+                const QMetaMethod method = meta->method(i);
+                if (method.methodType() == QMetaMethod::Signal)
+                    spies.push_back(std::make_unique<QSignalSpy>(&rs, method));
+            }
+            QVERIFY(!spies.empty());
+
+            rs.reset();
+
+            for (const auto &spy : spies) {
+                const bool isTransmitEdge = spy->signal() == QByteArray("transmitStateChanged(bool)");
+                QCOMPARE(spy->size(), transmitting && isTransmitEdge ? 1 : 0);
+            }
+        }
+    }
+
     // K4 remote power state (PS command).
     void testPowerStateInitiallyUnknown() {
         RadioState rs;

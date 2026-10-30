@@ -57,7 +57,8 @@ public:
 
     explicit RadioState(QObject *parent = nullptr);
 
-    // Reset all state to initial values (used on disconnect for clean reconnect)
+    // Returns every field to unknown (used on disconnect), so the next session's first report of each
+    // always emits. Emits nothing, except transmitStateChanged(false) when it was transmitting.
     void reset();
 
     /**
