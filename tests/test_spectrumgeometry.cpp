@@ -1,6 +1,9 @@
 #include "dsp/spectrumgeometry.h"
 #include <QtTest>
 
+#include <cmath>
+#include <cstdlib>
+
 using namespace SpectrumGeometry;
 
 class TestSpectrumGeometry : public QObject {
@@ -22,6 +25,13 @@ private slots:
     void pskPassbandIsCentredOnTheDial();
     void dataAPassbandIsUpperSideband();
     void amFmAndUnknownIgnoreIfShift();
+
+    void frequencyAndPositionRoundTrip();
+    void miniPanCwFrameCentresThePassband();
+    void miniPanDataFramePutsTheDialAtTheCentre();
+    void miniPanPassbandIsPassbandForInEveryMode();
+    void notchSitsOnTheDialsAudioSide();
+    void oneDefaultCwPitch();
 
     void normalFrameIsUsable();
     void binCountWiderThanTheTextureIsRejected();
@@ -128,6 +138,74 @@ void TestSpectrumGeometry::amFmAndUnknownIgnoreIfShift() {
         QCOMPARE(pb.lowHz, qint64(28997000));
         QCOMPARE(pb.highHz, qint64(29003000));
     }
+}
+
+void TestSpectrumGeometry::frequencyAndPositionRoundTrip() {
+    // Edges and centre of a 3 kHz mini-pan and a 50 kHz panadapter, then a sweep back and forth.
+    QCOMPARE(normalizedXFor(9'999'000, 10'000'500, 3000), 0.0f);
+    QCOMPARE(normalizedXFor(10'000'500, 10'000'500, 3000), 0.5f);
+    QCOMPARE(normalizedXFor(10'002'000, 10'000'500, 3000), 1.0f);
+    QVERIFY(normalizedXFor(9'998'000, 10'000'500, 3000) < 0.0f); // off-screen is not clamped
+    for (int span : {3000, 12'000, 50'000}) {
+        for (qint64 f = 14'000'000 - span / 2; f <= 14'000'000 + span / 2; f += span / 50) {
+            const double x = normalizedXFor(f, 14'000'000, span);
+            QVERIFY(std::abs(freqForNormalizedX(x, 14'000'000, span) - f) <= 1);
+        }
+    }
+    QCOMPARE(normalizedXFor(14'000'000, 14'000'000, 0), 0.0f);
+    QCOMPARE(freqForNormalizedX(0.3, 14'000'000, 0), qint64(14'000'000));
+}
+
+// The MiniPAN frame captured from a K4D in CW (protocol test): centre 10,000,500 = dial + pitch 500,
+// span 3 kHz. With IS at the pitch the passband sits in the middle, 200 Hz = 1/15 of the width.
+// The old fixed 2 kHz span drew it 1/10 wide.
+void TestSpectrumGeometry::miniPanCwFrameCentresThePassband() {
+    const qint64 centre = 10'000'500;
+    const int span = 3000;
+    const Passband pb = passbandFor(Mode::Cw, DataSubMode::DataA, 10'000'000, 200, 50, 170);
+    QCOMPARE(normalizedXFor(pb.lowHz, centre, span), 1400.0f / 3000.0f);
+    QCOMPARE(normalizedXFor(pb.highHz, centre, span), 1600.0f / 3000.0f);
+    QCOMPARE(normalizedXFor(markerFreqHz(10'000'000, 50, Mode::Cw), centre, span), 0.5f);
+    QCOMPARE(normalizedXFor(10'000'000, centre, span), 1.0f / 3.0f); // the dial, a pitch left of centre
+}
+
+// DATA-A frame from the same capture: centre = dial 10,131,000, span 12 kHz.
+void TestSpectrumGeometry::miniPanDataFramePutsTheDialAtTheCentre() {
+    const qint64 dial = 10'131'000;
+    const int span = 12'000;
+    QCOMPARE(normalizedXFor(markerFreqHz(dial, 150, Mode::Data), dial, span), 0.5f);
+    const Passband pb = passbandFor(Mode::Data, DataSubMode::DataA, dial, 3200, 150, 170);
+    QCOMPARE(normalizedXFor(pb.lowHz, dial, span), (6000.0f - 100.0f) / 12000.0f);
+    QCOMPARE(normalizedXFor(pb.highHz, dial, span), (6000.0f + 3100.0f) / 12000.0f);
+}
+
+// The mini-pan places a passband by mapping passbandFor's edges onto the frame's axis, so in every
+// mode its width is BW / span and its centre is passbandFor's centre: no mode has a rule of its own.
+void TestSpectrumGeometry::miniPanPassbandIsPassbandForInEveryMode() {
+    const qint64 dial = 7'030'000;
+    const int span = 3000;
+    const qint64 centre = dial + 500;
+    for (Mode m : {Mode::Lsb, Mode::Usb, Mode::Cw, Mode::CwR, Mode::Data, Mode::DataR, Mode::Am, Mode::Fm}) {
+        for (DataSubMode sub : {DataSubMode::DataA, DataSubMode::AfskA, DataSubMode::FskD, DataSubMode::PskD}) {
+            const Passband pb = passbandFor(m, sub, dial, 400, 55, 170);
+            const float left = normalizedXFor(pb.lowHz, centre, span);
+            const float right = normalizedXFor(pb.highHz, centre, span);
+            QVERIFY(std::abs((right - left) - 400.0f / span) < 1e-6f);
+            const qint64 mid = freqForNormalizedX((left + right) / 2.0, centre, span);
+            QVERIFY(std::abs(mid - (pb.lowHz + pb.highHz) / 2) <= 1);
+        }
+    }
+}
+
+void TestSpectrumGeometry::notchSitsOnTheDialsAudioSide() {
+    for (Mode m : {Mode::Usb, Mode::Cw, Mode::Data, Mode::DataR, Mode::Am, Mode::Fm})
+        QCOMPARE(notchFreqHz(m, 14'000'000, 800), qint64(14'000'800));
+    for (Mode m : {Mode::Lsb, Mode::CwR})
+        QCOMPARE(notchFreqHz(m, 14'000'000, 800), qint64(13'999'200));
+}
+
+void TestSpectrumGeometry::oneDefaultCwPitch() {
+    QCOMPARE(DefaultCwPitchHz, 500); // the K4's default; the mini-pan once assumed 600
 }
 
 void TestSpectrumGeometry::normalFrameIsUsable() {

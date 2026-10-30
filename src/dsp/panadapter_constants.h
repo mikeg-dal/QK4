@@ -58,10 +58,6 @@ constexpr int PassbandEdgeAlpha = 180;
 // MiniPan passband alpha — higher than main pan for visibility at small scale
 constexpr int MiniPanFillAlpha = 100;
 
-// MiniPan span Hz — Narrow used for CW/FSK/AFSK, Wide for all others
-constexpr int SpanNarrowHz = 2000;
-constexpr int SpanWideHz = 10000;
-
 } // namespace PanadapterConstants
 
 #endif // PANADAPTER_CONSTANTS_H

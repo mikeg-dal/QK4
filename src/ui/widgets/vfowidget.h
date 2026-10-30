@@ -46,7 +46,7 @@ public:
     void setTxMeterQrp(bool isQrp);
 
     // Mini-pan support
-    void updateMiniPan(const QByteArray &data);
+    void updateMiniPan(const QByteArray &bins, qint64 centerHz, int spanHz);
     void showMiniPan();
     void showNormal();
     bool isMiniPanVisible() const;
@@ -55,8 +55,8 @@ public:
     void setMiniPanMode(const QString &mode);
     void setMiniPanDataSubMode(int subMode);
     void setMiniPanFilterBandwidth(int bw);
+    void setMiniPanTunedFrequency(qint64 freqHz);
     void setMiniPanIfShift(int shift);
-    void setMiniPanCwPitch(int pitch);
     void setMiniPanNotchFilter(bool enabled, int pitchHz);
     void setMiniPanPassbandColor(const QColor &color);
     void setMiniPanWaterfallHeight(int percent);
@@ -127,7 +127,7 @@ private:
     int m_pendingDataSubMode = 0;
     int m_pendingFilterBw = 2400;
     int m_pendingIfShift = 50;
-    int m_pendingCwPitch = 600;
+    qint64 m_pendingTunedFreq = 0;
     bool m_pendingNotchEnabled = false;
     int m_pendingNotchPitchHz = 0;
     QColor m_pendingPassbandColor;

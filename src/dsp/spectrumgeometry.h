@@ -12,6 +12,10 @@ namespace SpectrumGeometry {
 
 enum class Mode { Unknown, Lsb, Usb, Cw, CwR, Data, DataR, Am, Fm };
 
+// CW pitch assumed until the radio reports CW: the K4's own default, 500 Hz. One value for every
+// renderer (the mini-pan once assumed 600).
+constexpr int DefaultCwPitchHz = 500;
+
 // K4 DATA sub-mode (DT command): DATA-A, AFSK-A, FSK-D, PSK-D.
 enum class DataSubMode { DataA = 0, AfskA = 1, FskD = 2, PskD = 3 };
 
@@ -31,6 +35,18 @@ qint64 displayCenterHz(qint64 centerFreqHz, int ifShiftDecaHz, Mode mode);
 
 // Frequency where the VFO marker is drawn: the passband centre in CW, the dial otherwise.
 qint64 markerFreqHz(qint64 tunedFreqHz, int ifShiftDecaHz, Mode mode);
+
+// Horizontal position of a frequency on a display spanning spanHz around centerHz: 0 at the left
+// edge, 1 at the right, unclamped so callers can tell off-screen from on-screen. 0 for a span <= 0.
+// The panadapter passes its display centre (displayCenterHz), the mini-pan its MiniPAN frame's centre.
+float normalizedXFor(qint64 freqHz, qint64 centerHz, int spanHz);
+
+// The inverse: the frequency at normalised position x (not clamped). centerHz for a span <= 0.
+qint64 freqForNormalizedX(double x, qint64 centerHz, int spanHz);
+
+// Where the manual notch sits. NM is an audio offset from the dial: above it in USB, CW and the DATA
+// and AM/FM modes, below it in LSB and CW-R.
+qint64 notchFreqHz(Mode mode, qint64 tunedFreqHz, int notchPitchHz);
 
 struct Passband {
     qint64 lowHz;

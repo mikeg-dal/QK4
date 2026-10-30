@@ -300,7 +300,7 @@ private:
     SpectrumGeometry::Mode m_mode = SpectrumGeometry::Mode::Usb;
     SpectrumGeometry::DataSubMode m_dataSubMode = SpectrumGeometry::DataSubMode::DataA;
     int m_ifShift = 50;
-    int m_cwPitch = 500;
+    int m_cwPitch = SpectrumGeometry::DefaultCwPitchHz;
     int m_fskMarkTone = 915; // FSK Mark-Tone (user-configurable from K4 front panel)
     int m_rttyShift = 170;   // Fixed 170 Hz shift between Mark and Space
 

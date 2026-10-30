@@ -270,10 +270,10 @@ void VFOWidget::setApf(bool enabled, int bandwidth) {
                                   .arg(K4Styles::Dimensions::FontSizeBody));
 }
 
-void VFOWidget::updateMiniPan(const QByteArray &data) {
+void VFOWidget::updateMiniPan(const QByteArray &bins, qint64 centerHz, int spanHz) {
     // Only update if mini-pan exists and is visible
     if (m_miniPan && m_stackedWidget->currentIndex() == 1) {
-        m_miniPan->updateSpectrum(data);
+        m_miniPan->updateSpectrum(bins, centerHz, spanHz);
     }
 }
 
@@ -294,7 +294,7 @@ void VFOWidget::showMiniPan() {
         m_miniPan->setDataSubMode(m_pendingDataSubMode);
         m_miniPan->setFilterBandwidth(m_pendingFilterBw);
         m_miniPan->setIfShift(m_pendingIfShift);
-        m_miniPan->setCwPitch(m_pendingCwPitch);
+        m_miniPan->setTunedFrequency(m_pendingTunedFreq);
         m_miniPan->setNotchFilter(m_pendingNotchEnabled, m_pendingNotchPitchHz);
         if (m_pendingWaterfallHeight >= 0)
             m_miniPan->setWaterfallHeight(m_pendingWaterfallHeight);
@@ -334,10 +334,10 @@ void VFOWidget::setMiniPanIfShift(int shift) {
         m_miniPan->setIfShift(shift);
 }
 
-void VFOWidget::setMiniPanCwPitch(int pitch) {
-    m_pendingCwPitch = pitch;
+void VFOWidget::setMiniPanTunedFrequency(qint64 freqHz) {
+    m_pendingTunedFreq = freqHz;
     if (m_miniPan)
-        m_miniPan->setCwPitch(pitch);
+        m_miniPan->setTunedFrequency(freqHz);
 }
 
 void VFOWidget::setMiniPanNotchFilter(bool enabled, int pitchHz) {
@@ -383,7 +383,7 @@ void VFOWidget::resetToDefaults() {
     setMiniPanMode("USB");
     setMiniPanFilterBandwidth(2400);
     setMiniPanIfShift(50);
-    setMiniPanCwPitch(600);
+    setMiniPanTunedFrequency(0);
     setMiniPanNotchFilter(false, 0);
 }
 

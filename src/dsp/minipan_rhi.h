@@ -13,8 +13,9 @@
 
 // Compact Mini-Pan widget for VFO area using Qt RHI
 // GPU-accelerated via Metal (macOS), DirectX (Windows), Vulkan (Linux)
-// Shows simplified spectrum + waterfall in a small form factor
-// Fixed mode-dependent span around VFO frequency
+// Shows simplified spectrum + waterfall in a small form factor.
+// The frequency axis comes from each MiniPAN frame: its centre and span (3 kHz in CW, 12 kHz in
+// DATA-A, chosen by the radio). Overlays are placed by absolute frequency on that axis.
 class MiniPanRhiWidget : public QRhiWidget {
     Q_OBJECT
 
@@ -22,8 +23,8 @@ public:
     explicit MiniPanRhiWidget(QWidget *parent = nullptr);
     ~MiniPanRhiWidget();
 
-    // Update spectrum from MiniPAN packet (TYPE=3)
-    void updateSpectrum(const QByteArray &bins);
+    // Update spectrum from a MiniPAN packet (TYPE=3): its bins, centre (Hz) and span (Hz).
+    void updateSpectrum(const QByteArray &bins, qint64 centerHz, int spanHz);
     void clear();
 
     // Passband color (default blue)
@@ -38,9 +39,9 @@ public:
     void setDataSubMode(int subMode);
 
     // Filter passband visualization
+    void setTunedFrequency(qint64 freqHz); // the receiver's dial, RIT included
     void setFilterBandwidth(int bwHz);
     void setIfShift(int shift);
-    void setCwPitch(int pitchHz);
     void setAveraging(int level); // 1-20: K4 #AVG display averaging
 
 signals:
@@ -65,7 +66,6 @@ private:
 
     // Data processing
     float normalizeDb(float db) const;
-    int bandwidthForMode(SpectrumGeometry::Mode mode) const;
 
     // RHI resources
     QRhi *m_rhi = nullptr;
@@ -163,9 +163,9 @@ private:
     int m_notchPitchHz = 0;
     SpectrumGeometry::Mode m_mode = SpectrumGeometry::Mode::Usb;
     SpectrumGeometry::DataSubMode m_dataSubMode = SpectrumGeometry::DataSubMode::DataA;
-    // Mode-dependent span: PanadapterConstants::SpanNarrowHz for CW and FSK/AFSK/PSK, SpanWideHz
-    // otherwise.
-    int m_bandwidthHz = 10000;
+    // Frequency axis of the latest MiniPAN frame; 0 until the first one arrives.
+    qint64 m_centerHz = 0;
+    int m_spanHz = 0;
 
     // Display averaging (K4 #AVG control, 1-20)
     int m_averagingLevel = -1; // until the radio reports #AVG; see PanadapterRhiWidget
@@ -173,9 +173,9 @@ private:
     float m_decayAlpha = 1.0f;
 
     // Filter passband visualization
+    qint64 m_tunedFreq = 0; // 0 until the controller reports the dial
     int m_filterBw = 2400;
     int m_ifShift = 50;
-    int m_cwPitch = 600;
 
     // Frequency label overlays
     QLabel *m_leftFreqLabel = nullptr;

@@ -63,6 +63,25 @@ qint64 markerFreqHz(qint64 tunedFreqHz, int ifShiftDecaHz, Mode mode) {
     return displayCenterHz(tunedFreqHz, ifShiftDecaHz, mode);
 }
 
+float normalizedXFor(qint64 freqHz, qint64 centerHz, int spanHz) {
+    if (spanHz <= 0)
+        return 0.0f;
+    const qint64 startHz = centerHz - spanHz / 2;
+    return static_cast<float>(freqHz - startHz) / static_cast<float>(spanHz);
+}
+
+qint64 freqForNormalizedX(double x, qint64 centerHz, int spanHz) {
+    if (spanHz <= 0)
+        return centerHz;
+    const qint64 startHz = centerHz - spanHz / 2;
+    return startHz + static_cast<qint64>(x * spanHz);
+}
+
+qint64 notchFreqHz(Mode mode, qint64 tunedFreqHz, int notchPitchHz) {
+    const bool lowerSideband = mode == Mode::Lsb || mode == Mode::CwR;
+    return lowerSideband ? tunedFreqHz - notchPitchHz : tunedFreqHz + notchPitchHz;
+}
+
 Passband passbandFor(Mode mode, DataSubMode subMode, qint64 tunedFreqHz, int bandwidthHz, int ifShiftDecaHz,
                      int rttyShiftHz) {
     const qint64 shiftHz = static_cast<qint64>(ifShiftDecaHz) * 10;

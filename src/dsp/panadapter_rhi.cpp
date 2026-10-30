@@ -1150,14 +1150,11 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                             m_txMarkerColor);
             }
 
-            // Notch: NM is an audio offset from the dial; CW maps like USB and CW-R like LSB
-            // (consistent with the mini-pan).
+            // Notch: NM is an audio offset from the dial (SpectrumGeometry::notchFreqHz, shared with
+            // the mini-pan).
             if (m_notchEnabled && m_notchPitchHz > 0 && m_spanHz > 0) {
-                const bool lowerSideband =
-                    m_mode == SpectrumGeometry::Mode::Lsb || m_mode == SpectrumGeometry::Mode::CwR;
-                const int offsetHz = lowerSideband ? -m_notchPitchHz : m_notchPitchHz;
-                const float tunedX = freqToNormalized(m_tunedFreq) * w;
-                const float notchX = tunedX + (static_cast<float>(offsetHz) * w) / m_spanHz;
+                const float notchX =
+                    freqToNormalized(SpectrumGeometry::notchFreqHz(m_mode, m_tunedFreq, m_notchPitchHz)) * w;
                 stageDashed(notchX, PanadapterConstants::MarkerLineWidth, m_notchDashVerts, m_notchVbo.get(),
                             m_notchUniformBuffer.get(), m_notchSrb.get(), m_notchColor);
             }
@@ -1573,8 +1570,7 @@ qint64 PanadapterRhiWidget::displayCenterHz() const {
 
 float PanadapterRhiWidget::freqToNormalized(qint64 freq) const {
     // Map frequency to normalized range [0.0, 1.0] for drawing markers and passbands.
-    const qint64 startFreq = displayCenterHz() - m_spanHz / 2;
-    return static_cast<float>(freq - startFreq) / static_cast<float>(m_spanHz);
+    return SpectrumGeometry::normalizedXFor(freq, displayCenterHz(), m_spanHz);
 }
 
 qint64 PanadapterRhiWidget::xToFreq(int x, int w) const {
@@ -1582,10 +1578,9 @@ qint64 PanadapterRhiWidget::xToFreq(int x, int w) const {
     // the display so the click lands where the user sees it on the frequency labels.
     if (w <= 0)
         return m_centerFreq;
-    const qint64 startFreq = displayCenterHz() - m_spanHz / 2;
     // Clamp to [0, 1] to prevent runaway acceleration when dragging past edges
-    double normalized = qBound(0.0, static_cast<double>(x) / static_cast<double>(w), 1.0);
-    return startFreq + static_cast<qint64>(normalized * m_spanHz);
+    const double normalized = qBound(0.0, static_cast<double>(x) / static_cast<double>(w), 1.0);
+    return SpectrumGeometry::freqForNormalizedX(normalized, displayCenterHz(), m_spanHz);
 }
 
 int PanadapterRhiWidget::calculateGridInterval(int spanHz) const {
@@ -1677,7 +1672,7 @@ void PanadapterRhiWidget::clear() {
     m_mode = SpectrumGeometry::Mode::Usb;
     m_dataSubMode = SpectrumGeometry::DataSubMode::DataA;
     m_noiseFloor = -130.0f;
-    m_cwPitch = 500;
+    m_cwPitch = SpectrumGeometry::DefaultCwPitchHz;
     m_ifShift = 50;
     m_filterBw = 2400;
     m_notchEnabled = false;

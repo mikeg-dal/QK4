@@ -279,7 +279,6 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     connect(m_radioState, &RadioState::filterBandwidthChanged, this,
             [this](int bw) { m_vfoA->setMiniPanFilterBandwidth(bw); });
     connect(m_radioState, &RadioState::ifShiftChanged, this, [this](int shift) { m_vfoA->setMiniPanIfShift(shift); });
-    connect(m_radioState, &RadioState::cwPitchChanged, this, [this](int pitch) { m_vfoA->setMiniPanCwPitch(pitch); });
 
     // Tuning rate indicator (VT command)
     connect(m_radioState, &RadioState::tuningStepChanged, this, [this](int step) { m_vfoA->setTuningRate(step); });
@@ -313,7 +312,6 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     connect(m_radioState, &RadioState::filterBandwidthBChanged, this,
             [this](int bw) { m_vfoB->setMiniPanFilterBandwidth(bw); });
     connect(m_radioState, &RadioState::ifShiftBChanged, this, [this](int shift) { m_vfoB->setMiniPanIfShift(shift); });
-    connect(m_radioState, &RadioState::cwPitchChanged, this, [this](int pitch) { m_vfoB->setMiniPanCwPitch(pitch); });
     connect(m_radioState, &RadioState::notchBChanged, this, [this]() {
         bool enabled = m_radioState->manualNotchEnabledB();
         int pitch = m_radioState->manualNotchPitchB();
@@ -610,6 +608,7 @@ void SpectrumController::updatePanadapterPassbands() {
             rxA = static_cast<quint64>(adjusted);
     }
     m_panA.pad->setTunedFrequency(rxA);
+    m_vfoA->setMiniPanTunedFrequency(static_cast<qint64>(rxA));
 
     // Panadapter B always shows VFO B's own passband
     quint64 rxB = m_radioState->vfoB();
@@ -619,6 +618,7 @@ void SpectrumController::updatePanadapterPassbands() {
             rxB = static_cast<quint64>(adjusted);
     }
     m_panB.pad->setTunedFrequency(rxB);
+    m_vfoB->setMiniPanTunedFrequency(static_cast<qint64>(rxB));
 
     // Update secondary VFO overlays with RIT-adjusted positions
     // VFO B overlay on panadapter A (green passband showing where VFO B is listening)
@@ -680,7 +680,7 @@ void SpectrumController::onSpectrumData(int receiver, const QByteArray &payload,
 }
 
 void SpectrumController::onMiniSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount,
-                                            qint64 /*centerFreq*/, int /*spanHz*/) {
+                                            qint64 centerFreq, int spanHz) {
     // binsOffset and binCount come off the wire; never view bytes past the payload.
     if (SpectrumGeometry::usableBinCount(payload.size(), binsOffset, binCount, std::numeric_limits<int>::max()) == 0)
         return;
@@ -688,9 +688,9 @@ void SpectrumController::onMiniSpectrumData(int receiver, const QByteArray &payl
     QByteArray bins = QByteArray::fromRawData(payload.constData() + binsOffset, binCount);
     // Route Mini-PAN data based on receiver byte (0=Main/A, 1=Sub/B)
     if (receiver == 0 && m_vfoA->isMiniPanVisible()) {
-        m_vfoA->updateMiniPan(bins);
+        m_vfoA->updateMiniPan(bins, centerFreq, spanHz);
     } else if (receiver == 1 && m_vfoB->isMiniPanVisible()) {
-        m_vfoB->updateMiniPan(bins);
+        m_vfoB->updateMiniPan(bins, centerFreq, spanHz);
     }
 }
 
