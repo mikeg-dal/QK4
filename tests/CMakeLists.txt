@@ -819,6 +819,13 @@ set(QK4_POPUP_TEST_SOURCES
 add_executable(test_popupplacement ${QK4_POPUP_TEST_SOURCES})
 target_include_directories(test_popupplacement PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_popupplacement Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
+# WHY: this test links a stand-in for ConnectionController (sendCAT etc. are defined in the test) and
+# not connectioncontroller.cpp, so the class has no typeinfo. UBSan's vptr check references that
+# typeinfo from the controllers compiled in here, which fails to link in the sanitizer build. Only
+# that one check is turned off, only for this target.
+if(QK4_TESTS_SANITIZE AND NOT MSVC)
+    target_compile_options(test_popupplacement PRIVATE -fno-sanitize=vptr)
+endif()
 foreach(scale 1 1.5 2)
     string(REPLACE "." "_" scale_name "${scale}")
     add_test(NAME PopupPlacementTests_x${scale_name} COMMAND test_popupplacement)
