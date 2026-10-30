@@ -83,6 +83,60 @@ private slots:
         QCOMPARE(oldRadio.allReceived(), QByteArray());
         QVERIFY2(errors.isEmpty(), qPrintable(errors.isEmpty() ? QString() : errors.first().first().toString()));
     }
+
+    // TRN-002. Cancelling while the radio has not yet answered is the operator's choice, not a
+    // failure. The old code closed the socket before leaving Authenticating, so the synchronous
+    // disconnected() was reported as "closed the connection without responding".
+    void cancellingDuringAuthenticationReportsNothing() {
+        FakeRadio radio;
+        QVERIFY(radio.listen());
+        TcpClient client;
+        QSignalSpy errors(&client, &TcpClient::errorOccurred);
+        QSignalSpy states(&client, &TcpClient::stateChanged);
+
+        client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
+        QTRY_COMPARE(client.connectionState(), TcpClient::Authenticating);
+        client.disconnectFromHost();
+        QCOMPARE(client.connectionState(), TcpClient::Disconnected);
+        QTRY_VERIFY(radio.connectionCount() == 1 && radio.socket(0)->state() == QAbstractSocket::UnconnectedState);
+        QTest::qWait(100);
+        QVERIFY2(errors.isEmpty(), qPrintable(errors.isEmpty() ? QString() : errors.first().first().toString()));
+        QCOMPARE(states.last().first().value<TcpClient::ConnectionState>(), TcpClient::Disconnected);
+    }
+
+    // TRN-002. A radio that accepts the connection and never answers is one failure, reported once.
+    // The old code reported the timeout and then, from the close it caused, a second and false
+    // "closed the connection without responding".
+    void authTimeoutIsReportedExactlyOnce() {
+        FakeRadio radio;
+        QVERIFY(radio.listen());
+        TcpClient client;
+        QSignalSpy errors(&client, &TcpClient::errorOccurred);
+
+        client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
+        QTRY_COMPARE(client.connectionState(), TcpClient::Authenticating);
+        QTRY_COMPARE_WITH_TIMEOUT(client.connectionState(), TcpClient::Disconnected,
+                                  K4Protocol::AUTH_TIMEOUT_MS + 2000);
+        QTest::qWait(200);
+        QCOMPARE(errors.size(), 1);
+        QVERIFY(errors.first().first().toString().contains(QStringLiteral("sent no data")));
+    }
+
+    // The radio closing the connection before answering is still reported, once.
+    void radioClosingBeforeAnsweringIsReportedOnce() {
+        FakeRadio radio;
+        QVERIFY(radio.listen());
+        TcpClient client;
+        QSignalSpy errors(&client, &TcpClient::errorOccurred);
+
+        client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
+        QTRY_COMPARE(client.connectionState(), TcpClient::Authenticating);
+        QTRY_COMPARE(radio.connectionCount(), 1);
+        radio.socket(0)->close();
+        QTRY_COMPARE(client.connectionState(), TcpClient::Disconnected);
+        QTest::qWait(100);
+        QCOMPARE(errors.size(), 1);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestTcpClient)
