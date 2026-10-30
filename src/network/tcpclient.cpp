@@ -8,6 +8,7 @@
 #include <QSslConfiguration>
 #include <QSslPreSharedKeyAuthenticator>
 #include <QSslSocket>
+#include <chrono>
 
 // ConnectFailure::Phase mirrors ConnectionState rather than reusing it, so connect_failure.h - and
 // the test that links it alone - stays clear of QSslSocket. These keep the two from drifting.
@@ -294,7 +295,7 @@ TcpClient::ConnectionState TcpClient::connectionState() const {
 void TcpClient::sendCAT(const QString &command) {
     if (QThread::currentThread() != thread()) {
         qCDebug(lcCatTx) << "cross-thread marshal:" << command;
-        QMetaObject::invokeMethod(this, "sendCAT", Qt::QueuedConnection, Q_ARG(QString, command));
+        QMetaObject::invokeMethod(this, &TcpClient::sendCAT, Qt::QueuedConnection, command);
         return;
     }
     if (m_state.load(std::memory_order_acquire) == Connected) {
@@ -338,12 +339,18 @@ void TcpClient::logKzLatency() {
 
 void TcpClient::sendRaw(const QByteArray &data) {
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, "sendRaw", Qt::QueuedConnection, Q_ARG(QByteArray, data));
+        QMetaObject::invokeMethod(this, &TcpClient::sendRaw, Qt::QueuedConnection, data);
         return;
     }
-    if (m_socket->state() == QAbstractSocket::ConnectedState) {
-        m_socket->write(data);
+    // WHY the session state and not the socket's: the socket is ConnectedState from the TCP
+    // handshake on, before the radio has accepted the password, and QSslSocket queues anything
+    // written before encrypted() and sends it once the handshake completes. Audio written then
+    // would reach the radio ahead of authentication.
+    if (m_state.load(std::memory_order_acquire) != Connected) {
+        ++m_rawDropped;
+        return;
     }
+    m_socket->write(data);
 }
 
 void TcpClient::setState(ConnectionState state) {
@@ -351,6 +358,11 @@ void TcpClient::setState(ConnectionState state) {
     if (prev != state) {
         static const char *names[] = {"Disconnected", "Connecting", "Authenticating", "Connected"};
         qCDebug(lcLinkTcp) << "State:" << names[prev] << "->" << names[state];
+        // Counted per write (audio arrives every few ms), reported once per state left.
+        if (m_rawDropped > 0) {
+            qCInfo(lcLinkTcp) << "Dropped" << m_rawDropped << "raw packets written while" << names[prev];
+            m_rawDropped = 0;
+        }
         m_state.store(state, std::memory_order_release);
         m_connected.store(state == Connected, std::memory_order_relaxed);
         if (state == Connected) {
@@ -474,16 +486,16 @@ void TcpClient::onSocketError(QAbstractSocket::SocketError error) {
     // syscall fails synchronously instead of waiting for ARP resolution. The ARP request
     // IS sent, so a brief retry after 500ms succeeds once the ARP reply populates the cache.
     // This is not a workaround — it's correct handling of a real network transient.
-    constexpr int kArpRetryIntervalMs = 500;
+    constexpr std::chrono::milliseconds kArpRetryInterval{500};
     constexpr int kArpMaxRetries = 2;
     bool arpTransient =
         (error == QAbstractSocket::NetworkError && stateNow == Connecting && m_retryCount < kArpMaxRetries);
     if (arpTransient) {
         m_retryCount++;
         m_connectTimer->stop();
-        qCDebug(lcLinkTcp) << "ARP-cold retry" << m_retryCount << "in" << kArpRetryIntervalMs << "ms";
+        qCDebug(lcLinkTcp) << "ARP-cold retry" << m_retryCount << "in" << kArpRetryInterval.count() << "ms";
         m_socket->abort();
-        m_retryTimer->start(kArpRetryIntervalMs);
+        m_retryTimer->start(kArpRetryInterval);
         return;
     }
 

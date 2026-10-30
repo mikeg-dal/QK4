@@ -68,10 +68,6 @@ ConnectionController::~ConnectionController() {
 void ConnectionController::connectToRadio(const RadioEntry &radio) {
     qCDebug(lcLink) << "connectToRadio: isConnected=" << m_tcpClient->isConnected()
                     << "connectionState=" << m_tcpClient->connectionState();
-    if (m_tcpClient->isConnected()) {
-        QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::QueuedConnection);
-    }
-
     m_currentRadio = radio;
 
     // Load startup macro so TcpClient can send it before RDY (state dump reflects changes)
@@ -87,20 +83,20 @@ void ConnectionController::connectToRadio(const RadioEntry &radio) {
     // WHY on every attempt, even when empty: TcpClient only clears its copy after sending it on a
     // successful auth. A macro queued for an attempt that failed would otherwise survive into the
     // next one and run although the operator has since removed or changed it.
-    QMetaObject::invokeMethod(m_tcpClient, "setStartupMacro", Qt::QueuedConnection, Q_ARG(QString, macroToSend));
+    QMetaObject::invokeMethod(m_tcpClient, &TcpClient::setStartupMacro, Qt::QueuedConnection, macroToSend);
 
     qCInfo(lcLink) << "Connecting to" << radio.host << ":" << radio.port
                    << (radio.useTls ? "(TLS/PSK)" : "(unencrypted)") << "encodeMode:" << radio.encodeMode
                    << "streamingLatency:" << radio.streamingLatency;
-    QMetaObject::invokeMethod(m_tcpClient, "connectToHost", Qt::QueuedConnection, Q_ARG(QString, radio.host),
-                              Q_ARG(quint16, radio.port), Q_ARG(QString, radio.password), Q_ARG(bool, radio.useTls),
-                              Q_ARG(QString, radio.identity), Q_ARG(int, radio.encodeMode),
-                              Q_ARG(int, radio.streamingLatency));
+    // connectToHost() ends whatever attempt or session is current itself (TcpClient's one teardown
+    // path), so there is no separate disconnect to queue ahead of it.
+    QMetaObject::invokeMethod(m_tcpClient, &TcpClient::connectToHost, Qt::QueuedConnection, radio.host, radio.port,
+                              radio.password, radio.useTls, radio.identity, radio.encodeMode, radio.streamingLatency);
 }
 
 void ConnectionController::disconnectFromRadio() {
     qCInfo(lcLink) << "Disconnect requested";
-    QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_tcpClient, &TcpClient::disconnectFromHost, Qt::QueuedConnection);
 }
 
 void ConnectionController::sendCAT(const QString &command) {

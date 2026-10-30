@@ -137,6 +137,30 @@ private slots:
         QTest::qWait(100);
         QCOMPARE(errors.size(), 1);
     }
+
+    // TRN-012. The socket is connected from the TCP handshake on, before the radio has accepted the
+    // password; nothing but the password hash may be written until it has. The old gate was the
+    // socket's state, so TX audio went out ahead of authentication.
+    void sendRawBeforeAuthenticationWritesNothing() {
+        FakeRadio radio;
+        QVERIFY(radio.listen());
+        TcpClient client;
+
+        client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
+        QTRY_COMPARE(client.connectionState(), TcpClient::Authenticating);
+        client.sendRaw(QByteArrayLiteral("AUDIO"));
+        const QByteArray hash = Protocol::buildAuthData(QStringLiteral("pw"));
+        QTRY_COMPARE(radio.received(0).size(), hash.size());
+        QTest::qWait(100);
+        QCOMPARE(radio.received(0), hash);
+
+        // Once the radio answers, the same write goes out.
+        radio.answer(0);
+        QTRY_COMPARE(client.connectionState(), TcpClient::Connected);
+        client.sendRaw(QByteArrayLiteral("AUDIO"));
+        QTRY_VERIFY(radio.received(0).endsWith("AUDIO"));
+        client.disconnectFromHost();
+    }
 };
 
 QTEST_GUILESS_MAIN(TestTcpClient)

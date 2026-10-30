@@ -38,18 +38,18 @@ public:
      *                   distinct tiers — 20/40/60/120 ms per packet, verified in
      *                   `memory/k4-streaming-latency.md`. Default 3 ≈ 40 ms.
      *
-     * Must be called on the IO thread (or via `QMetaObject::invokeMethod`); annotated Q_INVOKABLE
-     * so callers on the main thread can queue it.
+     * Must be called on the IO thread; callers elsewhere queue it with the functor overload of
+     * `QMetaObject::invokeMethod` (checked at compile time).
      */
-    Q_INVOKABLE void connectToHost(const QString &host, quint16 port, const QString &password, bool useTls = false,
-                                   const QString &identity = QString(), int encodeMode = 3, int streamingLatency = 3);
-    Q_INVOKABLE void disconnectFromHost();
+    void connectToHost(const QString &host, quint16 port, const QString &password, bool useTls = false,
+                       const QString &identity = QString(), int encodeMode = 3, int streamingLatency = 3);
+    void disconnectFromHost();
     bool isConnected() const;
     ConnectionState connectionState() const;
     bool isUsingTls() const { return m_useTls; }
 
-    Q_INVOKABLE void sendCAT(const QString &command);
-    Q_INVOKABLE void sendRaw(const QByteArray &data);
+    void sendCAT(const QString &command);
+    void sendRaw(const QByteArray &data);
 
     // Where the CW keying threads post KZ and ML frames (the keyer, and the KPOD+'s own KZ strings).
     // Posting is lock-free and allocation-free from any thread; this object writes the frames from
@@ -59,7 +59,7 @@ public:
     // Pre-RDY command string sent before the state dump on connect.
     // Must be called before connectToHost() — both are queued to the IO thread,
     // so ordering is guaranteed as long as the caller doesn't interleave.
-    Q_INVOKABLE void setStartupMacro(const QString &macro) { m_startupMacro = macro; }
+    void setStartupMacro(const QString &macro) { m_startupMacro = macro; }
 
     Protocol *protocol() { return m_protocol; }
 
@@ -108,6 +108,9 @@ private:
     QTimer *m_pingTimer;
     QTimer *m_retryTimer;
     int m_retryCount = 0;
+    // sendRaw() calls refused because the session was not Connected, since the last state change.
+    // I/O thread only.
+    quint64 m_rawDropped = 0;
     // Bumped by every connectToHost() and disconnectFromHost(), so an asynchronous step started for
     // one attempt (the mDNS lookup) can tell that it has since been replaced. I/O thread only.
     quint64 m_attemptId = 0;
