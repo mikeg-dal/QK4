@@ -186,6 +186,54 @@ private slots:
         QCOMPARE(spy.at(0).at(0).toString(), QString("MD2;"));
     }
 
+    // TRN-004. A read larger than any buffer cap is still a stream of valid packets. The old code
+    // checked the cap before parsing and threw the whole burst away.
+    void testBurstLargerThanTheBufferCapIsDeliveredWhole() {
+        Protocol p;
+        QSignalSpy spy(&p, &Protocol::audioDataReady);
+
+        QByteArray audio;
+        audio.append(static_cast<char>(K4Protocol::Audio));
+        audio.append("\x01\x00\x03\xF0\x00\x00", 6);
+        audio.append(QByteArray(11520, '\x55')); // RAW EM0, 120 ms tier: the largest audio packet
+        const QByteArray packet = buildTestPacket(audio);
+        QByteArray burst;
+        int count = 0;
+        while (burst.size() <= K4Protocol::MAX_BUFFER_SIZE + packet.size()) {
+            burst.append(packet);
+            ++count;
+        }
+        p.parse(burst);
+        QCOMPARE(spy.count(), count);
+    }
+
+    // TRN-004. Four payload bytes that read as a start marker, followed by a huge "length", must not
+    // hold up the real packet behind them. The old code waited for the announced bytes (up to 1 MB).
+    void testBogusLengthDoesNotStallTheNextPacket() {
+        Protocol p;
+        QSignalSpy spy(&p, &Protocol::catResponseReceived);
+
+        QByteArray data = K4Protocol::START_MARKER;
+        char lengthBytes[4];
+        qToBigEndian(quint32(K4Protocol::MAX_PAYLOAD_SIZE + 1), reinterpret_cast<uchar *>(lengthBytes));
+        data.append(lengthBytes, 4);
+        data.append(buildTestPacket(buildCATPayload("FA00014074000;")));
+        p.parse(data);
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("FA00014074000;"));
+    }
+
+    // The largest payload the parser accepts is still delivered.
+    void testPayloadAtTheLengthLimitIsAccepted() {
+        Protocol p;
+        QSignalSpy spy(&p, &Protocol::catResponseReceived);
+        QByteArray payload = buildCATPayload("MD2;");
+        payload.append(QByteArray(K4Protocol::MAX_PAYLOAD_SIZE - payload.size(), ' '));
+        p.parse(buildTestPacket(payload));
+        QCOMPARE(spy.count(), 1);
+    }
+
     void testTruncatedHeader() {
         Protocol p;
         QSignalSpy spy(&p, &Protocol::packetReceived);

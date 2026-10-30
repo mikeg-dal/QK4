@@ -100,7 +100,7 @@ Markers are mirror-imaged so corruption can't alias one for the other.
 **QK4 encoding.**
 - `src/network/protocol.h` — class/namespace header comment documents the frame format.
 - `src/network/protocol.cpp::parse` — the **"keep last 3 bytes"** branch when no marker is found is load-bearing: `START_MARKER` is 4 bytes; if a TCP read delivered 1–3 of those bytes, dropping them would lose sync on the next read. Inline WHY comment.
-- Buffer overflow recovery: `K4Protocol::MAX_BUFFER_SIZE` (1 MB, `protocol.h`); overflow clears the buffer and warns.
+- Bogus lengths: a header announcing more than `K4Protocol::MAX_PAYLOAD_SIZE` (256 KiB, `protocol.h`) is treated as a false start marker and skipped, so it cannot stall parsing. There is no cap on a single read: every complete packet in it is delivered, and the unconsumed tail is bounded by one maximum frame.
 
 ---
 

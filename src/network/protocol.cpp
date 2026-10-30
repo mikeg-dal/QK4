@@ -10,14 +10,11 @@
 Protocol::Protocol(QObject *parent) : QObject(parent) {}
 
 void Protocol::parse(const QByteArray &data) {
+    // WHY no size check before parsing: a single read may legitimately carry more than any cap (a
+    // burst after a stall), and every complete packet in it must still be delivered. What could
+    // grow without bound is only the unconsumed tail, and that is bounded by construction: with no
+    // start marker it is 3 bytes, and behind a header it is at most one MAX_PAYLOAD_SIZE frame.
     m_buffer.append(data);
-
-    // Prevent unbounded buffer growth from malformed data
-    if (m_buffer.size() > K4Protocol::MAX_BUFFER_SIZE) {
-        qCWarning(lcCatRx) << "Protocol buffer overflow (" << m_buffer.size() << "bytes), clearing";
-        reset();
-        return;
-    }
 
     // Process all complete packets in the buffer
     // All K4 data comes wrapped in binary packets with START/END markers
@@ -29,7 +26,7 @@ void Protocol::parse(const QByteArray &data) {
             // split the marker across two reads (1–3 bytes now, final byte(s) in the next read).
             // Dropping those trailing bytes would lose sync; retaining 3 guarantees we still find
             // the marker when the remainder arrives.
-            m_readOffset = std::max(m_readOffset, m_buffer.size() - 3);
+            m_readOffset = (std::max)(m_readOffset, m_buffer.size() - 3);
             break;
         }
 
@@ -46,6 +43,13 @@ void Protocol::parse(const QByteArray &data) {
 
         // Read payload length (big-endian uint32)
         const quint32 payloadLength = qFromBigEndian<quint32>(reinterpret_cast<const uchar *>(packet + 4));
+        if (payloadLength > K4Protocol::MAX_PAYLOAD_SIZE) {
+            // Not a packet: waiting for this many bytes would stall every packet behind it.
+            qCWarning(lcCatRx) << "Invalid K4 packet: announced length" << payloadLength << "exceeds"
+                               << K4Protocol::MAX_PAYLOAD_SIZE;
+            m_readOffset += 4;
+            continue;
+        }
 
         // Calculate total packet size: start(4) + length(4) + payload + end(4)
         const qint64 totalPacketSize = 4 + 4 + qint64(payloadLength) + 4;

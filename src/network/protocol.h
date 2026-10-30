@@ -39,7 +39,16 @@ constexpr int CONNECTION_TIMEOUT_MS = 10000; // 10 seconds
 constexpr int AUTH_TIMEOUT_MS = 5000;        // 5 seconds for auth response
 
 // Buffer limits
-constexpr int MAX_BUFFER_SIZE = 1024 * 1024; // 1MB max buffer before reset
+constexpr int MAX_BUFFER_SIZE = 1024 * 1024; // CatServer: 1 MB of client input without a terminator
+
+// The largest payload a frame header may announce. A larger length is not a packet but a false
+// start marker - four payload bytes that happen to read FE FD FC FB - and the parser steps past it.
+// WHY 256 KiB: the largest binary packets are far smaller (RAW EM0 audio at the 120 ms SL tier is
+// 7 + 1440 x 2 x 4 = 11,527 bytes; a PAN is 27 + 1024 bins), but the size of the largest CAT packet
+// (the RDY state dump with every MEDF menu definition) has not been measured on the framed ports.
+// A whole 222 s CAT session captured on port 9200, menus included, was 108 KB; 256 KiB is over twice
+// that. The bound also caps how long a bogus length can stall parsing.
+constexpr quint32 MAX_PAYLOAD_SIZE = 256 * 1024;
 
 // PAN packet byte offsets (Type 0x02)
 namespace PanPacket {
