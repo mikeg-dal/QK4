@@ -68,6 +68,10 @@ public:
     void beginEntry();
     void cancelEntry();
 
+    // A locked VFO (LK / LK$) takes no typed frequency: while locked, beginEntry() does nothing, and
+    // locking during an entry cancels it, showing the radio's frequency again.
+    void setEntryLocked(bool locked);
+
 signals:
     // Emitted when user presses Enter to confirm frequency entry
     // digits is the frequency as plain digits (e.g., "7024980")
@@ -89,6 +93,8 @@ protected:
     void wheelEvent(QWheelEvent *event) override;
 
 private:
+    bool m_entryLocked = false;
+
     // Enter edit mode with cursor at the specified digit position (0-7)
     void enterEditMode(int digitPosition);
 

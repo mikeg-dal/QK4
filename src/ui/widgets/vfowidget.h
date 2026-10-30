@@ -83,6 +83,7 @@ public:
     // Open or cancel direct frequency entry on this VFO's display.
     void beginFrequencyEntry();
     void cancelFrequencyEntry();
+    void setFrequencyEntryLocked(bool locked); // VFO lock: no typed frequency (FrequencyDisplayWidget)
 
 signals:
     void normalContentClicked();                      // User clicked normal view → show mini-pan

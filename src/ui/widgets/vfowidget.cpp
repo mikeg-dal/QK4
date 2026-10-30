@@ -427,3 +427,7 @@ void VFOWidget::beginFrequencyEntry() {
 void VFOWidget::cancelFrequencyEntry() {
     m_frequencyDisplay->cancelEntry();
 }
+
+void VFOWidget::setFrequencyEntryLocked(bool locked) {
+    m_frequencyDisplay->setEntryLocked(locked);
+}

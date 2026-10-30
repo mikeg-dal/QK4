@@ -35,6 +35,13 @@ VfoFrequencyController::VfoFrequencyController(RadioState *radioState, Connectio
     : QObject(parent), m_radioState(radioState), m_connection(connection), m_vfoA(vfoA), m_vfoB(vfoB) {
     connect(m_radioState, &RadioState::frequencyChanged, this, &VfoFrequencyController::onFrequencyChanged);
     connect(m_radioState, &RadioState::frequencyBChanged, this, &VfoFrequencyController::onFrequencyBChanged);
+    // A locked VFO takes no typed frequency, whichever way entry is opened (FREQ ENT, B SET).
+    connect(m_radioState, &RadioState::lockAChanged, this,
+            [this](bool locked) { m_vfoA->setFrequencyEntryLocked(locked); });
+    connect(m_radioState, &RadioState::lockBChanged, this,
+            [this](bool locked) { m_vfoB->setFrequencyEntryLocked(locked); });
+    m_vfoA->setFrequencyEntryLocked(m_radioState->lockA());
+    m_vfoB->setFrequencyEntryLocked(m_radioState->lockB());
     connect(m_vfoA, &VFOWidget::tuningDigitClicked, this,
             [this](int digitFromRight) { setTuningRateFromDigit(false, digitFromRight); });
     connect(m_vfoB, &VFOWidget::tuningDigitClicked, this,

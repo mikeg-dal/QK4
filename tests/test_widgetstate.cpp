@@ -109,6 +109,41 @@ private slots:
         QCOMPARE(w.displayText(), QString("7.025.000"));
     }
 
+    // A locked VFO (LK / LK$) takes no typed frequency: FREQ ENT, with or without B SET, must not open
+    // entry, and no keys reach it. Bench 2026-10-30: B SET + FREQ ENT accepted digits on a locked VFO B.
+    void lockedVfoDoesNotOpenFrequencyEntry() {
+        FrequencyDisplayWidget w;
+        w.setFrequency("7024980");
+        w.show();
+        w.setEntryLocked(true);
+        QSignalSpy entered(&w, &FrequencyDisplayWidget::frequencyEntered);
+        w.beginEntry();
+        QVERIFY(!w.isEditing());
+        QTest::keyClicks(&w, "0014074000");
+        QTest::keyClick(&w, Qt::Key_Return);
+        QCOMPARE(entered.count(), 0);
+        QCOMPARE(w.displayText(), QString("7.024.980"));
+
+        w.setEntryLocked(false); // unlocking allows entry again
+        w.beginEntry();
+        QVERIFY(w.isEditing());
+    }
+
+    // Locking while an entry is open cancels it and shows the radio's frequency, typed digits gone.
+    void lockingDuringEntryCancelsIt() {
+        FrequencyDisplayWidget w;
+        w.setFrequency("7024980");
+        w.show();
+        QSignalSpy entered(&w, &FrequencyDisplayWidget::frequencyEntered);
+        w.beginEntry();
+        QTest::keyClicks(&w, "999");
+        w.setEntryLocked(true);
+        QVERIFY(!w.isEditing());
+        QCOMPARE(w.displayText(), QString("7.024.980"));
+        QTest::keyClick(&w, Qt::Key_Return);
+        QCOMPARE(entered.count(), 0);
+    }
+
     void frequencyUpdateOutsideEntryShowsImmediately() {
         FrequencyDisplayWidget w;
         w.setFrequency("14.074.000");

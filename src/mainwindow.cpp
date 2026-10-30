@@ -862,9 +862,13 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         // FA accepts 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz
         // A locked VFO keeps its frequency: ask for it instead, so the display shows it again.
         const QString set = QString("FA%1;").arg(freqString);
-        m_connectionController->sendCAT(RadioUtils::catMovesLockedVfo(set, m_radioState->lockA(), m_radioState->lockB())
-                                            ? QString("FA;")
-                                            : set + "FA;");
+        if (RadioUtils::catMovesLockedVfo(set, m_radioState->lockA(), m_radioState->lockB())) {
+            // WHY redraw here: the radio's reply would repeat the frequency it already had, and an
+            // unchanged value emits nothing, so the typed digits would stay on screen.
+            m_vfoFrequencyController->refreshVfoA();
+            return;
+        }
+        m_connectionController->sendCAT(set + "FA;");
     });
 
     // Connect VFO A wheel tuning - same pattern as panadapter wheel tuning
@@ -1094,9 +1098,13 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         // FB accepts 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz
         // A locked VFO keeps its frequency: ask for it instead, so the display shows it again.
         const QString set = QString("FB%1;").arg(freqString);
-        m_connectionController->sendCAT(RadioUtils::catMovesLockedVfo(set, m_radioState->lockA(), m_radioState->lockB())
-                                            ? QString("FB;")
-                                            : set + "FB;");
+        if (RadioUtils::catMovesLockedVfo(set, m_radioState->lockA(), m_radioState->lockB())) {
+            // WHY redraw here: the radio's reply would repeat the frequency it already had, and an
+            // unchanged value emits nothing, so the typed digits would stay on screen.
+            m_vfoFrequencyController->refreshVfoB();
+            return;
+        }
+        m_connectionController->sendCAT(set + "FB;");
     });
 
     // Connect VFO B wheel tuning - same pattern as panadapter wheel tuning

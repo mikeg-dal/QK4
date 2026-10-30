@@ -74,8 +74,14 @@ bool FrequencyDisplayWidget::isEditing() const {
 }
 
 void FrequencyDisplayWidget::beginEntry() {
-    if (m_cursorPosition < 0)
+    if (m_cursorPosition < 0 && !m_entryLocked)
         enterEditMode(0);
+}
+
+void FrequencyDisplayWidget::setEntryLocked(bool locked) {
+    m_entryLocked = locked;
+    if (locked)
+        exitEditMode(false);
 }
 
 void FrequencyDisplayWidget::cancelEntry() {
@@ -245,7 +251,7 @@ int FrequencyDisplayWidget::tuningDigitAtX(int x) const {
 }
 
 void FrequencyDisplayWidget::enterEditMode(int digitPosition) {
-    if (digitPosition < 0 || digitPosition > kMaxDigitIndex) {
+    if (m_entryLocked || digitPosition < 0 || digitPosition > kMaxDigitIndex) {
         return;
     }
 
