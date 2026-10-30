@@ -89,6 +89,28 @@ private slots:
         QCOMPARE(rs.isQrpMode(), true);
     }
 
+    // The optimistic setter keeps the range it is given. It used to infer the range from the value
+    // (<= 10 meant QRP), which relabelled a reported XVTR 5.0 mW as 5.0 W QRP, and a QRO 5 W as QRP
+    // (CAT-003).
+    void testSetRfPowerKeepsXvtrRange() {
+        RadioState rs;
+        rs.parseCATCommand("PC050X;");
+        QSignalSpy spy(&rs, &RadioState::rfPowerChanged);
+        rs.setRfPower(5.1, LevelsState::PowerRange::Xvtr);
+        QCOMPARE(rs.rfPower(), 5.1);
+        QCOMPARE(rs.powerRange(), LevelsState::PowerRange::Xvtr);
+        QVERIFY(rs.isXvtrPowerMode());
+        QCOMPARE(spy.size(), 1);
+    }
+
+    void testSetRfPowerKeepsLowQroRange() {
+        RadioState rs;
+        rs.parseCATCommand("PC006H;");
+        rs.setRfPower(5.0, LevelsState::PowerRange::Qro);
+        QCOMPARE(rs.powerRange(), LevelsState::PowerRange::Qro);
+        QVERIFY(!rs.isQrpMode());
+    }
+
     // Filter position (FP/FP$ — uses handleIntPair helper)
     void testFilterPositionA() {
         RadioState rs;

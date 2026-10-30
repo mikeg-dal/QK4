@@ -1,6 +1,8 @@
 #ifndef RADIOUTILS_H
 #define RADIOUTILS_H
 
+#include "models/radiostate/levelsstate.h"
+
 #include <QString>
 #include <QVector>
 #include <QtGlobal>
@@ -40,6 +42,29 @@ constexpr int KEYER_WPM_MAX = 100;
 inline int ditMsForWpm(int wpm) {
     return 1200 / qBound(KEYER_WPM_MIN, wpm, KEYER_WPM_MAX);
 }
+
+// PC power limits (Programmer's Reference rev. D5): "L = low power (QRP, 0.1-10.0 W) ... H = high
+// power (QRO, 1-110 W) ... X = milliwatt range (for XVTRs, 0.1-10.0 mW)". QRP and XVTR are in tenths
+// of their unit, as the PC command carries them; QRO is in whole watts.
+constexpr int RF_POWER_TENTHS_MIN = 1;
+constexpr int RF_POWER_TENTHS_MAX = 100;
+constexpr int RF_POWER_QRO_MIN_W = 1;
+constexpr int RF_POWER_QRO_MAX_W = 110;
+
+/// RF power as the K4 holds it: `value` in the range's own unit (W for QRP and QRO, mW for XVTR).
+struct RfPower {
+    double value;
+    LevelsState::PowerRange range;
+};
+
+/// RF power after `steps` knob ticks, stepping within the range the radio reported:
+///  - QRP steps 0.1 W down to 0.1 W; past 10.0 W it moves to 11 W QRO.
+///  - QRO steps 1 W within 1-110 W. It moves to 10.0 W QRP only when it crosses down from above
+///    10 W, so a QRO setting of 1-10 W that the radio reported stays QRO.
+///  - XVTR steps 0.1 mW within 0.1-10.0 mW and never leaves XVTR: the range belongs to the
+///    transverter band, and a value in watts there would ask for a different power entirely.
+/// nullopt when the power is not known yet (negative sentinel) or the tick changes nothing.
+std::optional<RfPower> nextRfPower(double value, LevelsState::PowerRange range, int steps);
 
 /// Convert VT tuning step index (0-5) to Hz.
 /// Returns 1000 Hz for out-of-range values.

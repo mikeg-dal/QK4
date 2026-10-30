@@ -112,7 +112,8 @@ public:
     // Optimistic setters for scroll wheel updates (radio doesn't echo these commands)
     void setKeyerSpeed(int wpm);
     void setCwPitch(int pitchHz);
-    void setRfPower(double watts);
+    // `value` in the range's own unit (W for QRP and QRO, mW for XVTR).
+    void setRfPower(double value, LevelsState::PowerRange range);
     void setFilterBandwidth(int bwHz);
     void setIfShift(int shift);
     void setFilterBandwidthB(int bwHz);

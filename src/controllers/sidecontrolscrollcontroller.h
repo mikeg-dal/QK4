@@ -8,7 +8,7 @@ class ConnectionController;
 class SideControlPanel;
 
 // Owns the scroll-handler routing for SideControlPanel: WPM, pitch, mic gain,
-// compression, power (QRP/QRO tier transitions), delay (mode-aware SD), filter
+// compression, power (stepping within the radio's L/H/X range), delay (mode-aware SD), filter
 // bandwidth, HI/LO cut (paired BW + IS math with mode-specific data-submode
 // limits), shift, RF gain (Main + Sub), squelch (Main + Sub).
 //

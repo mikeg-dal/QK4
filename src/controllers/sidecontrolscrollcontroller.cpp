@@ -2,6 +2,7 @@
 
 #include "connectioncontroller.h"
 #include "models/radiostate.h"
+#include "network/catframes.h"
 #include "ui/widgets/sidecontrolpanel.h"
 #include "utils/radioutils.h"
 
@@ -40,41 +41,12 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
     });
 
     // Group 1: PWR/DLY
-    // PC command uses PCnnnr; format: L=QRP (0.1-10W), H=QRO (11-110W)
-    // QRP (≤10W): 0.1W increments, e.g., 10.0, 9.9, 9.8, ... 0.1
-    // QRO (>10W): 1W increments, e.g., 11, 12, 13, ... 110
     connect(m_panel, &SideControlPanel::powerChanged, this, [this](int delta) {
-        double currentPower = m_radioState->rfPower();
-        double newPower;
-
-        if (currentPower <= 10.0) {
-            // Currently in QRP range: 0.1W increments
-            newPower = currentPower + (delta * 0.1);
-            if (newPower > 10.0) {
-                // Transition to QRO at 11W
-                newPower = 11.0;
-                int powerVal = static_cast<int>(newPower);
-                m_connection->sendCAT(QString("PC%1H;").arg(powerVal, 3, 10, QChar('0')));
-            } else {
-                newPower = qBound(0.1, newPower, 10.0);
-                int powerVal = static_cast<int>(qRound(newPower * 10)); // 9.9W = 099
-                m_connection->sendCAT(QString("PC%1L;").arg(powerVal, 3, 10, QChar('0')));
-            }
-        } else {
-            // Currently in QRO range: 1W increments
-            newPower = currentPower + delta;
-            if (newPower <= 10.0) {
-                // Transition to QRP at 10.0W
-                newPower = 10.0;
-                int powerVal = static_cast<int>(qRound(newPower * 10)); // 10.0W = 100
-                m_connection->sendCAT(QString("PC%1L;").arg(powerVal, 3, 10, QChar('0')));
-            } else {
-                newPower = qBound(11.0, newPower, 110.0);
-                int powerVal = static_cast<int>(newPower);
-                m_connection->sendCAT(QString("PC%1H;").arg(powerVal, 3, 10, QChar('0')));
-            }
-        }
-        m_radioState->setRfPower(newPower);
+        const auto next = RadioUtils::nextRfPower(m_radioState->rfPower(), m_radioState->powerRange(), delta);
+        if (!next)
+            return;
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::setRfPower(next->value, next->range)));
+        m_radioState->setRfPower(next->value, next->range);
     });
 
     connect(m_panel, &SideControlPanel::delayChanged, this, [this](int delta) {

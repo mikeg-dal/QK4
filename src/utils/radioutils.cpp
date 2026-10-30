@@ -8,6 +8,38 @@
 
 namespace RadioUtils {
 
+namespace {
+// Where the knob crosses between QRP and QRO: the top of QRP and the first QRO step above it.
+constexpr int kQrpTopW = RF_POWER_TENTHS_MAX / 10;
+constexpr int kQroAboveQrpW = kQrpTopW + 1;
+} // namespace
+
+std::optional<RfPower> nextRfPower(double value, LevelsState::PowerRange range, int steps) {
+    if (value < 0.0)
+        return std::nullopt;
+    using Range = LevelsState::PowerRange;
+    // WHY integers: QRP and XVTR step in tenths, and adding 0.1 to a double drifts off the grid the
+    // radio reports on (PC099L is 9.9 W, not 9.900000000000002).
+    if (range == Range::Qro) {
+        const int watts = qRound(value);
+        const int next = watts + steps;
+        if (watts > kQrpTopW && next <= kQrpTopW)
+            return RfPower{static_cast<double>(kQrpTopW), Range::Qrp};
+        const int clamped = std::clamp(next, RF_POWER_QRO_MIN_W, RF_POWER_QRO_MAX_W);
+        if (clamped == watts)
+            return std::nullopt;
+        return RfPower{static_cast<double>(clamped), Range::Qro};
+    }
+    const int tenths = qRound(value * 10.0);
+    const int next = tenths + steps;
+    if (range == Range::Qrp && next > RF_POWER_TENTHS_MAX)
+        return RfPower{static_cast<double>(kQroAboveQrpW), Range::Qro};
+    const int clamped = std::clamp(next, RF_POWER_TENTHS_MIN, RF_POWER_TENTHS_MAX);
+    if (clamped == tenths)
+        return std::nullopt;
+    return RfPower{clamped / 10.0, range};
+}
+
 int tuningStepToHz(int step) {
     static const int table[] = {1, 10, 100, 1000, 10000, 100};
     return (step >= 0 && step <= 5) ? table[step] : 1000;

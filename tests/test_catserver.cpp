@@ -794,7 +794,7 @@ private slots:
 
     void testPcxHighPower() {
         RadioState rs;
-        rs.setRfPower(100.0); // High power mode (>10W)
+        rs.setRfPower(100.0, LevelsState::PowerRange::Qro);
 
         CatServer server(&rs);
         QVERIFY(server.start(0));

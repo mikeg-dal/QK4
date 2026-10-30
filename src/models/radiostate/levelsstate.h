@@ -48,7 +48,8 @@ void handleSQ(LevelsState &state, RadioState &owner, const QString &cmd); // Squ
 void handleSQSub(LevelsState &state, RadioState &owner, const QString &cmd);
 
 // Optimistic setters (radio may not echo these; UI sets them directly).
-void setRfPower(LevelsState &state, RadioState &owner, double watts);
+// Keeps the range it is given: the range is the radio's (L / H / X), never inferred from the value.
+void setRfPower(LevelsState &state, RadioState &owner, double value, LevelsState::PowerRange range);
 void setMicGain(LevelsState &state, RadioState &owner, int gain);
 void setCompression(LevelsState &state, RadioState &owner, int level);
 void setRfGain(LevelsState &state, RadioState &owner, int gain);

@@ -126,13 +126,10 @@ void handleSQSub(LevelsState &state, RadioState &owner, const QString &cmd) {
     }
 }
 
-void setRfPower(LevelsState &state, RadioState &owner, double watts) {
-    // Optimistic UI setter — assumes HF range (auto-pick QRP if ≤10 W). XVTR
-    // mW writes don't go through this path; they come from the K4 via handlePC.
-    const LevelsState::PowerRange range = (watts <= 10.0) ? LevelsState::PowerRange::Qrp : LevelsState::PowerRange::Qro;
+void setRfPower(LevelsState &state, RadioState &owner, double value, LevelsState::PowerRange range) {
     bool changed = false;
-    if (state.rfPower != watts) {
-        state.rfPower = watts;
+    if (state.rfPower != value) {
+        state.rfPower = value;
         changed = true;
     }
     if (range != state.powerRange) {

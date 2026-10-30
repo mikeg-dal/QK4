@@ -1,10 +1,14 @@
 #include "catframes.h"
 
+#include "utils/radioutils.h"
+
 #include <QChar>
 #include <QLatin1String>
 #include <QString>
 #include <QStringList>
 #include <QtGlobal>
+
+#include <algorithm>
 
 namespace {
 int k4ModeDigit(RadioState::Mode mode) {
@@ -177,7 +181,7 @@ namespace {
 int powerToWire(double value, LevelsState::PowerRange range) {
     const bool tenths = (range != LevelsState::PowerRange::Qro);
     const int raw = static_cast<int>(tenths ? (value * 10.0 + 0.5) : (value + 0.5));
-    return qBound(0, raw, tenths ? 100 : 110);
+    return std::clamp(raw, 0, tenths ? RadioUtils::RF_POWER_TENTHS_MAX : RadioUtils::RF_POWER_QRO_MAX_W);
 }
 
 char powerRangeSuffix(LevelsState::PowerRange range) {

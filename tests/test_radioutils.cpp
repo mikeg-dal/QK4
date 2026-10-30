@@ -448,6 +448,90 @@ private slots:
     // The two thresholds the status bar colours on, so a unit change cannot shift a warning.
     void testTemp_warnThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(60), 140); }
     void testTemp_critThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(75), 167); }
+
+    // nextRfPower - the PWR knob steps within the range the radio reported (APP-002 / CAT-003).
+    void testRfPower_qrpTopStepsUpIntoQro() {
+        const auto next = RadioUtils::nextRfPower(10.0, LevelsState::PowerRange::Qrp, 1);
+        QVERIFY(next);
+        QCOMPARE(next->value, 11.0);
+        QCOMPARE(next->range, LevelsState::PowerRange::Qro);
+    }
+    void testRfPower_qroElevenStepsDownIntoQrp() {
+        const auto next = RadioUtils::nextRfPower(11.0, LevelsState::PowerRange::Qro, -1);
+        QVERIFY(next);
+        QCOMPARE(next->value, 10.0);
+        QCOMPARE(next->range, LevelsState::PowerRange::Qrp);
+    }
+    // The K4's QRO range is 1-110 W. A QRO 5 W the radio reported is not QRP 5.0 W.
+    void testRfPower_lowQroStaysQro() {
+        for (const int steps : {-1, 1}) {
+            const auto next = RadioUtils::nextRfPower(5.0, LevelsState::PowerRange::Qro, steps);
+            QVERIFY(next);
+            QCOMPARE(next->value, 5.0 + steps);
+            QCOMPARE(next->range, LevelsState::PowerRange::Qro);
+        }
+        QVERIFY(!RadioUtils::nextRfPower(1.0, LevelsState::PowerRange::Qro, -1));
+    }
+    void testRfPower_qrpStepsTenths() {
+        const auto next = RadioUtils::nextRfPower(9.9, LevelsState::PowerRange::Qrp, -1);
+        QVERIFY(next);
+        QCOMPARE(next->value, 9.8);
+        QCOMPARE(next->range, LevelsState::PowerRange::Qrp);
+        QVERIFY(!RadioUtils::nextRfPower(0.1, LevelsState::PowerRange::Qrp, -1));
+    }
+    void testRfPower_qroTopStops() { QVERIFY(!RadioUtils::nextRfPower(110.0, LevelsState::PowerRange::Qro, 1)); }
+    void testRfPower_unknownSendsNothing() {
+        QVERIFY(!RadioUtils::nextRfPower(-1.0, LevelsState::PowerRange::Qro, 1));
+        QVERIFY(!RadioUtils::nextRfPower(-1.0, LevelsState::PowerRange::Qrp, -1));
+    }
+    // Sweep: from every XVTR setting, any tick stays XVTR (mW) and inside 0.1-10.0 mW.
+    void testRfPower_xvtrNeverLeavesXvtr() {
+        for (int tenths = 1; tenths <= 100; ++tenths) {
+            for (int steps = -120; steps <= 120; ++steps) {
+                const auto next = RadioUtils::nextRfPower(tenths / 10.0, LevelsState::PowerRange::Xvtr, steps);
+                if (!next)
+                    continue;
+                QCOMPARE(next->range, LevelsState::PowerRange::Xvtr);
+                QVERIFY(next->value >= 0.1 - 1e-9 && next->value <= 10.0 + 1e-9);
+            }
+        }
+    }
+    // Sweep: every result is on its range's grid and inside it, and a range change happens only at
+    // the QRP 10.0 W / QRO 11 W boundary.
+    void testRfPower_resultsStayInRangeAndCrossOnlyAtTheBoundary() {
+        using R = LevelsState::PowerRange;
+        struct Start {
+            double value;
+            R range;
+        };
+        QVector<Start> starts;
+        for (int t = 1; t <= 100; ++t)
+            starts.append({t / 10.0, R::Qrp});
+        for (int w = 1; w <= 110; ++w)
+            starts.append({static_cast<double>(w), R::Qro});
+        for (const Start &start : starts) {
+            for (int steps = -150; steps <= 150; ++steps) {
+                const auto next = RadioUtils::nextRfPower(start.value, start.range, steps);
+                if (!next)
+                    continue;
+                if (next->range == R::Qrp) {
+                    const double tenths = next->value * 10.0;
+                    QCOMPARE(tenths, static_cast<double>(qRound(tenths)));
+                    QVERIFY(tenths >= 1.0 && tenths <= 100.0);
+                } else {
+                    QCOMPARE(next->range, R::Qro);
+                    QCOMPARE(next->value, static_cast<double>(qRound(next->value)));
+                    QVERIFY(next->value >= 1.0 && next->value <= 110.0);
+                }
+                if (next->range != start.range) {
+                    if (next->range == R::Qro)
+                        QCOMPARE(next->value, 11.0);
+                    else
+                        QCOMPARE(next->value, 10.0);
+                }
+            }
+        }
+    }
 };
 
 QTEST_MAIN(TestRadioUtils)

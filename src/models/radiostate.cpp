@@ -179,8 +179,8 @@ void RadioState::setCwPitch(int pitchHz) {
     ModeFilterHandlers::setCwPitch(m_modeFilterState, *this, pitchHz);
 }
 
-void RadioState::setRfPower(double watts) {
-    LevelsHandlers::setRfPower(m_levelsState, *this, watts);
+void RadioState::setRfPower(double value, LevelsState::PowerRange range) {
+    LevelsHandlers::setRfPower(m_levelsState, *this, value, range);
 }
 
 void RadioState::setFilterBandwidth(int bwHz) {
