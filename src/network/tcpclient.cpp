@@ -172,6 +172,12 @@ void TcpClient::attemptConnection() {
     // wait for bytes that never come, and the reconnect times out in authentication.
     m_protocol->reset();
 
+    // WHY: connectToHost() on a socket that is not Unconnected fails with OperationError while the
+    // previous connection carries on. A graceful close (the K4's disconnect command still being
+    // written) or a failed attempt can leave it Closing; this attempt replaces it outright.
+    if (m_socket->state() != QAbstractSocket::UnconnectedState)
+        m_socket->abort();
+
     if (m_useTls) {
         // Log OpenSSL version Qt is using (first attempt only)
         if (m_retryCount == 0) {
@@ -245,15 +251,22 @@ void TcpClient::disconnectFromHost() {
     ++m_attemptId; // anything still in flight for the attempt being ended is now stale
 
     if (m_socket->state() != QAbstractSocket::UnconnectedState) {
-        // Send graceful disconnect command
         if (m_state.load(std::memory_order_acquire) == Connected) {
             // WHY first: a KZU the keyer posted on its way out (a straight key held at quit) must
             // reach the K4 before the session ends. The egress wakes this thread through a
             // notifier, which the event loop may service after this queued call.
             writeKzFrames();
             sendCAT(K4Protocol::Commands::DISCONNECT);
+            m_socket->disconnectFromHost();
+        } else {
+            // WHY abort and not disconnectFromHost(): during HostLookup or Connecting, Qt's
+            // disconnectFromHost() only marks a close as pending. The cancelled attempt then still
+            // completes, emits connected(), and the next attempt's credentials - the password hash
+            // or the PSK, already replaced by connectToHost() - go to the host being abandoned.
+            // abort() "immediately closes the socket, discarding any pending data" (Qt 6.10
+            // QAbstractSocket::abort), and nothing of an unauthenticated attempt is worth keeping.
+            m_socket->abort();
         }
-        m_socket->disconnectFromHost();
     }
 
     setState(Disconnected);
@@ -347,6 +360,13 @@ void TcpClient::setState(ConnectionState state) {
 }
 
 void TcpClient::onSocketConnected() {
+    // A connection for no live attempt must not be authenticated: the credentials now held belong
+    // to whichever radio was asked for since.
+    if (m_state.load(std::memory_order_acquire) != Connecting) {
+        qCWarning(lcLinkTcp) << "Socket connected with no attempt in progress; closing it";
+        m_socket->abort();
+        return;
+    }
     // WHY: small-write CAT traffic (KZ keying bursts in particular) plus K4-side delayed-ACK
     // produces ~40 ms RTT stalls when Nagle is on. Setting LowDelayOption after the TCP socket
     // is connected applies TCP_NODELAY to the actual FD and benefits the TLS handshake itself.
@@ -370,6 +390,11 @@ void TcpClient::onSocketConnected() {
 }
 
 void TcpClient::onSocketEncrypted() {
+    if (m_state.load(std::memory_order_acquire) != Connecting) {
+        qCWarning(lcLinkTcp) << "TLS session established with no attempt in progress; closing it";
+        m_socket->abort();
+        return;
+    }
     m_connectTimer->stop();
     // TLS handshake completed successfully
     QSslCipher negotiated = m_socket->sessionCipher();
@@ -415,6 +440,10 @@ void TcpClient::onSocketDisconnected() {
 
 void TcpClient::onReadyRead() {
     QByteArray data = m_socket->readAll();
+    // Bytes still arriving on a session already ended belong to no one and must not be parsed into
+    // the next one.
+    if (m_state.load(std::memory_order_acquire) == Disconnected)
+        return;
     m_protocol->parse(data);
 }
 

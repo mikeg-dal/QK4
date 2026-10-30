@@ -419,6 +419,17 @@ target_include_directories(test_protocol PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_protocol Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME ProtocolTests COMMAND test_protocol)
 
+# TcpClient against loopback fake radios: attempt teardown when switching radios or cancelling, one
+# error per failure, nothing written before authentication, PING/PONG round trip.
+add_executable(test_tcpclient test_tcpclient.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tcpclient.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/protocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/kzegress.cpp
+)
+target_include_directories(test_tcpclient PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_tcpclient Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME TcpClientTests COMMAND test_tcpclient)
+
 # KZ egress: the lock-free queue from the CW keying threads to the I/O thread, its wake-up across a
 # moveToThread, and the latency histogram the I/O thread keeps.
 add_executable(test_kzegress test_kzegress.cpp ${CMAKE_SOURCE_DIR}/src/network/kzegress.cpp)
