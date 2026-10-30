@@ -235,6 +235,17 @@ private slots:
             QVERIFY(cardOf(&feature).contains(globalRect(plus)));
             feature.hidePopup();
         }
+
+        // The NB FILTER key changes its text under the open bar: the card follows the row.
+        feature.setNbFilter(0);
+        feature.showForFeature(FeatureMenuBar::NbLevel, host.bar);
+        for (int filter : {1, 2, 0}) {
+            feature.setNbFilter(filter);
+            VERIFY_CENTRED_ABOVE(cardOf(&feature), bar);
+            QPushButton *plus = buttonWithText(&feature, QStringLiteral("+"));
+            QVERIFY(cardOf(&feature).contains(globalRect(plus)));
+        }
+        feature.hidePopup();
     }
 
     // A row's sub-popups (RX EQ, LINE OUT, VOX, ANT CFG ...) sit on the row's card. They were

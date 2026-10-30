@@ -52,6 +52,8 @@ protected:
 
 private:
     void setupUi();
+    void fitToRow();        // size the card to the row's keys (initPopup)
+    void refitWhileShown(); // after a key's text changes under an open bar
     void updateForFeature();
     static QString nbFilterText(int filter);
 
@@ -68,6 +70,7 @@ private:
     int m_value = 0;
     QString m_valueUnit;
     int m_nbFilter = 0; // 0=NONE, 1=NARROW, 2=WIDE
+    QSize m_cardSize;   // contentSize(), set by fitToRow()
     WheelAccumulator m_wheelAccumulator;
 };
 

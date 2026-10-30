@@ -14,7 +14,7 @@ const int RowSpacing = 8;
 
 FeatureMenuBar::FeatureMenuBar(QWidget *parent) : K4PopupBase(parent) {
     setupUi();
-    initPopup();
+    fitToRow();
 }
 
 void FeatureMenuBar::setupUi() {
@@ -94,15 +94,31 @@ void FeatureMenuBar::showForFeature(Feature feature, QWidget *anchor) {
     m_currentFeature = feature;
     updateForFeature();
     // The width follows the feature (NB's FILTER key, NR's engine key): size before the one show.
-    initPopup();
+    fitToRow();
     showAboveWidget(anchor);
 }
 
-QSize FeatureMenuBar::contentSize() const {
+void FeatureMenuBar::fitToRow() {
     // The row's own width — keys hidden for this feature drop out — without the shadow margins.
+    // invalidate() drops the row's cached size hint, which may still hold the last feature's keys.
     const int sm = K4Styles::Dimensions::ShadowMargin;
     layout()->invalidate();
-    return QSize(layout()->sizeHint().width() - 2 * sm, K4Styles::Dimensions::ButtonHeightMedium + 2 * CardPaddingV);
+    m_cardSize =
+        QSize(layout()->sizeHint().width() - 2 * sm, K4Styles::Dimensions::ButtonHeightMedium + 2 * CardPaddingV);
+    initPopup();
+}
+
+void FeatureMenuBar::refitWhileShown() {
+    // A key's text changed under an open bar (FILTER NONE -> NARROW): resize and re-centre it.
+    if (isVisible() && anchor()) {
+        fitToRow();
+        showAboveWidget(anchor());
+    }
+}
+
+QSize FeatureMenuBar::contentSize() const {
+    // Fixed between fits so the painted card always matches the window it is drawn in.
+    return m_cardSize;
 }
 
 void FeatureMenuBar::wheelEvent(QWheelEvent *event) {
@@ -154,8 +170,10 @@ void FeatureMenuBar::setNrEngine(NrEngine engine) {
     if (m_nrEngine == engine)
         return;
     m_nrEngine = engine;
-    if (m_currentFeature == NrAdjust)
+    if (m_currentFeature == NrAdjust) {
         m_nrEngineBtn->setText(m_nrEngine == Ssnr ? "NR+" : "LMS");
+        refitWhileShown();
+    }
 }
 
 void FeatureMenuBar::setFeatureEnabled(bool enabled) {
@@ -170,6 +188,8 @@ void FeatureMenuBar::setValue(int value) {
 void FeatureMenuBar::setNbFilter(int filter) {
     m_nbFilter = qBound(0, filter, 2);
     m_extraBtn->setText(nbFilterText(m_nbFilter));
+    if (m_currentFeature == NbLevel)
+        refitWhileShown();
 }
 
 QString FeatureMenuBar::nbFilterText(int filter) {
