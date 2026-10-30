@@ -760,6 +760,62 @@ target_link_libraries(test_widgetstate Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Netw
 add_test(NAME WidgetStateTests COMMAND test_widgetstate)
 set_tests_properties(WidgetStateTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# Popup placement and dismissal (K4PopupBase and its users), offscreen on a 4K screen at each
+# interface scale QK4 offers a 4K monitor: every popup centred directly above what opened it, and
+# closed by its key, a click away, Escape, its anchor going, the window moving and the app leaving.
+set(QK4_POPUP_TEST_SOURCES
+    test_popupplacement.cpp
+    ${CMAKE_SOURCE_DIR}/src/controllers/antennaconfigcontroller.cpp
+    ${CMAKE_SOURCE_DIR}/src/controllers/featuremenucontroller.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/datacontrolstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/frequencyvfostate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/levelsstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/modefilterstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/powerstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/processingstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/qskcontrolstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/rxtxmeterstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/spectrumdisplaystate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/catframes.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/kpa1500antennas.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/networkmetrics.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/k4popupbase.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/antennacfgpopup.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/buttonrowpopup.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/confirmpopup.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/displaypopupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/modepopupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/rxeqpopupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/voxpopup.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/bottommenubar.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/controlgroupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/displaymenubutton.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/featuremenubar.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/kpa1500minipanel.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/nethealthpopup.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/nethealthwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/rightsidepanel.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/sidepanelbutton.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/togglegroupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
+)
+add_executable(test_popupplacement ${QK4_POPUP_TEST_SOURCES})
+target_include_directories(test_popupplacement PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_popupplacement Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
+foreach(scale 1 1.5 2)
+    string(REPLACE "." "_" scale_name "${scale}")
+    add_test(NAME PopupPlacementTests_x${scale_name} COMMAND test_popupplacement)
+    set_tests_properties(PopupPlacementTests_x${scale_name} PROPERTIES ENVIRONMENT
+        "QT_QPA_PLATFORM=offscreen:configfile=${CMAKE_CURRENT_SOURCE_DIR}/data/offscreen/screen-4k.json;QT_SCALE_FACTOR=${scale}")
+endforeach()
+
 # Capture-rate decimation — pure logic, no audio device needed.
 add_executable(test_audiodecimator test_audiodecimator.cpp)
 target_include_directories(test_audiodecimator PRIVATE ${CMAKE_SOURCE_DIR}/src)
