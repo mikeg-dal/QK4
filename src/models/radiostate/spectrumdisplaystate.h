@@ -1,6 +1,8 @@
 #ifndef MODELS_RADIOSTATE_SPECTRUMDISPLAYSTATE_H
 #define MODELS_RADIOSTATE_SPECTRUMDISPLAYSTATE_H
 
+#include "reportedflag.h"
+
 #include <QString>
 
 #include <optional>
@@ -26,6 +28,9 @@ constexpr int ScaleDefault = 75;
 // for the same signal (K4 Operating Manual rev D6, DISPLAY → WTR CLRS).
 constexpr int WaterfallColorRangeMin = 5;
 constexpr int WaterfallColorRangeMax = 30;
+// #FPS — display frame rate. Unknown until the radio reports one; displayFps() reads it as FpsDefault.
+constexpr int FpsUnknown = -1;
+constexpr int FpsDefault = 30;
 } // namespace SpectrumDisplayLimits
 
 // Panadapter / waterfall / display-related state — all of the K4's
@@ -49,15 +54,15 @@ struct SpectrumDisplayState {
     int scale = -1;
 
     // #MP / #MP$ — mini-pan enabled.
-    bool miniPanAEnabled = false;
-    bool miniPanBEnabled = false;
+    ReportedFlag miniPanAEnabled;
+    ReportedFlag miniPanBEnabled;
 
     // Display state (LCD vs EXT variants where applicable)
     int dualPanModeLcd = -1;     // #DPM 0=A, 1=B, 2=Dual
     int dualPanModeExt = -1;     // #HDPM
     int displayModeLcd = -1;     // #DSM 0=spec, 1=spec+waterfall
     int displayModeExt = -1;     // #HDSM
-    int displayFps = 30;         // #FPS 12-30
+    int displayFps = -1;         // #FPS 12-30; -1 = SpectrumDisplayLimits::FpsUnknown
     int waterfallColor = -1;     // #WFC 0-4
     int waterfallHeight = -1;    // #WFH 0-100%
     int waterfallHeightExt = -1; // #HWFH 0-100%

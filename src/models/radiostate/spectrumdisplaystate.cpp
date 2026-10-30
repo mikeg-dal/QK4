@@ -10,13 +10,13 @@ void SpectrumDisplayState::reset() {
     spanHz = 0;
     spanHzB = 0;
     scale = -1;
-    miniPanAEnabled = false;
-    miniPanBEnabled = false;
+    miniPanAEnabled.reset();
+    miniPanBEnabled.reset();
     dualPanModeLcd = -1;
     dualPanModeExt = -1;
     displayModeLcd = -1;
     displayModeExt = -1;
-    displayFps = 30;
+    displayFps = SpectrumDisplayLimits::FpsUnknown;
     waterfallColor = -1;
     waterfallHeight = -1;
     waterfallHeightExt = -1;
@@ -102,20 +102,16 @@ void handleMP(SpectrumDisplayState &state, RadioState &owner, const QString &cmd
     if (cmd.length() < 4)
         return;
     bool enabled = (cmd.at(3) == '1');
-    if (state.miniPanAEnabled != enabled) {
-        state.miniPanAEnabled = enabled;
+    if (state.miniPanAEnabled.set(enabled))
         emit owner.miniPanAEnabledChanged(enabled);
-    }
 }
 
 void handleMPSub(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 5)
         return;
     bool enabled = (cmd.at(4) == '1');
-    if (state.miniPanBEnabled != enabled) {
-        state.miniPanBEnabled = enabled;
+    if (state.miniPanBEnabled.set(enabled))
         emit owner.miniPanBEnabledChanged(enabled);
-    }
 }
 
 void handleDPM(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
@@ -406,17 +402,13 @@ void setSpanHzB(SpectrumDisplayState &state, RadioState &owner, int spanHz) {
 }
 
 void setMiniPanAEnabled(SpectrumDisplayState &state, RadioState &owner, bool enabled) {
-    if (state.miniPanAEnabled != enabled) {
-        state.miniPanAEnabled = enabled;
+    if (state.miniPanAEnabled.set(enabled))
         emit owner.miniPanAEnabledChanged(enabled);
-    }
 }
 
 void setMiniPanBEnabled(SpectrumDisplayState &state, RadioState &owner, bool enabled) {
-    if (state.miniPanBEnabled != enabled) {
-        state.miniPanBEnabled = enabled;
+    if (state.miniPanBEnabled.set(enabled))
         emit owner.miniPanBEnabledChanged(enabled);
-    }
 }
 
 void setWaterfallHeight(SpectrumDisplayState &state, RadioState &owner, int percent) {

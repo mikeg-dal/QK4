@@ -379,8 +379,8 @@ public:
     void setSpanHzB(int spanHz);
 
     // Mini-Pan enabled state (tracked via #MP / #MP$ CAT commands)
-    bool miniPanAEnabled() const { return m_spectrumDisplayState.miniPanAEnabled; }
-    bool miniPanBEnabled() const { return m_spectrumDisplayState.miniPanBEnabled; }
+    bool miniPanAEnabled() const { return m_spectrumDisplayState.miniPanAEnabled.isOn(); }
+    bool miniPanBEnabled() const { return m_spectrumDisplayState.miniPanBEnabled.isOn(); }
 
     // Mini-Pan state setters (called optimistically when sending CAT commands)
     void setMiniPanAEnabled(bool enabled);
@@ -399,7 +399,10 @@ public:
     int dualPanModeExt() const { return m_spectrumDisplayState.dualPanModeExt; }
     int displayModeLcd() const { return m_spectrumDisplayState.displayModeLcd; }
     int displayModeExt() const { return m_spectrumDisplayState.displayModeExt; }
-    int displayFps() const { return m_spectrumDisplayState.displayFps; }
+    int displayFps() const {
+        return reportedOr(m_spectrumDisplayState.displayFps, SpectrumDisplayLimits::FpsUnknown,
+                          SpectrumDisplayLimits::FpsDefault);
+    }
     int waterfallColor() const { return m_spectrumDisplayState.waterfallColor; }
     int waterfallHeight() const { return m_spectrumDisplayState.waterfallHeight; }       // #WFHxx
     int waterfallHeightExt() const { return m_spectrumDisplayState.waterfallHeightExt; } // #HWFHxx

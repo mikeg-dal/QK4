@@ -1955,6 +1955,9 @@ private slots:
     // signals, so each receiver must emit exactly once per real change and never for the other.
     void testMiniPanFrontPanelToggleSequence() {
         RadioState rs;
+        // Both receivers known, as after the connection dump: the replay then counts real changes only.
+        rs.parseCATCommand("#MP0;");
+        rs.parseCATCommand("#MP$0;");
         QSignalSpy spyA(&rs, &RadioState::miniPanAEnabledChanged);
         QSignalSpy spyB(&rs, &RadioState::miniPanBEnabledChanged);
 
