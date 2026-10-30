@@ -104,7 +104,7 @@ QByteArray setRfPower(double value, LevelsState::PowerRange range);
 QByteArray noiseReduction(int level, bool on);
 // GTn, one digit: 0 off, 1 slow, 2 fast - the radio's form in both directions (GT2 at R40).
 QByteArray agcSpeed(int agc);
-// SQnnn - the radio's form (SQ010 at R40); subRx() gives SQ$nnn.
+// SQnnn - the radio's form (SQ010 at R40); subRx() gives SQ$nnn. Clamped to 0-40.
 QByteArray squelch(int level);
 // RG-nn - the radio's form (RG-00 at R40); subRx() gives RG$-nn. RadioState stores the magnitude.
 QByteArray rfGain(int magnitude);

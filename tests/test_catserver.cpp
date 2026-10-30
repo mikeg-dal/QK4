@@ -183,6 +183,9 @@ private slots:
         QCOMPARE(CatFrames::setFilterBandwidth(-100), QByteArray("BW0000;"));
         QCOMPARE(CatFrames::setRfPower(999, LevelsState::PowerRange::Qro), QByteArray("PC110H;"));
         QCOMPARE(CatFrames::setRfPower(99, LevelsState::PowerRange::Qrp), QByteArray("PC100L;"));
+        // The K4's own limits (rev. D5): SQ "000-040", RG "00 to 60".
+        QCOMPARE(CatFrames::squelch(41), QByteArray("SQ040;"));
+        QCOMPARE(CatFrames::rfGain(99), QByteArray("RG-60;"));
     }
 
     // =========================================================================

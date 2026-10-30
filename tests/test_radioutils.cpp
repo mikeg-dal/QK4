@@ -449,6 +449,51 @@ private slots:
     void testTemp_warnThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(60), 140); }
     void testTemp_critThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(75), 167); }
 
+    // Knob limits come from the K4 (APP-003): KS 8-100, CW 25-95 x10 Hz, SQ 0-40. The knobs stopped
+    // at 50 WPM, went past 950 Hz to 990 (CW99 is out of range) and stopped squelch at 29.
+    void testKeyerSpeed_stepsPastFifty() { QCOMPARE(RadioUtils::nextKeyerSpeed(50, 1), std::optional<int>(51)); }
+    void testKeyerSpeed_stopsAtTheRadioLimits() {
+        QVERIFY(!RadioUtils::nextKeyerSpeed(100, 1));
+        QVERIFY(!RadioUtils::nextKeyerSpeed(8, -1));
+        QCOMPARE(RadioUtils::nextKeyerSpeed(98, 5), std::optional<int>(100));
+    }
+    void testCwPitch_staysAtTheTopOfTheRange() { QVERIFY(!RadioUtils::nextCwPitch(950, 1)); }
+    void testCwPitch_reachesTheBottomOfTheRange() {
+        QCOMPARE(RadioUtils::nextCwPitch(260, -1), std::optional<int>(250));
+        QVERIFY(!RadioUtils::nextCwPitch(250, -1));
+    }
+    void testSquelch_stepsPastTwentyNine() { QCOMPARE(RadioUtils::nextSquelch(35, 1), std::optional<int>(36)); }
+    void testSquelch_stopsAtForty() {
+        QCOMPARE(RadioUtils::nextSquelch(29, 1), std::optional<int>(30));
+        QVERIFY(!RadioUtils::nextSquelch(40, 1));
+    }
+    // A value the radio has not reported yet is never stepped: from the -1 sentinel the old knobs
+    // sent KS008, CW30, SQ000, MG000 or a 0 ms delay.
+    void testKnobs_unknownValueSendsNothing() {
+        QVERIFY(!RadioUtils::nextKeyerSpeed(-1, 1));
+        QVERIFY(!RadioUtils::nextCwPitch(-1, 1));
+        QVERIFY(!RadioUtils::nextSquelch(-1, 1));
+        QVERIFY(!RadioUtils::stepWithin(-999, -1, 0, RadioUtils::RF_GAIN_MAX));
+        QVERIFY(!RadioUtils::stepWithin(-1, 1, 0, RadioUtils::QSK_DELAY_MAX));
+    }
+    // Sweep: from every legal value, any tick lands on a legal value (and on the pitch grid).
+    void testKnobs_neverLeaveTheRadioRange() {
+        for (int steps = -120; steps <= 120; ++steps) {
+            for (int wpm = RadioUtils::KEYER_WPM_MIN; wpm <= RadioUtils::KEYER_WPM_MAX; ++wpm) {
+                const auto next = RadioUtils::nextKeyerSpeed(wpm, steps);
+                QVERIFY(!next || (*next >= 8 && *next <= 100));
+            }
+            for (int hz = RadioUtils::CW_PITCH_MIN_HZ; hz <= RadioUtils::CW_PITCH_MAX_HZ; hz += 10) {
+                const auto next = RadioUtils::nextCwPitch(hz, steps);
+                QVERIFY(!next || (*next >= 250 && *next <= 950 && *next % 10 == 0));
+            }
+            for (int sq = 0; sq <= RadioUtils::SQUELCH_MAX; ++sq) {
+                const auto next = RadioUtils::nextSquelch(sq, steps);
+                QVERIFY(!next || (*next >= 0 && *next <= 40));
+            }
+        }
+    }
+
     // nextRfPower - the PWR knob steps within the range the radio reported (APP-002 / CAT-003).
     void testRfPower_qrpTopStepsUpIntoQro() {
         const auto next = RadioUtils::nextRfPower(10.0, LevelsState::PowerRange::Qrp, 1);

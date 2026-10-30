@@ -43,6 +43,39 @@ inline int ditMsForWpm(int wpm) {
     return 1200 / qBound(KEYER_WPM_MIN, wpm, KEYER_WPM_MAX);
 }
 
+// K4 limits from the Programmer's Reference rev. D5, in the unit RadioState stores. Every control
+// that steps one of these values and every builder that sends it uses these, never a copy.
+// CW: "CWnn; where nn is sidetone pitch x10 Hz (25-95)".
+constexpr int CW_PITCH_MIN_HZ = 250;
+constexpr int CW_PITCH_MAX_HZ = 950;
+constexpr int CW_PITCH_STEP_HZ = 10;
+// SQ / SQ$: "nnn is 000-040".
+constexpr int SQUELCH_MAX = 40;
+// MG: "<xxx> is 000-080".
+constexpr int MIC_GAIN_MAX = 80;
+// CP: "nnn is 000-030".
+constexpr int COMPRESSION_MAX = 30;
+// RG / RG$: "nn is 00 to 60 (-0 to -60 dB)". RadioState stores the magnitude.
+constexpr int RF_GAIN_MAX = 60;
+// SD: "delay in 10-ms increments (000-255 = 0.00 to 2.55 seconds)".
+constexpr int QSK_DELAY_MAX = 255;
+
+/// `current` moved by `steps` and clamped to [min, max], or nullopt when nothing must be sent:
+/// `current` is negative (the radio has not reported the value yet; every such field starts at a
+/// negative sentinel, and stepping from it sends a value the operator never chose), or the clamped
+/// result equals `current` (already at the limit).
+std::optional<int> stepWithin(int current, int steps, int min, int max);
+
+/// Keyer speed after `steps` WPM, within KEYER_WPM_MIN..KEYER_WPM_MAX. nullopt as stepWithin().
+std::optional<int> nextKeyerSpeed(int currentWpm, int steps);
+
+/// CW pitch after `steps` x CW_PITCH_STEP_HZ, within CW_PITCH_MIN_HZ..CW_PITCH_MAX_HZ. nullopt as
+/// stepWithin().
+std::optional<int> nextCwPitch(int currentHz, int steps);
+
+/// Squelch after `steps`, within 0..SQUELCH_MAX. nullopt as stepWithin().
+std::optional<int> nextSquelch(int current, int steps);
+
 // PC power limits (Programmer's Reference rev. D5): "L = low power (QRP, 0.1-10.0 W) ... H = high
 // power (QRO, 1-110 W) ... X = milliwatt range (for XVTRs, 0.1-10.0 mW)". QRP and XVTR are in tenths
 // of their unit, as the PC command carries them; QRO is in whole watts.

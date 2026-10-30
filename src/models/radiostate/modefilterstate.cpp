@@ -1,6 +1,7 @@
 #include "modefilterstate.h"
 
 #include "models/radiostate.h"
+#include "utils/radioutils.h"
 
 #include <QtGlobal>
 
@@ -61,9 +62,8 @@ void handleCW(ModeFilterState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 4 || cmd.startsWith("CW-"))
         return;
     bool ok;
-    const int pitchCode = cmd.mid(2).toInt(&ok);
-    if (ok && pitchCode >= 25 && pitchCode <= 95) {
-        const int pitchHz = pitchCode * 10;
+    const int pitchHz = cmd.mid(2).toInt(&ok) * RadioUtils::CW_PITCH_STEP_HZ;
+    if (ok && pitchHz >= RadioUtils::CW_PITCH_MIN_HZ && pitchHz <= RadioUtils::CW_PITCH_MAX_HZ) {
         if (pitchHz != state.cwPitch) {
             state.cwPitch = pitchHz;
             emit owner.cwPitchChanged(state.cwPitch);

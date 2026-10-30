@@ -18,26 +18,35 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
     // echo most of these SET commands.
 
     // Group 1: WPM/PTCH (CW mode) and MIC/CMP (Voice mode)
+    // Every knob steps from the value the radio reported, within the K4's own limits
+    // (RadioUtils), and sends nothing until the radio has reported it.
     connect(m_panel, &SideControlPanel::wpmChanged, this, [this](int delta) {
-        int newWpm = qBound(8, m_radioState->keyerSpeed() + delta, 50);
-        m_connection->sendCAT(QString("KS%1;").arg(newWpm, 3, 10, QChar('0')));
-        m_radioState->setKeyerSpeed(newWpm);
+        const auto wpm = RadioUtils::nextKeyerSpeed(m_radioState->keyerSpeed(), delta);
+        if (!wpm)
+            return;
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::keyerSpeed(*wpm)));
+        m_radioState->setKeyerSpeed(*wpm);
     });
     connect(m_panel, &SideControlPanel::pitchChanged, this, [this](int delta) {
-        int currentPitch = m_radioState->cwPitch(); // In Hz
-        int newPitch = qBound(300, currentPitch + (delta * 10), 990);
-        m_connection->sendCAT(QString("CW%1;").arg(newPitch / 10, 2, 10, QChar('0')));
-        m_radioState->setCwPitch(newPitch);
+        const auto pitchHz = RadioUtils::nextCwPitch(m_radioState->cwPitch(), delta);
+        if (!pitchHz)
+            return;
+        m_connection->sendCAT(QString("CW%1;").arg(*pitchHz / RadioUtils::CW_PITCH_STEP_HZ, 2, 10, QChar('0')));
+        m_radioState->setCwPitch(*pitchHz);
     });
     connect(m_panel, &SideControlPanel::micGainChanged, this, [this](int delta) {
-        int newGain = qBound(0, m_radioState->micGain() + delta, 80);
-        m_connection->sendCAT(QString("MG%1;").arg(newGain, 3, 10, QChar('0')));
-        m_radioState->setMicGain(newGain);
+        const auto gain = RadioUtils::stepWithin(m_radioState->micGain(), delta, 0, RadioUtils::MIC_GAIN_MAX);
+        if (!gain)
+            return;
+        m_connection->sendCAT(QString("MG%1;").arg(*gain, 3, 10, QChar('0')));
+        m_radioState->setMicGain(*gain);
     });
     connect(m_panel, &SideControlPanel::compressionChanged, this, [this](int delta) {
-        int newComp = qBound(0, m_radioState->compression() + delta, 30);
-        m_connection->sendCAT(QString("CP%1;").arg(newComp, 3, 10, QChar('0')));
-        m_radioState->setCompression(newComp);
+        const auto comp = RadioUtils::stepWithin(m_radioState->compression(), delta, 0, RadioUtils::COMPRESSION_MAX);
+        if (!comp)
+            return;
+        m_connection->sendCAT(QString("CP%1;").arg(*comp, 3, 10, QChar('0')));
+        m_radioState->setCompression(*comp);
     });
 
     // Group 1: PWR/DLY
@@ -50,12 +59,11 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
     });
 
     connect(m_panel, &SideControlPanel::delayChanged, this, [this](int delta) {
-        int currentDelay = m_radioState->delayForCurrentMode();
-        if (currentDelay < 0)
-            currentDelay = 0;                                // Handle uninitialized
-        int newDelay = qBound(0, currentDelay + delta, 255); // 0-255 = 0.00 to 2.55 seconds
-
-        // Optimistic update - update local state immediately
+        const auto delay =
+            RadioUtils::stepWithin(m_radioState->delayForCurrentMode(), delta, 0, RadioUtils::QSK_DELAY_MAX);
+        if (!delay)
+            return;
+        const int newDelay = *delay;
         m_radioState->setDelayForCurrentMode(newDelay);
 
         // SD command format: SDxyzzz where x=QSK flag, y=mode (C/V/D), zzz=delay in 10ms
@@ -135,24 +143,32 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
     // RF Gain uses RG-nn; format where nn is 00-60 (representing -0 to -60 dB attenuation)
     // Scroll up = less attenuation = decrease value, scroll down = more attenuation = increase value
     connect(m_panel, &SideControlPanel::mainRfGainChanged, this, [this](int delta) {
-        int newGain = qBound(0, m_radioState->rfGain() - delta, 60);
-        m_connection->sendCAT(QString("RG-%1;").arg(newGain, 2, 10, QChar('0')));
-        m_radioState->setRfGain(newGain);
+        const auto gain = RadioUtils::stepWithin(m_radioState->rfGain(), -delta, 0, RadioUtils::RF_GAIN_MAX);
+        if (!gain)
+            return;
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::rfGain(*gain)));
+        m_radioState->setRfGain(*gain);
     });
     connect(m_panel, &SideControlPanel::mainSquelchChanged, this, [this](int delta) {
-        int newSql = qBound(0, m_radioState->squelchLevel() + delta, 29);
-        m_connection->sendCAT(QString("SQ%1;").arg(newSql, 3, 10, QChar('0')));
-        m_radioState->setSquelchLevel(newSql);
+        const auto sql = RadioUtils::nextSquelch(m_radioState->squelchLevel(), delta);
+        if (!sql)
+            return;
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::squelch(*sql)));
+        m_radioState->setSquelchLevel(*sql);
     });
     connect(m_panel, &SideControlPanel::subRfGainChanged, this, [this](int delta) {
-        int newGain = qBound(0, m_radioState->rfGainB() - delta, 60);
-        m_connection->sendCAT(QString("RG$-%1;").arg(newGain, 2, 10, QChar('0')));
-        m_radioState->setRfGainB(newGain);
+        const auto gain = RadioUtils::stepWithin(m_radioState->rfGainB(), -delta, 0, RadioUtils::RF_GAIN_MAX);
+        if (!gain)
+            return;
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::subRx(CatFrames::rfGain(*gain))));
+        m_radioState->setRfGainB(*gain);
     });
     connect(m_panel, &SideControlPanel::subSquelchChanged, this, [this](int delta) {
-        int newSql = qBound(0, m_radioState->squelchLevelB() + delta, 29);
-        m_connection->sendCAT(QString("SQ$%1;").arg(newSql, 3, 10, QChar('0')));
-        m_radioState->setSquelchLevelB(newSql);
+        const auto sql = RadioUtils::nextSquelch(m_radioState->squelchLevelB(), delta);
+        if (!sql)
+            return;
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::subRx(CatFrames::squelch(*sql))));
+        m_radioState->setSquelchLevelB(*sql);
     });
 }
 

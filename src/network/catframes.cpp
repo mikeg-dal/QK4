@@ -19,10 +19,6 @@ int k4ModeDigit(RadioState::Mode mode) {
 // CW by CAT. All of this is K4 fact, taken from the manual's KY and KS entries.
 // ---------------------------------------------------------------------------------------------
 
-// "KSnnn, where nnn is the keyer speed, from 8 to 100 WPM."
-constexpr int kMinKeyerWpm = 8;
-constexpr int kMaxKeyerWpm = 100;
-
 // How much text one KY may carry: THE DOCUMENTED MAXIMUM, not a number chosen for comfort.
 // The manual says "0 to 60 characters", and the bench confirmed it - 60 keyed in full, and so did
 // 68, which is past the limit and therefore not something to rely on, but it shows 60 is a soft
@@ -213,7 +209,9 @@ QByteArray filterWidthExtended(int bwHz) {
 }
 
 QByteArray keyerSpeed(int wpm) {
-    return QString("KS%1;").arg(qBound(kMinKeyerWpm, wpm, kMaxKeyerWpm), 3, 10, QChar('0')).toUtf8();
+    return QString("KS%1;")
+        .arg(std::clamp(wpm, RadioUtils::KEYER_WPM_MIN, RadioUtils::KEYER_WPM_MAX), 3, 10, QChar('0'))
+        .toUtf8();
 }
 
 QList<QByteArray> cwText(const QString &text, bool wait) {
@@ -302,11 +300,11 @@ QByteArray noiseReduction(int level, bool on) {
 }
 
 QByteArray squelch(int level) {
-    return QString("SQ%1;").arg(qBound(0, level, 999), 3, 10, QChar('0')).toUtf8();
+    return QString("SQ%1;").arg(std::clamp(level, 0, RadioUtils::SQUELCH_MAX), 3, 10, QChar('0')).toUtf8();
 }
 
 QByteArray rfGain(int magnitude) {
-    return QString("RG-%1;").arg(qBound(0, magnitude, 99), 2, 10, QChar('0')).toUtf8();
+    return QString("RG-%1;").arg(std::clamp(magnitude, 0, RadioUtils::RF_GAIN_MAX), 2, 10, QChar('0')).toUtf8();
 }
 
 QByteArray subRx(const QByteArray &mainFrame) {

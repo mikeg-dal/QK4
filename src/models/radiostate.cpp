@@ -1,4 +1,5 @@
 #include "radiostate.h"
+#include "utils/radioutils.h"
 #include <QDateTime>
 #include <QDebug>
 #include <QThread>
@@ -1162,7 +1163,7 @@ int RadioState::delayForCurrentMode() const {
 }
 
 void RadioState::setDelayForCurrentMode(int delay) {
-    delay = qBound(0, delay, 255);
+    delay = std::clamp(delay, 0, RadioUtils::QSK_DELAY_MAX);
     int *target = nullptr;
     switch (mode()) {
     case CW:

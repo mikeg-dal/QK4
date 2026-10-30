@@ -14,6 +14,27 @@ constexpr int kQrpTopW = RF_POWER_TENTHS_MAX / 10;
 constexpr int kQroAboveQrpW = kQrpTopW + 1;
 } // namespace
 
+std::optional<int> stepWithin(int current, int steps, int min, int max) {
+    if (current < 0)
+        return std::nullopt;
+    const int next = std::clamp(current + steps, min, max);
+    if (next == current)
+        return std::nullopt;
+    return next;
+}
+
+std::optional<int> nextKeyerSpeed(int currentWpm, int steps) {
+    return stepWithin(currentWpm, steps, KEYER_WPM_MIN, KEYER_WPM_MAX);
+}
+
+std::optional<int> nextCwPitch(int currentHz, int steps) {
+    return stepWithin(currentHz, steps * CW_PITCH_STEP_HZ, CW_PITCH_MIN_HZ, CW_PITCH_MAX_HZ);
+}
+
+std::optional<int> nextSquelch(int current, int steps) {
+    return stepWithin(current, steps, 0, SQUELCH_MAX);
+}
+
 std::optional<RfPower> nextRfPower(double value, LevelsState::PowerRange range, int steps) {
     if (value < 0.0)
         return std::nullopt;
