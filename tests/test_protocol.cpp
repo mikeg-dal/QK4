@@ -273,6 +273,48 @@ private slots:
         QCOMPARE(seqSpy.at(0).at(0).value<quint8>(), quint8(42));
     }
 
+    // TRN-006. PAN header as the K4 sends it: type, version, sequence, PAN type, receiver, u16 data
+    // length at 5, 4 reserved bytes, int64 centre (Hz) at 11, int32 sample rate (kHz) at 19, int32
+    // noise floor x10 at 23, bins from 27. Values are little-endian.
+    void testPanPacketRouting() {
+        Protocol p;
+        QSignalSpy spy(&p, &Protocol::spectrumDataReady);
+
+        constexpr int bins = 1024;
+        QByteArray pan(27, '\0');
+        pan[0] = static_cast<char>(K4Protocol::PAN);
+        pan[1] = '\x01';
+        pan[2] = '\x07';
+        pan[3] = '\x00';
+        pan[4] = '\x01'; // Sub
+        qToLittleEndian<quint16>(bins, reinterpret_cast<uchar *>(pan.data() + 5));
+        qToLittleEndian<qint64>(14'074'000, reinterpret_cast<uchar *>(pan.data() + 11));
+        qToLittleEndian<qint32>(96, reinterpret_cast<uchar *>(pan.data() + 19));
+        qToLittleEndian<qint32>(-1234, reinterpret_cast<uchar *>(pan.data() + 23));
+        pan.append(QByteArray(bins, '\x40'));
+
+        p.parse(buildTestPacket(pan));
+
+        QCOMPARE(spy.count(), 1);
+        const QList<QVariant> args = spy.at(0);
+        QCOMPARE(args.at(0).toInt(), 1);                       // receiver
+        QCOMPARE(args.at(1).toByteArray(), pan);               // payload
+        QCOMPARE(args.at(2).toInt(), 27);                      // bins offset
+        QCOMPARE(args.at(3).toInt(), bins);                    // bin count
+        QCOMPARE(args.at(4).toLongLong(), qint64(14'074'000)); // centre, Hz
+        QCOMPARE(args.at(5).toInt(), 96);                      // sample rate, kHz
+        QCOMPARE(args.at(6).toFloat(), -123.4f);               // noise floor, dB
+    }
+
+    void testPanPacketWithOnlyAHeaderIsIgnored() {
+        Protocol p;
+        QSignalSpy spy(&p, &Protocol::spectrumDataReady);
+        QByteArray pan(27, '\0');
+        pan[0] = static_cast<char>(K4Protocol::PAN);
+        p.parse(buildTestPacket(pan));
+        QCOMPARE(spy.count(), 0);
+    }
+
     void testMiniPanPacketRouting() {
         Protocol p;
         QSignalSpy spy(&p, &Protocol::miniSpectrumDataReady);
