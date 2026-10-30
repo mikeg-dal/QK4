@@ -92,7 +92,13 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     m_panA.pad->setObjectName("A");
     // dB range and spectrum/waterfall split follow the radio's #SCL/#REF/#WFH (wired below)
     m_panA.pad->setGridEnabled(true);
-    // Primary VFO A uses default cyan passband
+    // Primary VFO A: cyan passband and marker, set from the theme like VFO B's below. WHY: the marker
+    // was left at the widget's default, a darker cyan (0, 140, 200), so VFO A's line looked thinner
+    // and fainter than VFO B's full-strength green one (bench 2026-10-30).
+    QColor vfoAPassbandAlpha(K4Styles::Colors::VfoACyan);
+    vfoAPassbandAlpha.setAlpha(K4Styles::Colors::Alpha::PassbandFill);
+    m_panA.pad->setPassbandColor(vfoAPassbandAlpha);
+    m_panA.pad->setFrequencyMarkerColor(QColor(K4Styles::Colors::VfoACyan));
     // Secondary VFO B uses green passband
     QColor vfoBPassbandAlpha(K4Styles::Colors::VfoBGreen);
     vfoBPassbandAlpha.setAlpha(K4Styles::Colors::Alpha::PassbandFill);
@@ -119,8 +125,6 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     m_panB.pad->setPassbandColor(vfoBPassbandAlpha);
     m_panB.pad->setFrequencyMarkerColor(QColor(K4Styles::Colors::VfoBGreen));
     // Secondary VFO A uses cyan passband
-    QColor vfoAPassbandAlpha(K4Styles::Colors::VfoACyan);
-    vfoAPassbandAlpha.setAlpha(K4Styles::Colors::Alpha::PassbandFill);
     m_panB.pad->setSecondaryPassbandColor(vfoAPassbandAlpha);
     m_panB.pad->setSecondaryMarkerColor(QColor(K4Styles::Colors::VfoACyan));
     m_panB.pad->setSecondaryVisible(true);
