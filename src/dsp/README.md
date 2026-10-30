@@ -62,9 +62,14 @@ REF, the waterfall share, the window size and the font size all change the step 
 with no extra wiring. The tick sits after each label, and DX spot labels keep out of the column
 (`PanadapterRhiWidget::amplitudeAxisWidthPx()`, measured from the label font).
 
-With `qk4.spectrum.diag` enabled a `CALIB` line compares the radio's reported noise floor against our own
-minimum bin. A persistent gap means `K4_DBM_OFFSET` is wrong and every value on the scale is off by
-that amount.
+`K4_DBM_OFFSET` (162, in `spectrumscale.h`) was measured against the radio's own dBm meter (`SMH`)
+on a steady carrier, at two span tiers; the comment there has the numbers. The bins are power per
+bin, so noise rises 3 dB each time the span tier doubles while a carrier stays put.
+
+With `qk4.spectrum.diag` enabled a `CALIB` line compares the radio's reported noise floor against
+the 5th-percentile bin. That is a sanity check, not the calibration: noise statistics put the
+percentile some dB below the floor (median about 3-4 dB above it) even with the offset right. Recalibrate
+from a carrier against `SMH`, not from this line.
 
 ## Sampling
 

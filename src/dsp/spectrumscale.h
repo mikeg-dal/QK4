@@ -14,6 +14,16 @@
 // below it, 10 dB steps above.
 namespace SpectrumScale {
 
+// PAN bin byte -> dBm: dBm = byte - K4_DBM_OFFSET. Measured 2026-10-30 on K4D SN1641 against the
+// radio's own calibrated dBm meter (SMH), WWV 10 MHz carrier in CW, 200 Hz filter, preamp and
+// attenuator off: peak byte - SMH = 161-162 at the 48 kHz tier and 162-163 at the 96 kHz tier,
+// constant across 13 dB of fading. The bytes are power per bin, so the same constant holds at every
+// span (the radio's reported noise floor rose 3.4 dB when the bin width doubled; the carrier did
+// not move). With it a signal lands at the K4's dBm and AutoRef's REF puts the noise on the bottom
+// edge, as on the K4's own screen. 146 (tuned by eye in January while a baseline tracker pinned
+// the noise down) drew everything 16 dB high.
+constexpr float K4_DBM_OFFSET = 162.0f;
+
 // S9 and the width of one S-unit, in dBm/dB.
 constexpr float S9_DBM = -73.0f;
 constexpr float DB_PER_S_UNIT = 6.0f;

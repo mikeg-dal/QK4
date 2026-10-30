@@ -1320,11 +1320,10 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
         // over a thousand times in one session. A low percentile tracks the same floor without the
         // jitter.
         const float minDbm = sorted[sorted.size() / 20];
-        // Track the minimum, not the median: measured against a live band the min lands within a
-        // few dB of the radio's reported floor, while the median runs ~20 dB higher because most
-        // bins hold signal rather than noise. The min is therefore the calibration signal and the
-        // median is context — keying the log on the min keeps it quiet unless the offset is wrong,
-        // instead of chattering as band activity moves the median.
+        // A sanity check, not the calibration (that came from a carrier against SMH; see
+        // SpectrumScale::K4_DBM_OFFSET). With the offset right, noise statistics put this percentile
+        // some dB below the radio's floor and the median ~3-4 dB above it; a shift of ~16 dB is
+        // what the old 146 looked like. Logged on settling and on a sustained change.
         // Smoothed before comparing: calibration error is a standing offset, so only a sustained
         // move is worth a line. Per-frame variation is band noise, not the constant drifting.
         const float delta = minDbm - m_noiseFloor;

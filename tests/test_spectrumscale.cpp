@@ -11,6 +11,23 @@ class TestSpectrumScale : public QObject {
     Q_OBJECT
 
 private slots:
+    // K4_DBM_OFFSET pinned to the bench pairs it was measured from (2026-10-30, WWV 10 MHz carrier,
+    // peak PAN byte vs the radio's own SMH dBm at the same moment, 48 and 96 kHz tiers). Every pair
+    // must come out within 1.5 dB of the radio's reading; 146 missed them all by about 16 dB.
+    void panByteOffsetMatchesTheRadiosDbmMeter() {
+        struct Pair {
+            int peakByte;
+            int smhDbm;
+        };
+        const Pair pairs[] = {{95, -66},  {107, -54}, {95, -67},  {106, -55}, {106, -56},  // 48 kHz tier
+                              {113, -50}, {111, -52}, {113, -50}, {111, -52}, {103, -59}}; // 96 kHz tier
+        for (const Pair &p : pairs) {
+            const float dbm = static_cast<float>(p.peakByte) - SpectrumScale::K4_DBM_OFFSET;
+            QVERIFY2(std::abs(dbm - static_cast<float>(p.smhDbm)) <= 1.5f,
+                     qPrintable(QStringLiteral("byte %1 -> %2 dBm, radio %3").arg(p.peakByte).arg(dbm).arg(p.smhDbm)));
+        }
+    }
+
     void convertsSMeterReadingsToDbm() {
         // RadioState encodes the K4's SM bars as S0..S9 directly, and anything stronger as
         // 9.0 + dBoverS9/10 - so S9+20 arrives as 11.0. Treating that as an S-unit would clamp it

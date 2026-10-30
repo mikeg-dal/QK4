@@ -3,6 +3,7 @@
 
 #include <QColor>
 #include "logging/logcategories.h"
+#include "dsp/spectrumscale.h"
 #include <QFile>
 #include <QVector>
 #include <rhi/qrhi.h>
@@ -78,9 +79,9 @@ inline QShader loadShader(const QString &path) {
     return QShader();
 }
 
-// K4 spectrum calibration constant (shared between panadapter and minipan)
-// dBm = raw_byte - K4_DBM_OFFSET
-constexpr float K4_DBM_OFFSET = 146.0f;
+// K4 spectrum calibration constant (shared between panadapter and minipan): dBm = raw_byte -
+// K4_DBM_OFFSET. Owned by SpectrumScale, where it is measured and tested.
+constexpr float K4_DBM_OFFSET = SpectrumScale::K4_DBM_OFFSET;
 
 // Uniform block for waterfall.vert / waterfall.frag.
 //
