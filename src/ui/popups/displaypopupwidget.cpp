@@ -306,7 +306,8 @@ void DisplayPopupWidget::updateWtrClrsControlGroup() {
     if (!m_wtrClrsControlGroup)
         return;
     const int range = (m_extEnabled && !m_lcdEnabled) ? m_waterfallColorRangeExt : m_waterfallColorRange;
-    m_wtrClrsControlGroup->setValue(range < 0 ? QStringLiteral("--") : QString::number(range));
+    // The K4 shows WTR CLRS as #WBS / 10: 0.5 to 3.0 in 0.1 steps (bench 2026-10-30).
+    m_wtrClrsControlGroup->setValue(range < 0 ? QStringLiteral("--") : QString::number(range / 10.0, 'f', 1));
 }
 
 void DisplayPopupWidget::setWaterfallColorRange(int db) {

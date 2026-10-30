@@ -247,7 +247,8 @@ private slots:
     }
 
     // WTR CLRS (right-click on NB / WTR CLRS, as on the K4) opens a page for the radio's waterfall
-    // colour range (#WBS): "--" until the radio reports, then its value, and +/- ask to step it.
+    // colour range (#WBS): "--" until the radio reports, then its value as the K4 shows it (0.5-3.0),
+    // and +/- ask to step it.
     void displayWtrClrsPageStepsTheColourRange() {
         DisplayPopupWidget popup;
         DisplayMenuButton *nbKey = nullptr;
@@ -264,7 +265,7 @@ private slots:
         QVERIFY(wtrClrs);
         QCOMPARE(wtrClrs->value(), QStringLiteral("--"));
         popup.setWaterfallColorRange(14);
-        QCOMPARE(wtrClrs->value(), QStringLiteral("14"));
+        QCOMPARE(wtrClrs->value(), QStringLiteral("1.4")); // shown as the K4 shows it: #WBS / 10
 
         QTest::mouseClick(nbKey, Qt::RightButton);
         auto *stack = popup.findChild<QStackedWidget *>();
