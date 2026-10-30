@@ -1,5 +1,10 @@
 #include <QTest>
+#include <QMetaMethod>
 #include <QSignalSpy>
+
+#include <algorithm>
+#include <memory>
+#include <vector>
 #include "models/radiostate.h"
 
 class TestRadioState : public QObject {
@@ -3419,9 +3424,24 @@ private slots:
         QCOMPARE(rs.textDecodeMode(), -1);
         QCOMPARE(rs.textDecodeLines(), -1);
         // RIT/XIT
-        QCOMPARE(rs.ritXitOffset(), 0); // reset uses 0, not sentinel
+        // Fields whose unknown sentinel is hidden by the getter: they read as the legal default.
+        QCOMPARE(rs.ritXitOffset(), 0);
         QCOMPARE(rs.ritEnabled(), false);
         QCOMPARE(rs.xitEnabled(), false);
+        QCOMPARE(rs.splitEnabled(), false);
+        QCOMPARE(rs.bSetEnabled(), false);
+        QCOMPARE(rs.isTransmitting(), false);
+        QCOMPARE(rs.agcSpeed(), RadioState::AGC_Slow);
+        QCOMPARE(rs.agcSpeedB(), RadioState::AGC_Slow);
+        QCOMPARE(rs.noiseBlankerLevel(), 0);
+        QCOMPARE(rs.manualNotchPitch(), 1000);
+        QCOMPARE(rs.afxMode(), 0);
+        QCOMPARE(rs.apfBandwidth(), 0);
+        QCOMPARE(rs.rxEqBands(), QVector<int>(8, 0));
+        QCOMPARE(rs.txEqBands(), QVector<int>(8, 0));
+        QCOMPARE(rs.displayFps(), 30);
+        QCOMPARE(rs.mainRxDisplayAll(), true);
+        QCOMPARE(rs.xvtrBandSelect(), 1);
     }
 
     // Sentinel's functional contract: post-reset, the very next CAT packet
@@ -3482,6 +3502,102 @@ private slots:
             rs.parseCATCommand("DT2;");
             QCOMPARE(spy.count(), 1);
         }
+    }
+
+    // CAT-001 / CAT-002: the connection dump (RDY;) must always be applied. Each row is a report whose
+    // value equals what the field used to reset to (off, 0, AGC Slow, #FPS 30, XVTR 144 MHz…), so the
+    // change guard swallowed it after a reconnect and every consumer kept the previous session's value.
+    // A row may hold several commands (`;`-separated) when one selects what the next applies to (XVN).
+    void testFirstReportAfterResetEmits_data() {
+        QTest::addColumn<QString>("commands");
+        QTest::addColumn<QByteArray>("signal");
+
+        const auto row = [](const char *commands, const char *signal) {
+            QTest::newRow(commands) << QString::fromLatin1(commands) << QByteArray(signal);
+        };
+        row("FT0", SIGNAL(splitChanged(bool)));
+        row("BS0", SIGNAL(bSetChanged(bool)));
+        row("TS0", SIGNAL(testModeChanged(bool)));
+        row("SB0", SIGNAL(subRxEnabledChanged(bool)));
+        row("DV0", SIGNAL(diversityChanged(bool)));
+        row("RX", SIGNAL(transmitStateChanged(bool)));
+        row("RT0", SIGNAL(ritXitChanged(bool, bool, int)));
+        row("XT0", SIGNAL(ritXitChanged(bool, bool, int)));
+        row("RT$0", SIGNAL(ritXitBChanged(bool, int)));
+        row("RO+0000", SIGNAL(ritXitChanged(bool, bool, int)));
+        row("RO$+0000", SIGNAL(ritXitBChanged(bool, int)));
+        row("LK0", SIGNAL(lockAChanged(bool)));
+        row("LK$0", SIGNAL(lockBChanged(bool)));
+        row("LN0", SIGNAL(vfoLinkChanged(bool)));
+        row("NB000", SIGNAL(processingChanged()));
+        row("NB0000", SIGNAL(processingChanged()));
+        row("NB$000", SIGNAL(processingChangedB()));
+        row("NR000", SIGNAL(processingChanged()));
+        row("NR$000", SIGNAL(processingChangedB()));
+        row("NRS000", SIGNAL(processingChanged()));
+        row("NRS$000", SIGNAL(processingChangedB()));
+        row("NA0", SIGNAL(notchChanged()));
+        row("NA$0", SIGNAL(notchBChanged()));
+        row("NM0", SIGNAL(notchChanged()));
+        row("NM10000", SIGNAL(notchChanged()));
+        row("NM$0", SIGNAL(notchBChanged()));
+        row("NM$10000", SIGNAL(notchBChanged()));
+        row("PA00", SIGNAL(processingChanged()));
+        row("PA$00", SIGNAL(processingChangedB()));
+        row("RA000", SIGNAL(processingChanged()));
+        row("RA$000", SIGNAL(processingChangedB()));
+        row("GT1", SIGNAL(processingChanged()));
+        row("GT$1", SIGNAL(processingChangedB()));
+        row("FX0", SIGNAL(afxModeChanged(int)));
+        row("AP00", SIGNAL(apfChanged(bool, int)));
+        row("AP$00", SIGNAL(apfBChanged(bool, int)));
+        row("VXC0", SIGNAL(voxChanged(bool)));
+        row("VXV0", SIGNAL(voxChanged(bool)));
+        row("VXD0", SIGNAL(voxChanged(bool)));
+        row("SD0C005", SIGNAL(qskEnabledChanged(bool)));
+        row("RE+00+00+00+00+00+00+00+00", SIGNAL(rxEqChanged()));
+        row("TE+00+00+00+00+00+00+00+00", SIGNAL(txEqChanged()));
+        row("#FPS30", SIGNAL(displayFpsChanged(int)));
+        row("#MP0", SIGNAL(miniPanAEnabledChanged(bool)));
+        row("#MP$0", SIGNAL(miniPanBEnabledChanged(bool)));
+        row("ACM10000000", SIGNAL(mainRxAntCfgChanged()));
+        row("ACS10000000", SIGNAL(subRxAntCfgChanged()));
+        row("ACT1000", SIGNAL(txAntCfgChanged()));
+        row("XVN1", SIGNAL(xvtrBandSelectChanged(int)));
+        row("XVN1;XVM0", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVR00144", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVI28", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVO+00000", SIGNAL(xvtrBandsChanged()));
+    }
+
+    void testFirstReportAfterResetEmits() {
+        QFETCH(QString, commands);
+        QFETCH(QByteArray, signal);
+        const QStringList parts = commands.split(u';', Qt::SkipEmptyParts);
+
+        RadioState rs;
+        // Every row must reach a registered handler, or the row would pass by never being parsed.
+        const QStringList prefixes = rs.registeredCommandPrefixes();
+        for (const QString &part : parts) {
+            QVERIFY2(std::any_of(prefixes.cbegin(), prefixes.cend(),
+                                 [&part](const QString &prefix) { return part.startsWith(prefix); }),
+                     qPrintable(part));
+        }
+
+        for (const QString &part : parts)
+            rs.parseCATCommand(part + u';');
+        rs.reset();
+
+        QSignalSpy spy(&rs, signal.constData());
+        QVERIFY(spy.isValid());
+        for (const QString &part : parts)
+            rs.parseCATCommand(part + u';');
+        QCOMPARE(spy.size(), 1);
+
+        // And only the first: the change guard still holds once the value is known.
+        for (const QString &part : parts)
+            rs.parseCATCommand(part + u';');
+        QCOMPARE(spy.size(), 1);
     }
 
     // K4 remote power state (PS command).
