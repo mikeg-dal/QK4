@@ -640,6 +640,10 @@ void SideControlPanel::setCurrent(double amps) {
 }
 
 void SideControlPanel::resetToDefaults() {
+    // MON / BAL show the radio's levels: with the radio gone they would show stale ones.
+    m_monOverlay->hide();
+    m_balOverlay->hide();
+
     // Knob / filter values
     setBandwidth(0);
     setShift(0);

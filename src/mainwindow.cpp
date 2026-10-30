@@ -1355,6 +1355,15 @@ void MainWindow::resetUiForDisconnect() {
     m_subDivIndicatorController->reset();
     m_ritXitController->reset();
 
+    // Every popup shows or edits the radio it was opened for: none may stay up with that radio gone.
+    // WHY not closeAllPopups(): the MENU overlay is deliberately left open across a reconnect and
+    // refills from the resent menu (#124, MenuOverlayTests).
+    m_popupManager->closeOwnedPopups();
+    m_antennaCfgController->closeAll();
+    m_modePopupController->close();
+    m_featureMenuController->close();
+    m_statusBarController->closePopups();
+
     m_radioState->reset();
 }
 

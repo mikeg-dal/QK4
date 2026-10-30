@@ -14,7 +14,7 @@
  * - Colored indicator bar (orange for Global, cyan for MainRx, green for SubRx)
  * - Dark background with rounded corners
  * - Mouse wheel handling for value adjustment
- * - Click outside to close
+ * - Closed by pressing its key again, the other overlay's key, or the disconnect reset
  */
 class SideControlOverlay : public QWidget {
     Q_OBJECT

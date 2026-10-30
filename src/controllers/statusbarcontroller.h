@@ -42,6 +42,8 @@ public:
     // Task-level API.
     void setTitle(const QString &text);
     void clearReadings();
+    // Close the power-off confirmation and the network-metrics popup (disconnect reset).
+    void closePopups();
     void setKpa1500Visible(bool visible);
     void setKpa1500Status(const QString &text, const QString &styleSheet);
 

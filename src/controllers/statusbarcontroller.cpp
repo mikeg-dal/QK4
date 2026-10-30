@@ -272,6 +272,13 @@ void StatusBarController::showError(const QString &errorMessage) {
                                                .arg(K4Styles::Dimensions::FontSizeReadout));
 }
 
+void StatusBarController::closePopups() {
+    // WHY: a power-off confirmation left up after the link dropped would send PS0 into nothing.
+    if (m_confirmPopup)
+        m_confirmPopup->hidePopup();
+    m_netHealthWidget->closeMetricsPopup();
+}
+
 void StatusBarController::clearReadings() {
     m_lpaTempField->clear();
     m_paTempField->clear();
