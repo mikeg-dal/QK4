@@ -6,15 +6,15 @@ void FrequencyVfoState::reset() {
     frequency = 0;
     vfoA = 0;
     vfoB = 0;
-    splitEnabled = false;
-    ritEnabled = false;
-    xitEnabled = false;
-    ritXitOffset = 0;
-    ritEnabledB = false;
-    ritXitOffsetB = 0;
-    vfoLink = false;
-    lockA = false;
-    lockB = false;
+    splitEnabled.reset();
+    ritEnabled.reset();
+    xitEnabled.reset();
+    ritXitOffset = RitXitOffsetUnknown;
+    ritEnabledB.reset();
+    ritXitOffsetB = RitXitOffsetUnknown;
+    vfoLink.reset();
+    lockA.reset();
+    lockB.reset();
 }
 
 namespace FrequencyVfoHandlers {
@@ -46,40 +46,29 @@ void handleFT(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() <= 2)
         return;
     const bool newSplit = (cmd.mid(2) == "1");
-    if (newSplit != state.splitEnabled) {
-        state.splitEnabled = newSplit;
-        emit owner.splitChanged(state.splitEnabled);
-    }
+    if (state.splitEnabled.set(newSplit))
+        emit owner.splitChanged(newSplit);
 }
 
 void handleRT(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3 || (cmd.at(2) != '0' && cmd.at(2) != '1'))
         return;
-    const bool enabled = (cmd.at(2) == '1');
-    if (enabled != state.ritEnabled) {
-        state.ritEnabled = enabled;
-        emit owner.ritXitChanged(state.ritEnabled, state.xitEnabled, state.ritXitOffset);
-    }
+    if (state.ritEnabled.set(cmd.at(2) == '1'))
+        emit owner.ritXitChanged(owner.ritEnabled(), owner.xitEnabled(), owner.ritXitOffset());
 }
 
 void handleRTSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 4 || (cmd.at(3) != '0' && cmd.at(3) != '1'))
         return;
-    const bool enabled = (cmd.at(3) == '1');
-    if (enabled != state.ritEnabledB) {
-        state.ritEnabledB = enabled;
-        emit owner.ritXitBChanged(state.ritEnabledB, state.ritXitOffsetB);
-    }
+    if (state.ritEnabledB.set(cmd.at(3) == '1'))
+        emit owner.ritXitBChanged(owner.ritEnabledB(), owner.ritXitOffsetB());
 }
 
 void handleXT(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3 || (cmd.at(2) != '0' && cmd.at(2) != '1'))
         return;
-    const bool enabled = (cmd.at(2) == '1');
-    if (enabled != state.xitEnabled) {
-        state.xitEnabled = enabled;
-        emit owner.ritXitChanged(state.ritEnabled, state.xitEnabled, state.ritXitOffset);
-    }
+    if (state.xitEnabled.set(cmd.at(2) == '1'))
+        emit owner.ritXitChanged(owner.ritEnabled(), owner.xitEnabled(), owner.ritXitOffset());
 }
 
 void handleRO(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
@@ -89,7 +78,7 @@ void handleRO(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     const int offset = cmd.mid(2).toInt(&ok);
     if (ok && offset != state.ritXitOffset) {
         state.ritXitOffset = offset;
-        emit owner.ritXitChanged(state.ritEnabled, state.xitEnabled, state.ritXitOffset);
+        emit owner.ritXitChanged(owner.ritEnabled(), owner.xitEnabled(), offset);
     }
 }
 
@@ -106,7 +95,7 @@ void handleROSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd
     const int offset = cmd.mid(3).toInt(&ok);
     if (ok && offset != state.ritXitOffsetB) {
         state.ritXitOffsetB = offset;
-        emit owner.ritXitBChanged(state.ritEnabledB, state.ritXitOffsetB);
+        emit owner.ritXitBChanged(owner.ritEnabledB(), offset);
     }
 }
 
@@ -119,10 +108,8 @@ void handleLN(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (!ok)
         return;
     const bool linked = (ln == 1);
-    if (linked != state.vfoLink) {
-        state.vfoLink = linked;
-        emit owner.vfoLinkChanged(state.vfoLink);
-    }
+    if (state.vfoLink.set(linked))
+        emit owner.vfoLinkChanged(linked);
 }
 
 void handleLK(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
@@ -130,10 +117,8 @@ void handleLK(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3)
         return;
     const bool locked = (cmd.at(2) == '1');
-    if (locked != state.lockA) {
-        state.lockA = locked;
-        emit owner.lockAChanged(state.lockA);
-    }
+    if (state.lockA.set(locked))
+        emit owner.lockAChanged(locked);
 }
 
 void handleLKSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
@@ -141,10 +126,8 @@ void handleLKSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd
     if (cmd.length() < 4)
         return;
     const bool locked = (cmd.at(3) == '1');
-    if (locked != state.lockB) {
-        state.lockB = locked;
-        emit owner.lockBChanged(state.lockB);
-    }
+    if (state.lockB.set(locked))
+        emit owner.lockBChanged(locked);
 }
 
 } // namespace FrequencyVfoHandlers

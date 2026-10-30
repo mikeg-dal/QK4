@@ -21,11 +21,11 @@ void RxTxMeterState::reset() {
     calibratedPaEfficiency = 0.0;
     paTemperatureC = -1;
     lpaTemperatureC = -1;
-    isTransmitting = false;
-    subReceiverEnabled = -1;
-    diversityEnabled = -1;
-    testMode = false;
-    bSetEnabled = false;
+    isTransmitting.reset();
+    subReceiverEnabled.reset();
+    diversityEnabled.reset();
+    testMode.reset();
+    bSetEnabled.reset();
     messageBank = -1;
     radioID.clear();
     radioModel.clear();
@@ -131,7 +131,7 @@ void handleTM(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     // moments that land in CW key-up gaps — using TM frame rate + SIRF calibration
     // gives both smoothness and accuracy. Fallback: a fixed η=0.34 (the historical
     // hardcoded value) until the first SIRF lands, so the meter is never blank in TX.
-    if (state.isTransmitting && state.supplyVoltage > 0 && state.forwardPower > 0) {
+    if (state.isTransmitting.isOn() && state.supplyVoltage > 0 && state.forwardPower > 0) {
         constexpr double K4_PA_EFFICIENCY_FALLBACK = 0.34;
         const double eff =
             (state.calibratedPaEfficiency > 0) ? state.calibratedPaEfficiency : K4_PA_EFFICIENCY_FALLBACK;
@@ -144,17 +144,13 @@ void handleTM(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
 }
 
 void handleTX(RxTxMeterState &state, RadioState &owner, const QString & /*cmd*/) {
-    if (!state.isTransmitting) {
-        state.isTransmitting = true;
+    if (state.isTransmitting.set(true))
         emit owner.transmitStateChanged(true);
-    }
 }
 
 void handleRX(RxTxMeterState &state, RadioState &owner, const QString & /*cmd*/) {
-    if (state.isTransmitting) {
-        state.isTransmitting = false;
+    if (state.isTransmitting.set(false))
         emit owner.transmitStateChanged(false);
-    }
 }
 
 void handleID(RxTxMeterState &state, RadioState & /*owner*/, const QString &cmd) {
@@ -291,7 +287,7 @@ void handleSIRF(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     // TX-time SIRF (current > 0.1 A — avoids divide-by-near-zero and TX-edge stale-zero
     // frames) AND a sensible forward power reading. Calibration is sticky: it stays
     // valid across band changes until the next valid SIRF resets it.
-    if (state.isTransmitting && current > 0.1 && state.forwardPower > 0 && state.supplyVoltage > 0) {
+    if (state.isTransmitting.isOn() && current > 0.1 && state.forwardPower > 0 && state.supplyVoltage > 0) {
         const double eff = state.forwardPower / (current * state.supplyVoltage);
         // Sanity-clamp to a plausible PA-efficiency range (15–60 %). Outside this is
         // almost certainly a stale value or PA-load mismatch; keep the previous good
@@ -328,48 +324,38 @@ void handleSB(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     // SB0=off, SB1=on, SB3=on with the Sub mini-pan running (see catframes.h)
     if (cmd.length() <= 2)
         return;
-    int newState = (cmd.mid(2) != "0") ? 1 : 0;
-    if (newState != state.subReceiverEnabled) {
-        state.subReceiverEnabled = newState;
-        emit owner.subRxEnabledChanged(newState == 1);
-    }
+    const bool enabled = (cmd.mid(2) != "0");
+    if (state.subReceiverEnabled.set(enabled))
+        emit owner.subRxEnabledChanged(enabled);
 }
 
 void handleDV(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() <= 2)
         return;
-    int newState = (cmd.mid(2) == "1") ? 1 : 0;
-    if (newState != state.diversityEnabled) {
-        state.diversityEnabled = newState;
-        emit owner.diversityChanged(newState == 1);
-    }
+    const bool enabled = (cmd.mid(2) == "1");
+    if (state.diversityEnabled.set(enabled))
+        emit owner.diversityChanged(enabled);
 }
 
 void handleTS(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3)
         return;
-    bool enabled = (cmd.mid(2, 1) == "1");
-    if (enabled != state.testMode) {
-        state.testMode = enabled;
-        emit owner.testModeChanged(state.testMode);
-    }
+    const bool enabled = (cmd.mid(2, 1) == "1");
+    if (state.testMode.set(enabled))
+        emit owner.testModeChanged(enabled);
 }
 
 void handleBS(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3)
         return;
-    bool enabled = (cmd.mid(2, 1) == "1");
-    if (enabled != state.bSetEnabled) {
-        state.bSetEnabled = enabled;
-        emit owner.bSetChanged(state.bSetEnabled);
-    }
+    const bool enabled = (cmd.mid(2, 1) == "1");
+    if (state.bSetEnabled.set(enabled))
+        emit owner.bSetChanged(enabled);
 }
 
 void setBSetEnabled(RxTxMeterState &state, RadioState &owner, bool enabled) {
-    if (enabled != state.bSetEnabled) {
-        state.bSetEnabled = enabled;
-        emit owner.bSetChanged(state.bSetEnabled);
-    }
+    if (state.bSetEnabled.set(enabled))
+        emit owner.bSetChanged(enabled);
 }
 
 } // namespace RxTxMeterHandlers

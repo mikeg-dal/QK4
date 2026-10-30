@@ -164,50 +164,68 @@ public:
     double paDrainCurrent() const { return m_rxTxMeterState.paDrainCurrent; }
 
     // Control states
-    bool isTransmitting() const { return m_rxTxMeterState.isTransmitting; }
-    bool subReceiverEnabled() const { return m_rxTxMeterState.subReceiverEnabled == 1; }
-    bool diversityEnabled() const { return m_rxTxMeterState.diversityEnabled == 1; }
-    bool splitEnabled() const { return m_frequencyVfoState.splitEnabled; }
+    bool isTransmitting() const { return m_rxTxMeterState.isTransmitting.isOn(); }
+    bool subReceiverEnabled() const { return m_rxTxMeterState.subReceiverEnabled.isOn(); }
+    bool diversityEnabled() const { return m_rxTxMeterState.diversityEnabled.isOn(); }
+    bool splitEnabled() const { return m_frequencyVfoState.splitEnabled.isOn(); }
 
     // Processing (NB/NR/PA/RA/GT + NA/NM) — backed by m_processingState.
-    int noiseBlankerLevel() const { return m_processingState.noiseBlankerLevel; }
-    bool noiseBlankerEnabled() const { return m_processingState.noiseBlankerEnabled; }
-    int noiseBlankerFilterWidth() const { return m_processingState.noiseBlankerFilterWidth; }
-    int noiseReductionLevel() const { return m_processingState.noiseReductionLevel; }
-    bool noiseReductionEnabled() const { return m_processingState.noiseReductionEnabled; }
-    int ssnrLevel() const { return m_processingState.ssnrLevel; }
-    bool ssnrEnabled() const { return m_processingState.ssnrEnabled; }
+    int noiseBlankerLevel() const {
+        return reportedOr(m_processingState.noiseBlankerLevel, ProcessingState::Unknown, 0);
+    }
+    bool noiseBlankerEnabled() const { return m_processingState.noiseBlankerEnabled.isOn(); }
+    int noiseBlankerFilterWidth() const {
+        return reportedOr(m_processingState.noiseBlankerFilterWidth, ProcessingState::Unknown, 0);
+    }
+    int noiseReductionLevel() const {
+        return reportedOr(m_processingState.noiseReductionLevel, ProcessingState::Unknown, 0);
+    }
+    bool noiseReductionEnabled() const { return m_processingState.noiseReductionEnabled.isOn(); }
+    int ssnrLevel() const { return reportedOr(m_processingState.ssnrLevel, ProcessingState::Unknown, 0); }
+    bool ssnrEnabled() const { return m_processingState.ssnrEnabled.isOn(); }
 
-    bool autoNotchEnabled() const { return m_processingState.autoNotchEnabled; }
-    bool manualNotchEnabled() const { return m_processingState.manualNotchEnabled; }
-    int manualNotchPitch() const { return m_processingState.manualNotchPitch; }
+    bool autoNotchEnabled() const { return m_processingState.autoNotchEnabled.isOn(); }
+    bool manualNotchEnabled() const { return m_processingState.manualNotchEnabled.isOn(); }
+    int manualNotchPitch() const {
+        return reportedOr(m_processingState.manualNotchPitch, ProcessingState::Unknown,
+                          ProcessingState::ManualNotchPitchDefault);
+    }
 
-    bool autoNotchEnabledB() const { return m_processingState.autoNotchEnabledB; }
-    bool manualNotchEnabledB() const { return m_processingState.manualNotchEnabledB; }
-    int manualNotchPitchB() const { return m_processingState.manualNotchPitchB; }
+    bool autoNotchEnabledB() const { return m_processingState.autoNotchEnabledB.isOn(); }
+    bool manualNotchEnabledB() const { return m_processingState.manualNotchEnabledB.isOn(); }
+    int manualNotchPitchB() const {
+        return reportedOr(m_processingState.manualNotchPitchB, ProcessingState::Unknown,
+                          ProcessingState::ManualNotchPitchDefault);
+    }
 
     // Optimistic setters for notch pitch (radio doesn't echo these commands)
     void setManualNotchPitch(int pitch);
     void setManualNotchPitchB(int pitch);
 
-    int preamp() const { return m_processingState.preamp; }
-    bool preampEnabled() const { return m_processingState.preampEnabled; }
-    int attenuatorLevel() const { return m_processingState.attenuatorLevel; }
-    bool attenuatorEnabled() const { return m_processingState.attenuatorEnabled; }
-    AGCSpeed agcSpeed() const { return static_cast<AGCSpeed>(m_processingState.agcSpeed); }
+    int preamp() const { return reportedOr(m_processingState.preamp, ProcessingState::Unknown, 0); }
+    bool preampEnabled() const { return m_processingState.preampEnabled.isOn(); }
+    int attenuatorLevel() const { return reportedOr(m_processingState.attenuatorLevel, ProcessingState::Unknown, 0); }
+    bool attenuatorEnabled() const { return m_processingState.attenuatorEnabled.isOn(); }
+    AGCSpeed agcSpeed() const { return agcSpeedOf(m_processingState.agcSpeed); }
 
-    int noiseBlankerLevelB() const { return m_processingState.noiseBlankerLevelB; }
-    bool noiseBlankerEnabledB() const { return m_processingState.noiseBlankerEnabledB; }
-    int noiseBlankerFilterWidthB() const { return m_processingState.noiseBlankerFilterWidthB; }
-    int noiseReductionLevelB() const { return m_processingState.noiseReductionLevelB; }
-    bool noiseReductionEnabledB() const { return m_processingState.noiseReductionEnabledB; }
-    int ssnrLevelB() const { return m_processingState.ssnrLevelB; }
-    bool ssnrEnabledB() const { return m_processingState.ssnrEnabledB; }
-    int preampB() const { return m_processingState.preampB; }
-    bool preampEnabledB() const { return m_processingState.preampEnabledB; }
-    int attenuatorLevelB() const { return m_processingState.attenuatorLevelB; }
-    bool attenuatorEnabledB() const { return m_processingState.attenuatorEnabledB; }
-    AGCSpeed agcSpeedB() const { return static_cast<AGCSpeed>(m_processingState.agcSpeedB); }
+    int noiseBlankerLevelB() const {
+        return reportedOr(m_processingState.noiseBlankerLevelB, ProcessingState::Unknown, 0);
+    }
+    bool noiseBlankerEnabledB() const { return m_processingState.noiseBlankerEnabledB.isOn(); }
+    int noiseBlankerFilterWidthB() const {
+        return reportedOr(m_processingState.noiseBlankerFilterWidthB, ProcessingState::Unknown, 0);
+    }
+    int noiseReductionLevelB() const {
+        return reportedOr(m_processingState.noiseReductionLevelB, ProcessingState::Unknown, 0);
+    }
+    bool noiseReductionEnabledB() const { return m_processingState.noiseReductionEnabledB.isOn(); }
+    int ssnrLevelB() const { return reportedOr(m_processingState.ssnrLevelB, ProcessingState::Unknown, 0); }
+    bool ssnrEnabledB() const { return m_processingState.ssnrEnabledB.isOn(); }
+    int preampB() const { return reportedOr(m_processingState.preampB, ProcessingState::Unknown, 0); }
+    bool preampEnabledB() const { return m_processingState.preampEnabledB.isOn(); }
+    int attenuatorLevelB() const { return reportedOr(m_processingState.attenuatorLevelB, ProcessingState::Unknown, 0); }
+    bool attenuatorEnabledB() const { return m_processingState.attenuatorEnabledB.isOn(); }
+    AGCSpeed agcSpeedB() const { return agcSpeedOf(m_processingState.agcSpeedB); }
 
     // Radio info
     QString radioID() const { return m_rxTxMeterState.radioID; }
@@ -224,11 +242,15 @@ public:
     }
 
     // RIT/XIT — backed by m_frequencyVfoState.
-    bool ritEnabled() const { return m_frequencyVfoState.ritEnabled; }
-    bool xitEnabled() const { return m_frequencyVfoState.xitEnabled; }
-    int ritXitOffset() const { return m_frequencyVfoState.ritXitOffset; }
-    bool ritEnabledB() const { return m_frequencyVfoState.ritEnabledB; }
-    int ritXitOffsetB() const { return m_frequencyVfoState.ritXitOffsetB; }
+    bool ritEnabled() const { return m_frequencyVfoState.ritEnabled.isOn(); }
+    bool xitEnabled() const { return m_frequencyVfoState.xitEnabled.isOn(); }
+    int ritXitOffset() const {
+        return reportedOr(m_frequencyVfoState.ritXitOffset, FrequencyVfoState::RitXitOffsetUnknown, 0);
+    }
+    bool ritEnabledB() const { return m_frequencyVfoState.ritEnabledB.isOn(); }
+    int ritXitOffsetB() const {
+        return reportedOr(m_frequencyVfoState.ritXitOffsetB, FrequencyVfoState::RitXitOffsetUnknown, 0);
+    }
 
     // Message bank (MN)
     int messageBank() const { return m_rxTxMeterState.messageBank; }
@@ -254,16 +276,16 @@ public:
     int lpaTemperatureC() const { return m_rxTxMeterState.lpaTemperatureC; }
 
     // TEST mode (TX test)
-    bool testMode() const { return m_rxTxMeterState.testMode; }
+    bool testMode() const { return m_rxTxMeterState.testMode.isOn(); }
 
     // ATU mode (0=not installed, 1=bypass, 2=auto)
     int atuMode() const { return m_antennaState.atuMode; }
 
     // B SET (Target B) - controls whether feature menu commands target Sub RX
     // State is tracked internally (toggled when SW44 is sent)
-    bool bSetEnabled() const { return m_rxTxMeterState.bSetEnabled; }
+    bool bSetEnabled() const { return m_rxTxMeterState.bSetEnabled.isOn(); }
     void setBSetEnabled(bool enabled);
-    void toggleBSet() { setBSetEnabled(!m_rxTxMeterState.bSetEnabled); }
+    void toggleBSet() { setBSetEnabled(!bSetEnabled()); }
     // Mode and DATA sub-mode of the receiver B SET points the filter controls at: VFO B's while
     // B SET is on, VFO A's otherwise. Their limits must come from the receiver they adjust.
     Mode filterTargetMode() const { return bSetEnabled() ? modeB() : mode(); }
@@ -282,11 +304,11 @@ public:
     int apfBandwidthB() const { return m_audioEffectsState.apfBandwidthB; } // Sub RX: 0=30Hz, 1=50Hz, 2=150Hz
 
     // VFO Lock (LK/LK$ commands)
-    bool lockA() const { return m_frequencyVfoState.lockA; }
-    bool lockB() const { return m_frequencyVfoState.lockB; }
+    bool lockA() const { return m_frequencyVfoState.lockA.isOn(); }
+    bool lockB() const { return m_frequencyVfoState.lockB.isOn(); }
 
     // VFO Link (LN command)
-    bool vfoLink() const { return m_frequencyVfoState.vfoLink; }
+    bool vfoLink() const { return m_frequencyVfoState.vfoLink.isOn(); }
 
     // Monitor Level (ML command) - sidetone/speech monitor
     // mode: 0=CW, 1=AF data, 2=voice
@@ -703,6 +725,13 @@ signals:
     void textBufferReceived(const QString &text, bool isSubRx); // TB$ decoded text
 
 private:
+    // A radio-reported value, or `fallback` while it still holds its subsystem's `unknown` sentinel.
+    static int reportedOr(int value, int unknown, int fallback) { return value == unknown ? fallback : value; }
+    // AGC_Slow until the first GT / GT$, the default the VFO's AGC label starts from.
+    static AGCSpeed agcSpeedOf(int stored) {
+        return stored == ProcessingState::Unknown ? AGC_Slow : static_cast<AGCSpeed>(stored);
+    }
+
     static std::optional<int> knownDbm(int dbm) {
         return dbm == RxTxMeterLimits::SMeterDbmUnknown ? std::nullopt : std::optional<int>(dbm);
     }
@@ -812,7 +841,7 @@ private:
                        void (RadioState::*signal)(int));
 
     // Parse bool from cmd character at charPos, store in member if changed, emit void signal
-    void handleBoolPair(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)());
+    void handleBoolPair(const QString &cmd, int charPos, ReportedFlag &member, void (RadioState::*signal)());
 
     // Parse bool from cmd character at charPos, store in member if changed, emit signal(bool)
     void handleBoolPairVal(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)(bool));

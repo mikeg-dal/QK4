@@ -2681,9 +2681,20 @@ private slots:
 
     void testRxWhileReceivingNoDuplicateSignal() {
         RadioState rs;
+        rs.parseCATCommand("RX;");
         QSignalSpy spy(&rs, &RadioState::transmitStateChanged);
-        rs.parseCATCommand("RX;"); // already RX by default
+        rs.parseCATCommand("RX;");
         QCOMPARE(spy.count(), 0);
+    }
+
+    // The radio's first RX; is applied and announced, not assumed: until it arrives QK4 does not know
+    // whether the radio is transmitting.
+    void testFirstRxIsReported() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::transmitStateChanged);
+        rs.parseCATCommand("RX;");
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), false);
     }
 
     // --- SMH / SMH$ (the radio's signal level in dBm) ---

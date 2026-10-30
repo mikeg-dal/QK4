@@ -5,39 +5,7 @@
 #include <QtGlobal>
 
 void ProcessingState::reset() {
-    // Main RX
-    noiseBlankerLevel = 0;
-    noiseBlankerEnabled = false;
-    noiseBlankerFilterWidth = 0;
-    noiseReductionLevel = 0;
-    noiseReductionEnabled = false;
-    ssnrLevel = 0;
-    ssnrEnabled = false;
-    autoNotchEnabled = false;
-    manualNotchEnabled = false;
-    manualNotchPitch = 1000;
-    preamp = 0;
-    preampEnabled = false;
-    attenuatorLevel = 0;
-    attenuatorEnabled = false;
-    agcSpeed = RadioState::AGC_Slow;
-
-    // Sub RX
-    noiseBlankerLevelB = 0;
-    noiseBlankerEnabledB = false;
-    noiseBlankerFilterWidthB = 0;
-    noiseReductionLevelB = 0;
-    noiseReductionEnabledB = false;
-    ssnrLevelB = 0;
-    ssnrEnabledB = false;
-    autoNotchEnabledB = false;
-    manualNotchEnabledB = false;
-    manualNotchPitchB = 1000;
-    preampB = 0;
-    preampEnabledB = false;
-    attenuatorLevelB = 0;
-    attenuatorEnabledB = false;
-    agcSpeedB = RadioState::AGC_Slow;
+    *this = ProcessingState();
 }
 
 namespace ProcessingHandlers {
@@ -63,11 +31,10 @@ void handleNB(ProcessingState &state, RadioState &owner, const QString &cmd) {
         if (ok3)
             newFilter = qMin(filter, 2);
     }
-    if (newLevel == state.noiseBlankerLevel && newEnabled == state.noiseBlankerEnabled &&
-        newFilter == state.noiseBlankerFilterWidth)
+    const bool enabledChanged = state.noiseBlankerEnabled.set(newEnabled);
+    if (!enabledChanged && newLevel == state.noiseBlankerLevel && newFilter == state.noiseBlankerFilterWidth)
         return;
     state.noiseBlankerLevel = newLevel;
-    state.noiseBlankerEnabled = newEnabled;
     state.noiseBlankerFilterWidth = newFilter;
     emit owner.processingChanged();
 }
@@ -92,11 +59,10 @@ void handleNBSub(ProcessingState &state, RadioState &owner, const QString &cmd) 
         if (ok3)
             newFilter = qMin(filter, 2);
     }
-    if (newLevel == state.noiseBlankerLevelB && newEnabled == state.noiseBlankerEnabledB &&
-        newFilter == state.noiseBlankerFilterWidthB)
+    const bool enabledChanged = state.noiseBlankerEnabledB.set(newEnabled);
+    if (!enabledChanged && newLevel == state.noiseBlankerLevelB && newFilter == state.noiseBlankerFilterWidthB)
         return;
     state.noiseBlankerLevelB = newLevel;
-    state.noiseBlankerEnabledB = newEnabled;
     state.noiseBlankerFilterWidthB = newFilter;
     emit owner.processingChangedB();
 }
@@ -113,10 +79,10 @@ void handleNR(ProcessingState &state, RadioState &owner, const QString &cmd) {
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.noiseReductionLevel && newEnabled == state.noiseReductionEnabled)
+    const bool enabledChanged = state.noiseReductionEnabled.set(newEnabled);
+    if (!enabledChanged && level == state.noiseReductionLevel)
         return;
     state.noiseReductionLevel = level;
-    state.noiseReductionEnabled = newEnabled;
     emit owner.processingChanged();
 }
 
@@ -132,10 +98,10 @@ void handleNRSub(ProcessingState &state, RadioState &owner, const QString &cmd) 
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.noiseReductionLevelB && newEnabled == state.noiseReductionEnabledB)
+    const bool enabledChanged = state.noiseReductionEnabledB.set(newEnabled);
+    if (!enabledChanged && level == state.noiseReductionLevelB)
         return;
     state.noiseReductionLevelB = level;
-    state.noiseReductionEnabledB = newEnabled;
     emit owner.processingChangedB();
 }
 
@@ -152,10 +118,10 @@ void handleNRS(ProcessingState &state, RadioState &owner, const QString &cmd) {
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.ssnrLevel && newEnabled == state.ssnrEnabled)
+    const bool enabledChanged = state.ssnrEnabled.set(newEnabled);
+    if (!enabledChanged && level == state.ssnrLevel)
         return;
     state.ssnrLevel = level;
-    state.ssnrEnabled = newEnabled;
     emit owner.processingChanged();
 }
 
@@ -172,10 +138,10 @@ void handleNRSSub(ProcessingState &state, RadioState &owner, const QString &cmd)
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.ssnrLevelB && newEnabled == state.ssnrEnabledB)
+    const bool enabledChanged = state.ssnrEnabledB.set(newEnabled);
+    if (!enabledChanged && level == state.ssnrLevelB)
         return;
     state.ssnrLevelB = level;
-    state.ssnrEnabledB = newEnabled;
     emit owner.processingChangedB();
 }
 
@@ -191,10 +157,10 @@ void handlePA(ProcessingState &state, RadioState &owner, const QString &cmd) {
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.preamp && newEnabled == state.preampEnabled)
+    const bool enabledChanged = state.preampEnabled.set(newEnabled);
+    if (!enabledChanged && level == state.preamp)
         return;
     state.preamp = level;
-    state.preampEnabled = newEnabled;
     emit owner.processingChanged();
 }
 
@@ -210,10 +176,10 @@ void handlePASub(ProcessingState &state, RadioState &owner, const QString &cmd) 
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.preampB && newEnabled == state.preampEnabledB)
+    const bool enabledChanged = state.preampEnabledB.set(newEnabled);
+    if (!enabledChanged && level == state.preampB)
         return;
     state.preampB = level;
-    state.preampEnabledB = newEnabled;
     emit owner.processingChangedB();
 }
 
@@ -229,10 +195,10 @@ void handleRA(ProcessingState &state, RadioState &owner, const QString &cmd) {
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.attenuatorLevel && newEnabled == state.attenuatorEnabled)
+    const bool enabledChanged = state.attenuatorEnabled.set(newEnabled);
+    if (!enabledChanged && level == state.attenuatorLevel)
         return;
     state.attenuatorLevel = level;
-    state.attenuatorEnabled = newEnabled;
     emit owner.processingChanged();
 }
 
@@ -248,10 +214,10 @@ void handleRASub(ProcessingState &state, RadioState &owner, const QString &cmd) 
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.attenuatorLevelB && newEnabled == state.attenuatorEnabledB)
+    const bool enabledChanged = state.attenuatorEnabledB.set(newEnabled);
+    if (!enabledChanged && level == state.attenuatorLevelB)
         return;
     state.attenuatorLevelB = level;
-    state.attenuatorEnabledB = newEnabled;
     emit owner.processingChangedB();
 }
 
@@ -313,16 +279,14 @@ void handleNM(ProcessingState &state, RadioState &owner, const QString &cmd) {
             state.manualNotchPitch = pitch;
             changed = true;
         }
-        if (state.manualNotchEnabled != enabled) {
-            state.manualNotchEnabled = enabled;
+        if (state.manualNotchEnabled.set(enabled)) {
             changed = true;
         }
         if (changed)
             emit owner.notchChanged();
     } else if (data.length() >= 1) {
         const bool enabled = (data.at(0) == '1');
-        if (state.manualNotchEnabled != enabled) {
-            state.manualNotchEnabled = enabled;
+        if (state.manualNotchEnabled.set(enabled)) {
             emit owner.notchChanged();
         }
     }
@@ -341,16 +305,14 @@ void handleNMSub(ProcessingState &state, RadioState &owner, const QString &cmd) 
             state.manualNotchPitchB = pitch;
             changed = true;
         }
-        if (state.manualNotchEnabledB != enabled) {
-            state.manualNotchEnabledB = enabled;
+        if (state.manualNotchEnabledB.set(enabled)) {
             changed = true;
         }
         if (changed)
             emit owner.notchBChanged();
     } else if (data.length() >= 1) {
         const bool enabled = (data.at(0) == '1');
-        if (state.manualNotchEnabledB != enabled) {
-            state.manualNotchEnabledB = enabled;
+        if (state.manualNotchEnabledB.set(enabled)) {
             emit owner.notchBChanged();
         }
     }

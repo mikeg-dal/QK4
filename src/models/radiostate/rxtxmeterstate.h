@@ -1,6 +1,8 @@
 #ifndef MODELS_RADIOSTATE_RXTXMETERSTATE_H
 #define MODELS_RADIOSTATE_RXTXMETERSTATE_H
 
+#include "reportedflag.h"
+
 #include <QMap>
 #include <QString>
 
@@ -63,18 +65,14 @@ struct RxTxMeterState {
     int lpaTemperatureC = -1;
 
     // TX/RX transition.
-    bool isTransmitting = false;
+    ReportedFlag isTransmitting;
 
-    // Control toggles carried alongside the TX/RX feed.
-    // WHY tri-state (-1 = unknown until first SB/DV): a plain bool defaulting to
-    // false is swallowed by the change-guard when the radio's first report is the
-    // default-off state (SB0/DV0), so no Changed signal ever fires and consumers
-    // (VFO B dimming, sub-RX mute) keep their stale initial state. -1 guarantees
-    // the first update always emits. (0 = off, 1 = on.)
-    int subReceiverEnabled = -1;
-    int diversityEnabled = -1;
-    bool testMode = false;
-    bool bSetEnabled = false;
+    // Control toggles carried alongside the TX/RX feed (SB, DV, TS, BS). Unknown until the radio
+    // reports them — see reportedflag.h.
+    ReportedFlag subReceiverEnabled;
+    ReportedFlag diversityEnabled;
+    ReportedFlag testMode;
+    ReportedFlag bSetEnabled;
 
     // Message bank (MN).
     int messageBank = -1;

@@ -1,8 +1,12 @@
 #ifndef MODELS_RADIOSTATE_FREQUENCYVFOSTATE_H
 #define MODELS_RADIOSTATE_FREQUENCYVFOSTATE_H
 
+#include "reportedflag.h"
+
 #include <QString>
 #include <QtGlobal>
+
+#include <limits>
 
 class RadioState;
 
@@ -17,19 +21,21 @@ struct FrequencyVfoState {
     quint64 vfoA = 0;
     quint64 vfoB = 0;
 
-    bool splitEnabled = false; // FT
+    ReportedFlag splitEnabled; // FT
 
     // RIT / XIT state + offsets. Main RX on RO, Sub RX / split-XIT on RO$.
-    bool ritEnabled = false;
-    bool xitEnabled = false;
-    int ritXitOffset = 0;
-    bool ritEnabledB = false;
-    int ritXitOffsetB = 0;
+    // RO / RO$ carry ±9999 Hz, so RitXitOffsetUnknown can never arrive on the wire.
+    static constexpr int RitXitOffsetUnknown = (std::numeric_limits<int>::min)();
+    ReportedFlag ritEnabled;
+    ReportedFlag xitEnabled;
+    int ritXitOffset = RitXitOffsetUnknown;
+    ReportedFlag ritEnabledB;
+    int ritXitOffsetB = RitXitOffsetUnknown;
 
     // VFO link (LN) and per-VFO lock (LK / LK$).
-    bool vfoLink = false;
-    bool lockA = false;
-    bool lockB = false;
+    ReportedFlag vfoLink;
+    ReportedFlag lockA;
+    ReportedFlag lockB;
 
     void reset();
 };

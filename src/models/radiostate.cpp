@@ -455,14 +455,11 @@ void RadioState::handleIntPair(const QString &cmd, int prefixLen, int &member, i
     }
 }
 
-void RadioState::handleBoolPair(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)()) {
+void RadioState::handleBoolPair(const QString &cmd, int charPos, ReportedFlag &member, void (RadioState::*signal)()) {
     if (cmd.length() <= charPos)
         return;
-    bool enabled = (cmd.at(charPos) == '1');
-    if (member != enabled) {
-        member = enabled;
+    if (member.set(cmd.at(charPos) == '1'))
         emit(this->*signal)();
-    }
 }
 
 void RadioState::handleBoolPairVal(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)(bool)) {
