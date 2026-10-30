@@ -190,6 +190,7 @@ set(SOURCES
     src/dsp/minipan_rhi.cpp
     src/dsp/bandplanstrip.cpp
     src/dsp/spectrumgeometry.cpp
+    src/dsp/poweraverager.cpp
     src/dsp/spectrumscale.cpp
     src/dsp/waterfallgeometry.cpp
     src/utils/panelscale.cpp

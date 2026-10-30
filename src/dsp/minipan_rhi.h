@@ -1,6 +1,7 @@
 #ifndef MINIPAN_RHI_H
 #define MINIPAN_RHI_H
 
+#include "dsp/poweraverager.h"
 #include <QRhiWidget>
 #include <rhi/qrhi.h>
 #include <QColor>
@@ -190,8 +191,7 @@ private:
 
     // Display averaging (K4 #AVG control, 1-20)
     int m_averagingLevel = -1; // until the radio reports #AVG; see PanadapterRhiWidget
-    float m_attackAlpha = 1.0f;
-    float m_decayAlpha = 1.0f;
+    PowerAverager m_averager;  // #AVG, see PanadapterRhiWidget
 
     // Filter passband visualization
     qint64 m_tunedFreq = 0; // 0 until the controller reports the dial

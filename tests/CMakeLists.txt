@@ -156,6 +156,13 @@ target_link_libraries(test_spectrumscale Qt6::Core Qt6::Test)
 add_test(NAME SpectrumScaleTests COMMAND test_spectrumscale)
 
 # Panadapter frequency axis: mode parsing, CW display centre, passband edges, PAN frame bin bounds.
+add_executable(test_poweraverager test_poweraverager.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/poweraverager.cpp
+)
+target_include_directories(test_poweraverager PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_poweraverager Qt6::Core Qt6::Test)
+add_test(NAME PowerAveragerTests COMMAND test_poweraverager)
+
 add_executable(test_spectrumgeometry test_spectrumgeometry.cpp
     ${CMAKE_SOURCE_DIR}/src/dsp/spectrumgeometry.cpp
 )
@@ -828,6 +835,7 @@ if(NOT QK4_TESTS_ONLY AND QT_GUI_PRIVATE_FOUND)
         ${CMAKE_SOURCE_DIR}/src/dsp/minipan_rhi.cpp
         ${CMAKE_SOURCE_DIR}/src/dsp/bandplanstrip.cpp
         ${CMAKE_SOURCE_DIR}/src/dsp/spectrumgeometry.cpp
+        ${CMAKE_SOURCE_DIR}/src/dsp/poweraverager.cpp
         ${CMAKE_SOURCE_DIR}/src/dsp/spectrumscale.cpp
         ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
         ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp

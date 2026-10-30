@@ -74,25 +74,6 @@ int frequencyLabelStepHz(int gridIntervalHz, int spanHz, double widthPx, double 
 // height: there is no fade towards the bottom, which is where the band noise is drawn.
 float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, float glowAlpha);
 
-// Trace smoothing for the radio's #AVG level (1..20, clamped): the EMA weights given to a rising and
-// a falling bin. The K4 does not average the PAN stream at any #AVG (measured 2026-10-30: per-bin
-// frame-to-frame variation identical at AVG 1 and AVG 20), so a client must average itself to look
-// like the K4's screen. #AVG n is read as "average over about n frames": the EMA equivalent of an
-// n-frame moving average, alpha = 2 / (n + 1), the same for rising and falling bins. At #AVG 1 that is
-// 1: every frame drawn as it arrives, as on the K4. The exact K4 rule is unpublished; tune by eye.
-struct EmaAlphas {
-    float attack;
-    float decay;
-};
-EmaAlphas emaAlphasFor(int avgLevel);
-
-// One EMA step on a bin, averaged in POWER, not in dB: alpha x the new power + (1 - alpha) x the
-// previous power, back to dB. Averaging dB values pulls noise down (for noise the mean of the dB
-// readings sits ~2.5 dB under the dB of the mean power) and flattens its peaks; at #AVG 3 QK4's
-// noise grass came out about half as tall and 2-3 dB lower than the K4's (bench 2026-10-30).
-// alpha >= 1 returns the new value unchanged (#AVG 1).
-float averagePowerDb(float previousDb, float newDb, float alpha);
-
 } // namespace SpectrumGeometry
 
 #endif // SPECTRUMGEOMETRY_H

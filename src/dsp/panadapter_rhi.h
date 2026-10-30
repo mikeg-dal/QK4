@@ -1,6 +1,7 @@
 #ifndef PANADAPTER_RHI_H
 #define PANADAPTER_RHI_H
 
+#include "dsp/poweraverager.h"
 #include <QRhiWidget>
 #include <rhi/qrhi.h>
 #include <QColor>
@@ -368,8 +369,8 @@ private:
     // -1 until the radio reports #AVG, so its first report always applies (a legal default here
     // swallowed #AVG1 and left the old smoothing on). Unsmoothed until then.
     int m_averagingLevel = -1;
-    float m_attackAlpha = 1.0f;
-    float m_decayAlpha = 1.0f;
+    PowerAverager m_tierAverager;  // full-tier bins -> waterfall
+    PowerAverager m_traceAverager; // cropped bins -> trace
 
     WheelAccumulator m_wheelAccumulator;
 

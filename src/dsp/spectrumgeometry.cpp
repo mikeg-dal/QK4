@@ -137,20 +137,4 @@ float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, f
     return qMax(0.9f * fillMask, glow * glowAlpha);
 }
 
-float averagePowerDb(float previousDb, float newDb, float alpha) {
-    if (alpha >= 1.0f)
-        return newDb;
-    // Relative to the larger value so the powers stay near 1 whatever the dBm (no underflow).
-    const float ref = (std::max)(previousDb, newDb);
-    const float power =
-        alpha * std::pow(10.0f, (newDb - ref) / 10.0f) + (1.0f - alpha) * std::pow(10.0f, (previousDb - ref) / 10.0f);
-    return ref + 10.0f * std::log10(power);
-}
-
-EmaAlphas emaAlphasFor(int avgLevel) {
-    const int level = std::clamp(avgLevel, 1, 20);
-    const float alpha = 2.0f / static_cast<float>(level + 1); // n-frame moving-average equivalent
-    return {alpha, alpha};
-}
-
 } // namespace SpectrumGeometry

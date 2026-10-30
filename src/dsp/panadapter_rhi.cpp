@@ -1,6 +1,7 @@
 #include "panadapter_rhi.h"
 #include "logging/logcategories.h"
 #include "dsp/bandplanstrip.h"
+#include "dsp/poweraverager.h"
 #include "dsp/spectrumgeometry.h"
 #include "dsp/spectrumscale.h"
 #include "dsp/waterfallgeometry.h"
@@ -25,30 +26,6 @@
 #include <utility>
 
 namespace {
-
-// Stretch a spectrum curve to a different bin count, keeping its shape across the frequency axis.
-// Used when the bin count changes under an EMA that must not be interrupted.
-QVector<float> resampleLinear(const QVector<float> &src, int dstSize) {
-    if (src.isEmpty() || dstSize <= 0)
-        return QVector<float>(qMax(0, dstSize), 0.0f);
-    if (src.size() == dstSize)
-        return src;
-
-    QVector<float> out(dstSize);
-    if (src.size() == 1) {
-        out.fill(src[0]);
-        return out;
-    }
-    const float step = static_cast<float>(src.size() - 1) / static_cast<float>(qMax(1, dstSize - 1));
-    for (int i = 0; i < dstSize; ++i) {
-        const float pos = i * step;
-        const int lo = qBound(0, static_cast<int>(pos), src.size() - 1);
-        const int hi = qMin(lo + 1, src.size() - 1);
-        const float frac = pos - lo;
-        out[i] = src[lo] * (1.0f - frac) + src[hi] * frac;
-    }
-    return out;
-}
 
 // The amplitude-axis and frequency-scale labels: readout size, Medium weight, tabular figures.
 QFont scaleLabelFont() {
@@ -1295,9 +1272,6 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
     qint32 tierSpanHz = sampleRate * 1000;
     int totalBins = binCount;
 
-    const float attackAlpha = m_attackAlpha;
-    const float decayAlpha = m_decayAlpha;
-
     // === Full-tier path (all bins → waterfall storage) ===
     decompressBins(bins, m_tierRawSpectrum);
 
@@ -1320,16 +1294,10 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
             m_waterfallNeedsFullClear = true;
         }
 
-        m_tierSpectrum = m_tierRawSpectrum;
+        m_tierAverager.reset(); // no averaging across a tier change
         m_lastTierSampleRate = sampleRate;
-    } else if (m_tierSpectrum.size() != m_tierRawSpectrum.size()) {
-        m_tierSpectrum = m_tierRawSpectrum;
-    } else {
-        for (int i = 0; i < m_tierRawSpectrum.size(); ++i) {
-            float alpha = (m_tierRawSpectrum[i] > m_tierSpectrum[i]) ? attackAlpha : decayAlpha;
-            m_tierSpectrum[i] = SpectrumGeometry::averagePowerDb(m_tierSpectrum[i], m_tierRawSpectrum[i], alpha);
-        }
     }
+    m_tierAverager.add(m_tierRawSpectrum, m_tierSpectrum); // #AVG (PowerAverager)
     m_waterfallTierBinCount = totalBins;
     m_waterfallTierSpanHz = static_cast<float>(tierSpanHz);
 
@@ -1346,23 +1314,10 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
 
     decompressBins(binsToUse, m_rawSpectrum);
 
-    // WHY resample instead of reassigning: the cropped bin count is spanHz * totalBins / tierSpanHz,
-    // so it changes on every span change and every tier crossing. Dropping the smoothed curve there
-    // put one raw, unsmoothed frame on screen, which reads as a visible flash against an EMA running
-    // at attack 0.52 / decay 0.34. The frequency axis is unchanged across that boundary — old and
-    // new both cover spanHz about the same centre, only the resolution differs — so the smoothed
-    // curve carries over correctly once stretched to the new bin count, and smoothing continues
-    // uninterrupted.
-    if (m_currentSpectrum.isEmpty()) {
-        m_currentSpectrum = m_rawSpectrum;
-    } else {
-        if (m_currentSpectrum.size() != m_rawSpectrum.size())
-            m_currentSpectrum = resampleLinear(m_currentSpectrum, m_rawSpectrum.size());
-        for (int i = 0; i < m_rawSpectrum.size(); ++i) {
-            float alpha = (m_rawSpectrum[i] > m_currentSpectrum[i]) ? attackAlpha : decayAlpha;
-            m_currentSpectrum[i] = SpectrumGeometry::averagePowerDb(m_currentSpectrum[i], m_rawSpectrum[i], alpha);
-        }
-    }
+    // #AVG over the last n frames, in power (PowerAverager). A span or tier change alters the cropped
+    // bin count and restarts the average: the next n frames build it up again, so nothing from the
+    // old resolution is blended in.
+    m_traceAverager.add(m_rawSpectrum, m_currentSpectrum);
 
     // The radio reports the noise floor it measured, in the same dBm the bins are meant to be in
     // once RhiUtils::K4_DBM_OFFSET is applied. Comparing the two is a free check that the offset is
@@ -1684,6 +1639,8 @@ void PanadapterRhiWidget::clear() {
     m_currentSpectrum.clear();
     m_rawSpectrum.clear();
     m_averagingLevel = -1; // the next session's #AVG always applies
+    m_tierAverager.reset();
+    m_traceAverager.reset();
     m_tierSpectrum.clear();
     m_tierRawSpectrum.clear();
     m_lastTierSampleRate = 0;
@@ -1821,9 +1778,8 @@ void PanadapterRhiWidget::setAveraging(int level) {
     if (m_averagingLevel == level)
         return;
     m_averagingLevel = level;
-    const SpectrumGeometry::EmaAlphas alphas = SpectrumGeometry::emaAlphasFor(level);
-    m_attackAlpha = alphas.attack;
-    m_decayAlpha = alphas.decay;
+    m_tierAverager.setLength(level);
+    m_traceAverager.setLength(level);
 }
 
 // Secondary VFO setters

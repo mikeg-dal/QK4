@@ -699,15 +699,8 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerHz, i
     for (int i = 0; i < bins.size(); ++i)
         m_spectrum[i] = static_cast<quint8>(bins[i]) - SpectrumScale::K4_MINIPAN_DBM_OFFSET;
 
-    // #AVG smoothing, averaged in power like the main pan (SpectrumGeometry::averagePowerDb)
-    if (m_smoothedSpectrum.size() != m_spectrum.size()) {
-        m_smoothedSpectrum = m_spectrum;
-    } else {
-        for (int i = 0; i < m_spectrum.size(); ++i) {
-            float alpha = (m_spectrum[i] > m_smoothedSpectrum[i]) ? m_attackAlpha : m_decayAlpha;
-            m_smoothedSpectrum[i] = SpectrumGeometry::averagePowerDb(m_smoothedSpectrum[i], m_spectrum[i], alpha);
-        }
-    }
+    // #AVG over the last n frames, in power, like the main pan (PowerAverager)
+    m_averager.add(m_spectrum, m_smoothedSpectrum);
 
     m_waterfallNeedsUpdate = true;
     update();
@@ -715,6 +708,7 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerHz, i
 
 void MiniPanRhiWidget::clear() {
     m_averagingLevel = -1; // the next session's #AVG always applies
+    m_averager.reset();
     m_spectrum.clear();
     m_smoothedSpectrum.clear();
     m_waterfallWriteRow = 0;
@@ -832,9 +826,7 @@ void MiniPanRhiWidget::setAveraging(int level) {
         return;
     m_averagingLevel = level;
     // One rule for both pans (Rule 1): no smoothing at #AVG 1, as on the K4.
-    const SpectrumGeometry::EmaAlphas alphas = SpectrumGeometry::emaAlphasFor(level);
-    m_attackAlpha = alphas.attack;
-    m_decayAlpha = alphas.decay;
+    m_averager.setLength(level);
 }
 
 void MiniPanRhiWidget::mousePressEvent(QMouseEvent *event) {

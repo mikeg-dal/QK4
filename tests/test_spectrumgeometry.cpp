@@ -41,8 +41,6 @@ private slots:
     void frequencyLabelsTakeOneEvenStep();
     void frequencyLabelStepIsTheSmallestThatFits();
     void fillIsOpaqueDownToTheBottomEdge();
-    void avgOneDrawsEveryFrameAsItArrives();
-    void averagingIsInPowerNotDb();
 };
 
 void TestSpectrumGeometry::modeParsesRadioStateSpelling() {
@@ -288,40 +286,6 @@ void TestSpectrumGeometry::fillIsOpaqueDownToTheBottomEdge() {
     }
     // Well above the trace and its glow nothing is drawn.
     QCOMPARE(fillAlphaFor(0.1f, 0.9f, 0.04f, 0.8f, 1.0f), 0.0f);
-}
-
-// #AVG 1 means no averaging on the K4; QK4 must not smooth either, or the noise grass sits about one
-// S-unit low (bench 2026-10-30). Higher levels smooth, more with each level, and stay in (0, 1].
-void TestSpectrumGeometry::avgOneDrawsEveryFrameAsItArrives() {
-    const EmaAlphas one = emaAlphasFor(1);
-    QCOMPARE(one.attack, 1.0f);
-    QCOMPARE(one.decay, 1.0f);
-    QCOMPARE(emaAlphasFor(0).attack, 1.0f); // clamped up to 1
-    float prevAttack = 1.0f, prevDecay = 1.0f;
-    for (int level = 2; level <= 20; ++level) {
-        const EmaAlphas a = emaAlphasFor(level);
-        QVERIFY(a.attack > 0.0f && a.attack < prevAttack);
-        QVERIFY(a.decay > 0.0f && a.decay < prevDecay);
-        prevAttack = a.attack;
-        prevDecay = a.decay;
-    }
-    QCOMPARE(emaAlphasFor(25).attack, emaAlphasFor(20).attack); // clamped down to 20
-    // #AVG n averages over about n frames: alpha 2 / (n + 1), symmetric.
-    for (int n : {2, 5, 10, 20}) {
-        QCOMPARE(emaAlphasFor(n).attack, 2.0f / static_cast<float>(n + 1));
-        QCOMPARE(emaAlphasFor(n).decay, emaAlphasFor(n).attack);
-    }
-}
-
-// #AVG averages power, as a spectrum analyser does: averaging the dB values pulled the noise grass
-// ~2.5 dB low and flattened it (bench 2026-10-30, #AVG 3).
-void TestSpectrumGeometry::averagingIsInPowerNotDb() {
-    QCOMPARE(averagePowerDb(-100.0f, -90.0f, 1.0f), -90.0f);                    // #AVG 1: the new frame
-    QVERIFY(std::abs(averagePowerDb(-100.0f, -100.0f, 0.5f) + 100.0f) < 1e-4f); // steady stays put
-    // Half of 1e-10 mW and 1e-9 mW is 5.5e-10 mW = -92.6 dBm, not the dB mean -95.
-    QVERIFY(std::abs(averagePowerDb(-100.0f, -90.0f, 0.5f) - (-92.596f)) < 0.01f);
-    // Very low levels do not underflow.
-    QVERIFY(std::abs(averagePowerDb(-400.0f, -400.0f, 0.3f) + 400.0f) < 1e-3f);
 }
 
 QTEST_APPLESS_MAIN(TestSpectrumGeometry)
