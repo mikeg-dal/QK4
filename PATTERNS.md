@@ -113,7 +113,11 @@ State lives in plain-struct **subsystems** under `src/models/radiostate/`. `Radi
 `QObject` façade that owns them, dispatches CAT and emits every signal.
 
 1. **Pick the subsystem** whose topic fits (Subsystem State, below). A new subsystem is rare.
-2. **Add the field** to the struct and restore its sentinel in the struct's `reset()`.
+2. **Add the field** to the struct and restore its sentinel in the struct's `reset()`. The sentinel
+   must be a value the radio can never send, so its first report always emits — including a first
+   report of "off" or 0 (the connection dump). On/off fields are `ReportedFlag`
+   (`radiostate/reportedflag.h`), never a plain `bool`; ints take a named `Unknown` outside the wire
+   range, and the getter reads unknown as the legal default.
 3. **Add a handler** in the subsystem's `*Handlers` namespace:
    `void handleXX(XxxState &state, RadioState &owner, const QString &cmd)`. Mutate the struct, then
    `emit owner.myThingChanged(value);`.

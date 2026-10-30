@@ -21,6 +21,8 @@ the end.
 - **Parse order:** register specific prefixes before general ones (`RG$` before `RG`).
   `test_radiostate_registry` enforces this.
 - **Sentinels:** initialise state to an invalid value (`-1`, `-999`) so the first radio update emits.
+  Never a legal value, not even "off" or 0: the connection dump reports those, and a change guard
+  would swallow them. On/off state is a `ReportedFlag` (`src/models/radiostate/reportedflag.h`).
   Every subsystem struct has a `reset()` that restores its sentinels; `RadioState::reset()` calls it
   on disconnect.
 
