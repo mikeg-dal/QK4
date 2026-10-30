@@ -24,7 +24,7 @@ void main() {
     gl_Position = vec4(position, 0.0, 1.0);
 
     // The texture stores more history than is shown. Scale the quad's 0..1 t across only the
-    // visible slice, so the rows on screen are the newest ones and each maps to one device pixel;
+    // visible slice, so the rows on screen are the newest ones and each maps to one physical pixel;
     // V wraps, which is what makes the ring buffer scroll.
     fragTexCoord = vec2(texCoord.x, texCoord.y * visibleFraction + scrollOffset);
 }

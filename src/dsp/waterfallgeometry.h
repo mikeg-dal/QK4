@@ -13,9 +13,25 @@
 // display shows the newest `visibleRows` of them, oldest at the bottom.
 namespace WaterfallGeometry {
 
-// Rows to draw for a waterfall this tall, one row per device pixel, clamped to what is stored less
-// the row reserved for the write head. pxPerRow above 1 means a clamp bit and the blur is back.
-int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows);
+// Device pixels each row is drawn with: one row per PHYSICAL pixel of the panel.
+//
+// Normally a device pixel is a physical one and this is 1. When the OS draws a framebuffer larger
+// than the panel and scales it down (macOS "HiDPI" on a 4K panel: 7680x4320 halved to 3840x2160,
+// still devicePixelRatio 2), a 1-device-pixel row is half a physical pixel, and every one-row
+// scroll step moves the image by half a physical pixel. The display's downscale then pairs the rows
+// differently on alternate steps: a one-row feature is crisp in one physical pixel, then smeared at
+// half strength across two, then crisp again — the whole noise field twinkles at half the frame
+// rate while it scrolls. With rows as tall as the downscale factor, each step is exactly one
+// physical pixel and the scroll is rigid again.
+//
+// Only a whole factor can be honoured (2.0 within 1%); a fractional macOS "scaled" mode has no row
+// height that lands on the panel's grid, so it keeps 1. Below 1.5 is 1.
+int devicePxPerRowFor(qreal framebufferPixelsPerPanelPixel);
+
+// Rows to draw for a waterfall this tall, one row per devicePxPerRow device pixels, clamped to what
+// is stored less the row reserved for the write head. pxPerRow above devicePxPerRow means a clamp
+// bit and the blur is back.
+int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int devicePxPerRow = 1);
 
 // Oldest row on display, wrapped into [0, storedRows). Excluding the in-flight row is this
 // function's job alone: taking writeRow - visibleRows puts the newest drawn row at writeRow - 1.
@@ -35,8 +51,10 @@ float visibleFractionFor(int visibleRows, int storedRows);
 //
 // MUST be kept in sync with src/dsp/shaders/waterfall.{vert,frag} by hand. Same coupling as
 // RhiUtils::WaterfallUniforms, and it exists for the same reason: the alternative is no coverage.
-// pixel 0 is the bottom of the waterfall (oldest), pixelCount - 1 the top (newest).
-int rowForPixel(int pixel, int pixelCount, int writeRow, int visibleRows, int storedRows);
+// pixel 0 is the bottom of the waterfall (oldest). viewportHeightPx is the waterfall viewport's
+// height in device pixels, which is fractional in general (924 px x 0.6 = 554.4); the pixels drawn
+// are those whose centre lies inside it.
+int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows, int storedRows);
 
 // ---- Colour: which dBm lands where in the waterfall palette ----------------------------------
 //

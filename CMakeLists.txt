@@ -192,6 +192,7 @@ set(SOURCES
     src/dsp/spectrumgeometry.cpp
     src/dsp/spectrumscale.cpp
     src/dsp/waterfallgeometry.cpp
+    src/utils/panelscale.cpp
     src/settings/radiosettings.cpp
     src/settings/interfacescale.cpp
     src/logging/logcategories.cpp
@@ -344,6 +345,7 @@ set(HEADERS
     src/utils/rtscheduling.h
     src/utils/rtsemaphore.h
     src/utils/threadshutdown.h
+    src/utils/panelscale.h
     src/utils/spscring.h
     src/network/protocol.h
     src/network/networkmetrics.h
@@ -551,6 +553,7 @@ if(APPLE)
     target_link_libraries(${PROJECT_NAME} PRIVATE
         "-framework IOKit"
         "-framework CoreFoundation"
+        "-framework CoreGraphics"
         "-framework Foundation"
     )
 endif()

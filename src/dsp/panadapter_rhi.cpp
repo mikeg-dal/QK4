@@ -9,12 +9,14 @@
 #include "dashgeometry.h"
 #include "rhi_utils.h"
 #include "ui/styling/k4styles.h"
+#include "utils/panelscale.h"
 #include <QFontMetrics>
 #include <QLoggingCategory>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QResizeEvent>
+#include <QScreen>
 #include <QtMath>
 #include <algorithm>
 #include <array>
@@ -922,7 +924,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     }
 
     // Update waterfall texture if needed
-    if (m_waterfallNeedsUpdate && !m_currentSpectrum.isEmpty()) {
+    const bool rowCommitted = m_waterfallNeedsUpdate && !m_currentSpectrum.isEmpty();
+    if (rowCommitted) {
         updateWaterfallData();
         QRhiTextureSubresourceUploadDescription rowUpload(
             m_waterfallData.constData() + m_waterfallWriteRow * m_textureWidth, m_textureWidth);
@@ -933,16 +936,22 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         m_waterfallNeedsUpdate = false;
     }
 
-    // One stored row per device pixel of waterfall height, so a row is never stretched across
-    // several pixels and blended with its neighbours. Clamped to what is actually stored: past
-    // that the old stretching returns, which the qk4.spectrum.diag geometry line reports as pxPerRow
-    // climbing above 1.
-    m_visibleRows = WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS);
+    // One stored row per physical pixel of waterfall height, so a row is never stretched across
+    // several pixels and blended with its neighbours, and each scroll step moves the image by one
+    // whole physical pixel. That is one device pixel unless the OS downscales the framebuffer onto
+    // the panel (updateDevicePxPerRow). Clamped to what is actually stored: past that the old
+    // stretching returns, which the qk4.spectrum.diag geometry line reports as pxPerRow climbing
+    // above devicePxPerRow.
+    updateDevicePxPerRow();
+    m_visibleRows =
+        WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS, m_devicePxPerRow);
 
     // Logged here rather than earlier in the frame: the geometry line reports pxPerRow, which is
     // only meaningful once the visible row count for this frame has been chosen.
-    if (lcSpectrumDiag().isDebugEnabled())
+    if (lcSpectrumDiag().isDebugEnabled()) {
         logRenderGeometry(outputSize);
+        noteRenderCadence(rowCommitted);
+    }
 
     // Show the newest m_visibleRows rows, ending one short of the row being written.
     //
@@ -1360,6 +1369,10 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
         }
     }
 
+    // A row is written per render, not per frame: a frame arriving before the previous one was
+    // drawn replaces it (the EMA has already folded it in), and that history slice is never stored.
+    if (m_waterfallNeedsUpdate && lcSpectrumDiag().isDebugEnabled())
+        ++m_cadenceCoalesced;
     m_waterfallNeedsUpdate = true;
     updateFreqScaleOverlay(); // Update frequency labels when center freq changes
     update();
@@ -1453,11 +1466,12 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     const float waterfallHeightPx = static_cast<float>(outputSize.height()) * (1.0f - m_spectrumRatio);
     const float pxPerRow = m_visibleRows > 0 ? waterfallHeightPx / m_visibleRows : 0.0f;
 
-    // Rows follow pixel height now, so anything but ~1.0 means a clamp bit: the window is either
-    // taller than the stored rows or shorter than MIN_VISIBLE_ROWS.
-    const char *verdict = pxPerRow <= 1.05f ? "1:1"
-                          : pxPerRow < 2.0f ? "above 1:1, clamped by stored rows"
-                                            : "well above 1:1, blur returning";
+    // Rows follow physical pixel height, so pxPerRow is ~devicePxPerRow; anything above means a
+    // clamp bit: the window is either taller than the stored rows or shorter than MIN_VISIBLE_ROWS.
+    const float perPhysical = pxPerRow / static_cast<float>(m_devicePxPerRow);
+    const char *verdict = perPhysical <= 1.05f ? "1:1 physical"
+                          : perPhysical < 2.0f ? "above 1:1, clamped by stored rows"
+                                               : "well above 1:1, blur returning";
 
     const float visibleBins = m_waterfallTierSpanHz > 0.0f
                                   ? static_cast<float>(m_waterfallTierBinCount) *
@@ -1470,12 +1484,67 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     // rejected what the Homebrew one accepted. One asprintf has no wrapping decision to disagree
     // about, and reads better besides.
     qCDebug(lcSpectrumDiag, "%s",
-            qPrintable(QString::asprintf("GEOMETRY    output %dx%d px  dpr %g  spectrumRatio %g  "
+            qPrintable(QString::asprintf("GEOMETRY    output %dx%d px  dpr %g  framebuffer/panel %.3f  "
+                                         "devicePxPerRow %d  spectrumRatio %g  "
                                          "waterfall %.1f px  rows %d/%d visible/stored  "
                                          "pxPerRow %.4f (%s)  visibleBins %.0f  pxPerBin %.2f",
-                                         outputSize.width(), outputSize.height(), devicePixelRatioF(), m_spectrumRatio,
-                                         waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
-                                         visibleBins, pxPerBin)));
+                                         outputSize.width(), outputSize.height(), devicePixelRatioF(),
+                                         m_framebufferPerPanel, m_devicePxPerRow, m_spectrumRatio, waterfallHeightPx,
+                                         m_visibleRows, m_waterfallHistory, pxPerRow, verdict, visibleBins, pxPerBin)));
+}
+
+void PanadapterRhiWidget::updateDevicePxPerRow() {
+    const QScreen *current = screen();
+    const QRect geometry = current ? current->geometry() : QRect();
+    const qreal dpr = devicePixelRatioF();
+    if (current == m_panelScaleScreen && geometry == m_panelScaleGeometry && qFuzzyCompare(dpr, m_panelScaleDpr))
+        return;
+    m_panelScaleScreen = current;
+    m_panelScaleGeometry = geometry;
+    m_panelScaleDpr = dpr;
+    m_framebufferPerPanel = PanelScale::framebufferPixelsPerPanelPixel(current);
+    m_devicePxPerRow = WaterfallGeometry::devicePxPerRowFor(m_framebufferPerPanel);
+}
+
+void PanadapterRhiWidget::noteRenderCadence(bool rowCommitted) {
+    if (!m_cadenceClock.isValid())
+        m_cadenceClock.start();
+    ++m_cadenceRenders;
+    if (!rowCommitted)
+        return;
+
+    const qint64 now = m_cadenceClock.nsecsElapsed();
+    if (m_cadenceLastRowNs >= 0) {
+        const qint64 interval = now - m_cadenceLastRowNs;
+        const qreal refreshHz = screen() ? screen()->refreshRate() : 60.0;
+        const qint64 refreshNs = static_cast<qint64>(1e9 / (refreshHz > 0.0 ? refreshHz : 60.0));
+        const int refreshes =
+            static_cast<int>(std::clamp((interval + refreshNs / 2) / refreshNs, qint64{0}, qint64{7}));
+        ++m_cadenceRefreshesPerRow[static_cast<size_t>(refreshes)];
+        m_cadenceMinRowNs = m_cadenceRows == 0 ? interval : (std::min)(m_cadenceMinRowNs, interval);
+        m_cadenceMaxRowNs = (std::max)(m_cadenceMaxRowNs, interval);
+        m_cadenceSumRowNs += interval;
+        ++m_cadenceRows;
+    }
+    m_cadenceLastRowNs = now;
+
+    if (m_cadenceRows < CadenceReportRows)
+        return;
+    const auto &h = m_cadenceRefreshesPerRow;
+    qCDebug(
+        lcSpectrumDiag, "%s",
+        qPrintable(QString::asprintf("CADENCE     rows %d  row interval ms mean %.1f min %.1f max %.1f  "
+                                     "refreshes/row 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7+:%d (0:%d)  "
+                                     "renders/row %.2f  frames coalesced %d",
+                                     m_cadenceRows, m_cadenceSumRowNs / 1e6 / m_cadenceRows, m_cadenceMinRowNs / 1e6,
+                                     m_cadenceMaxRowNs / 1e6, h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[0],
+                                     static_cast<double>(m_cadenceRenders) / m_cadenceRows, m_cadenceCoalesced)));
+    m_cadenceRows = 0;
+    m_cadenceRenders = 0;
+    m_cadenceCoalesced = 0;
+    m_cadenceSumRowNs = 0;
+    m_cadenceMaxRowNs = 0;
+    m_cadenceRefreshesPerRow.fill(0);
 }
 
 qint64 PanadapterRhiWidget::displayCenterHz() const {

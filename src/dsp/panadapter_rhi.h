@@ -5,9 +5,11 @@
 #include <rhi/qrhi.h>
 #include <QColor>
 #include <QElapsedTimer>
+#include <QRect>
 #include <QSize>
 #include <QTimer>
 #include <QVector>
+#include <array>
 #include <memory>
 #include "dsp/spectrumgeometry.h"
 #include "models/radiostate/spectrumdisplaystate.h"
@@ -18,6 +20,7 @@
 class DbmScaleOverlay;
 class FrequencyScaleOverlay;
 class BandPlanOverlay;
+class QScreen;
 
 // Modern GPU-accelerated panadapter using Qt RHI
 // Supports Metal (macOS), DirectX (Windows), Vulkan (Linux)
@@ -128,6 +131,12 @@ private:
     // Diagnostics — no rendering effect. Gated on the qk4.spectrum.diag category being debug-enabled.
     void logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz);
     void logRenderGeometry(const QSize &outputSize);
+    // Row commit vs. render timing, logged every CadenceReportRows rows: how many display refreshes
+    // each row stayed on screen and how many PAN frames arrived too close together to get a row.
+    void noteRenderCadence(bool rowCommitted);
+
+    // Re-derives m_devicePxPerRow when the widget's screen, its geometry or its scale changes.
+    void updateDevicePxPerRow();
 
     // Coordinate helpers
     qint64 displayCenterHz() const;
@@ -236,6 +245,16 @@ private:
     int m_waterfallHistory = MAX_WATERFALL_HISTORY; // rows stored (ring size)
     int m_visibleRows = MAX_WATERFALL_HISTORY;      // rows drawn; follows waterfall pixel height
     int m_waterfallWriteRow = 0;
+    // Device pixels per row: one row per physical pixel of the panel, which is two device pixels
+    // when macOS halves a HiDPI framebuffer onto a panel of half its size. See
+    // WaterfallGeometry::devicePxPerRowFor for why a half-pixel scroll step twinkles.
+    int m_devicePxPerRow = 1;
+    qreal m_framebufferPerPanel = 1.0;
+    // What m_devicePxPerRow was derived from. Querying the OS enumerates display modes, so it runs
+    // only when one of these changes, not per frame. The pointer is compared, never dereferenced.
+    const QScreen *m_panelScaleScreen = nullptr;
+    QRect m_panelScaleGeometry;
+    qreal m_panelScaleDpr = 0.0;
     QVector<quint8> m_waterfallData;
     bool m_waterfallNeedsUpdate = false;
     bool m_waterfallNeedsFullClear = false;
@@ -249,6 +268,17 @@ private:
     bool m_geometryLoggedWithBins = false;
     // Last logged gap between the radio's reported noise floor and our own minimum bin, so the
     // calibration check reports on change rather than every frame.
+    // Render cadence diagnostic (noteRenderCadence); only touched while qk4.spectrum.diag is on.
+    static constexpr int CadenceReportRows = 150;
+    QElapsedTimer m_cadenceClock;
+    qint64 m_cadenceLastRowNs = -1;
+    qint64 m_cadenceMinRowNs = 0;
+    qint64 m_cadenceMaxRowNs = 0;
+    qint64 m_cadenceSumRowNs = 0;
+    int m_cadenceRows = 0;
+    int m_cadenceRenders = 0;
+    int m_cadenceCoalesced = 0;
+    std::array<int, 8> m_cadenceRefreshesPerRow{}; // index = refreshes the row was shown for; 7 = 7+
     float m_lastLoggedCalibDelta = 0.0f;
     float m_calibDelta = 0.0f;
     int m_calibSamples = 0;

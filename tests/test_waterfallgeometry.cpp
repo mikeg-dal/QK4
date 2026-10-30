@@ -25,6 +25,13 @@ private slots:
     void mappingIsOntoAndOrdered();
     void mappingHoldsAcrossTheRingWrap();
 
+    // One row per physical pixel when the OS downscales the framebuffer onto the panel.
+    void devicePxPerRowHonoursOnlyWholeDownscales();
+    void visibleRowsCountsPhysicalPixels();
+    void fractionalViewportStaysOneToOne();
+    void oneDevicePxRowsShareAPhysicalPixelUnderDownscale();
+    void twoDevicePxRowsScrollByWholePhysicalPixels();
+
     // Colour window (WaterfallGeometry::colorWindowFor and the shader mirror).
     void noiseAtRefIsMidBlueNotBlack();
     void oldRefScaleWindowDrewNoiseBlack();
@@ -162,6 +169,80 @@ void TestWaterfallGeometry::mappingHoldsAcrossTheRingWrap() {
         QCOMPARE(seen.size(), visible);
         QVERIFY(!seen.contains(writeRow));
         QCOMPARE(WaterfallGeometry::rowForPixel(visible - 1, visible, writeRow, visible, stored),
+                 (writeRow - 1 + stored) % stored);
+    }
+}
+
+void TestWaterfallGeometry::devicePxPerRowHonoursOnlyWholeDownscales() {
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(1.0), 1);   // framebuffer is the panel (5K at 2560x1440)
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(2.0), 2);   // 7680x4320 halved onto a 4K panel
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(2.015), 2); // within 1%
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(3.0), 3);
+    // Fractional macOS "scaled" modes land on no whole row height: unchanged.
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(1.125), 1); // 5K panel as "looks like 2880x1620"
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(1.75), 1);
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(2.2), 1);
+    // Upscaled framebuffer (fewer pixels than the panel) and nonsense.
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(0.5), 1);
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(0.0), 1);
+}
+
+void TestWaterfallGeometry::visibleRowsCountsPhysicalPixels() {
+    // Mike's panadapter, 2026-10-30: output 2092x924 px, spectrumRatio 0.4, on a 4K panel driven
+    // with a 7680x4320 framebuffer.
+    QCOMPARE(WaterfallGeometry::visibleRowsFor(554.4f, 2048, 64, 1), 554);
+    QCOMPARE(WaterfallGeometry::visibleRowsFor(554.4f, 2048, 64, 2), 277);
+    // The stored-rows clamp still applies to rows, not pixels.
+    QCOMPARE(WaterfallGeometry::visibleRowsFor(8000.0f, 2048, 64, 2), 2047);
+}
+
+// The viewport is 554.4 px for 554 rows (pxPerRow 1.0007). That ratio is not a seam: with the V snap
+// every whole pixel inside the viewport still resolves to exactly one row, in order, at every
+// scroll position — so the fractional height is not what twinkles.
+void TestWaterfallGeometry::fractionalViewportStaysOneToOne() {
+    const int stored = 2048, visible = 554;
+    for (int writeRow : {0, 1, 300, 1493, 2047}) {
+        const int oldest = WaterfallGeometry::oldestVisibleRow(writeRow, visible, stored);
+        for (int px = 0; px < visible; ++px)
+            QCOMPARE(WaterfallGeometry::rowForPixel(px, 554.4f, writeRow, visible, stored), (oldest + px) % stored);
+    }
+}
+
+// The defect: at one device pixel per row under a 2:1 downscale, each physical pixel is two rows
+// that the display's scaler blends, and which two changes with every scroll step.
+void TestWaterfallGeometry::oneDevicePxRowsShareAPhysicalPixelUnderDownscale() {
+    const int stored = 2048, visible = 554, writeRow = 700;
+    for (int physical = 0; physical < visible / 2; ++physical) {
+        const int lower = WaterfallGeometry::rowForPixel(2 * physical, 554.4f, writeRow, visible, stored);
+        const int upper = WaterfallGeometry::rowForPixel(2 * physical + 1, 554.4f, writeRow, visible, stored);
+        QVERIFY(lower != upper);
+    }
+}
+
+// The fix: rows two device pixels tall. Each physical pixel (device pixels 2j, 2j+1 from the bottom,
+// which is also the top-aligned pairing because the widget's device height is even at DPR 2) holds
+// one row, and one step later every physical pixel holds what the one above it held: a rigid scroll
+// by exactly one physical pixel, which the display's downscale leaves untouched.
+void TestWaterfallGeometry::twoDevicePxRowsScrollByWholePhysicalPixels() {
+    const int stored = 2048;
+    const float viewport = 554.4f;
+    const int visible = WaterfallGeometry::visibleRowsFor(viewport, stored, 64, 2);
+    const int physicalPixels = visible; // 277 whole physical pixels, 554 device pixels
+
+    for (int writeRow : {0, 1, 1000, 2046, 2047}) {
+        const int next = (writeRow + 1) % stored;
+        for (int physical = 0; physical < physicalPixels; ++physical) {
+            const int lower = WaterfallGeometry::rowForPixel(2 * physical, viewport, writeRow, visible, stored);
+            const int upper = WaterfallGeometry::rowForPixel(2 * physical + 1, viewport, writeRow, visible, stored);
+            QCOMPARE(lower, upper);
+            QVERIFY(lower != writeRow);
+            if (physical > 0) {
+                const int below = WaterfallGeometry::rowForPixel(2 * (physical - 1), viewport, next, visible, stored);
+                QCOMPARE(below, lower);
+            }
+        }
+        // Newest complete row on the top physical pixel.
+        QCOMPARE(WaterfallGeometry::rowForPixel(2 * physicalPixels - 1, viewport, writeRow, visible, stored),
                  (writeRow - 1 + stored) % stored);
     }
 }

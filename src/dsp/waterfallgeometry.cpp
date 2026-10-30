@@ -4,17 +4,26 @@
 #include "models/radiostate/spectrumdisplaystate.h"
 
 #include <QtGlobal>
+#include <algorithm>
 #include <cmath>
 
 namespace WaterfallGeometry {
 
-int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows) {
+int devicePxPerRowFor(qreal framebufferPixelsPerPanelPixel) {
+    const long whole = std::lround(framebufferPixelsPerPanelPixel);
+    if (whole < 2 || std::abs(framebufferPixelsPerPanelPixel - static_cast<qreal>(whole)) > 0.01 * whole)
+        return 1;
+    return static_cast<int>(whole);
+}
+
+int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int devicePxPerRow) {
     if (storedRows <= 0)
         return 0;
     // One row is always reserved for the write head: showing all storedRows would wrap the window
     // onto the whole ring and put the in-flight row back on screen.
     const int maxRows = storedRows - 1;
-    const int wanted = static_cast<int>(std::lround(waterfallHeightPx));
+    const int wanted =
+        static_cast<int>(std::lround(waterfallHeightPx / static_cast<float>((std::max)(1, devicePxPerRow))));
     return qBound(qMin(minRows, maxRows), wanted, maxRows);
 }
 
@@ -39,12 +48,12 @@ float visibleFractionFor(int visibleRows, int storedRows) {
     return static_cast<float>(visibleRows) / static_cast<float>(storedRows);
 }
 
-int rowForPixel(int pixel, int pixelCount, int writeRow, int visibleRows, int storedRows) {
-    if (storedRows <= 0 || pixelCount <= 0)
+int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows, int storedRows) {
+    if (storedRows <= 0 || viewportHeightPx <= 0.0f)
         return 0;
 
     // waterfall.vert: V = t * visibleFraction + scrollOffset, t at the pixel's centre.
-    const float t = (static_cast<float>(pixel) + 0.5f) / static_cast<float>(pixelCount);
+    const float t = (static_cast<float>(pixel) + 0.5f) / viewportHeightPx;
     const float v = t * visibleFractionFor(visibleRows, storedRows) +
                     scrollOffsetFor(oldestVisibleRow(writeRow, visibleRows, storedRows), storedRows);
 
