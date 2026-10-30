@@ -57,6 +57,15 @@ signals:
 protected:
     // QRhiWidget overrides
     void initialize(QRhiCommandBuffer *cb) override;
+    // Drops every QRhi resource; QRhiWidget calls it before the QRhi they belong to goes away.
+    void releaseResources() override;
+    // The QRhi the GPU resources were created from; null while there are none, or once that QRhi
+    // is gone. Equals rhi() whenever render() draws.
+    QRhi *resourcesRhi() const;
+    // initialize() for a given QRhi: drops the resources when it is not the one they came from, then
+    // creates whatever is missing. initialize() passes rhi(); the lifecycle test passes a Null QRhi
+    // of its own, because the offscreen platform has no QRhiWidget support to swap one for real.
+    void initializeResources(QRhi *current, QRhiCommandBuffer *cb);
     void render(QRhiCommandBuffer *cb) override;
     void resizeEvent(QResizeEvent *event) override;
 
@@ -73,56 +82,59 @@ private:
 
     void updateDbRange();
 
-    // RHI resources
+    // RHI resources. Every object created from m_rhi lives in m_gpu, so a QRhi change drops all of
+    // them at once (releaseResources()) and a new resource cannot be missed there.
     QRhi *m_rhi = nullptr;
-    std::unique_ptr<QRhiBuffer> m_spectrumVbo;
-    std::unique_ptr<QRhiBuffer> m_spectrumUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_waterfallVbo;
-    std::unique_ptr<QRhiBuffer> m_waterfallUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_overlayVbo;
-    std::unique_ptr<QRhiBuffer> m_overlayUniformBuffer;
-    std::unique_ptr<QRhiTexture> m_waterfallTexture;
-    std::unique_ptr<QRhiTexture> m_colorLutTexture;
-    std::unique_ptr<QRhiSampler> m_sampler;
-    std::unique_ptr<QRhiGraphicsPipeline> m_spectrumPipeline;
-    std::unique_ptr<QRhiGraphicsPipeline> m_waterfallPipeline;
-    std::unique_ptr<QRhiGraphicsPipeline> m_overlayLinePipeline;
-    std::unique_ptr<QRhiGraphicsPipeline> m_overlayTrianglePipeline;
-    std::unique_ptr<QRhiShaderResourceBindings> m_spectrumSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_waterfallSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_overlaySrb;
+    struct GpuResources {
+        std::unique_ptr<QRhiBuffer> spectrumVbo;
+        std::unique_ptr<QRhiBuffer> spectrumUniformBuffer;
+        std::unique_ptr<QRhiBuffer> waterfallVbo;
+        std::unique_ptr<QRhiBuffer> waterfallUniformBuffer;
+        std::unique_ptr<QRhiBuffer> overlayVbo;
+        std::unique_ptr<QRhiBuffer> overlayUniformBuffer;
+        std::unique_ptr<QRhiTexture> waterfallTexture;
+        std::unique_ptr<QRhiTexture> colorLutTexture;
+        std::unique_ptr<QRhiSampler> sampler;
+        std::unique_ptr<QRhiGraphicsPipeline> spectrumPipeline;
+        std::unique_ptr<QRhiGraphicsPipeline> waterfallPipeline;
+        std::unique_ptr<QRhiGraphicsPipeline> overlayLinePipeline;
+        std::unique_ptr<QRhiGraphicsPipeline> overlayTrianglePipeline;
+        std::unique_ptr<QRhiShaderResourceBindings> spectrumSrb;
+        std::unique_ptr<QRhiShaderResourceBindings> waterfallSrb;
+        std::unique_ptr<QRhiShaderResourceBindings> overlaySrb;
 
-    // Dedicated passband buffers (QRhi requires separate buffers to avoid conflicts)
-    std::unique_ptr<QRhiBuffer> m_passbandVbo;
-    std::unique_ptr<QRhiBuffer> m_passbandUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_passbandSrb;
+        // Dedicated passband buffers (QRhi requires separate buffers to avoid conflicts)
+        std::unique_ptr<QRhiBuffer> passbandVbo;
+        std::unique_ptr<QRhiBuffer> passbandUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> passbandSrb;
 
-    // Dedicated passband edge buffers (separate from fill to avoid conflicts)
-    std::unique_ptr<QRhiBuffer> m_passbandEdgeVbo;
-    std::unique_ptr<QRhiBuffer> m_passbandEdgeUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_passbandEdgeSrb;
+        // Dedicated passband edge buffers (separate from fill to avoid conflicts)
+        std::unique_ptr<QRhiBuffer> passbandEdgeVbo;
+        std::unique_ptr<QRhiBuffer> passbandEdgeUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> passbandEdgeSrb;
 
-    // Dedicated center line buffers
-    std::unique_ptr<QRhiBuffer> m_centerLineVbo;
-    std::unique_ptr<QRhiBuffer> m_centerLineUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_centerLineSrb;
+        // Dedicated center line buffers
+        std::unique_ptr<QRhiBuffer> centerLineVbo;
+        std::unique_ptr<QRhiBuffer> centerLineUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> centerLineSrb;
 
-    // Dedicated notch filter buffers (QRhi requires separate buffers to avoid conflicts)
-    std::unique_ptr<QRhiBuffer> m_notchVbo;
-    std::unique_ptr<QRhiBuffer> m_notchUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_notchSrb;
+        // Dedicated notch filter buffers (QRhi requires separate buffers to avoid conflicts)
+        std::unique_ptr<QRhiBuffer> notchVbo;
+        std::unique_ptr<QRhiBuffer> notchUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> notchSrb;
 
-    // Dedicated RTTY space tone dashed line buffers
-    std::unique_ptr<QRhiBuffer> m_rttySpaceVbo;
-    std::unique_ptr<QRhiBuffer> m_rttySpaceUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_rttySpaceSrb;
+        // Dedicated RTTY space tone dashed line buffers
+        std::unique_ptr<QRhiBuffer> rttySpaceVbo;
+        std::unique_ptr<QRhiBuffer> rttySpaceUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> rttySpaceSrb;
 
-    // Dedicated frame-border buffers: the spectrum/waterfall separator uses the shared overlay
-    // buffers, and two draws in one frame cannot share a dynamic buffer.
-    std::unique_ptr<QRhiBuffer> m_borderVbo;
-    std::unique_ptr<QRhiBuffer> m_borderUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_borderSrb;
-
+        // Dedicated frame-border buffers: the spectrum/waterfall separator uses the shared overlay
+        // buffers, and two draws in one frame cannot share a dynamic buffer.
+        std::unique_ptr<QRhiBuffer> borderVbo;
+        std::unique_ptr<QRhiBuffer> borderUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> borderSrb;
+    };
+    GpuResources m_gpu;
     QRhiRenderPassDescriptor *m_rpDesc = nullptr;
 
     bool m_rhiInitialized = false;

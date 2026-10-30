@@ -13,9 +13,15 @@ Qt version: `QRhiWidget` needs Qt 6.7 or later. The QRhi classes (`QRhi`, `QShad
 panadapter on every Qt minor bump; every release package is built with the one Qt named in
 `.github/qt-version` (Flatpak takes the same minor from the KDE runtime).
 
-Reparenting: neither widget implements `QRhiWidget::releaseResources()`. Qt expects a robust
-subclass to implement it if the widget can move to a different top-level window. These widgets are
-never moved to another top-level window; implement it before doing that.
+QRhi changes: `QRhiWidget` may call `initialize()` again with a different `QRhi` (a GPU switch, a
+device loss such as a Windows TDR or an unplugged eGPU, a grab before the widget is shown, a move
+to another top-level window), and calls `releaseResources()` before the old one is destroyed. Both
+widgets keep every QRhi object in one `m_gpu` struct: `releaseResources()` drops it whole, and
+`initialize()` compares `rhi()` with the QRhi it last used, drops everything on a change and
+recreates what is missing, re-uploading the colour LUTs and starting the waterfall empty. Add a new
+GPU resource to `m_gpu` and nowhere else. `test_rhiwidgetlifecycle` drives that path with its own
+Null-backend QRhis (the offscreen platform cannot create one for a `QRhiWidget`); the pipelines
+built in `render()` are not covered there.
 
 ## Files
 

@@ -101,6 +101,15 @@ signals:
 protected:
     // QRhiWidget overrides
     void initialize(QRhiCommandBuffer *cb) override;
+    // Drops every QRhi resource; QRhiWidget calls it before the QRhi they belong to goes away.
+    void releaseResources() override;
+    // The QRhi the GPU resources were created from; null while there are none, or once that QRhi
+    // is gone. Equals rhi() whenever render() draws.
+    QRhi *resourcesRhi() const;
+    // initialize() for a given QRhi: drops the resources when it is not the one they came from, then
+    // creates whatever is missing. initialize() passes rhi(); the lifecycle test passes a Null QRhi
+    // of its own, because the offscreen platform has no QRhiWidget support to swap one for real.
+    void initializeResources(QRhi *current, QRhiCommandBuffer *cb);
     void render(QRhiCommandBuffer *cb) override;
     void resizeEvent(QResizeEvent *event) override;
 
@@ -144,54 +153,58 @@ private:
     qint64 xToFreq(int x, int w) const;
     int calculateGridInterval(int spanHz) const;
     void rebuildGridIfNeeded(float w, float spectrumHeight, float dpr);
-    // RHI resources
+    // RHI resources. Every object created from m_rhi lives in m_gpu, so a QRhi change drops all of
+    // them at once (releaseResources()) and a new resource cannot be missed there.
     QRhi *m_rhi = nullptr;
-    std::unique_ptr<QRhiBuffer> m_waterfallVbo;
-    std::unique_ptr<QRhiBuffer> m_waterfallUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_overlayVbo;
-    std::unique_ptr<QRhiBuffer> m_overlayUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_passbandVbo;
-    std::unique_ptr<QRhiBuffer> m_passbandUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_markerVbo;
-    std::unique_ptr<QRhiBuffer> m_markerUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_notchVbo;
-    std::unique_ptr<QRhiBuffer> m_notchUniformBuffer;
-    std::unique_ptr<QRhiTexture> m_waterfallTexture;
-    std::unique_ptr<QRhiTexture> m_colorLutTexture;
-    std::unique_ptr<QRhiTexture> m_spectrumDataTexture; // 1D texture for spectrum values
-    std::unique_ptr<QRhiSampler> m_sampler;
-    std::unique_ptr<QRhiGraphicsPipeline> m_waterfallPipeline;
-    std::unique_ptr<QRhiGraphicsPipeline> m_overlayLinePipeline;
-    std::unique_ptr<QRhiGraphicsPipeline> m_overlayTrianglePipeline;
-    std::unique_ptr<QRhiBuffer> m_fullscreenQuadVbo; // Shared fullscreen quad for fragment-shader styles
-    // Spectrum fill resources (LUT-based colors)
-    std::unique_ptr<QRhiGraphicsPipeline> m_spectrumFillPipeline;
-    std::unique_ptr<QRhiShaderResourceBindings> m_spectrumFillSrb;
-    std::unique_ptr<QRhiBuffer> m_spectrumFillUniformBuffer;
-    std::unique_ptr<QRhiTexture> m_spectrumFillLutTexture; // 256-entry color LUT for spectrum fill
-    std::unique_ptr<QRhiShaderResourceBindings> m_waterfallSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_overlaySrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_passbandSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_markerSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_notchSrb;
-    // Secondary passband buffers (for other VFO's overlay)
-    std::unique_ptr<QRhiBuffer> m_secondaryPassbandVbo;
-    std::unique_ptr<QRhiBuffer> m_secondaryPassbandUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_secondaryPassbandSrb;
-    std::unique_ptr<QRhiBuffer> m_secondaryMarkerVbo;
-    std::unique_ptr<QRhiBuffer> m_secondaryMarkerUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_secondaryMarkerSrb;
-    // TX marker buffers (shows TX position when RIT/XIT active)
-    std::unique_ptr<QRhiBuffer> m_txMarkerVbo;
-    std::unique_ptr<QRhiBuffer> m_txMarkerUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_txMarkerSrb;
-    // RTTY space tone line buffers (the mark tone coincides with the VFO marker)
-    std::unique_ptr<QRhiBuffer> m_rttySpaceVbo;
-    std::unique_ptr<QRhiBuffer> m_rttySpaceUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_rttySpaceSrb;
-    std::unique_ptr<QRhiBuffer> m_secRttySpaceVbo;
-    std::unique_ptr<QRhiBuffer> m_secRttySpaceUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_secRttySpaceSrb;
+    struct GpuResources {
+        std::unique_ptr<QRhiBuffer> waterfallVbo;
+        std::unique_ptr<QRhiBuffer> waterfallUniformBuffer;
+        std::unique_ptr<QRhiBuffer> overlayVbo;
+        std::unique_ptr<QRhiBuffer> overlayUniformBuffer;
+        std::unique_ptr<QRhiBuffer> passbandVbo;
+        std::unique_ptr<QRhiBuffer> passbandUniformBuffer;
+        std::unique_ptr<QRhiBuffer> markerVbo;
+        std::unique_ptr<QRhiBuffer> markerUniformBuffer;
+        std::unique_ptr<QRhiBuffer> notchVbo;
+        std::unique_ptr<QRhiBuffer> notchUniformBuffer;
+        std::unique_ptr<QRhiTexture> waterfallTexture;
+        std::unique_ptr<QRhiTexture> colorLutTexture;
+        std::unique_ptr<QRhiTexture> spectrumDataTexture; // 1D texture for spectrum values
+        std::unique_ptr<QRhiSampler> sampler;
+        std::unique_ptr<QRhiGraphicsPipeline> waterfallPipeline;
+        std::unique_ptr<QRhiGraphicsPipeline> overlayLinePipeline;
+        std::unique_ptr<QRhiGraphicsPipeline> overlayTrianglePipeline;
+        std::unique_ptr<QRhiBuffer> fullscreenQuadVbo; // Shared fullscreen quad for fragment-shader styles
+        // Spectrum fill resources (LUT-based colors)
+        std::unique_ptr<QRhiGraphicsPipeline> spectrumFillPipeline;
+        std::unique_ptr<QRhiShaderResourceBindings> spectrumFillSrb;
+        std::unique_ptr<QRhiBuffer> spectrumFillUniformBuffer;
+        std::unique_ptr<QRhiTexture> spectrumFillLutTexture; // 256-entry color LUT for spectrum fill
+        std::unique_ptr<QRhiShaderResourceBindings> waterfallSrb;
+        std::unique_ptr<QRhiShaderResourceBindings> overlaySrb;
+        std::unique_ptr<QRhiShaderResourceBindings> passbandSrb;
+        std::unique_ptr<QRhiShaderResourceBindings> markerSrb;
+        std::unique_ptr<QRhiShaderResourceBindings> notchSrb;
+        // Secondary passband buffers (for other VFO's overlay)
+        std::unique_ptr<QRhiBuffer> secondaryPassbandVbo;
+        std::unique_ptr<QRhiBuffer> secondaryPassbandUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> secondaryPassbandSrb;
+        std::unique_ptr<QRhiBuffer> secondaryMarkerVbo;
+        std::unique_ptr<QRhiBuffer> secondaryMarkerUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> secondaryMarkerSrb;
+        // TX marker buffers (shows TX position when RIT/XIT active)
+        std::unique_ptr<QRhiBuffer> txMarkerVbo;
+        std::unique_ptr<QRhiBuffer> txMarkerUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> txMarkerSrb;
+        // RTTY space tone line buffers (the mark tone coincides with the VFO marker)
+        std::unique_ptr<QRhiBuffer> rttySpaceVbo;
+        std::unique_ptr<QRhiBuffer> rttySpaceUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> rttySpaceSrb;
+        std::unique_ptr<QRhiBuffer> secRttySpaceVbo;
+        std::unique_ptr<QRhiBuffer> secRttySpaceUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> secRttySpaceSrb;
+    };
+    GpuResources m_gpu;
     QRhiRenderPassDescriptor *m_rpDesc = nullptr;
 
     bool m_rhiInitialized = false;

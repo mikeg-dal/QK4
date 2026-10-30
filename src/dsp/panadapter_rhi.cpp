@@ -394,7 +394,12 @@ PanadapterRhiWidget::PanadapterRhiWidget(QWidget *parent) : QRhiWidget(parent) {
 }
 
 PanadapterRhiWidget::~PanadapterRhiWidget() {
-    // QRhi resources are automatically cleaned up
+    // m_gpu's unique_ptrs release the QRhi resources after this body, while the QRhiWidget base and
+    // its QRhi are still alive.
+}
+
+QRhi *PanadapterRhiWidget::resourcesRhi() const {
+    return m_gpu.waterfallTexture ? m_gpu.waterfallTexture->rhi() : nullptr;
 }
 
 void PanadapterRhiWidget::resizeEvent(QResizeEvent *event) {
@@ -536,15 +541,35 @@ void PanadapterRhiWidget::initSpectrumLUT() {
     }
 }
 
-void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
-    if (m_rhiInitialized)
-        return;
+void PanadapterRhiWidget::releaseResources() {
+    // QRhiWidget calls this before the QRhi these objects came from is destroyed (a GPU switch, a
+    // device loss, moving to another window). They must go now, not in the next initialize().
+    m_gpu = {};
+    m_rpDesc = nullptr;
+    m_rhiInitialized = false;
+    m_pipelinesCreated = false;
+    m_rhi = nullptr;
+}
 
-    m_rhi = rhi();
+void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
+    initializeResources(rhi(), cb);
+}
+
+void PanadapterRhiWidget::initializeResources(QRhi *current, QRhiCommandBuffer *cb) {
+    // WHY compare, not just test a flag: initialize() runs again on every resize with the same
+    // QRhi, but also with a different QRhi after a GPU switch, a device loss (Windows TDR, eGPU
+    // unplugged) or a grab before the widget is shown. Resources from the old one are unusable.
+    if (m_rhi != current) {
+        if (m_rhi)
+            releaseResources();
+        m_rhi = current;
+    }
     if (!m_rhi) {
         qCWarning(lcSpectrumRender) << "QRhi is NULL - GPU backend failed to initialize";
         return;
     }
+    if (m_rhiInitialized)
+        return;
 
     // Use fixed texture sizes - GPU bilinear filtering handles scaling to display size
     m_textureWidth = BASE_TEXTURE_WIDTH;
@@ -555,6 +580,9 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_waterfallData.fill(0);
     m_rowTierSpanHz.resize(m_waterfallHistory);
     m_rowTierSpanHz.fill(0.0f);
+    // A new texture starts empty (uploaded below), so the ring starts over with it.
+    m_waterfallWriteRow = 0;
+    m_waterfallNeedsFullClear = false;
 
     // Load shaders from compiled .qsb resources
     m_spectrumFillVert = RhiUtils::loadShader(":/shaders/src/dsp/shaders/spectrum_fill.vert.qsb");
@@ -565,39 +593,39 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_overlayFrag = RhiUtils::loadShader(":/shaders/src/dsp/shaders/overlay.frag.qsb");
 
     // Create waterfall texture (single channel for dB values)
-    m_waterfallTexture.reset(m_rhi->newTexture(QRhiTexture::R8, QSize(m_textureWidth, m_waterfallHistory), 1,
-                                               QRhiTexture::UsedAsTransferSource));
-    m_waterfallTexture->create();
+    m_gpu.waterfallTexture.reset(m_rhi->newTexture(QRhiTexture::R8, QSize(m_textureWidth, m_waterfallHistory), 1,
+                                                   QRhiTexture::UsedAsTransferSource));
+    m_gpu.waterfallTexture->create();
 
     // Create color LUT texture (256x1 RGBA)
-    m_colorLutTexture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(256, 1)));
-    m_colorLutTexture->create();
+    m_gpu.colorLutTexture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(256, 1)));
+    m_gpu.colorLutTexture->create();
 
     // Create spectrum data texture (1D texture for fragment shader spectrum)
-    m_spectrumDataTexture.reset(m_rhi->newTexture(QRhiTexture::R32F, QSize(m_textureWidth, 1)));
-    m_spectrumDataTexture->create();
+    m_gpu.spectrumDataTexture.reset(m_rhi->newTexture(QRhiTexture::R32F, QSize(m_textureWidth, 1)));
+    m_gpu.spectrumDataTexture->create();
 
     // Create spectrum fill color LUT texture (256x1 RGBA)
-    m_spectrumFillLutTexture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(256, 1)));
-    m_spectrumFillLutTexture->create();
+    m_gpu.spectrumFillLutTexture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(256, 1)));
+    m_gpu.spectrumFillLutTexture->create();
 
     // Upload color LUT data (separate LUTs for waterfall and spectrum)
     QRhiResourceUpdateBatch *rub = m_rhi->nextResourceUpdateBatch();
     // Upload waterfall color LUT
     QRhiTextureSubresourceUploadDescription waterfallLutUpload(m_colorLUT.constData(), m_colorLUT.size());
-    rub->uploadTexture(m_colorLutTexture.get(), QRhiTextureUploadEntry(0, 0, waterfallLutUpload));
+    rub->uploadTexture(m_gpu.colorLutTexture.get(), QRhiTextureUploadEntry(0, 0, waterfallLutUpload));
     // Upload spectrum fill color LUT
     QRhiTextureSubresourceUploadDescription spectrumLutUpload(m_spectrumLUT.constData(), m_spectrumLUT.size());
-    rub->uploadTexture(m_spectrumFillLutTexture.get(), QRhiTextureUploadEntry(0, 0, spectrumLutUpload));
+    rub->uploadTexture(m_gpu.spectrumFillLutTexture.get(), QRhiTextureUploadEntry(0, 0, spectrumLutUpload));
 
     // Upload initial zeroed waterfall data (prevents uninitialized texture garbage)
     QRhiTextureSubresourceUploadDescription waterfallUpload(m_waterfallData.constData(), m_waterfallData.size());
-    rub->uploadTexture(m_waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, waterfallUpload));
+    rub->uploadTexture(m_gpu.waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, waterfallUpload));
 
     // Create sampler
-    m_sampler.reset(m_rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
-                                      QRhiSampler::ClampToEdge, QRhiSampler::Repeat));
-    m_sampler->create();
+    m_gpu.sampler.reset(m_rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
+                                          QRhiSampler::ClampToEdge, QRhiSampler::Repeat));
+    m_gpu.sampler->create();
 
     // Waterfall quad (static). Texcoord t spans the full 0..1 and the vertex shader scales it by
     // visibleFraction, so changing how many rows are on screen costs a uniform rather than a
@@ -611,26 +639,26 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
         1.0f,  1.0f,  1.0f, 1.0f, // top-right
         -1.0f, 1.0f,  0.0f, 1.0f  // top-left
     };
-    m_waterfallVbo.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(waterfallQuad)));
-    m_waterfallVbo->create();
-    rub->uploadStaticBuffer(m_waterfallVbo.get(), waterfallQuad);
+    m_gpu.waterfallVbo.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(waterfallQuad)));
+    m_gpu.waterfallVbo->create();
+    rub->uploadStaticBuffer(m_gpu.waterfallVbo.get(), waterfallQuad);
 
     // Overlay VBO: up to 4096 segments × 2 (x,y) floats. Covers the main panadapter overlays
     // (passband edges, markers, mouse QSY, span cursor). Wider than MiniPan because the full
     // panadapter shows more simultaneous overlays.
     constexpr int kOverlayMaxSegments = 4096;
     constexpr int kFloatsPerVertex = 2;
-    m_overlayVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
-                                        kOverlayMaxSegments * kFloatsPerVertex * sizeof(float)));
-    m_overlayVbo->create();
+    m_gpu.overlayVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                            kOverlayMaxSegments * kFloatsPerVertex * sizeof(float)));
+    m_gpu.overlayVbo->create();
 
     // Create uniform buffers
-    m_waterfallUniformBuffer.reset(
+    m_gpu.waterfallUniformBuffer.reset(
         m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(RhiUtils::WaterfallUniforms)));
-    m_waterfallUniformBuffer->create();
+    m_gpu.waterfallUniformBuffer->create();
 
-    m_overlayUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
-    m_overlayUniformBuffer->create();
+    m_gpu.overlayUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_gpu.overlayUniformBuffer->create();
 
     // Fullscreen quad (shared by all fragment-shader spectrum styles)
     // Position (x, y) + texCoord (s, t) - covers normalized -1 to 1 range
@@ -643,71 +671,72 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
         1.0f,  1.0f,  1.0f, 0.0f, // top-right
         -1.0f, 1.0f,  0.0f, 0.0f  // top-left
     };
-    m_fullscreenQuadVbo.reset(
+    m_gpu.fullscreenQuadVbo.reset(
         m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(fullscreenQuad)));
-    m_fullscreenQuadVbo->create();
-    rub->uploadStaticBuffer(m_fullscreenQuadVbo.get(), fullscreenQuad);
+    m_gpu.fullscreenQuadVbo->create();
+    rub->uploadStaticBuffer(m_gpu.fullscreenQuadVbo.get(), fullscreenQuad);
 
     // Spectrum amplitude style uniform buffer: 80 bytes (std140 layout)
     // fillBaseColor(16) + fillPeakColor(16) + glowColor(16) + params(16) + viewport(16)
-    m_spectrumFillUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 80));
-    m_spectrumFillUniformBuffer->create();
+    m_gpu.spectrumFillUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 80));
+    m_gpu.spectrumFillUniformBuffer->create();
 
     // Separate buffers for passband to avoid GPU buffer conflicts
-    m_passbandVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 256 * sizeof(float)));
-    m_passbandVbo->create();
+    m_gpu.passbandVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 256 * sizeof(float)));
+    m_gpu.passbandVbo->create();
 
-    m_passbandUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
-    m_passbandUniformBuffer->create();
+    m_gpu.passbandUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_gpu.passbandUniformBuffer->create();
 
     // Separate buffers for marker to avoid conflicts with passband
-    m_markerVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 64 * sizeof(float)));
-    m_markerVbo->create();
+    m_gpu.markerVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 64 * sizeof(float)));
+    m_gpu.markerVbo->create();
 
-    m_markerUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
-    m_markerUniformBuffer->create();
+    m_gpu.markerUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_gpu.markerUniformBuffer->create();
 
     // Separate buffers for notch to avoid conflicts with grid (which shares overlay buffers)
-    m_notchVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
-                                      PanadapterConstants::MaxDashFloats * sizeof(float)));
-    m_notchVbo->create();
+    m_gpu.notchVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                          PanadapterConstants::MaxDashFloats * sizeof(float)));
+    m_gpu.notchVbo->create();
 
-    m_notchUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
-    m_notchUniformBuffer->create();
+    m_gpu.notchUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_gpu.notchUniformBuffer->create();
 
     // Secondary VFO passband buffers (for showing other receiver's passband)
-    m_secondaryPassbandVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 256 * sizeof(float)));
-    m_secondaryPassbandVbo->create();
+    m_gpu.secondaryPassbandVbo.reset(
+        m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 256 * sizeof(float)));
+    m_gpu.secondaryPassbandVbo->create();
 
-    m_secondaryPassbandUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
-    m_secondaryPassbandUniformBuffer->create();
+    m_gpu.secondaryPassbandUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_gpu.secondaryPassbandUniformBuffer->create();
 
-    m_secondaryMarkerVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 64 * sizeof(float)));
-    m_secondaryMarkerVbo->create();
+    m_gpu.secondaryMarkerVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 64 * sizeof(float)));
+    m_gpu.secondaryMarkerVbo->create();
 
-    m_secondaryMarkerUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
-    m_secondaryMarkerUniformBuffer->create();
+    m_gpu.secondaryMarkerUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_gpu.secondaryMarkerUniformBuffer->create();
 
     // TX marker buffers (shows TX position when RIT/XIT splits TX from RX)
-    m_txMarkerVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 64 * sizeof(float)));
-    m_txMarkerVbo->create();
+    m_gpu.txMarkerVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, 64 * sizeof(float)));
+    m_gpu.txMarkerVbo->create();
 
-    m_txMarkerUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
-    m_txMarkerUniformBuffer->create();
+    m_gpu.txMarkerUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_gpu.txMarkerUniformBuffer->create();
 
     // RTTY space tone line buffers (primary VFO)
-    m_rttySpaceVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
-                                          PanadapterConstants::MaxDashFloats * sizeof(float)));
-    m_rttySpaceVbo->create();
-    m_rttySpaceUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
-    m_rttySpaceUniformBuffer->create();
+    m_gpu.rttySpaceVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                              PanadapterConstants::MaxDashFloats * sizeof(float)));
+    m_gpu.rttySpaceVbo->create();
+    m_gpu.rttySpaceUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_gpu.rttySpaceUniformBuffer->create();
 
     // RTTY space tone line buffers (secondary VFO)
-    m_secRttySpaceVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
-                                             PanadapterConstants::MaxDashFloats * sizeof(float)));
-    m_secRttySpaceVbo->create();
-    m_secRttySpaceUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
-    m_secRttySpaceUniformBuffer->create();
+    m_gpu.secRttySpaceVbo.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                                 PanadapterConstants::MaxDashFloats * sizeof(float)));
+    m_gpu.secRttySpaceVbo->create();
+    m_gpu.secRttySpaceUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 32));
+    m_gpu.secRttySpaceUniformBuffer->create();
 
     cb->resourceUpdate(rub);
 
@@ -725,157 +754,157 @@ void PanadapterRhiWidget::createPipelines() {
 
     // Spectrum fill pipeline (LUT-based colors with amplitude brightness)
     {
-        m_spectrumFillSrb.reset(m_rhi->newShaderResourceBindings());
-        m_spectrumFillSrb->setBindings(
+        m_gpu.spectrumFillSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.spectrumFillSrb->setBindings(
             {QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage,
-                                                      m_spectrumFillUniformBuffer.get()),
+                                                      m_gpu.spectrumFillUniformBuffer.get()),
              QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
-                                                       m_spectrumDataTexture.get(), m_sampler.get()),
+                                                       m_gpu.spectrumDataTexture.get(), m_gpu.sampler.get()),
              QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage,
-                                                       m_spectrumFillLutTexture.get(), m_sampler.get())});
-        m_spectrumFillSrb->create();
+                                                       m_gpu.spectrumFillLutTexture.get(), m_gpu.sampler.get())});
+        m_gpu.spectrumFillSrb->create();
 
-        m_spectrumFillPipeline.reset(m_rhi->newGraphicsPipeline());
-        m_spectrumFillPipeline->setShaderStages(
+        m_gpu.spectrumFillPipeline.reset(m_rhi->newGraphicsPipeline());
+        m_gpu.spectrumFillPipeline->setShaderStages(
             {{QRhiShaderStage::Vertex, m_spectrumFillVert}, {QRhiShaderStage::Fragment, m_spectrumFillFrag}});
 
         QRhiVertexInputLayout inputLayout;
         inputLayout.setBindings({{4 * sizeof(float)}});                         // position(2) + texcoord(2)
         inputLayout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float2, 0}, // position
                                    {0, 1, QRhiVertexInputAttribute::Float2, 2 * sizeof(float)}}); // texcoord
-        m_spectrumFillPipeline->setVertexInputLayout(inputLayout);
-        m_spectrumFillPipeline->setTopology(QRhiGraphicsPipeline::Triangles);
-        m_spectrumFillPipeline->setShaderResourceBindings(m_spectrumFillSrb.get());
-        m_spectrumFillPipeline->setRenderPassDescriptor(m_rpDesc);
+        m_gpu.spectrumFillPipeline->setVertexInputLayout(inputLayout);
+        m_gpu.spectrumFillPipeline->setTopology(QRhiGraphicsPipeline::Triangles);
+        m_gpu.spectrumFillPipeline->setShaderResourceBindings(m_gpu.spectrumFillSrb.get());
+        m_gpu.spectrumFillPipeline->setRenderPassDescriptor(m_rpDesc);
 
         QRhiGraphicsPipeline::TargetBlend blend;
         blend.enable = true;
         blend.srcColor = QRhiGraphicsPipeline::SrcAlpha;
         blend.dstColor = QRhiGraphicsPipeline::OneMinusSrcAlpha;
-        m_spectrumFillPipeline->setTargetBlends({blend});
+        m_gpu.spectrumFillPipeline->setTargetBlends({blend});
 
-        m_spectrumFillPipeline->create();
+        m_gpu.spectrumFillPipeline->create();
     }
 
     // Waterfall pipeline
     {
-        m_waterfallSrb.reset(m_rhi->newShaderResourceBindings());
-        m_waterfallSrb->setBindings(
+        m_gpu.waterfallSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.waterfallSrb->setBindings(
             {QRhiShaderResourceBinding::uniformBuffer(
                  0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-                 m_waterfallUniformBuffer.get()),
+                 m_gpu.waterfallUniformBuffer.get()),
              QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
-                                                       m_waterfallTexture.get(), m_sampler.get()),
+                                                       m_gpu.waterfallTexture.get(), m_gpu.sampler.get()),
              QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage,
-                                                       m_colorLutTexture.get(), m_sampler.get())});
-        m_waterfallSrb->create();
+                                                       m_gpu.colorLutTexture.get(), m_gpu.sampler.get())});
+        m_gpu.waterfallSrb->create();
 
-        m_waterfallPipeline.reset(m_rhi->newGraphicsPipeline());
-        m_waterfallPipeline->setShaderStages(
+        m_gpu.waterfallPipeline.reset(m_rhi->newGraphicsPipeline());
+        m_gpu.waterfallPipeline->setShaderStages(
             {{QRhiShaderStage::Vertex, m_waterfallVert}, {QRhiShaderStage::Fragment, m_waterfallFrag}});
 
         QRhiVertexInputLayout inputLayout;
         inputLayout.setBindings({{4 * sizeof(float)}});                         // position(2) + texcoord(2)
         inputLayout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float2, 0}, // position
                                    {0, 1, QRhiVertexInputAttribute::Float2, 2 * sizeof(float)}}); // texcoord
-        m_waterfallPipeline->setVertexInputLayout(inputLayout);
-        m_waterfallPipeline->setTopology(QRhiGraphicsPipeline::Triangles);
-        m_waterfallPipeline->setShaderResourceBindings(m_waterfallSrb.get());
-        m_waterfallPipeline->setRenderPassDescriptor(m_rpDesc);
-        m_waterfallPipeline->create();
+        m_gpu.waterfallPipeline->setVertexInputLayout(inputLayout);
+        m_gpu.waterfallPipeline->setTopology(QRhiGraphicsPipeline::Triangles);
+        m_gpu.waterfallPipeline->setShaderResourceBindings(m_gpu.waterfallSrb.get());
+        m_gpu.waterfallPipeline->setRenderPassDescriptor(m_rpDesc);
+        m_gpu.waterfallPipeline->create();
     }
 
     // Overlay pipeline (lines)
     {
-        m_overlaySrb.reset(m_rhi->newShaderResourceBindings());
-        m_overlaySrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        m_gpu.overlaySrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.overlaySrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-            m_overlayUniformBuffer.get())});
-        m_overlaySrb->create();
+            m_gpu.overlayUniformBuffer.get())});
+        m_gpu.overlaySrb->create();
 
         // Separate SRB for passband to avoid buffer conflicts
-        m_passbandSrb.reset(m_rhi->newShaderResourceBindings());
-        m_passbandSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        m_gpu.passbandSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.passbandSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-            m_passbandUniformBuffer.get())});
-        m_passbandSrb->create();
+            m_gpu.passbandUniformBuffer.get())});
+        m_gpu.passbandSrb->create();
 
         // Separate SRB for marker to avoid buffer conflicts with passband
-        m_markerSrb.reset(m_rhi->newShaderResourceBindings());
-        m_markerSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        m_gpu.markerSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.markerSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-            m_markerUniformBuffer.get())});
-        m_markerSrb->create();
+            m_gpu.markerUniformBuffer.get())});
+        m_gpu.markerSrb->create();
 
-        m_notchSrb.reset(m_rhi->newShaderResourceBindings());
-        m_notchSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        m_gpu.notchSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.notchSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-            m_notchUniformBuffer.get())});
-        m_notchSrb->create();
+            m_gpu.notchUniformBuffer.get())});
+        m_gpu.notchSrb->create();
 
         // Secondary VFO passband SRBs
-        m_secondaryPassbandSrb.reset(m_rhi->newShaderResourceBindings());
-        m_secondaryPassbandSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        m_gpu.secondaryPassbandSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.secondaryPassbandSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-            m_secondaryPassbandUniformBuffer.get())});
-        m_secondaryPassbandSrb->create();
+            m_gpu.secondaryPassbandUniformBuffer.get())});
+        m_gpu.secondaryPassbandSrb->create();
 
-        m_secondaryMarkerSrb.reset(m_rhi->newShaderResourceBindings());
-        m_secondaryMarkerSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        m_gpu.secondaryMarkerSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.secondaryMarkerSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-            m_secondaryMarkerUniformBuffer.get())});
-        m_secondaryMarkerSrb->create();
+            m_gpu.secondaryMarkerUniformBuffer.get())});
+        m_gpu.secondaryMarkerSrb->create();
 
-        m_txMarkerSrb.reset(m_rhi->newShaderResourceBindings());
-        m_txMarkerSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        m_gpu.txMarkerSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.txMarkerSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-            m_txMarkerUniformBuffer.get())});
-        m_txMarkerSrb->create();
+            m_gpu.txMarkerUniformBuffer.get())});
+        m_gpu.txMarkerSrb->create();
 
         // RTTY space tone SRBs (primary VFO)
-        m_rttySpaceSrb.reset(m_rhi->newShaderResourceBindings());
-        m_rttySpaceSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        m_gpu.rttySpaceSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.rttySpaceSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-            m_rttySpaceUniformBuffer.get())});
-        m_rttySpaceSrb->create();
+            m_gpu.rttySpaceUniformBuffer.get())});
+        m_gpu.rttySpaceSrb->create();
 
         // RTTY space tone SRBs (secondary VFO)
-        m_secRttySpaceSrb.reset(m_rhi->newShaderResourceBindings());
-        m_secRttySpaceSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        m_gpu.secRttySpaceSrb.reset(m_rhi->newShaderResourceBindings());
+        m_gpu.secRttySpaceSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
-            m_secRttySpaceUniformBuffer.get())});
-        m_secRttySpaceSrb->create();
+            m_gpu.secRttySpaceUniformBuffer.get())});
+        m_gpu.secRttySpaceSrb->create();
 
-        m_overlayLinePipeline.reset(m_rhi->newGraphicsPipeline());
-        m_overlayLinePipeline->setShaderStages(
+        m_gpu.overlayLinePipeline.reset(m_rhi->newGraphicsPipeline());
+        m_gpu.overlayLinePipeline->setShaderStages(
             {{QRhiShaderStage::Vertex, m_overlayVert}, {QRhiShaderStage::Fragment, m_overlayFrag}});
 
         QRhiVertexInputLayout inputLayout;
         inputLayout.setBindings({{2 * sizeof(float)}});
         inputLayout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float2, 0}});
-        m_overlayLinePipeline->setVertexInputLayout(inputLayout);
-        m_overlayLinePipeline->setTopology(QRhiGraphicsPipeline::Lines);
-        m_overlayLinePipeline->setShaderResourceBindings(m_overlaySrb.get());
-        m_overlayLinePipeline->setRenderPassDescriptor(m_rpDesc);
+        m_gpu.overlayLinePipeline->setVertexInputLayout(inputLayout);
+        m_gpu.overlayLinePipeline->setTopology(QRhiGraphicsPipeline::Lines);
+        m_gpu.overlayLinePipeline->setShaderResourceBindings(m_gpu.overlaySrb.get());
+        m_gpu.overlayLinePipeline->setRenderPassDescriptor(m_rpDesc);
 
         QRhiGraphicsPipeline::TargetBlend blend;
         blend.enable = true;
         blend.srcColor = QRhiGraphicsPipeline::SrcAlpha;
         blend.dstColor = QRhiGraphicsPipeline::OneMinusSrcAlpha;
-        m_overlayLinePipeline->setTargetBlends({blend});
+        m_gpu.overlayLinePipeline->setTargetBlends({blend});
 
-        m_overlayLinePipeline->create();
+        m_gpu.overlayLinePipeline->create();
 
         // Triangle version for filled shapes
-        m_overlayTrianglePipeline.reset(m_rhi->newGraphicsPipeline());
-        m_overlayTrianglePipeline->setShaderStages(
+        m_gpu.overlayTrianglePipeline.reset(m_rhi->newGraphicsPipeline());
+        m_gpu.overlayTrianglePipeline->setShaderStages(
             {{QRhiShaderStage::Vertex, m_overlayVert}, {QRhiShaderStage::Fragment, m_overlayFrag}});
-        m_overlayTrianglePipeline->setVertexInputLayout(inputLayout);
-        m_overlayTrianglePipeline->setTopology(QRhiGraphicsPipeline::Triangles);
-        m_overlayTrianglePipeline->setShaderResourceBindings(m_overlaySrb.get());
-        m_overlayTrianglePipeline->setRenderPassDescriptor(m_rpDesc);
-        m_overlayTrianglePipeline->setTargetBlends({blend});
-        m_overlayTrianglePipeline->create();
+        m_gpu.overlayTrianglePipeline->setVertexInputLayout(inputLayout);
+        m_gpu.overlayTrianglePipeline->setTopology(QRhiGraphicsPipeline::Triangles);
+        m_gpu.overlayTrianglePipeline->setShaderResourceBindings(m_gpu.overlaySrb.get());
+        m_gpu.overlayTrianglePipeline->setRenderPassDescriptor(m_rpDesc);
+        m_gpu.overlayTrianglePipeline->setTargetBlends({blend});
+        m_gpu.overlayTrianglePipeline->create();
     }
 
     m_pipelinesCreated = true;
@@ -898,6 +927,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
             return;
         }
     }
+    Q_ASSERT(resourcesRhi() == m_rhi); // never draw with resources from a QRhi that has gone
 
     const QSize outputSize = renderTarget()->pixelSize();
     const float w = outputSize.width();
@@ -919,7 +949,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // Full waterfall clear (on disconnect)
     if (m_waterfallNeedsFullClear) {
         QRhiTextureSubresourceUploadDescription fullUpload(m_waterfallData.constData(), m_waterfallData.size());
-        rub->uploadTexture(m_waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, fullUpload));
+        rub->uploadTexture(m_gpu.waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, fullUpload));
         m_waterfallNeedsFullClear = false;
     }
 
@@ -931,7 +961,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
             m_waterfallData.constData() + m_waterfallWriteRow * m_textureWidth, m_textureWidth);
         rowUpload.setDestinationTopLeft(QPoint(0, m_waterfallWriteRow));
         rowUpload.setSourceSize(QSize(m_textureWidth, 1));
-        rub->uploadTexture(m_waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, rowUpload));
+        rub->uploadTexture(m_gpu.waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, rowUpload));
         m_waterfallWriteRow = (m_waterfallWriteRow + 1) % m_waterfallHistory;
         m_waterfallNeedsUpdate = false;
     }
@@ -999,7 +1029,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                                                      rowShift,
                                                      0.0f,
                                                      0.0f};
-    rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
+    rub->updateDynamicBuffer(m_gpu.waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
     if (!m_currentSpectrum.isEmpty()) {
         // Upload raw spectrum bins to 1D texture - GPU shader does bilinear interpolation
@@ -1021,7 +1051,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         QRhiTextureSubresourceUploadDescription specDataUpload(m_normalizedSpectrum.constData(),
                                                                m_normalizedSpectrum.size() * sizeof(float));
         specDataUpload.setSourceSize(QSize(m_textureWidth, 1));
-        rub->uploadTexture(m_spectrumDataTexture.get(), QRhiTextureUploadEntry(0, 0, specDataUpload));
+        rub->uploadTexture(m_gpu.spectrumDataTexture.get(), QRhiTextureUploadEntry(0, 0, specDataUpload));
 
         // Update spectrum fill uniform buffer (80 bytes, std140 layout)
         float specBinCount =
@@ -1049,17 +1079,17 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
             static_cast<float>(m_textureWidth), // textureWidth for bin centering
             0.0f                                // padding
         };
-        rub->updateDynamicBuffer(m_spectrumFillUniformBuffer.get(), 0, sizeof(specFillUniforms), &specFillUniforms);
+        rub->updateDynamicBuffer(m_gpu.spectrumFillUniformBuffer.get(), 0, sizeof(specFillUniforms), &specFillUniforms);
     }
 
     // Grid lines behind the spectrum, in the spectrum area's own coordinates.
     const float dpr = static_cast<float>(devicePixelRatioF());
     int gridVertexCount = 0;
-    if (m_gridEnabled && m_overlayLinePipeline) {
+    if (m_gridEnabled && m_gpu.overlayLinePipeline) {
         rebuildGridIfNeeded(w, spectrumHeight, dpr);
         gridVertexCount =
-            RhiUtils::stageOverlay(rub, m_overlayVbo.get(), m_overlayUniformBuffer.get(), m_gridVerts.constData(),
-                                   m_gridVerts.size(), w, spectrumHeight, m_gridColor);
+            RhiUtils::stageOverlay(rub, m_gpu.overlayVbo.get(), m_gpu.overlayUniformBuffer.get(),
+                                   m_gridVerts.constData(), m_gridVerts.size(), w, spectrumHeight, m_gridColor);
     }
 
     // Per-VFO overlays, staged in draw order. Each has its own buffers (see RhiUtils::stageOverlay),
@@ -1104,39 +1134,40 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         stage(vbo, ubo, srb, verts.constData(), verts.size(), color);
     };
 
-    if (m_overlayLinePipeline && m_overlayTrianglePipeline) {
+    if (m_gpu.overlayLinePipeline && m_gpu.overlayTrianglePipeline) {
         // Secondary VFO first, so it renders behind the primary where they overlap.
         if (m_secondaryVisible && m_secondaryFilterBw > 0 && m_secondaryTunedFreq > 0) {
             stagePassband(SpectrumGeometry::passbandFor(m_secondaryMode, m_secondaryDataSubMode, m_secondaryTunedFreq,
                                                         m_secondaryFilterBw, m_secondaryIfShift, m_rttyShift),
-                          m_secondaryPassbandVbo.get(), m_secondaryPassbandUniformBuffer.get(),
-                          m_secondaryPassbandSrb.get(), m_secondaryPassbandColor);
+                          m_gpu.secondaryPassbandVbo.get(), m_gpu.secondaryPassbandUniformBuffer.get(),
+                          m_gpu.secondaryPassbandSrb.get(), m_secondaryPassbandColor);
             stageMarker(SpectrumGeometry::markerFreqHz(m_secondaryTunedFreq, m_secondaryIfShift, m_secondaryMode),
-                        m_secondaryMarkerVbo.get(), m_secondaryMarkerUniformBuffer.get(), m_secondaryMarkerSrb.get(),
-                        m_secondaryMarkerColor);
+                        m_gpu.secondaryMarkerVbo.get(), m_gpu.secondaryMarkerUniformBuffer.get(),
+                        m_gpu.secondaryMarkerSrb.get(), m_secondaryMarkerColor);
             // The mark tone coincides with the solid marker, so only the space tone is drawn.
             if (SpectrumGeometry::isRtty(m_secondaryMode, m_secondaryDataSubMode) && m_fskMarkTone > 0)
                 stageDashed(freqToNormalized(m_secondaryTunedFreq - m_rttyShift) * w,
-                            PanadapterConstants::RttyDashLineWidth, m_secRttyDashVerts, m_secRttySpaceVbo.get(),
-                            m_secRttySpaceUniformBuffer.get(), m_secRttySpaceSrb.get(), m_secondaryRttyToneColor);
+                            PanadapterConstants::RttyDashLineWidth, m_secRttyDashVerts, m_gpu.secRttySpaceVbo.get(),
+                            m_gpu.secRttySpaceUniformBuffer.get(), m_gpu.secRttySpaceSrb.get(),
+                            m_secondaryRttyToneColor);
         }
 
         if (m_cursorVisible && m_filterBw > 0 && m_tunedFreq > 0) {
             // K4 IF shift is in decahertz: the passband centre's offset from the dial.
             stagePassband(
                 SpectrumGeometry::passbandFor(m_mode, m_dataSubMode, m_tunedFreq, m_filterBw, m_ifShift, m_rttyShift),
-                m_passbandVbo.get(), m_passbandUniformBuffer.get(), m_passbandSrb.get(), m_passbandColor);
+                m_gpu.passbandVbo.get(), m_gpu.passbandUniformBuffer.get(), m_gpu.passbandSrb.get(), m_passbandColor);
 
             // FSK-D and AFSK-A: the dial is the mark, which the marker already shows; space is one
             // shift below.
             if (SpectrumGeometry::isRtty(m_mode, m_dataSubMode) && m_fskMarkTone > 0)
                 stageDashed(freqToNormalized(m_tunedFreq - m_rttyShift) * w, PanadapterConstants::RttyDashLineWidth,
-                            m_rttyDashVerts, m_rttySpaceVbo.get(), m_rttySpaceUniformBuffer.get(), m_rttySpaceSrb.get(),
-                            m_rttyToneColor);
+                            m_rttyDashVerts, m_gpu.rttySpaceVbo.get(), m_gpu.rttySpaceUniformBuffer.get(),
+                            m_gpu.rttySpaceSrb.get(), m_rttyToneColor);
 
             // CW: marker at the passband centre (dial + IS); other modes: at the dial.
-            stageMarker(SpectrumGeometry::markerFreqHz(m_tunedFreq, m_ifShift, m_mode), m_markerVbo.get(),
-                        m_markerUniformBuffer.get(), m_markerSrb.get(), m_frequencyMarkerColor);
+            stageMarker(SpectrumGeometry::markerFreqHz(m_tunedFreq, m_ifShift, m_mode), m_gpu.markerVbo.get(),
+                        m_gpu.markerUniformBuffer.get(), m_gpu.markerSrb.get(), m_frequencyMarkerColor);
 
             // TX marker when RIT/XIT moves TX away from RX. m_txFreq is the TX dial, so CW gets the
             // same pitch offset as the RX marker.
@@ -1146,8 +1177,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                     txDisplayFreq += m_cwPitch;
                 else if (m_mode == SpectrumGeometry::Mode::CwR)
                     txDisplayFreq -= m_cwPitch;
-                stageMarker(txDisplayFreq, m_txMarkerVbo.get(), m_txMarkerUniformBuffer.get(), m_txMarkerSrb.get(),
-                            m_txMarkerColor);
+                stageMarker(txDisplayFreq, m_gpu.txMarkerVbo.get(), m_gpu.txMarkerUniformBuffer.get(),
+                            m_gpu.txMarkerSrb.get(), m_txMarkerColor);
             }
 
             // Notch: NM is an audio offset from the dial (SpectrumGeometry::notchFreqHz, shared with
@@ -1155,8 +1186,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
             if (m_notchEnabled && m_notchPitchHz > 0 && m_spanHz > 0) {
                 const float notchX =
                     freqToNormalized(SpectrumGeometry::notchFreqHz(m_mode, m_tunedFreq, m_notchPitchHz)) * w;
-                stageDashed(notchX, PanadapterConstants::MarkerLineWidth, m_notchDashVerts, m_notchVbo.get(),
-                            m_notchUniformBuffer.get(), m_notchSrb.get(), m_notchColor);
+                stageDashed(notchX, PanadapterConstants::MarkerLineWidth, m_notchDashVerts, m_gpu.notchVbo.get(),
+                            m_gpu.notchUniformBuffer.get(), m_gpu.notchSrb.get(), m_notchColor);
             }
         }
     }
@@ -1167,11 +1198,11 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     cb->beginPass(renderTarget(), QColor(K4Styles::Colors::SpectrumBackground), {1.0f, 0}, nullptr);
 
     // Draw waterfall (bottom portion)
-    if (m_waterfallPipeline) {
+    if (m_gpu.waterfallPipeline) {
         cb->setViewport({0, 0, w, waterfallHeight});
-        cb->setGraphicsPipeline(m_waterfallPipeline.get());
-        cb->setShaderResources(m_waterfallSrb.get());
-        const QRhiCommandBuffer::VertexInput waterfallVbufBinding(m_waterfallVbo.get(), 0);
+        cb->setGraphicsPipeline(m_gpu.waterfallPipeline.get());
+        cb->setShaderResources(m_gpu.waterfallSrb.get());
+        const QRhiCommandBuffer::VertexInput waterfallVbufBinding(m_gpu.waterfallVbo.get(), 0);
         cb->setVertexInput(0, 1, &waterfallVbufBinding);
         cb->draw(6);
     }
@@ -1179,20 +1210,20 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // Draw grid BEHIND spectrum (in spectrum area)
     if (gridVertexCount > 0) {
         cb->setViewport({0, waterfallHeight, w, spectrumHeight});
-        cb->setGraphicsPipeline(m_overlayLinePipeline.get());
-        cb->setShaderResources(m_overlaySrb.get());
-        const QRhiCommandBuffer::VertexInput gridVbufBinding(m_overlayVbo.get(), 0);
+        cb->setGraphicsPipeline(m_gpu.overlayLinePipeline.get());
+        cb->setShaderResources(m_gpu.overlaySrb.get());
+        const QRhiCommandBuffer::VertexInput gridVbufBinding(m_gpu.overlayVbo.get(), 0);
         cb->setVertexInput(0, 1, &gridVbufBinding);
         cb->draw(gridVertexCount);
     }
 
     // Draw spectrum fill ON TOP of grid (shader-based fullscreen quad)
-    if (!m_currentSpectrum.isEmpty() && m_spectrumFillPipeline) {
+    if (!m_currentSpectrum.isEmpty() && m_gpu.spectrumFillPipeline) {
         cb->setViewport({0, waterfallHeight, w, spectrumHeight});
-        cb->setGraphicsPipeline(m_spectrumFillPipeline.get());
-        cb->setShaderResources(m_spectrumFillSrb.get());
+        cb->setGraphicsPipeline(m_gpu.spectrumFillPipeline.get());
+        cb->setShaderResources(m_gpu.spectrumFillSrb.get());
 
-        const QRhiCommandBuffer::VertexInput quadVbufBinding(m_fullscreenQuadVbo.get(), 0);
+        const QRhiCommandBuffer::VertexInput quadVbufBinding(m_gpu.fullscreenQuadVbo.get(), 0);
         cb->setVertexInput(0, 1, &quadVbufBinding);
         cb->draw(6); // Fullscreen quad (2 triangles)
     }
@@ -1201,7 +1232,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     cb->setViewport({0, 0, w, h});
     for (int i = 0; i < overlayDrawCount; ++i) {
         const OverlayDraw &draw = overlayDraws[i];
-        cb->setGraphicsPipeline(m_overlayTrianglePipeline.get());
+        cb->setGraphicsPipeline(m_gpu.overlayTrianglePipeline.get());
         cb->setShaderResources(draw.srb);
         const QRhiCommandBuffer::VertexInput vbufBinding(draw.vbo, 0);
         cb->setVertexInput(0, 1, &vbufBinding);

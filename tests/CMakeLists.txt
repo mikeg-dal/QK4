@@ -816,6 +816,43 @@ foreach(scale 1 1.5 2)
         "QT_QPA_PLATFORM=offscreen:configfile=${CMAKE_CURRENT_SOURCE_DIR}/data/offscreen/screen-4k.json;QT_SCALE_FACTOR=${scale}")
 endforeach()
 
+# The GPU widgets after their QRhi is replaced (GPU switch, device loss): offscreen on the Null
+# backend. Needs QRhi (GuiPrivate) and the compiled shaders (ShaderTools), so not in a qtbase-only
+# QK4_TESTS_ONLY build.
+if(NOT QK4_TESTS_ONLY AND QT_GUI_PRIVATE_FOUND)
+    add_executable(test_rhiwidgetlifecycle test_rhiwidgetlifecycle.cpp
+        ${CMAKE_SOURCE_DIR}/src/dsp/panadapter_rhi.cpp
+        ${CMAKE_SOURCE_DIR}/src/dsp/minipan_rhi.cpp
+        ${CMAKE_SOURCE_DIR}/src/dsp/bandplanstrip.cpp
+        ${CMAKE_SOURCE_DIR}/src/dsp/spectrumgeometry.cpp
+        ${CMAKE_SOURCE_DIR}/src/dsp/spectrumscale.cpp
+        ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+        ${CMAKE_SOURCE_DIR}/src/utils/bandplan.cpp
+        ${CMAKE_SOURCE_DIR}/src/utils/panelscale.cpp
+        ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
+    )
+    target_include_directories(test_rhiwidgetlifecycle PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_rhiwidgetlifecycle Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Widgets Qt6::Test)
+    qt6_add_shaders(test_rhiwidgetlifecycle "test_rhiwidgetlifecycle_shaders"
+        BATCHABLE
+        PRECOMPILE
+        PREFIX "/shaders"
+        BASE ${CMAKE_SOURCE_DIR}
+        FILES
+            ${CMAKE_SOURCE_DIR}/src/dsp/shaders/spectrum.vert
+            ${CMAKE_SOURCE_DIR}/src/dsp/shaders/spectrum.frag
+            ${CMAKE_SOURCE_DIR}/src/dsp/shaders/spectrum_fill.vert
+            ${CMAKE_SOURCE_DIR}/src/dsp/shaders/spectrum_fill.frag
+            ${CMAKE_SOURCE_DIR}/src/dsp/shaders/waterfall.vert
+            ${CMAKE_SOURCE_DIR}/src/dsp/shaders/waterfall.frag
+            ${CMAKE_SOURCE_DIR}/src/dsp/shaders/overlay.vert
+            ${CMAKE_SOURCE_DIR}/src/dsp/shaders/overlay.frag
+    )
+    add_test(NAME RhiWidgetLifecycleTests COMMAND test_rhiwidgetlifecycle)
+    set_tests_properties(RhiWidgetLifecycleTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # Capture-rate decimation — pure logic, no audio device needed.
 add_executable(test_audiodecimator test_audiodecimator.cpp)
 target_include_directories(test_audiodecimator PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -940,7 +977,9 @@ endif()
 get_property(_qk4_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 set(_qk4_test_targets "")
 foreach(_t IN LISTS _qk4_dir_targets)
-    if(_t MATCHES "^test_")
+    # Executables only: qt6_add_shaders adds a test_<name>_other_files utility target beside one.
+    get_target_property(_qk4_type ${_t} TYPE)
+    if(_t MATCHES "^test_" AND _qk4_type STREQUAL "EXECUTABLE")
         list(APPEND _qk4_test_targets ${_t})
         target_link_libraries(${_t} qk4_logging)
     endif()
