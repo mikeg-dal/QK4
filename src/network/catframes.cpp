@@ -351,6 +351,11 @@ QByteArray sMeterMain(double sMeter) {
     return QString("SM%1;").arg(bars, 4, 10, QChar('0')).toUtf8();
 }
 
+QByteArray signalLevelDbm(int dbm, bool sub) {
+    const int magnitude = qBound(0, qAbs(dbm), 999);
+    return QString("%1%2%3;").arg(sub ? "SMH$" : "SMH", dbm < 0 ? "-" : "+").arg(magnitude, 3, 10, QChar('0')).toUtf8();
+}
+
 QByteArray txMeter(int alc, int compression, double fwdPower, double swr, bool qrp) {
     // WHY: K4 TM format is TMaaabbbcccddd; — 4 fields × 3 digits.
     // aaa=ALC, bbb=compression, ccc=forward power (×10 in QRP mode), ddd=SWR×10.

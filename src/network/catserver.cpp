@@ -297,6 +297,10 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
             const int dt = m_radioState->dataSubModeB();
             return dt < 0 ? QByteArray() : CatFrames::subRx(CatFrames::dataSubMode(dt));
         }
+        if (prefix == "SMH") {
+            const auto dbm = m_radioState->sMeterDbmB();
+            return dbm ? CatFrames::signalLevelDbm(*dbm, true) : QByteArray();
+        }
         // XT$ stays unanswered: the radio itself does not answer it.
     }
 
@@ -384,6 +388,11 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         }
         if (prefix == "SM") {
             return CatFrames::sMeterMain(m_radioState->sMeter());
+        }
+        if (prefix == "SMH") {
+            // The radio's own dBm reading; no answer until it has reported one.
+            const auto dbm = m_radioState->sMeterDbm();
+            return dbm ? CatFrames::signalLevelDbm(*dbm, false) : QByteArray();
         }
         if (prefix == "PCX") {
             return CatFrames::rfPowerExtended(m_radioState->rfPower(), m_radioState->powerRange());

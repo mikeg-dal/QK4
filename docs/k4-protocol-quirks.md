@@ -323,6 +323,36 @@ A second tracker in QK4 would move the scale independently of the radio's own sc
 
 ---
 
+## 14. S-meter: `SM` streams bars, the dBm reading `SMH` must be asked for
+
+**Symptom.** TCI clients were sent a receive level ~3–5 dB below the radio's own: QK4 converted the
+`SM` bar count to dBm (`SM04` → −115 dBm) while the radio's `SMH` read −110…−112 dBm.
+
+**K4 behavior.** Captured on a K4D on 2026-10-30 with QK4's start-up sequence:
+
+- `SM` / `SM$` (bars, 0–42, matching the K4's bar graph) arrive unprompted whenever the meter
+  changes — about five a second on a quiet band.
+- `SMH` / `SMH$` (signal level in dBm, `SMH-110`, `SMH$-122`) arrived only in reply to `SMH;` /
+  `SMH$;`.
+- Programmer's Reference D5: "SMH$ (High-Resolution S-meter; GET only) RESP format: SMH$+nnn; where
+  +nnn is the signal level in dBm. SET format: SMHn; where n is 1 (Automatically delivered when
+  s-meter value changes.) … NOTE: SET format is not meta-mode dependent. Requires AI4 for
+  delivery." No way to turn delivery off again is documented.
+
+**QK4 encoding.**
+- `MainWindow::onRadioReady` sends `SMH1;` (delivery on change, at the rate the `SM` stream already
+  runs — no polling timer), then `SMH;` and `SMH$;` once so the first value does not wait for a
+  change.
+- `RxTxMeterHandlers::handleSMH` / `handleSMHSub` require the sign, so an echoed `SMH1` cannot be read
+  as +1 dBm. `RadioState::sMeterDbm()` / `sMeterDbmB()` are empty until the radio reports.
+- `SM` still drives the bar graphs. Anything that reports a level in dBm (TCI sensors, the CAT
+  server's `SMH` answer) uses `SMH`; `SpectrumScale::rxLevelDbm` falls back to the bar estimate only
+  before the first `SMH` arrives.
+- **Not yet bench-verified:** that `SMH1;` makes the radio push `SMH` and `SMH$` unprompted. If it
+  does not, TCI shows the one value read at connect; the fix is then to poll, not to go back to bars.
+
+---
+
 ## How to extend this document
 
 Add a new section only when a behavior satisfies **all** of:

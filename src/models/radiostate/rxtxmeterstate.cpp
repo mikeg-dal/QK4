@@ -9,6 +9,8 @@
 void RxTxMeterState::reset() {
     sMeter = 0.0;
     sMeterB = 0.0;
+    sMeterDbm = RxTxMeterLimits::SMeterDbmUnknown;
+    sMeterDbmB = RxTxMeterLimits::SMeterDbmUnknown;
     swrMeter = 1.0;
     alcMeter = 0;
     compressionDb = 0;
@@ -64,6 +66,33 @@ void handleSMSub(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
         state.sMeterB = 9.0 + dbAboveS9 / 10.0;
     }
     emit owner.sMeterBChanged(state.sMeterB);
+}
+
+// SMH±nnn / SMH$±nnn: a sign, then the level in dBm (SMH-110, SMH$-122 from a K4D, 2026-10-30).
+// WHY the sign is required: the SET that turns on automatic delivery is SMH1, and a bare number
+// would be read as +1 dBm if the radio ever echoed it.
+static void applySignalLevel(int &member, const QString &cmd, int prefixLen, RadioState &owner,
+                             void (RadioState::*signal)(int)) {
+    const QStringView field = QStringView(cmd).mid(prefixLen);
+    if (field.size() < 2 || field.size() > 4 || (field.front() != u'+' && field.front() != u'-'))
+        return;
+    for (const QChar c : field.mid(1)) {
+        if (!c.isDigit())
+            return;
+    }
+    const int dbm = field.toInt();
+    if (dbm != member) {
+        member = dbm;
+        (owner.*signal)(dbm);
+    }
+}
+
+void handleSMH(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
+    applySignalLevel(state.sMeterDbm, cmd, 3, owner, &RadioState::sMeterDbmChanged);
+}
+
+void handleSMHSub(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
+    applySignalLevel(state.sMeterDbmB, cmd, 4, owner, &RadioState::sMeterDbmBChanged);
 }
 
 void handlePO(RxTxMeterState & /*state*/, RadioState & /*owner*/, const QString & /*cmd*/) {

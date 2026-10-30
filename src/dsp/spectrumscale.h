@@ -4,6 +4,8 @@
 #include <QString>
 #include <QVector>
 
+#include <optional>
+
 // Amplitude axis for the panadapter: where a given dBm sits on screen, and which values earn a
 // label. Pure arithmetic with no Qt widget dependency so it can be tested directly — the bug that
 // prompted it (S1 printed at two different heights) was arithmetic, and only reachable through the
@@ -39,6 +41,11 @@ float sUnitDbm(int sUnit);
 // clamp it to S9 and silently discard every strong signal, which is why this is its own function
 // rather than a cast at the call site.
 float dbmForSMeterReading(double sMeterReading);
+
+// The receive level to report in dBm: the radio's own reading (SMH / SMH$) whenever it has sent one.
+// The bar estimate above is only the fallback until the first SMH arrives - on Mike's K4D the bars
+// read -115 dBm where SMH read -110...-112 (2026-10-30), so it is never preferred over the radio.
+float rxLevelDbm(std::optional<int> radioDbm, double sMeterReading);
 
 // Fraction of the chart height for a dBm value: 0 at minDb (bottom), 1 at maxDb (top).
 //

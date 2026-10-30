@@ -2600,6 +2600,99 @@ private slots:
         QCOMPARE(spy.count(), 0);
     }
 
+    // --- SMH / SMH$ (the radio's signal level in dBm) ---
+    // Wire forms from a K4D, 2026-10-30: SMH-110 while SM read 04 (QK4's bar estimate: -115 dBm).
+    void testSignalLevelDbmParses() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::sMeterDbmChanged);
+        QSignalSpy subSpy(&rs, &RadioState::sMeterDbmBChanged);
+        rs.parseCATCommand("SMH-110;");
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(-110));
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), -110);
+        QCOMPARE(subSpy.count(), 0);
+        QCOMPARE(rs.sMeterDbmB(), std::nullopt);
+
+        rs.parseCATCommand("SMH$-122;");
+        QCOMPARE(rs.sMeterDbmB(), std::optional<int>(-122));
+        QCOMPARE(subSpy.count(), 1);
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(-110)); // Main untouched
+        QCOMPARE(spy.count(), 1);
+
+        rs.parseCATCommand("SMH+005;"); // a strong signal reads positive
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(5));
+        rs.parseCATCommand("SMH-073;");
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(-73));
+    }
+
+    void testSignalLevelDbmUnknownUntilReported() {
+        RadioState rs;
+        QCOMPARE(rs.sMeterDbm(), std::nullopt);
+        QCOMPARE(rs.sMeterDbmB(), std::nullopt);
+        // The bar stream does not invent a dBm reading.
+        rs.parseCATCommand("SM04;");
+        rs.parseCATCommand("SM$04;");
+        QCOMPARE(rs.sMeterDbm(), std::nullopt);
+        QCOMPARE(rs.sMeterDbmB(), std::nullopt);
+    }
+
+    // SMH must not reach the SM (bar graph) handler, nor SMH$ the SM$ one.
+    void testSignalLevelDbmLeavesTheBarsAlone() {
+        RadioState rs;
+        rs.parseCATCommand("SM04;");
+        rs.parseCATCommand("SM$06;");
+        QSignalSpy barSpy(&rs, &RadioState::sMeterChanged);
+        QSignalSpy barBSpy(&rs, &RadioState::sMeterBChanged);
+        rs.parseCATCommand("SMH-110;");
+        rs.parseCATCommand("SMH$-100;");
+        QCOMPARE(barSpy.count(), 0);
+        QCOMPARE(barBSpy.count(), 0);
+        QCOMPARE(rs.sMeter(), 2.0);
+        QCOMPARE(rs.sMeterB(), 3.0);
+    }
+
+    // SMH1 is the SET that turns on automatic delivery; read as a level it would be +1 dBm.
+    void testSignalLevelDbmRejectsSetAndMalformed() {
+        RadioState rs;
+        rs.parseCATCommand("SMH-110;");
+        rs.parseCATCommand("SMH$-122;");
+        QSignalSpy spy(&rs, &RadioState::sMeterDbmChanged);
+        QSignalSpy subSpy(&rs, &RadioState::sMeterDbmBChanged);
+        for (const char *bad :
+             {"SMH1;", "SMH;", "SMH$;", "SMH$1;", "SMH-;", "SMH+;", "SMH-1x0;", "SMH--10;", "SMH-1100;", "SMH 110;"}) {
+            rs.parseCATCommand(QString::fromLatin1(bad));
+        }
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(subSpy.count(), 0);
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(-110));
+        QCOMPARE(rs.sMeterDbmB(), std::optional<int>(-122));
+    }
+
+    void testSignalLevelDbmEmitsOnlyOnChange() {
+        RadioState rs;
+        rs.parseCATCommand("SMH-110;");
+        QSignalSpy spy(&rs, &RadioState::sMeterDbmChanged);
+        rs.parseCATCommand("SMH-110;");
+        QCOMPARE(spy.count(), 0);
+        rs.parseCATCommand("SMH-111;");
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void testSignalLevelDbmResetsAndEmitsAgain() {
+        RadioState rs;
+        rs.parseCATCommand("SMH-110;");
+        rs.parseCATCommand("SMH$-122;");
+        rs.reset();
+        QCOMPARE(rs.sMeterDbm(), std::nullopt);
+        QCOMPARE(rs.sMeterDbmB(), std::nullopt);
+        QSignalSpy spy(&rs, &RadioState::sMeterDbmChanged);
+        QSignalSpy subSpy(&rs, &RadioState::sMeterDbmBChanged);
+        rs.parseCATCommand("SMH-110;"); // same as before the reset - must still emit
+        rs.parseCATCommand("SMH$-122;");
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(subSpy.count(), 1);
+    }
+
     // --- SM / SM$ (S-meter — emits on EVERY parse; streaming telemetry) ---
     // WHY: unlike config handlers, meters are intentionally non-idempotent —
     // the UI wants a repaint tick for every packet even if the displayed

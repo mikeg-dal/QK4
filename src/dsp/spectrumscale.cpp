@@ -60,6 +60,10 @@ float dbmForSMeterReading(double sMeterReading) {
     return static_cast<float>(S9_DBM - below * DB_PER_S_UNIT);
 }
 
+float rxLevelDbm(std::optional<int> radioDbm, double sMeterReading) {
+    return radioDbm ? static_cast<float>(*radioDbm) : dbmForSMeterReading(sMeterReading);
+}
+
 float normalizedForDb(float dbm, float minDb, float maxDb) {
     const float range = maxDb - minDb;
     if (range <= 0.0f)

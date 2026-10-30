@@ -51,6 +51,19 @@ private slots:
         }
     }
 
+    // The radio's own SMH reading wins whenever it has sent one; the bar estimate only fills the gap
+    // before the first SMH. On a K4D the bars (SM04) gave -115 dBm where SMH said -110.
+    void rxLevelPrefersTheRadiosDbm() {
+        QCOMPARE(SpectrumScale::rxLevelDbm(-110, 2.0), -110.0f);
+        QCOMPARE(SpectrumScale::rxLevelDbm(5, 0.0), 5.0f);
+        QCOMPARE(SpectrumScale::rxLevelDbm(-127, 13.0), -127.0f); // never blended with the bars
+    }
+
+    void rxLevelFallsBackToTheBarsUntilSmhArrives() {
+        QCOMPARE(SpectrumScale::rxLevelDbm(std::nullopt, 9.0), SpectrumScale::dbmForSMeterReading(9.0));
+        QCOMPARE(SpectrumScale::rxLevelDbm(std::nullopt, 2.0), -115.0f); // SM04
+    }
+
     // ---- anchors -------------------------------------------------------------------------
 
     void sUnitDbmMatchesTheAmateurScale() {

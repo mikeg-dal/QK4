@@ -459,8 +459,8 @@ reports:
 
 | Sensor | Source | Notes |
 |---|---|---|
-| `RX_SENSORS` | `RadioState::sMeter` | Deprecated in 2.0, still sent — older clients know only this |
-| `RX_CHANNEL_SENSORS` | `sMeter`, `sMeterB` | Channel B only while the Sub RX is on |
+| `RX_SENSORS` | `RadioState::sMeterDbm` (SMH) | Deprecated in 2.0, still sent — older clients know only this |
+| `RX_CHANNEL_SENSORS` | `sMeterDbm`, `sMeterDbmB` (SMH, SMH$) | Channel B only while the Sub RX is on |
 | `TX_SENSORS` | `forwardPower`, `swrMeter` | Five arguments always; see the mic caveat below |
 
 **Design: telemetry is not state.** Sensors live in `TciSensorReadings`, deliberately *outside*
@@ -474,10 +474,12 @@ The interval is clamped to the spec's 30–1000 ms rather than refused: a client
 means "as fast as you can", and without the clamp it can turn the server into a packet generator
 (measured: 500 readings in 500 ms).
 
-**dBm conversion.** `RadioState` carries the K4's S-meter in its own encoding — 0–9 is S0–S9, and
-anything stronger is `9.0 + dBoverS9/10`, so S9+20 arrives as `11.0`, not `29`. Converting that
-with `sUnitDbm()` would clamp it to S9 and silently discard every strong signal. `SpectrumScale::
-dbmForSMeterReading()` handles it, in the one place that already owns the S-unit convention.
+**dBm source.** The level is the radio's own `SMH` / `SMH$` reading in dBm
+(`docs/k4-protocol-quirks.md` §14), chosen by `SpectrumScale::rxLevelDbm()`. Until the first `SMH`
+arrives it falls back to an estimate from the `SM` bars via `SpectrumScale::dbmForSMeterReading()`,
+which read 3–5 dB low against `SMH` on a K4D. That fallback must handle RadioState's S-meter encoding
+— 0–9 is S0–S9, and anything stronger is `9.0 + dBoverS9/10`, so S9+20 arrives as `11.0`, not `29`;
+`sUnitDbm()` would clamp it to S9.
 
 **Two fields QK4 cannot fill honestly**, both recorded in the code rather than faked:
 
@@ -613,7 +615,7 @@ CAT passthrough (§5.2, now phase 2) would be *for*.
 | RF power / tune power | `rfPower`, `CatFrames::setRfPower`; menu 69 | `DRIVE`, `TUNE_DRIVE` | Reported and set |
 | CW keyer speed | `keyerSpeed`, `CatFrames::keyerSpeed` | `CW_KEYER_SPEED`, `CW_MACROS_SPEED` | Reported and set |
 | VFO lock | `lockA`, `lockB`, `CatFrames::setVfoLock` | `LOCK`, `VFO_LOCK` | Both reported; `VFO_LOCK` sets |
-| S-meter (both receivers) | `sMeter`, `sMeterB` | `RX_SENSORS`, `RX_CHANNEL_SENSORS` | Sent (§7.2) |
+| S-meter (both receivers) | `sMeterDbm`, `sMeterDbmB` (SMH) | `RX_SENSORS`, `RX_CHANNEL_SENSORS` | Sent (§7.2) |
 | SWR / forward power | `swrMeter`, `forwardPower` | `TX_SENSORS` | Sent; mic level and peak power cannot be measured (§7.2) |
 | Mic gain | `micGain` | `MIC_LEVEL` | Reported only (undocumented extension — §6.6) |
 

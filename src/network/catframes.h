@@ -119,6 +119,9 @@ QByteArray dataSubMode(int subMode);
 QByteArray aiMode(int level);
 
 QByteArray sMeterMain(double sMeter);
+// SMH±nnn / SMH$±nnn: signal level in dBm, a sign and three digits - the radio's form (SMH-110,
+// SMH$-122 from a K4D, 2026-10-30).
+QByteArray signalLevelDbm(int dbm, bool sub);
 
 QByteArray txMeter(int alc, int compression, double fwdPower, double swr, bool qrp);
 

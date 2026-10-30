@@ -539,6 +539,8 @@ void TciController::wireSnapshot() {
         // interval the client asked for, so a fast radio cannot flood the link.
         connect(m_radioState, &RadioState::sMeterChanged, this, [this](double) { publishSensors(); });
         connect(m_radioState, &RadioState::sMeterBChanged, this, [this](double) { publishSensors(); });
+        connect(m_radioState, &RadioState::sMeterDbmChanged, this, [this](int) { publishSensors(); });
+        connect(m_radioState, &RadioState::sMeterDbmBChanged, this, [this](int) { publishSensors(); });
         connect(m_radioState, &RadioState::swrChanged, this, [this](double) { publishSensors(); });
         connect(m_radioState, &RadioState::txMeterChanged, this,
                 [this](int, int, double, double) { publishSensors(); });
@@ -720,10 +722,12 @@ void TciController::publishSensors() {
     }
     TciSensorReadings readings;
 
-    // The protocol wants an absolute level in dBm. RadioState carries the K4's S-meter in its own
-    // encoding, so the conversion goes through the one place that owns the S-unit convention.
-    readings.sMeterDbm[TciRadio::MAIN_RECEIVER] = SpectrumScale::dbmForSMeterReading(m_radioState->sMeter());
-    readings.sMeterDbm[TciRadio::SUB_RECEIVER] = SpectrumScale::dbmForSMeterReading(m_radioState->sMeterB());
+    // The protocol wants an absolute level in dBm: the radio's own SMH / SMH$, falling back to the
+    // SM bar estimate only until the first SMH arrives.
+    readings.sMeterDbm[TciRadio::MAIN_RECEIVER] =
+        SpectrumScale::rxLevelDbm(m_radioState->sMeterDbm(), m_radioState->sMeter());
+    readings.sMeterDbm[TciRadio::SUB_RECEIVER] =
+        SpectrumScale::rxLevelDbm(m_radioState->sMeterDbmB(), m_radioState->sMeterB());
 
     readings.forwardPowerW = m_radioState->forwardPower();
     // The K4 reports ONE forward-power figure, not an RMS/peak pair. Reporting it as both is the

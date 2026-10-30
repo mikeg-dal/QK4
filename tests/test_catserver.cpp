@@ -153,6 +153,20 @@ private slots:
         QCOMPARE(CatFrames::sMeterMain(12.0), QByteArray("SM0028;"));
     }
 
+    void signalLevelReplyIsTheInverseOfTheRadioReport() {
+        for (int dbm = -150; dbm <= 20; ++dbm) {
+            for (const bool sub : {false, true}) {
+                RadioState rs;
+                const QByteArray wire = CatFrames::signalLevelDbm(dbm, sub);
+                rs.parseCATCommand(QString::fromLatin1(wire));
+                QCOMPARE(sub ? rs.sMeterDbmB() : rs.sMeterDbm(), std::optional<int>(dbm));
+            }
+        }
+        QCOMPARE(CatFrames::signalLevelDbm(-110, false), QByteArray("SMH-110;"));
+        QCOMPARE(CatFrames::signalLevelDbm(-73, false), QByteArray("SMH-073;"));
+        QCOMPARE(CatFrames::signalLevelDbm(5, true), QByteArray("SMH$+005;"));
+    }
+
     void setMenuValueUsesTheAbsoluteMeForm() {
         // The K4's tune power is menu item 69, set with MEnnnn.vvvv - ME0069.0020 is 20 W.
         // MenuController already sends the RELATIVE forms (ME0069.+ and .-); this is absolute.
@@ -978,6 +992,24 @@ private slots:
 
         QCOMPARE(sendCommand(server, "SQ;"), QString());
         QCOMPARE(sendCommand(server, "SQ$;"), QString());
+    }
+
+    // SMH / SMH$ answer the radio's own dBm reading in its own form (SMH-110, SMH$-122 from a K4D,
+    // 2026-10-30), and nothing before the radio has reported one.
+    void testSmhAnswersTheRadiosSignalLevel() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QCOMPARE(sendCommand(server, "SMH;"), QString());
+        QCOMPARE(sendCommand(server, "SMH$;"), QString());
+
+        rs.parseCATCommand("SMH-110;");
+        rs.parseCATCommand("SMH$-122;");
+        QCOMPARE(sendCommand(server, "SMH;"), QString("SMH-110;"));
+        QCOMPARE(sendCommand(server, "SMH$;"), QString("SMH$-122;"));
+        // SM stays the bar reading, not a dBm figure.
+        rs.parseCATCommand("SM04;");
+        QCOMPARE(sendCommand(server, "SM;"), QString("SM0004;"));
     }
 
     // #134. RG and RG$ went unanswered although QK4 stores both. Captured from a K4D at R40: RG-00.

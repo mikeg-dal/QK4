@@ -47,6 +47,7 @@ time of writing these replies have none: `OM`, `RVM`/`RVD`, the `KS;` GET, `SM`,
 | `optionModules()` | `QString` | `OM` (`OM AP----------;` while empty) |
 | `diversityEnabled()` | `bool` | `DV` |
 | `sMeter()` | `double` | `SM` |
+| `sMeterDbm()` / `sMeterDbmB()` | `std::optional<int>` | `SMH` / `SMH$` (`SMH-110`; no answer while empty) |
 | `alcMeter()`, `compressionDb()`, `forwardPower()`, `swrMeter()`, `isQrpMode()` | `int`, `int`, `double`, `double`, `bool` | `TM` |
 | `squelchLevel()` / `squelchLevelB()` | `int` | `SQ` / `SQ$` (no answer while −1) |
 | `rfGain()` / `rfGainB()` | `int` | `RG` / `RG$` (`RG-00`; no answer while unset) |

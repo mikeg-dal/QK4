@@ -1262,6 +1262,11 @@ void MainWindow::onRadioReady() {
     m_connectionController->sendCAT("#FPS;"); // Query back to confirm and update menu
     m_connectionController->sendCAT("#SCL;"); // Panadapter scale - not in RDY, needed for dB range
     m_connectionController->sendCAT("PS;");   // Remote power state - not in RDY, drives the status-bar power button
+    // WHY: the K4 streams SM (bars) unprompted but sends SMH (dBm) only when asked or after SMH1
+    // (delivery on change; no documented off form). See docs/k4-protocol-quirks.md §14.
+    m_connectionController->sendCAT("SMH1;");
+    m_connectionController->sendCAT("SMH;");
+    m_connectionController->sendCAT("SMH$;");
     // Note: ML and KP commands come in RDY; dump - no need to query
 
     // Create synthetic "Display FPS" menu item (will update from radio echo)

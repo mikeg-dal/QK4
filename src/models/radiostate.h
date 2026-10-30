@@ -142,6 +142,10 @@ public:
     // Meters — backed by m_rxTxMeterState.
     double sMeter() const { return m_rxTxMeterState.sMeter; }
     double sMeterB() const { return m_rxTxMeterState.sMeterB; }
+    // The radio's signal level in dBm (SMH / SMH$), or nothing until it has reported one. SM above is
+    // the bar graph; this is the number to use wherever a level is shown or sent in dBm.
+    std::optional<int> sMeterDbm() const { return knownDbm(m_rxTxMeterState.sMeterDbm); }
+    std::optional<int> sMeterDbmB() const { return knownDbm(m_rxTxMeterState.sMeterDbmB); }
 
     double swrMeter() const { return m_rxTxMeterState.swrMeter; }
 
@@ -556,6 +560,8 @@ signals:
     void tuningStepBChanged(int step); // VFO B tuning rate (0-5)
     void sMeterChanged(double value);
     void sMeterBChanged(double value);
+    void sMeterDbmChanged(int dbm);  // SMH
+    void sMeterDbmBChanged(int dbm); // SMH$
 
     void transmitStateChanged(bool transmitting);
     // Emitted when PC echo lands. `value` is in W for Qrp/Qro and mW for Xvtr —
@@ -683,6 +689,10 @@ signals:
     void textBufferReceived(const QString &text, bool isSubRx); // TB$ decoded text
 
 private:
+    static std::optional<int> knownDbm(int dbm) {
+        return dbm == RxTxMeterLimits::SMeterDbmUnknown ? std::nullopt : std::optional<int>(dbm);
+    }
+
     // Frequency / VFO / split / RIT/XIT state — see radiostate/frequencyvfostate.h.
     FrequencyVfoState m_frequencyVfoState;
     // Data-mode + tuning step + streaming latency — see radiostate/datacontrolstate.h.

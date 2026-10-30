@@ -6,6 +6,12 @@
 
 class RadioState;
 
+namespace RxTxMeterLimits {
+// SMH / SMH$ before the radio has reported a level (and after reset()). The wire field is a sign and
+// three digits, so it can never carry this value.
+constexpr int SMeterDbmUnknown = -1000;
+} // namespace RxTxMeterLimits
+
 // Operational / meter / radio-identity state. This subsystem owns all
 // non-VFO, non-audio, non-spectrum "what the radio is reporting right
 // now" telemetry — the RX/TX transition, the S-meters, the TX meter
@@ -13,12 +19,18 @@ class RadioState;
 // (ID/OM/RV.), message bank, and a handful of miscellaneous mode
 // toggles that ride along on the same signal path (SB, DV, TS, BS).
 //
-// Covers: TX, RX, SM, SM$, PO, TM, ID, OM, RV., ER, MN, SIFP, SB, DV,
+// Covers: TX, RX, SM, SM$, SMH, SMH$, PO, TM, ID, OM, RV., ER, MN, SIFP, SB, DV,
 // TS, BS.
 struct RxTxMeterState {
     // S-meters (SM / SM$) in S-units (0..9.9 before decimal, 9.x for dB over).
     double sMeter = 0.0;
     double sMeterB = 0.0;
+
+    // SMH / SMH$ — the radio's own signal level in dBm (Programmer's Reference D5: "SMH$+nnn; where
+    // +nnn is the signal level in dBm"). SMeterDbmUnknown until reported. SM stays the bar graph;
+    // anything that needs a level in dBm uses this.
+    int sMeterDbm = RxTxMeterLimits::SMeterDbmUnknown;
+    int sMeterDbmB = RxTxMeterLimits::SMeterDbmUnknown;
 
     // TX meter cluster (TM).
     double swrMeter = 1.0;
@@ -80,6 +92,8 @@ namespace RxTxMeterHandlers {
 
 void handleSM(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSMSub(RxTxMeterState &state, RadioState &owner, const QString &cmd);
+void handleSMH(RxTxMeterState &state, RadioState &owner, const QString &cmd);
+void handleSMHSub(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handlePO(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleTM(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleTX(RxTxMeterState &state, RadioState &owner, const QString &cmd);

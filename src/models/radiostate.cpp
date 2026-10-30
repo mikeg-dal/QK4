@@ -571,6 +571,10 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append(
         {"SQ$", [this](const QString &c) { LevelsHandlers::handleSQSub(m_levelsState, *this, c); }});
     m_commandHandlers.append({"SM$", [this](const QString &c) { handleSMSub(c); }});
+    m_commandHandlers.append(
+        {"SMH$", [this](const QString &c) { RxTxMeterHandlers::handleSMHSub(m_rxTxMeterState, *this, c); }});
+    m_commandHandlers.append(
+        {"SMH", [this](const QString &c) { RxTxMeterHandlers::handleSMH(m_rxTxMeterState, *this, c); }});
     m_commandHandlers.append({"NB$", [this](const QString &c) { handleNBSub(c); }});
     m_commandHandlers.append({"NR$", [this](const QString &c) { handleNRSub(c); }});
     m_commandHandlers.append({"NRS$", [this](const QString &c) { handleNRSSub(c); }});
