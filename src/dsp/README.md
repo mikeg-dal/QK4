@@ -118,18 +118,18 @@ from a carrier against `SMH`, not from this line.
 
 ## Sampling
 
-Both the spectrum trace and the waterfall read the same raw bins through a `Linear` sampler, and
-one line of shader math is the entire difference between them:
+The spectrum trace and the waterfall read the same full-tier bins (the trace averaged and eased,
+the waterfall averaged) through a `Linear` sampler, with one horizontal mapping:
 
-- `spectrum_fill.frag` → `texU = (binOffset + u * binCount + 0.5) / textureWidth`. Not floored, so
-  samples land between texel centres and hardware bilinear blends adjacent bins — a smooth trace.
-- `waterfall.frag` → `texU = (binOffset + clamp(binIndex, 0.5, binCount - 0.5)) / textureWidth`.
-  Also not floored: bilinear blends the two nearest bins, with bin i's centre at i + 0.5 and the
-  edges clamped to the outer bin centres so they never blend with the empty texels. It was
-  nearest-neighbour from `8ad70ea` (hard bin edges) until 2026-10-30, when at narrow spans each bin
-  drew as a ~6 px block while the K4 front panel looks smooth even at #AVG 1. The `floor()` on
-  `binOffset` (both shaders) stays: it matches the C++ integer division that centres the bins and
-  fixed a blur at 5/8/11 kHz spans.
+- `spectrum_fill.frag` and `waterfall.frag` → `tierU = (1 - spanRatio) / 2 + u * spanRatio`, then
+  `texU = (binOffset + clamp(tierU * binCount, 0.5, binCount - 0.5)) / textureWidth`. The visible
+  span is centred in the tier, bin i's centre is at i + 0.5, bilinear blends the two nearest bins,
+  and the edges clamp to the outer bin centres so they never blend with the empty texels. Until
+  2026-10-30 the trace cropped whole bins in C++ and drew bin i at the left edge of its slot, half
+  a bin or more left of the waterfall (SPEC-011), and the waterfall was nearest-neighbour (`8ad70ea`,
+  hard bin edges), which at narrow spans drew each bin as a ~6 px block while the K4 front panel
+  looks smooth even at #AVG 1. The `floor()` on `binOffset` stays: it matches the C++ integer
+  division that centres the bins and fixed a blur at 5/8/11 kHz spans.
 - `waterfall.frag` → `texV = (floor(texV * storedRows) + 0.5) / storedRows`. Time is snapped, not
   blended: a V between two rows makes bilinear blend **two different moments in time**, which is
   the vertical smear; snapping is also what makes any rows-per-pixel ratio unblended rather than

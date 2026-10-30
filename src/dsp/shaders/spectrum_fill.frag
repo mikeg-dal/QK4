@@ -17,15 +17,20 @@ layout(std140, binding = 0) uniform buf {
     float binCount;         // offset 60: actual spectrum bin count
     vec2 viewportSize;      // offset 64: viewport dimensions
     float textureWidth;     // offset 72: texture width for bin centering
-    float padding;          // offset 76: padding for 16-byte alignment
+    float spanRatio;        // offset 76: display span / tier span (the waterfall's window)
 };  // Total: 80 bytes
 
-// Simple bilinear sampling - let GPU handle interpolation
+// The waterfall's mapping (waterfall.frag), on the same full-tier bins, so the trace sits exactly
+// over the waterfall (SPEC-011): the visible span is centred in the tier, bin i's centre is at
+// i + 0.5, the Linear sampler blends the two nearest bins, and the edges clamp to the outer bin
+// centres so they never blend with the empty texels beside the bins.
 float sampleBilinear(float u) {
+    float r = clamp(spanRatio, 0.0, 1.0);
+    float tierU = (1.0 - r) / 2.0 + u * r;
     // Bins are centered in texture - use floor() to match C++ integer division
     float binOffset = floor((textureWidth - binCount) / 2.0);
-    // Map display X [0,1] to texture coordinate where bins are stored
-    float texU = (binOffset + u * binCount + 0.5) / textureWidth;
+    float binPos = clamp(tierU * binCount, 0.5, binCount - 0.5);
+    float texU = (binOffset + binPos) / textureWidth;
     return texture(spectrumData, vec2(texU, 0.5)).r;
 }
 

@@ -1043,7 +1043,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
             float binCount;         // offset 60: actual bin count
             float viewportSize[2];  // offset 64
             float textureWidth;     // offset 72: for bin centering
-            float padding;          // offset 76
+            float spanRatio;        // offset 76: span / tier span, the waterfall's window
         } specFillUniforms = {
             {0.0f, 0.08f, 0.16f, 0.85f},        // fillBaseColor: dark navy
             {0.0f, 0.63f, 1.0f, 0.85f},         // fillPeakColor: electric blue
@@ -1054,7 +1054,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
             specBinCount,                       // binCount for shader
             {w, h},                             // viewportSize
             static_cast<float>(m_textureWidth), // textureWidth for bin centering
-            0.0f                                // padding
+            // Same values the waterfall uniforms use above, so trace and waterfall window identically.
+            tierSpanHz > 0.0f ? std::clamp(spanHz / tierSpanHz, 0.0f, 1.0f) : 1.0f // spanRatio
         };
         rub->updateDynamicBuffer(m_gpu.spectrumFillUniformBuffer.get(), 0, sizeof(specFillUniforms), &specFillUniforms);
     }
@@ -1301,35 +1302,27 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
     m_waterfallTierBinCount = totalBins;
     m_waterfallTierSpanHz = static_cast<float>(tierSpanHz);
 
-    // === Cropped path (center bins → live spectrum trace) ===
-    QByteArray binsToUse;
-    if (tierSpanHz > m_spanHz && totalBins > 100 && m_spanHz > 0) {
-        int requestedBins = (static_cast<qint64>(m_spanHz) * totalBins) / tierSpanHz;
-        requestedBins = qBound(50, requestedBins, totalBins);
-        int centerStart = (totalBins - requestedBins) / 2;
-        binsToUse = bins.mid(centerStart, requestedBins);
-    } else {
-        binsToUse = bins;
-    }
-
-    decompressBins(binsToUse, m_rawSpectrum);
-
-    // #AVG over the last n frames, in power (PowerAverager). A span or tier change alters the cropped
-    // bin count and restarts the average: the next n frames build it up again, so nothing from the
-    // old resolution is blended in.
-    m_traceAverager.addEased(m_rawSpectrum, m_currentSpectrum);
+    // === Trace: the same full-tier bins as the waterfall ===
+    // WHY not a crop of the visible bins: the trace used to take floor(span/tier × bins) bins from
+    // floor((bins - n) / 2) and stretch them over the width, drawing bin i at the left edge of its
+    // slot. The waterfall windows the full tier continuously and draws bin i at its centre, so the
+    // trace sat half a bin or more left of the waterfall (SPEC-011). spectrum_fill.frag now applies
+    // the waterfall's window math to the same bins.
+    // #AVG over the last n frames, in power (PowerAverager). A tier change alters the bin count and
+    // restarts the average, so nothing from the old resolution is blended in.
+    m_traceAverager.addEased(m_tierRawSpectrum, m_currentSpectrum);
 
     // The radio reports the noise floor it measured, in the same dBm the bins are meant to be in
     // once RhiUtils::K4_DBM_OFFSET is applied. Comparing the two is a free check that the offset is
     // right — a systematic gap means every dBm and S-unit on the scale is off by that much. Logged
     // only when the disagreement changes, so it stays quiet while the calibration holds.
-    if (lcSpectrumDiag().isDebugEnabled() && !m_rawSpectrum.isEmpty()) {
-        // Raw bins, not the smoothed curve: the EMA's fast-attack/slow-decay asymmetry biases the
-        // result upward and would be read as a calibration error. The median is the meaningful
+    if (lcSpectrumDiag().isDebugEnabled() && !m_tierRawSpectrum.isEmpty()) {
+        // Raw bins, not the averaged trace: averaging changes the noise statistics and would be read
+        // as a calibration error. The median is the meaningful
         // comparison — with signals sparse across the span, most bins are noise, whereas the single
         // lowest bin is the deepest downward excursion of that noise and sits well below any floor
         // statistic the radio would report.
-        QVector<float> sorted = m_rawSpectrum;
+        QVector<float> sorted = m_tierRawSpectrum;
         std::sort(sorted.begin(), sorted.end());
         const float medianDbm = sorted[sorted.size() / 2];
         // 5th percentile, not the outright minimum: the lowest single bin is the deepest downward
@@ -1637,7 +1630,6 @@ void PanadapterRhiWidget::clear() {
     // Clear runtime data buffers, including the full-tier EMA so the first frame after a reconnect
     // is not blended with the last one before it.
     m_currentSpectrum.clear();
-    m_rawSpectrum.clear();
     m_averagingLevel = -1; // the next session's #AVG always applies
     m_tierAverager.reset();
     m_traceAverager.reset();

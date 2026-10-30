@@ -218,9 +218,8 @@ private:
     QShader m_overlayVert;
     QShader m_overlayFrag;
 
-    // Spectrum data (cropped to display span for live trace)
+    // The drawn trace: the full tier's bins, averaged and eased; spectrum_fill.frag windows them to the span
     QVector<float> m_currentSpectrum;
-    QVector<float> m_rawSpectrum;
     QVector<float> m_normalizedSpectrum; // Reused per-frame to avoid allocation in render()
     // Per-frame scratch for the dashed overlay lines; cleared, not reallocated, each frame.
     QVector<float> m_notchDashVerts;
@@ -353,7 +352,7 @@ private:
     // Colors
     QColor m_gridColor{160, 160, 160, 77};      // Light gray with 30% alpha
     QColor m_passbandColor{0, 191, 255, 64};    // Cyan with 25% alpha (VFO A default)
-    QColor m_frequencyMarkerColor{0, 140, 200}; // Darker cyan (VFO A default)
+    QColor m_frequencyMarkerColor{0, 191, 255}; // VfoACyan, as SpectrumController sets it
     QColor m_notchColor{255, 0, 0};             // Red
 
     // RTTY tone overlay colors
