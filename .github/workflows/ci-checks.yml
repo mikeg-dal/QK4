@@ -234,7 +234,11 @@ jobs:
 
       - name: Build instrumented tests
         # See unit-tests job comment for why this uses the qk4_tests aggregate.
-        run: cmake --build build-rtsan --target qk4_tests --parallel
+        # WHY 4: a bare --parallel under Makefiles is `make -j` with no limit, which started every
+        # instrumented compile at once; the runner ran out of memory and GitHub stopped it ("The
+        # runner has received a shutdown signal") three minutes in, twice (2026-10-30). 4 matches
+        # the hosted runner's cores and CMAKE_BUILD_PARALLEL_LEVEL in the platform builders.
+        run: cmake --build build-rtsan --target qk4_tests --parallel 4
 
       - name: Run instrumented tests
         # halt_on_error: the first violation ends the test, red. The self-tests set their own.
