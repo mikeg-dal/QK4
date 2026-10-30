@@ -351,6 +351,14 @@ private slots:
         QVERIFY(!RadioUtils::catMovesLockedVfo("AB2;", false, false));
     }
 
+    // textDecodeSetAllowed — TD is decode only in CW/DATA; in SSB TD1 arms 2-TONE (transmit safety)
+    void testTextDecode_onlyCwAndData() {
+        for (int md : {3, 7, 6, 9})
+            QVERIFY2(RadioUtils::textDecodeSetAllowed(md), qPrintable(QString::number(md)));
+        for (int md : {0, 1, 2, 4, 5, 8}) // unknown, LSB, USB, FM, AM, reserved
+            QVERIFY2(!RadioUtils::textDecodeSetAllowed(md), qPrintable(QString::number(md)));
+    }
+
     // isValidIpv4 — strict dotted-quad
     void testIpv4_simple() { QVERIFY(RadioUtils::isValidIpv4("192.168.1.10")); }
     void testIpv4_zeros() { QVERIFY(RadioUtils::isValidIpv4("0.0.0.0")); }

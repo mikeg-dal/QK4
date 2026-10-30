@@ -1,4 +1,5 @@
 #include "textdecodecontroller.h"
+#include "utils/radioutils.h"
 #include "logging/logcategories.h"
 
 #include "connectioncontroller.h"
@@ -188,6 +189,15 @@ void TextDecodeController::showSubRx() {
 void TextDecodeController::sendTextDecodeCmd(TextDecodeWindow *window, bool isMainRx) {
     if (!m_connection->isConnected())
         return;
+    // TRANSMIT SAFETY: TD is a decode command only in CW and DATA. In SSB its 1 arms the 2-TONE
+    // generator, so the next PTT would send two tones instead of the microphone. Decided from the
+    // radio's own mode for this receiver, not the window's label, and nothing is sent otherwise -
+    // not even TD0, which in SSB would switch off a 2-TONE the operator set.
+    const RadioState::Mode rxMode = isMainRx ? m_radioState->mode() : m_radioState->modeB();
+    if (!RadioUtils::textDecodeSetAllowed(static_cast<int>(rxMode))) {
+        qCDebug(lcUiTextDecode) << "not sending TD: no text decoder in mode" << rxMode;
+        return;
+    }
     int mode = 0;
     int threshold = 0;
     if (window->isDecodeEnabled()) {

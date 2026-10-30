@@ -154,6 +154,13 @@ qint64 vfoWheelTuneTarget(quint64 currentHz, int steps, int stepHz, bool locked)
 /// swap). A GET (FA;) moves nothing. The trailing ';' is optional. SWnn front-panel key
 /// emulations are not counted: those are the radio's own keys and the radio applies its own rules.
 enum VfoMask { VfoNone = 0, VfoA = 1, VfoB = 2 };
+
+/// Whether QK4 may send a TD / TD$ SET for a receiver in K4 mode `mdCode` (the MD digit: 3 CW,
+/// 7 CW-R, 6 DATA, 9 DATA-R). TD's argument means something different per mode (Programmer's
+/// Reference D5): text decode in CW and DATA, but in SSB "encode mode (2-tone): 0 = 2-TONE off,
+/// 1 = on", and nothing defined in AM/FM. So TD is a decode command only in CW and DATA; in any other
+/// mode a TD1 would arm the two-tone generator and the next PTT would transmit two tones.
+bool textDecodeSetAllowed(int mdCode);
 int vfosMovedByCat(const QString &command);
 
 /// True when `command` would move a VFO that is locked (LK for A, LK$ for B, each on its own). Every
