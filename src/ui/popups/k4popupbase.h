@@ -89,6 +89,12 @@ public:
      */
     bool isVisibleOrJustHidden() const;
 
+    /**
+     * @brief For a toggle key: close the popup and return true when it is open, or was just
+     *        closed by this same press (click-away); return false when the key should open it.
+     */
+    bool closeIfOpenForToggle();
+
 signals:
     /**
      * @brief Emitted when the popup is hidden.

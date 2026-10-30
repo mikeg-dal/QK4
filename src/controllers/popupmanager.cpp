@@ -917,17 +917,8 @@ void PopupManager::wireKeyingWeightPopup() {
     });
 }
 
-bool PopupManager::closedByItsKey(K4PopupBase *popup) {
-    // WHY isVisibleOrJustHidden: the press on the row key reaches the popup's click-away filter
-    // first and closes it, then the key fires. Reading isVisible() would reopen it every time.
-    if (!popup->isVisibleOrJustHidden())
-        return false;
-    popup->hidePopup();
-    return true;
-}
-
 void PopupManager::showRxEqAbove(ButtonRowLane lane) {
-    if (closedByItsKey(m_rxEqPopup))
+    if (m_rxEqPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     m_rxEqPopup->setAllBands(m_radioState->rxEqBands());
@@ -936,7 +927,7 @@ void PopupManager::showRxEqAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showTxEqAbove(ButtonRowLane lane) {
-    if (closedByItsKey(m_txEqPopup))
+    if (m_txEqPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     m_txEqPopup->setAllBands(m_radioState->txEqBands());
@@ -945,7 +936,7 @@ void PopupManager::showTxEqAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showLineOutAbove(ButtonRowLane lane) {
-    if (closedByItsKey(m_lineOutPopup))
+    if (m_lineOutPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     m_lineOutPopup->setLeftLevel(m_radioState->lineOutLeft());
@@ -956,7 +947,7 @@ void PopupManager::showLineOutAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showLineInAbove(ButtonRowLane lane) {
-    if (closedByItsKey(m_lineInPopup))
+    if (m_lineInPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     m_lineInPopup->setSoundCardLevel(m_radioState->lineInSoundCard());
@@ -967,7 +958,7 @@ void PopupManager::showLineInAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showMicInputAbove(ButtonRowLane lane) {
-    if (closedByItsKey(m_micInputPopup))
+    if (m_micInputPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     m_micInputPopup->setCurrentInput(m_radioState->micInput());
@@ -976,7 +967,7 @@ void PopupManager::showMicInputAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showMicConfigAbove(ButtonRowLane lane) {
-    if (closedByItsKey(m_micConfigPopup))
+    if (m_micConfigPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     const int input = m_radioState->micInput();
@@ -997,7 +988,7 @@ void PopupManager::showMicConfigAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showVoxGainAbove(ButtonRowLane lane) {
-    if (m_voxPopup->popupMode() == VoxPopupWidget::VoxGain && closedByItsKey(m_voxPopup))
+    if (m_voxPopup->popupMode() == VoxPopupWidget::VoxGain && m_voxPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     const bool isDataMode = (m_radioState->mode() == RadioState::DATA || m_radioState->mode() == RadioState::DATA_R);
@@ -1010,7 +1001,7 @@ void PopupManager::showVoxGainAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showAntiVoxAbove(ButtonRowLane lane) {
-    if (m_voxPopup->popupMode() == VoxPopupWidget::AntiVox && closedByItsKey(m_voxPopup))
+    if (m_voxPopup->popupMode() == VoxPopupWidget::AntiVox && m_voxPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     m_voxPopup->setPopupMode(VoxPopupWidget::AntiVox);
@@ -1021,7 +1012,7 @@ void PopupManager::showAntiVoxAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showSsbBwAbove(ButtonRowLane lane) {
-    if (closedByItsKey(m_ssbBwPopup))
+    if (m_ssbBwPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     m_ssbBwPopup->setEssbEnabled(m_radioState->essbEnabled());
@@ -1033,7 +1024,7 @@ void PopupManager::showSsbBwAbove(ButtonRowLane lane) {
 }
 
 void PopupManager::showKeyingWeightAbove(ButtonRowLane lane) {
-    if (closedByItsKey(m_keyingWeightPopup))
+    if (m_keyingWeightPopup->closeIfOpenForToggle())
         return;
     QWidget *anchor = anchorForLane(lane);
     const int weight = m_radioState->keyingWeight();

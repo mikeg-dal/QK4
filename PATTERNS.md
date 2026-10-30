@@ -312,6 +312,7 @@ rg -o 'class\s+(\w+)\s*:\s*public\s+K4PopupBase' -r '$1' src
 | `placeCard(anchor, card, available)` *(static)* | The placement rule as pure geometry, for tests |
 | `cardGlobalRect()` | The visible card in global coordinates |
 | `hidePopup()` | Hide and emit `closed()` |
+| `closeIfOpenForToggle()` | For a toggle key: closes the popup and returns true when it was open (or just closed by this same press); false means open it |
 | `isVisibleOrJustHidden()` | True while visible or just closed by the click-away filter. Toggle handlers read this, not `isVisible()`, so the dismissing click does not reopen the popup |
 | signal `closed()` | Hidden by `hidePopup()`, Escape or click-away |
 | `contentSize()` *(protected, pure virtual)* | Size of the content area, without shadow margins |

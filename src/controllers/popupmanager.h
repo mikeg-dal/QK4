@@ -22,7 +22,6 @@ class VoxPopupWidget;
 class SsbBwPopupWidget;
 class KeyingWeightPopupWidget;
 class SoftwareListPopupWidget;
-class K4PopupBase;
 class QTimer;
 class QWidget;
 
@@ -172,9 +171,6 @@ private:
     SsbBwPopupWidget *m_ssbBwPopup;
     KeyingWeightPopupWidget *m_keyingWeightPopup;
     SoftwareListPopupWidget *m_softwareListPopup;
-
-    // True (and the popup closed) when the popup was open: its own key was pressed again.
-    static bool closedByItsKey(K4PopupBase *popup);
 
     void wireDisplayPopup();
     void wireEqPopups();

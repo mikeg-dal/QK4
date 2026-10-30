@@ -75,12 +75,12 @@ QPoint K4PopupBase::placeCard(const QRect &anchor, const QSize &card, const QRec
 
     // Screen edges only. Sideways first; a card wider than the screen keeps its left edge on it.
     const int maxX = available.x() + available.width() - card.width();
-    x = std::max(available.x(), std::min(x, maxX));
+    x = (std::max)(available.x(), (std::min)(x, maxX));
     // No room above: the same gap below the anchor, then held on screen.
     if (y < available.y())
         y = anchor.y() + anchor.height() + gap;
     const int maxY = available.y() + available.height() - card.height();
-    y = std::max(available.y(), std::min(y, maxY));
+    y = (std::max)(available.y(), (std::min)(y, maxY));
     return {x, y};
 }
 
@@ -117,6 +117,13 @@ void K4PopupBase::hidePopup() {
 
 bool K4PopupBase::isVisibleOrJustHidden() const {
     return isVisible() || (m_hiddenTimer.isValid() && m_hiddenTimer.elapsed() < ReopenGuardMs);
+}
+
+bool K4PopupBase::closeIfOpenForToggle() {
+    if (!isVisibleOrJustHidden())
+        return false;
+    hidePopup();
+    return true;
 }
 
 void K4PopupBase::hideEvent(QHideEvent *event) {

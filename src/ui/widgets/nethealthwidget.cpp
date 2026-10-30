@@ -84,10 +84,8 @@ void NetHealthWidget::mousePressEvent(QMouseEvent *event) {
 void NetHealthWidget::toggleMetricsPopup() {
     // WHY isVisibleOrJustHidden: the press on the LED reaches the popup's click-away filter first
     // and closes it; reading isVisible() would reopen it on every second click.
-    if (m_popup && m_popup->isVisibleOrJustHidden()) {
-        m_popup->hidePopup();
+    if (m_popup && m_popup->closeIfOpenForToggle())
         return;
-    }
     if (!m_popup)
         m_popup = new NetHealthPopup(m_metrics, this); // a child: it cannot outlive the LED
     m_popup->showAboveWidget(this);

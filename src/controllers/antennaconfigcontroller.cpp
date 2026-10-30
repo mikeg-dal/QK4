@@ -81,9 +81,7 @@ void AntennaConfigController::showTxPopupAbove(QWidget *trigger) {
 void AntennaConfigController::toggleAbove(AntennaCfgPopupWidget *popup, QWidget *anchor) {
     // The ANT CFG key's press reaches the popup's click-away filter first and closes it; reading
     // isVisible() would reopen it, so a second press on the key would never close it.
-    if (popup->isVisibleOrJustHidden())
-        popup->hidePopup();
-    else if (anchor)
+    if (!popup->closeIfOpenForToggle() && anchor)
         popup->showAboveWidget(anchor);
 }
 
