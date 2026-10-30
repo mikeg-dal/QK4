@@ -126,6 +126,13 @@ struct ColorUniforms {
 };
 ColorUniforms colorUniformsFor(const ColorWindow &window);
 
+// The byte a waterfall row stores for a level: its palette position under the window in effect when
+// the row is captured, scaled to 1..255 (0 stays "no data"). The panadapter draws these with
+// pass-through uniforms, so a row keeps the colour it was drawn with: an AutoRef REF step or a #WBS
+// change recolours only new rows, as on the K4. Recolouring the whole history live made every
+// ~1 dB AutoRef step flash the entire waterfall (bench 2026-10-30).
+quint8 capturedByteFor(float dbm, const ColorWindow &window);
+
 // What the shader returns for a stored byte under the given uniforms — the GPU path mirrored end to
 // end, so a test can check that storedByteFor + colorUniformsFor agree with paletteFractionFor.
 float shaderFractionFor(quint8 storedByte, const ColorUniforms &uniforms);

@@ -93,6 +93,11 @@ quint8 storedByteFor(float dbm) {
     return static_cast<quint8>(qBound(static_cast<long>(NoDataByte) + 1, byte, 255L));
 }
 
+quint8 capturedByteFor(float dbm, const ColorWindow &window) {
+    const long byte = std::lround(paletteFractionFor(dbm, window) * 255.0f);
+    return static_cast<quint8>(std::clamp(byte, static_cast<long>(NoDataByte) + 1, 255L));
+}
+
 ColorUniforms colorUniformsFor(const ColorWindow &window) {
     if (window.spanDb <= 0.0f)
         return ColorUniforms{};

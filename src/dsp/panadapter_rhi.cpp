@@ -984,9 +984,9 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     float tierSpanHz = m_waterfallTierSpanHz > 0 ? m_waterfallTierSpanHz : static_cast<float>(m_spanHz);
     float spanHz = static_cast<float>(m_spanHz);
     // Layout comes from RhiUtils so it cannot drift from the shaders or from the mini-pan.
-    // The colour window follows REF and the radio's #WBS live; the stored rows are levels.
-    const WaterfallGeometry::ColorUniforms color = WaterfallGeometry::colorUniformsFor(
-        WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_waterfallColorRange));
+    // Rows store palette positions fixed at capture (updateWaterfallData), so the shader passes them
+    // through: a REF or #WBS change recolours only rows drawn after it.
+    const WaterfallGeometry::ColorUniforms color{};
     RhiUtils::WaterfallUniforms waterfallUniforms = {scrollOffset,
                                                      binCount,
                                                      static_cast<float>(m_textureWidth),
@@ -1416,11 +1416,13 @@ void PanadapterRhiWidget::updateWaterfallData() {
     if (row >= 0 && row < m_rowTierSpanHz.size())
         m_rowTierSpanHz[row] = m_waterfallTierSpanHz;
 
-    // Levels, not palette positions: waterfall.frag applies the colour window (REF, #WBS) when it
-    // draws, so the history recolours when either changes instead of keeping the REF it was
-    // captured under. No interpolation here — the GPU handles it.
+    // Palette positions fixed at capture under the current colour window (REF, #WBS): the row keeps
+    // its colour as the history scrolls, as on the K4. A live window recoloured the whole waterfall
+    // on every ~1 dB AutoRef step, which read as a flicker over the history.
+    const WaterfallGeometry::ColorWindow window =
+        WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_waterfallColorRange);
     for (int i = 0; i < specSize; ++i)
-        m_waterfallData[row * m_textureWidth + offset + i] = WaterfallGeometry::storedByteFor(source[i]);
+        m_waterfallData[row * m_textureWidth + offset + i] = WaterfallGeometry::capturedByteFor(source[i], window);
 }
 
 void PanadapterRhiWidget::logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz) {

@@ -44,6 +44,7 @@ private slots:
     void shaderMirrorMatchesPaletteFraction();
     void storedByteEncodesTheRadiosLevel();
     void noDataDrawsAtPaletteBottomUnderAnyWindow();
+    void capturedRowsKeepTheirColourWhenRefSteps();
 };
 
 namespace {
@@ -398,6 +399,26 @@ void TestWaterfallGeometry::noDataDrawsAtPaletteBottomUnderAnyWindow() {
     const WaterfallGeometry::ColorUniforms passThrough;
     QCOMPARE(WaterfallGeometry::shaderFractionFor(255, passThrough), 1.0f);
     QVERIFY(std::abs(WaterfallGeometry::shaderFractionFor(128, passThrough) - 128.0f / 255.0f) < 1e-6f);
+}
+
+// A row's colour is fixed when it is captured. Through pass-through uniforms the stored byte draws
+// at the palette position it was captured with (within one byte), and a later 1 dB AutoRef REF step
+// leaves rows already drawn alone - the whole-history flicker seen on the bench.
+void TestWaterfallGeometry::capturedRowsKeepTheirColourWhenRefSteps() {
+    using namespace WaterfallGeometry;
+    const ColorUniforms passThrough{};
+    for (float ref : {-130.0f, -110.0f, -106.0f}) {
+        const ColorWindow window = colorWindowFor(ref, 14);
+        for (float dbm = ref - 20.0f; dbm <= ref + 40.0f; dbm += 0.5f) {
+            const quint8 byte = capturedByteFor(dbm, window);
+            QVERIFY(byte != NoDataByte);
+            QVERIFY(std::abs(shaderFractionFor(byte, passThrough) - paletteFractionFor(dbm, window)) <= 1.0f / 255.0f);
+        }
+    }
+    // The same noise level captured before and after a 1 dB REF step stores different bytes: only the
+    // new row changes colour, because the uniforms no longer follow REF.
+    const float noise = -104.0f;
+    QVERIFY(capturedByteFor(noise, colorWindowFor(-106.0f, 14)) != capturedByteFor(noise, colorWindowFor(-107.0f, 14)));
 }
 
 QTEST_MAIN(TestWaterfallGeometry)
