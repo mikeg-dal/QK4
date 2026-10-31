@@ -11,8 +11,8 @@
 #include "pingtracker.h"
 #include "protocol.h"
 #include "utils/latencyhistogram.h"
-
-class KzEgress;
+#include "kzegress.h"
+#include <functional>
 
 class TcpClient : public QObject {
     Q_OBJECT
@@ -56,6 +56,9 @@ public:
     // Posting is lock-free and allocation-free from any thread; this object writes the frames from
     // the I/O thread, in order. Lives as long as this TcpClient.
     KzEgress *kzEgress() const { return m_kzEgress; }
+    // Runs on I/O before a queued keying frame is written. Setting it marshals to I/O.
+    using KzFrameFilter = std::function<bool(std::string_view, KzEgress::Source, quint64, bool)>;
+    void setKzFrameFilter(KzFrameFilter filter);
 
     // Pre-RDY command string sent before the state dump on connect.
     // Must be called before connectToHost() — both are queued to the IO thread,
@@ -72,6 +75,7 @@ signals:
     void disconnected();
     void errorOccurred(const QString &error);
     void authenticated();
+    void aboutToDisconnect();
     void latencyChanged(int ms);
 
 private:
@@ -139,6 +143,7 @@ private:
     bool m_authResponseReceived;
 
     KzEgress *m_kzEgress;
+    KzFrameFilter m_kzFrameFilter;
     // Enqueue on the keying thread to the socket write here, per frame, since the session began.
     // Written on the I/O thread only. Logged once a minute while keying and when the session ends.
     LatencyHistogram m_kzLatency;

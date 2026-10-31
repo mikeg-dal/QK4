@@ -88,6 +88,7 @@ category that no rule or Options switch can address. The same test enforces it.
 | `qk4.cw.keyer` | `lcCwKeyer` | CW orchestration (CwController) | `cw.keyer` |
 | `qk4.cw.halikey` | `lcCwHalikey` | HaliKey device and V1.4 serial worker | `hw.halikey` |
 | `qk4.cw.midi` | `lcCwMidi` | HaliKey MIDI worker | `hw.midi` |
+| `qk4.cw.vail` | `lcCwVail` | Vail adapter MIDI worker | `hw.vail` |
 | `qk4.hardware` | `lcHardware` | HardwareController | `qk4.hardware` |
 | `qk4.kpod` | `lcKpod` | KPOD (hidapi) | `hw.kpod` |
 | `qk4.kpod.udev` | `lcKpodUdev` | KPOD hotplug on Linux | `hw.kpod.udev` |

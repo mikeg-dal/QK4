@@ -259,6 +259,7 @@ void TcpClient::endSession(Close how) {
         // reach the K4 before the session ends. The egress wakes this thread through a
         // notifier, which the event loop may service after this queued call.
         writeKzFrames();
+        emit aboutToDisconnect();
         sendCAT(K4Protocol::Commands::DISCONNECT);
     }
 
@@ -314,14 +315,27 @@ void TcpClient::sendCAT(const QString &command) {
     }
 }
 
+void TcpClient::setKzFrameFilter(KzFrameFilter filter) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(
+            this, [this, filter = std::move(filter)]() mutable { m_kzFrameFilter = std::move(filter); },
+            Qt::QueuedConnection);
+        return;
+    }
+    m_kzFrameFilter = std::move(filter);
+}
+
 void TcpClient::writeKzFrames() {
     const bool connected = m_state.load(std::memory_order_acquire) == Connected;
-    m_kzEgress->drain([this, connected](std::string_view frame, std::int64_t enqueuedNs) {
+    m_kzEgress->drainTagged([this, connected](std::string_view frame, std::int64_t enqueuedNs, KzEgress::Source source,
+                                              quint64 epoch, bool eligibleAtPost) {
         const auto text = QLatin1StringView(frame.data(), static_cast<qsizetype>(frame.size()));
         if (!connected) {
             qCWarning(lcCatTx) << "DROPPED (state=" << m_state.load(std::memory_order_acquire) << "):" << text;
             return;
         }
+        if (m_kzFrameFilter && !m_kzFrameFilter(frame, source, epoch, eligibleAtPost))
+            return;
         char packet[KzEgress::kMaxFrameBytes + Protocol::kCatPacketOverhead];
         const std::size_t length = Protocol::writeCATPacket(frame, packet, sizeof packet);
         m_socket->write(packet, static_cast<qint64>(length));

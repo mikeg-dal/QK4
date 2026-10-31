@@ -74,7 +74,7 @@ int percent(qint64 value) {
 }
 
 int halikeyDeviceTypeIndex(qint64 type) {
-    return static_cast<int>(std::clamp<qint64>(type, 0, 1)); // 0 = V1.4 serial, 1 = MIDI
+    return static_cast<int>(std::clamp<qint64>(type, 0, 2)); // 0 = V1.4 serial, 1 = MIDI, 2 = Vail
 }
 
 int halikeyKeyerModeIndex(qint64 mode) {
@@ -764,6 +764,18 @@ void RadioSettings::setHalikeyMuteRadioMonitor(bool mute) {
     }
 }
 
+bool RadioSettings::vailComputerSidetone() const {
+    return m_vailComputerSidetone;
+}
+
+void RadioSettings::setVailComputerSidetone(bool enabled) {
+    if (m_vailComputerSidetone != enabled) {
+        m_vailComputerSidetone = enabled;
+        save();
+        emit vailComputerSidetoneChanged(enabled);
+    }
+}
+
 // =============================================================================
 // KPOD+ Keyer Settings
 // =============================================================================
@@ -994,6 +1006,7 @@ void RadioSettings::load() {
     m_halikeyStraightKey = m_settings.value("halikey/straightKey", false).toBool();
     m_halikeyDitMemoryDelay = percent(storedInt(m_settings.value("halikey/ditMemoryDelay"), 33));
     m_halikeyMuteRadioMonitor = m_settings.value("halikey/muteRadioMonitor", false).toBool();
+    m_vailComputerSidetone = m_settings.value("vail/computerSidetone", false).toBool();
 
     // KPOD+ keyer settings
     m_kpodPlusEncodeMode = kpodPlusEncodeModeIndex(storedInt(m_settings.value("kpodPlus/encodeMode"), 0));
@@ -1116,6 +1129,7 @@ void RadioSettings::save() {
     m_settings.setValue("halikey/straightKey", m_halikeyStraightKey);
     m_settings.setValue("halikey/ditMemoryDelay", m_halikeyDitMemoryDelay);
     m_settings.setValue("halikey/muteRadioMonitor", m_halikeyMuteRadioMonitor);
+    m_settings.setValue("vail/computerSidetone", m_vailComputerSidetone);
 
     // KPOD+ keyer settings
     m_settings.setValue("kpodPlus/encodeMode", m_kpodPlusEncodeMode);

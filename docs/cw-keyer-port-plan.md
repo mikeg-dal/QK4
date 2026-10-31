@@ -33,8 +33,9 @@ and thread. Nothing in `AudioEngine` renders sidetone yet.
 
 **Phase 3 — open.** Waits on bench question 2.
 
-The HaliKey options page (Options → HaliKey) has the keyer mode, input type, dit memory delay,
-monitor mute and Key-Down Delay.
+The CW Keyer options page has device selection, the HaliKey keyer mode, input type and dit
+memory delay, plus shared monitor mute and Key-Down Delay. Vail adds a choice of its onboard
+buzzer or computer sidetone.
 
 **Source:** Dale Farnsworth's [K4-Companion](https://github.com/DaleFarnsworth/K4-Companion),
 commit `040f711` (v2.2), GPL-3.0, the same licence as QK4. Ported files carry an SPDX header and
@@ -70,6 +71,16 @@ Items 1 and 2 fix what goes on air. Items 3 to 6 fix the feel and the monitoring
 - **K4 monitor mute: built, off by default.** If the bench shows the K4 already suppresses its
   monitor for `KZD`/`KZU` (it does for `KZ.`/`KZ-`), it stays off and the K4 menu setting covers
   the rest.
+  Production routing uses `CwMonitorMute::State` on the I/O thread for both HaliKey and Vail.
+  HaliKey frames reach that policy through the lock-free `KzEgress`, carrying their source,
+  generation and capture-time eligibility; stale key-downs are rejected before muting or writing.
+  It saves the known `ML0` level, mutes before an accepted key-down, and restores after the
+  queued keying tail, `KZL`, and a 500 ms margin. A new key-down cancels that restoration,
+  including across device changes. Temporary zero-level feedback cannot replace the saved
+  level. The keyer-local monitor timer stays disabled in production so it cannot
+  compete with the shared policy. Normal disconnect restores before the socket closes;
+  an unexpected connection loss cannot send a restoration, so check the K4's CW monitor
+  level after reconnecting. Local computer sidetone and the Vail buzzer are unaffected.
 - **Modes:** Iambic A, Iambic B (default), Plain Iambic, Ultimatic, plus straight key / external
   keyer passthrough (#130).
 - **Dit memory delay: in, default 33 %** (Dale's app default). Iambic B only.
@@ -167,6 +178,8 @@ planned under "Phases".
 | SerialLinePollerTests | `tests/test_seriallinepoller.cpp` | Rest state not an edge; paddles on the same poll with per-line delta; dit first; 20 ms straight-key debounce and bounce restart; dah ignored when straight |
 | PaddleKeyerThreadedTests | `tests/test_paddlekeyerthreaded.cpp` | The keyer on its own thread with a real steady clock; events and releases from other threads; no KZD left open; `close()` sends a held straight key's KZU before the join. Run under ThreadSanitizer too |
 | SidetoneSchedulerTests | `tests/test_sidetonescheduler.cpp` | First edge fixes delay at lead + block; keyer-late and skipped-block downs dragged; other late downs raise the delay; late ups dragged; exact-frame placement; cancel before/after placement; ease in silence; edge deadline |
+| CwMonitorMuteTests | `tests/test_cwmonitormute.cpp` | Shared HaliKey/Vail mute ownership, queued replay tails, saved monitor level and feedback, checkbox changes, forced releases, and connection isolation |
+| CwMonitorRoutingTests | `tests/test_cwmonitorrouting.cpp` | Real TCP framing, mute-before-key-down ordering, restoration with a blocked GUI, source handoff, and restoration before graceful disconnect |
 
 `tests/paddlekeyersim.h` is the C++ port of `paddle_sweep.py`'s `sim()`: virtual clock, 48 kHz,
 384-frame blocks, 16 ms lead, 0.1 ms hop. The keyer's sleeps advance the clock and run the blocks
@@ -231,10 +244,10 @@ changing either.
    See `k4-protocol-quirks.md` §8.
 2. Does the K4 suppress its own monitor for `KZD`/`KZU`, as it does for `KZ.`/`KZ-`? This decides
    phase 3.
-3. Is `ML0000;` echoed? The local sidetone volume is safe either way: it comes from
-   `RadioSettings`. The hazard is the keyer's own restore. `CwController` feeds every
-   `monitorLevelChanged` for CW into `PaddleKeyer::setMonitorLevel`, so an echoed `ML0000` would
-   become the level the keyer restores, and the unmute would send `ML0000` again.
+3. Is `ML0000;` echoed? Local sidetone volume is independent of `ML0`. Production monitor
+   restoration ignores the temporary zero echo and remembers the original nonzero level; a
+   nonzero operator change becomes the new restore value. `CwMonitorMuteTests` covers both
+   echoed and unechoed responses. This still needs a live-radio check of the new shared route.
 4. Does `KY \x04;RX;` (Esc) stop `KZD` playback already queued in the K4?
 5. ~~Which modem line does the HaliKey V1.4 assert for dah?~~ **Answered:** DCD and DSR together
    (`HaliKeyV14Worker::readPinState`).

@@ -7,6 +7,7 @@
 #include <QMediaDevices>
 #include <QTimer>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <numeric>
@@ -46,13 +47,15 @@ void SidetoneGenerator::setOutputDevice(const QString &deviceId) {
     if (m_selectedOutputDeviceId == deviceId)
         return;
     m_selectedOutputDeviceId = deviceId;
-    if (m_audioSink) {
+    if (m_started) {
         closeAudio();
         initAudio();
     }
 }
 
 void SidetoneGenerator::initAudio() {
+    if (!m_started || !m_streamWanted || m_audioSink)
+        return;
     QAudioDevice device;
     if (!m_selectedOutputDeviceId.isEmpty()) {
         for (const QAudioDevice &d : QMediaDevices::audioOutputs()) {
@@ -69,6 +72,10 @@ void SidetoneGenerator::initAudio() {
     // whether the effective default really moved. Set before sink creation so even
     // a failed start() records what was attempted (same ordering as AudioEngine).
     m_activeOutputDeviceId = device.id();
+    if (device.isNull()) {
+        qCWarning(lcAudio) << "SidetoneGenerator: No audio output device";
+        return;
+    }
 
     QAudioFormat format;
     format.setSampleRate(48000);
@@ -98,6 +105,7 @@ void SidetoneGenerator::initAudio() {
     m_framesWritten = 0;
     m_targetQueue = kTargetQueueSeconds;
     m_toneFrequency = 0;
+    m_liveTone.reset();
     rebuildTone();
 
     m_audioSink = new QAudioSink(device, format, this);
@@ -110,6 +118,7 @@ void SidetoneGenerator::initAudio() {
         qCWarning(lcAudio) << "SidetoneGenerator: Failed to start audio sink:" << m_audioSink->error();
         m_streamActive.store(false, std::memory_order_release);
         m_pushDevice = nullptr;
+        closeAudio();
     } else {
         m_streamActive.store(true, std::memory_order_release);
         if (!m_pumpTimer) {
@@ -130,22 +139,27 @@ void SidetoneGenerator::closeAudio() {
     m_streamActive.store(false, std::memory_order_release);
     if (m_pumpTimer)
         m_pumpTimer->stop();
-    if (!m_audioSink)
-        return;
     m_pushDevice = nullptr;
-    m_audioSink->stop();
-    delete m_audioSink;
-    m_audioSink = nullptr;
+    if (m_audioSink) {
+        m_audioSink->reset();
+        delete m_audioSink;
+        m_audioSink = nullptr;
+    }
     m_scheduler.clear();
+    m_liveTone.reset();
 }
 
 void SidetoneGenerator::start() {
     RtScheduling::promoteCurrentThread(RtScheduling::Threads::kSidetone);
+    m_started = true;
+    initAudio();
 }
 
 void SidetoneGenerator::stop() {
     m_streamWanted = false;
+    m_started = false;
     closeAudio();
+    m_liveMode = false;
     m_activeOutputDeviceId.clear();
 }
 
@@ -188,12 +202,48 @@ void SidetoneGenerator::onSystemDefaultOutputChanged() {
     initAudio();
 }
 
+void SidetoneGenerator::setKeyDown(bool down) {
+    const auto timestampNs =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    setKeyDownAt(down, timestampNs);
+}
+
+void SidetoneGenerator::setKeyDownAt(bool down, qint64 timestampNs) {
+    if (!m_started || !m_streamWanted)
+        return;
+    if (!m_liveMode) {
+        closeAudio();
+        m_liveMode = true;
+        initAudio();
+    } else if (down && (!m_audioSink || m_audioSink->error() != QAudio::NoError)) {
+        closeAudio();
+        initAudio();
+    }
+    if (!m_liveTone.setKeyDown(down, timestampNs))
+        qCWarning(lcAudio) << "SidetoneGenerator: Live edge queue overflowed; silencing output";
+}
+
+void SidetoneGenerator::resetKeyedTone() {
+    m_liveTone.reset();
+    if (!m_liveMode)
+        return;
+    closeAudio();
+    m_liveMode = false;
+    // WHY defer: a source reset is often followed immediately by setKeyDown(false) to prime
+    // Vail feedback. Let that open the stream once; otherwise resume scheduled paddle audio.
+    if (m_started)
+        QMetaObject::invokeMethod(this, [this]() { initAudio(); }, Qt::QueuedConnection);
+}
+
 void SidetoneGenerator::setFrequency(int hz) {
     m_frequency.store(hz, std::memory_order_relaxed);
+    m_liveTone.setFrequency(hz);
 }
 
 void SidetoneGenerator::setVolume(float volume) {
     m_volume.store(volume, std::memory_order_relaxed);
+    m_liveTone.setVolume(volume);
 }
 
 void SidetoneGenerator::rebuildTone() {
@@ -211,6 +261,10 @@ void SidetoneGenerator::rebuildTone() {
 }
 
 void SidetoneGenerator::renderBlock(float *out, int frames, double dacTime, double now) {
+    if (m_liveMode) {
+        m_liveTone.renderFloat(out, frames, m_rate);
+        return;
+    }
     m_scheduler.noteBlockTiming(dacTime, now, static_cast<double>(frames) / m_rate);
     const bool idle = !m_keyed && m_envelope <= 0 && !m_scheduler.pendingEdgeHeld();
     if (idle)
