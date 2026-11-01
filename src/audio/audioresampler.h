@@ -114,8 +114,6 @@ public:
         m_l = outputRate / g;
         m_m = inputRate / g;
         m_tapsPerPhase = tapsPerPhaseFor(m_l, m_m);
-        m_inputRate = inputRate;
-        m_outputRate = outputRate;
 
         buildPrototype();
         reset();
@@ -125,8 +123,6 @@ public:
     bool isConfigured() const { return m_l > 0 && m_m > 0; }
     int interpolation() const { return m_l; }
     int decimation() const { return m_m; }
-    int inputRate() const { return m_inputRate; }
-    int outputRate() const { return m_outputRate; }
     int tapsPerPhase() const { return m_tapsPerPhase; }
 
     // Clears the filter history and the phase. Call when the stream restarts - a new transmission,
@@ -220,8 +216,6 @@ private:
 
     int m_l = 0;
     int m_m = 0;
-    int m_inputRate = 0;
-    int m_outputRate = 0;
     int m_tapsPerPhase = TAPS_PER_PHASE;
     int m_writePos = 0;
     int m_offset = 0;

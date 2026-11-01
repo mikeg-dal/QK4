@@ -606,10 +606,6 @@ void AudioEngine::onSystemDefaultOutputChanged() {
     rebuildOutput();
 }
 
-QString AudioEngine::outputDeviceId() const {
-    return m_selectedOutputDeviceId;
-}
-
 QList<QPair<QString, QString>> AudioEngine::availableOutputDevices() {
     QList<QPair<QString, QString>> devices;
 

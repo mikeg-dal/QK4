@@ -426,7 +426,7 @@ void TxAudioPipeline::bufferAndEmitTxFrames(const QByteArray &pcm12k, float gain
     while (m_micBuffer.size() - m_micReadOffset >= frameBytes) {
         if (pttActive) {
             // Use fromRawData to avoid a copy; immediately consumed inside this
-            // tick on the audio thread — the underlying buffer doesn't move.
+            // tick on the TX thread — the underlying buffer doesn't move.
             const QByteArray frame = QByteArray::fromRawData(m_micBuffer.constData() + m_micReadOffset, frameBytes);
             encodeAndSendFrame(frame, frameSamples, encodeMode);
         }
@@ -440,10 +440,8 @@ void TxAudioPipeline::bufferAndEmitTxFrames(const QByteArray &pcm12k, float gain
 }
 
 void TxAudioPipeline::encodeAndSendFrame(const QByteArray &f32MonoFrame, int frameSamples, int encodeMode) {
-    // Runs on the audio thread. Translates the captured Float32 mono frame into
-    // the K4 wire format and emits txPacketReady. PR 12 moved this logic out
-    // of AudioController::onMicrophoneFrame (which ran on the main thread)
-    // so a busy GUI event loop no longer stalls voice TX packet emission.
+    // Runs on the TX thread. Translates the captured Float32 mono frame into the K4 wire format
+    // and emits txPacketReady.
     //
     // Quantisation happens HERE and nowhere earlier, so each mode gets the full depth its wire
     // format allows: 24 bits for EM0, 16 for EM1, and none at all for the Opus modes.
@@ -477,7 +475,7 @@ void TxAudioPipeline::encodeAndSendFrame(const QByteArray &f32MonoFrame, int fra
     // here and only wrong at the radio - nothing QK4 can hear distinguishes it from a dead
     // mic. This records what actually left the machine. The per-sample scan is why the
     // category is off by default and why every frame after a transmission's first is
-    // throttled; on the RT audio thread this is not free.
+    // throttled; on the TX thread this is not free.
     if (lcAudioTx().isDebugEnabled()) {
         // Scan every frame so the running peak is a true maximum, but only emit on the throttle.
         for (int i = 0; i < sampleCount; i++)

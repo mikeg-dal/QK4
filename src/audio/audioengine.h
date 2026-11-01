@@ -95,7 +95,6 @@ public:
 
     // Output device settings
     Q_INVOKABLE void setOutputDevice(const QString &deviceId);
-    QString outputDeviceId() const;
 
     // Get list of available output devices (for settings UI)
     static QList<QPair<QString, QString>> availableOutputDevices(); // (id, description)
