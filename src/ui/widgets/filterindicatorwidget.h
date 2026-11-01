@@ -44,8 +44,7 @@ public:
     // Shape color (for VFO A/B color coding)
     void setShapeColor(const QColor &fill);
 
-    // Reset to idle on K4 disconnect: minimum bandwidth, 50 decahertz shift, FIL1, empty mode,
-    // no data sub-mode.
+    // On K4 disconnect: back to "not reported", the startup state - no FIL number, no shape.
     void resetToDefaults();
 
 signals:
@@ -61,10 +60,11 @@ private:
     void drawRttyToneTriangles(QPainter &painter, int lineY, int lineWidth);
     void drawPskToneTriangle(QPainter &painter, int lineY, int lineWidth);
 
-    int m_filterPosition = 2;
-    int m_bandwidthHz = 2400;                    // Current bandwidth in Hz
+    // 0 / 0 / empty = not reported yet: nothing drawn for them (startup, and after resetToDefaults()).
+    int m_filterPosition = 0;                    // FIL1-3
+    int m_bandwidthHz = 0;                       // Current bandwidth in Hz
     int m_shift = 135;                           // Shift in decahertz
-    QString m_mode = "USB";                      // Mode for shift center calculation
+    QString m_mode;                              // Mode for shift center calculation
     int m_dataSubMode = 0;                       // DATA submode (0=DATA-A, 1=AFSK-A, 2=FSK-D, 3=PSK-D)
     static constexpr int kMinBandwidthHz = 50;   // Minimum bandwidth (triangle)
     static constexpr int kMaxBandwidthHz = 5000; // Maximum bandwidth (full trapezoid)

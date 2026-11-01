@@ -263,7 +263,7 @@ void FilterIndicatorWidget::paintEvent(QPaintEvent *) {
         drawRttyToneTriangles(painter, lineY, lineWidth);
     } else if (isPskD) {
         drawPskToneTriangle(painter, lineY, lineWidth);
-    } else {
+    } else if (m_bandwidthHz > 0) {
         drawBandwidthShape(painter, lineY, lineWidth);
     }
 
@@ -280,16 +280,22 @@ void FilterIndicatorWidget::paintEvent(QPaintEvent *) {
     painter.setFont(textFont);
     painter.setPen(m_textColor);
 
-    QString text = QString("FIL%1").arg(m_filterPosition);
-    int textY = lineY + lineHeight + 2;
-    QRectF textRect(0, textY, w, h - textY);
-    painter.drawText(textRect, Qt::AlignHCenter | Qt::AlignTop, text);
+    if (m_filterPosition > 0) {
+        QString text = QString("FIL%1").arg(m_filterPosition);
+        int textY = lineY + lineHeight + 2;
+        QRectF textRect(0, textY, w, h - textY);
+        painter.drawText(textRect, Qt::AlignHCenter | Qt::AlignTop, text);
+    }
 }
 
+// Back to "not reported": no FIL number and no shape until the radio sends them again. WHY not the
+// setters: setBandwidth clamps to the 50 Hz minimum, which drew a triangle for an unknown width, and
+// setFilterPosition accepts only 1-3, so the old reset showed FIL1.
 void FilterIndicatorWidget::resetToDefaults() {
-    setBandwidth(0);
-    setShift(50);
-    setFilterPosition(1);
-    setMode("");
-    setDataSubMode(0);
+    m_filterPosition = 0;
+    m_bandwidthHz = 0;
+    m_shift = 50;
+    m_mode.clear();
+    m_dataSubMode = 0;
+    update();
 }
