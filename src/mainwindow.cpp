@@ -953,17 +953,11 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     ritXitLabelsRow->setSpacing(8);
 
     m_ritLabel = new QLabel("RIT", m_ritXitBox);
-    m_ritLabel->setStyleSheet(QString("color: %1; font-size: %2px; border: none;")
-                                  .arg(K4Styles::Colors::TextSecondary)
-                                  .arg(K4Styles::Dimensions::FontSizeCaption));
     m_ritLabel->setCursor(Qt::PointingHandCursor);
     m_ritLabel->installEventFilter(this);
     ritXitLabelsRow->addWidget(m_ritLabel);
 
     m_xitLabel = new QLabel("XIT", m_ritXitBox);
-    m_xitLabel->setStyleSheet(QString("color: %1; font-size: %2px; border: none;")
-                                  .arg(K4Styles::Colors::TextSecondary)
-                                  .arg(K4Styles::Dimensions::FontSizeCaption));
     m_xitLabel->setCursor(Qt::PointingHandCursor);
     m_xitLabel->installEventFilter(this);
     ritXitLabelsRow->addWidget(m_xitLabel);
@@ -981,10 +975,6 @@ void MainWindow::setupVfoSection(QWidget *parent) {
 
     m_ritXitValueLabel = new QLabel("+0.00", m_ritXitBox);
     m_ritXitValueLabel->setAlignment(Qt::AlignCenter);
-    m_ritXitValueLabel->setStyleSheet(
-        QString("color: %1; font-size: %2px; font-weight: bold; border: none; padding: 0 11px;")
-            .arg(K4Styles::Colors::TextSecondary)
-            .arg(K4Styles::Dimensions::FontSizeHeading)); // Grey until RIT/XIT is enabled
     m_ritXitValueLabel->installEventFilter(this);
     ritXitLayout->addWidget(m_ritXitValueLabel);
 

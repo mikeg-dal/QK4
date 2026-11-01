@@ -14,12 +14,12 @@ RitXitController::RitXitController(RadioState *radioState, ConnectionController 
                                    QLabel *ritXitValueLabel, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_connection(connection), m_spectrum(spectrum), m_ritLabel(ritLabel),
       m_xitLabel(xitLabel), m_ritXitValueLabel(ritXitValueLabel) {
+    reset();
 
     // WHY: when BSET is off, RIT state reflects VFO A; when on, VFO B. In
     // split mode the K4 routes XIT offset to the VFO B register (RO$) even
     // without BSET, so we sometimes need to display RO$ while the rest of
-    // the state comes from VFO A. See ~/memory/MEMORY.md → K4 RIT/XIT
-    // Offset Registers.
+    // the state comes from VFO A. See docs/k4-protocol-quirks.md §2.
     connect(m_radioState, &RadioState::ritXitChanged, this, [this](bool ritEnabled, bool xitEnabled, int offset) {
         if (!m_radioState->bSetEnabled()) {
             int displayOffset = offset;
@@ -89,7 +89,7 @@ bool RitXitController::handleWheel(QWheelEvent *event) {
     return true;
 }
 
-void RitXitController::applyDisplay(bool ritEnabled, bool xitEnabled, int offset) {
+void RitXitController::applyLabels(bool ritEnabled, bool xitEnabled, int offset) {
     const QString activeStyle = QString("color: %1; font-size: %2px; font-weight: bold; border: none;")
                                     .arg(K4Styles::Colors::TextPrimary)
                                     .arg(K4Styles::Dimensions::FontSizeCaption);
@@ -110,6 +110,10 @@ void RitXitController::applyDisplay(bool ritEnabled, bool xitEnabled, int offset
         QString("color: %1; font-size: %2px; font-weight: bold; border: none; padding: 0 11px;")
             .arg(valueColor)
             .arg(K4Styles::Dimensions::FontSizeHeading));
+}
+
+void RitXitController::applyDisplay(bool ritEnabled, bool xitEnabled, int offset) {
+    applyLabels(ritEnabled, xitEnabled, offset);
 
     // RIT offset shifts the rendered VFO frequency; let MainWindow refresh.
     emit displayRefreshRequested();
@@ -120,15 +124,7 @@ void RitXitController::applyDisplay(bool ritEnabled, bool xitEnabled, int offset
 }
 
 void RitXitController::reset() {
-    // WHY: disconnect-state styling preserves MainWindow's historical look
-    // (Large-size bold, not Medium used by applyDisplay's inactive path).
-    const QString disabledLarge = QString("color: %1; font-size: %2px; font-weight: bold;")
-                                      .arg(K4Styles::Colors::TextSecondary)
-                                      .arg(K4Styles::Dimensions::FontSizeBody);
-    m_ritLabel->setStyleSheet(disabledLarge);
-    m_xitLabel->setStyleSheet(disabledLarge);
-    m_ritXitValueLabel->setText("+0.00");
-    m_ritXitValueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                          .arg(K4Styles::Colors::TextSecondary)
-                                          .arg(K4Styles::Dimensions::FontSizeHeading));
+    // The disconnected look is the inactive look applyDisplay() draws, so a
+    // reconnect starts from the same styling as a fresh launch.
+    applyLabels(false, false, 0);
 }

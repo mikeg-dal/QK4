@@ -18,7 +18,7 @@ class QWheelEvent;
 //
 // The wheel accumulator for the RIT/XIT box lives here too — MainWindow
 // forwards wheel events via handleWheel(). RU/RD vs RU$/RD$ selection is
-// BSET + XIT aware (see CAT command flow in ~/memory/MEMORY.md).
+// BSET + XIT aware (see docs/k4-protocol-quirks.md §2).
 //
 // Emits displayRefreshRequested whenever the displayed RIT/XIT offset
 // changes — MainWindow listens and re-runs its frequency-display logic
@@ -30,8 +30,10 @@ public:
     explicit RitXitController(RadioState *radioState, ConnectionController *connection, SpectrumController *spectrum,
                               QLabel *ritLabel, QLabel *xitLabel, QLabel *ritXitValueLabel, QObject *parent = nullptr);
 
-    // Resets RIT/XIT indicator labels to their disconnected defaults:
-    // value display "+0.00" and both RIT/XIT labels in disabled styling.
+    // Resets the RIT/XIT labels to their disconnected look: value "+0.00",
+    // all three drawn inactive exactly as applyDisplay() draws RIT and XIT
+    // off. Also run by the constructor, so launch and disconnect match.
+    // Touches only the labels: no displayRefreshRequested, no spectrum update.
     void reset();
 
     // Event-handler entry points called from MainWindow::eventFilter.
@@ -48,6 +50,7 @@ signals:
 
 private:
     void applyDisplay(bool ritEnabled, bool xitEnabled, int offset);
+    void applyLabels(bool ritEnabled, bool xitEnabled, int offset);
 
     RadioState *m_radioState;           // injected, not owned
     ConnectionController *m_connection; // injected, not owned
