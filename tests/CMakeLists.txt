@@ -478,6 +478,17 @@ target_include_directories(test_threadshutdown PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_threadshutdown Qt6::Core Qt6::Test)
 add_test(NAME ThreadShutdownTests COMMAND test_threadshutdown)
 
+# MidiDeviceWatcher: the macOS CoreMIDI run-loop thread starts and stops within its deadline.
+add_executable(test_mididevicewatcher test_mididevicewatcher.cpp
+    ${CMAKE_SOURCE_DIR}/src/hardware/mididevicewatcher.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/threadshutdown.cpp)
+target_include_directories(test_mididevicewatcher PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_mididevicewatcher Qt6::Core Qt6::Test)
+if(APPLE)
+    target_link_libraries(test_mididevicewatcher "-framework CoreMIDI" "-framework CoreFoundation")
+endif()
+add_test(NAME MidiDeviceWatcherTests COMMAND test_mididevicewatcher)
+
 # CwGate: when the keyer may key and when the sidetone stream is open (#92 idle CPU).
 add_executable(test_cwgate test_cwgate.cpp)
 target_include_directories(test_cwgate PRIVATE ${CMAKE_SOURCE_DIR}/src)

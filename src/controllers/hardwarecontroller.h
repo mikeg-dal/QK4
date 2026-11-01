@@ -11,6 +11,7 @@
 class KpodDevice;
 class KpodPlusDevice;
 class HalikeyDevice;
+class MidiDeviceWatcher;
 class PaddleKeyer;
 class SidetoneGenerator;
 class SidetoneScheduler;
@@ -117,6 +118,10 @@ signals:
     // can tell where it came from.
     void hardwareError(const QString &message);
 
+    // A MIDI device was plugged in, removed or changed (macOS; never emitted elsewhere, where every
+    // MIDI enumeration is already current). The HaliKey page rescans its list on it.
+    void midiDevicesChanged();
+
 private slots:
     void onKpodEncoderRotated(int ticks);
     void onKpodPollError(const QString &error);
@@ -140,6 +145,10 @@ private:
 
     // HaliKey CW paddle device
     HalikeyDevice *m_halikeyDevice;
+
+    // Keeps macOS's MIDI device list current (see mididevicewatcher.h). Created first, so it owns
+    // the process's first CoreMIDI client.
+    MidiDeviceWatcher *m_midiWatcher = nullptr;
 
     // The HaliKey keyer (port of K4-Companion's) and the seams it runs on. Declaration order is
     // construction order: the keyer refers to the clock, link, scheduler and timer, so they come

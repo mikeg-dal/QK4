@@ -9,6 +9,7 @@
 #include "hardware/paddlekeyer.h"
 #include "hardware/kpoddevice.h"
 #include "hardware/kpodplusdevice.h"
+#include "hardware/mididevicewatcher.h"
 #include "models/radiostate.h"
 #include "network/catframes.h"
 #include "settings/radiosettings.h"
@@ -32,6 +33,11 @@ constexpr std::chrono::milliseconds kSidetoneStopTimeout{2000};
 
 HardwareController::HardwareController(RadioState *radioState, ConnectionController *connController, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_connectionController(connController) {
+    // Before anything touches MIDI: the process's first CoreMIDI client must live on a thread with
+    // a running run loop, or devices plugged in later are never seen (mididevicewatcher.h).
+    m_midiWatcher = new MidiDeviceWatcher(this);
+    connect(m_midiWatcher, &MidiDeviceWatcher::devicesChanged, this, &HardwareController::midiDevicesChanged);
+
     // =========================================================================
     // KPOD USB tuning knob
     // =========================================================================
@@ -324,6 +330,8 @@ void HardwareController::shutdownDevices() {
     if (m_halikeyDevice) {
         m_halikeyDevice->closePort();
     }
+    if (m_midiWatcher)
+        m_midiWatcher->stop();
 
     // close() releases whatever is keyed (an open straight-key KZD gets its KZU, queued for the
     // keyer thread ahead of Close) and posts Close, which ends run(). quit() would do nothing: the

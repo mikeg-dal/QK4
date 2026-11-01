@@ -136,6 +136,8 @@ void OptionsDialog::ensurePageCreated(int index) {
         break;
     case PageCwKeyer:
         m_cwKeyerPage = new CwKeyerPage(m_hardwareController->halikeyDevice(), m_radioState, m_cwController, this);
+        connect(m_hardwareController, &HardwareController::midiDevicesChanged, m_cwKeyerPage,
+                &CwKeyerPage::rescanInBackground);
         page = m_cwKeyerPage;
         break;
     case PageKpod:

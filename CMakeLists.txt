@@ -290,6 +290,7 @@ set(SOURCES
     src/hardware/halikeyv14worker.cpp
     src/hardware/halikeymidiworker.cpp
     src/hardware/halikeyportscan.cpp
+    src/hardware/mididevicewatcher.cpp
     src/hardware/paddlekeyer.cpp
     src/hardware/keyerruntime.cpp
     src/hardware/seriallinepoller.cpp

@@ -12,6 +12,13 @@
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
+#include <chrono>
+
+namespace {
+// A plugged-in HaliKey shows up within this long while the page is open.
+constexpr std::chrono::milliseconds kRescanInterval{2000};
+} // namespace
+
 CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, CwController *cwController,
                          QWidget *parent)
     : QWidget(parent), m_halikeyDevice(halikeyDevice), m_radioState(radioState), m_cwController(cwController) {
@@ -24,6 +31,8 @@ CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, C
 
     m_portScan = new HaliKeyPortScan(this);
     connect(m_portScan, &HaliKeyPortScan::finished, this, &CwKeyerPage::applyCwKeyerPorts);
+    m_rescanTimer.setInterval(kRescanInterval);
+    connect(&m_rescanTimer, &QTimer::timeout, this, &CwKeyerPage::rescanInBackground);
 
     auto *form = OptionsPageLayout::addForm(layout);
 
@@ -242,7 +251,29 @@ void CwKeyerPage::populateCwKeyerPorts() {
     }
     m_scanType = deviceType;
     m_cwKeyerRefreshBtn->setEnabled(false);
+    startScan(deviceType);
+}
 
+void CwKeyerPage::rescanInBackground() {
+    if (!m_cwKeyerPortCombo || !m_cwKeyerDeviceTypeCombo || m_portScan->isScanning())
+        return;
+    const int deviceType = m_cwKeyerDeviceTypeCombo->currentData().toInt();
+    if (deviceType != m_scanType)
+        return; // a full scan for the new type is due; populateCwKeyerPorts() owns that
+    startScan(deviceType);
+}
+
+void CwKeyerPage::showEvent(QShowEvent *event) {
+    QWidget::showEvent(event);
+    m_rescanTimer.start();
+}
+
+void CwKeyerPage::hideEvent(QHideEvent *event) {
+    m_rescanTimer.stop();
+    QWidget::hideEvent(event);
+}
+
+void CwKeyerPage::startScan(int deviceType) {
     m_portScan->request(deviceType, [deviceType]() {
         if (deviceType == HaliKeyPortScan::kMidiType)
             return HalikeyDevice::availableMidiDevices();
@@ -257,6 +288,17 @@ void CwKeyerPage::populateCwKeyerPorts() {
 void CwKeyerPage::applyCwKeyerPorts(int deviceType, const QStringList &ports) {
     if (deviceType != m_scanType)
         return;
+
+    QStringList shown;
+    if (m_cwKeyerPortCombo->isEnabled()) {
+        for (int i = 0; i < m_cwKeyerPortCombo->count(); ++i)
+            shown.append(m_cwKeyerPortCombo->itemData(i).toString());
+    }
+    if (m_cwKeyerPortCombo->isEnabled() && shown == ports) {
+        // Nothing came or went: leave the list, and an open drop-down, as they are.
+        m_cwKeyerRefreshBtn->setEnabled(true);
+        return;
+    }
 
     {
         // Blocked: refilling the list must not save a port the operator did not pick.

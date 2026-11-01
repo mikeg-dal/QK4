@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSlider>
+#include <QTimer>
 
 class HalikeyDevice;
 class HaliKeyPortScan;
@@ -26,6 +27,14 @@ public:
 
     void refresh();
 
+    // A device may have come or gone: rescan without the "Scanning…" placeholder, and leave the
+    // list alone if nothing changed.
+    void rescanInBackground();
+
+protected:
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+
 private slots:
     void onCwKeyerConnectClicked();
     void onCwKeyerRefreshClicked();
@@ -33,6 +42,7 @@ private slots:
 
 private:
     void populateCwKeyerPorts();
+    void startScan(int deviceType);
     void applyCwKeyerPorts(int deviceType, const QStringList &ports);
     void updateCwKeyerDescription();
     void showKeyDownDelay(int ms);
@@ -53,6 +63,9 @@ private:
     QLabel *m_keyDownDelayValueLabel = nullptr;
     HaliKeyPortScan *m_portScan = nullptr;
     int m_scanType = -1; // device type of the list being shown or scanned
+    // WHY a poll: macOS, Windows and Linux announce no serial port arrivals to Qt (QSerialPortInfo
+    // only lists), and WinMM/ALSA MIDI likewise. Only while the page is visible.
+    QTimer m_rescanTimer;
 };
 
 #endif // CWKEYERPAGE_H
