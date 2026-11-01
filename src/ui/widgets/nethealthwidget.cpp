@@ -13,8 +13,7 @@ NetHealthWidget::NetHealthWidget(NetworkMetrics *metrics, QWidget *parent) : QWi
 
 void NetHealthWidget::onHealthTierChanged(NetworkMetrics::HealthTier tier) {
     m_tier = tier;
-    // NetworkMetrics only emits Green/Yellow/Orange when connected; Red on disconnect
-    // But Red can also mean connected-but-degraded, so track explicitly
+    // Red means either disconnected or connected-but-degraded; a live RTT tells them apart.
     m_connected = (tier != NetworkMetrics::Red) || (m_metrics->rttCurrent() >= 0);
     update();
 }
@@ -76,18 +75,16 @@ void NetHealthWidget::paintEvent(QPaintEvent *) {
 
 void NetHealthWidget::mousePressEvent(QMouseEvent *event) {
     Q_UNUSED(event)
-    // Click-toggle: click the LED to open/close the live metrics popup (predictable, and avoids
-    // the hover/leave-tracking that orphaned the popup across fullscreen transitions).
     toggleMetricsPopup();
 }
 
 void NetHealthWidget::toggleMetricsPopup() {
-    // WHY isVisibleOrJustHidden: the press on the LED reaches the popup's click-away filter first
+    // WHY closeIfOpenForToggle: the press on the glyph reaches the popup's click-away filter first
     // and closes it; reading isVisible() would reopen it on every second click.
     if (m_popup && m_popup->closeIfOpenForToggle())
         return;
     if (!m_popup)
-        m_popup = new NetHealthPopup(m_metrics, this); // a child: it cannot outlive the LED
+        m_popup = new NetHealthPopup(m_metrics, this); // a child: it cannot outlive this widget
     m_popup->showAboveWidget(this);
 }
 

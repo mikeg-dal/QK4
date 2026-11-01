@@ -495,9 +495,8 @@ void SideControlPanel::setCompression(int comp) {
 }
 
 void SideControlPanel::setPower(double power, LevelsState::PowerRange range) {
-    // Choose unit + precision per range. XVTR mW always shows one decimal
-    // (matches the K4's "mW 1.0" front-panel readout). QRP shows decimal
-    // (≤10 W); QRO shows whole watts (>10 W).
+    // XVTR mW always shows one decimal (the K4's "mW 1.0" front-panel readout); otherwise one
+    // decimal up to 10 W, whole watts above.
     QString powerStr;
     QString label;
     if (range == LevelsState::PowerRange::Xvtr) {

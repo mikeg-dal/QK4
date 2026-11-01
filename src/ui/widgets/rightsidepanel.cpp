@@ -53,7 +53,7 @@ void RightSidePanel::setupUi() {
 
     addGrid(buttonGrid);
 
-    // Connect existing button signals
+    // Connect 5×2 grid signals
     connect(m_preBtn, &QPushButton::clicked, this, &RightSidePanel::preClicked);
     connect(m_nbBtn, &QPushButton::clicked, this, &RightSidePanel::nbClicked);
     connect(m_nrBtn, &QPushButton::clicked, this, &RightSidePanel::nrClicked);

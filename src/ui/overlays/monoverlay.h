@@ -9,7 +9,7 @@
  *
  * Shows "MON LEVEL" with the current monitor level value.
  * Mouse wheel adjusts the value (0-100).
- * Auto-detects mode from RadioState to send correct ML command.
+ * The owner sets the ML mode group (setMode); level requests carry it.
  */
 class MonOverlay : public SideControlOverlay {
     Q_OBJECT

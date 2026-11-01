@@ -8,8 +8,9 @@ class NetHealthPopup;
 class QMouseEvent;
 
 /**
- * @brief Small LED in the status bar that reflects NetworkMetrics::HealthTier (green/yellow/red)
- *        based on buffer fill and jitter. A click opens or closes a live sparkline detail popup.
+ * @brief Signal-bars glyph in the status bar showing NetworkMetrics::HealthTier
+ *        (green/yellow/orange/red), derived from RTT, jitter, buffer fill, dropouts and missed PONGs.
+ *        A click opens or closes a live sparkline detail popup.
  */
 class NetHealthWidget : public QWidget {
     Q_OBJECT

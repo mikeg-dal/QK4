@@ -9,7 +9,6 @@
 
 SideControlOverlay::SideControlOverlay(Context ctx, QWidget *parent)
     : QWidget(parent), m_context(ctx), m_dismissal(new PopupDismissal(this, [this]() { hide(); })) {
-    // Start hidden
     hide();
 }
 
@@ -49,7 +48,7 @@ void SideControlOverlay::showOverGroup(QWidget *topWidget, QWidget *bottomWidget
     int h = bottomRight.y() - topLeft.y();
 
     setGeometry(x, y, w, h);
-    raise(); // Bring to front
+    raise();
     show();
 }
 

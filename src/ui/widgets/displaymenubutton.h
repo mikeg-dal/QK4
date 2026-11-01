@@ -4,9 +4,9 @@
 #include <QWidget>
 
 /**
- * @brief Dual-line nav button inside DisplayPopupWidget. Primary text white, alternate amber, with
- *        a selection highlight bar. Used for the DISPLAY popup's 7 menu choices
- *        (PAN/WTRF, NB/WTR CLRS, REF LVL/SCALE, …). Emits clicked / rightClicked.
+ * @brief Dual-line nav button inside DisplayPopupWidget: primary text white (bold when selected),
+ *        alternate amber. One per DISPLAY choice (PAN = A/WTRFALL, NB/WTR CLRS, REF LVL/SCALE, …).
+ *        Emits clicked / rightClicked.
  */
 class DisplayMenuButton : public QWidget {
     Q_OBJECT

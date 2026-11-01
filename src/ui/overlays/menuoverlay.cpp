@@ -27,7 +27,6 @@ MenuItemWidget::MenuItemWidget(int menuId, const MenuModel *model, QWidget *pare
     m_lockLabel->setFixedWidth(K4Styles::Dimensions::SmallIconSize);
     layout->addWidget(m_lockLabel);
 
-    // Value label
     m_valueLabel = new QLabel(this);
     m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
                                     .arg(K4Styles::Colors::TextSecondary)
@@ -244,7 +243,7 @@ void MenuOverlayWidget::setupUi() {
     navOuterLayout->addLayout(row1);
     navOuterLayout->addStretch();
 
-    // Row 2: Search, NORM, and Back buttons (3 buttons, smaller width)
+    // Row 3: Search, NORM, and Back buttons (3 buttons, smaller width)
     QHBoxLayout *row3 = new QHBoxLayout();
     row3->setSpacing(6); // Tighter spacing for 3 buttons
 

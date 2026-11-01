@@ -17,7 +17,7 @@ class Kpa1500MiniPanel : public QWidget {
 public:
     explicit Kpa1500MiniPanel(QWidget *parent = nullptr);
 
-    // Meter setters (same API as KPA1500Panel)
+    // Meter setters
     void setForwardPower(float watts);
     void setReflectedPower(float watts);
     void setSWR(float swr);

@@ -10,7 +10,7 @@
 
 namespace {
 // Repaint cadence while the popup is open. ~4 Hz keeps the fastest series (buffer) scrolling
-// smoothly without burning CPU; the window is only one small widget and only ticks on hover.
+// smoothly without burning CPU; the window is only one small widget and only ticks while shown.
 constexpr int kChartRefreshMs = 250;
 } // namespace
 
@@ -202,7 +202,7 @@ void NetHealthPopup::drawSparklineRow(QPainter &painter, const QRect &rowRect, c
 
     // --- Scale labels (drawn last) ---
     // Right-aligned in the gutter between the value column and the plot (clean card background, off
-    // the trace) so they read clearly. Larger bright-neutral font for readability.
+    // the trace) so they read clearly.
     QFont scaleFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeCaption, QFont::Normal);
     QFontMetrics sfm(scaleFont);
     painter.setFont(scaleFont);

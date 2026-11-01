@@ -10,11 +10,10 @@
  *
  * Contains 7 menu buttons: MENU, Fn, DISPLAY, BAND, MAIN RX, SUB RX, TX
  * Plus PTT button at far right with stretch separator.
- * (Icon buttons moved to SideControlPanel)
  *
  * Each menu button triggers a popup menu or panel when pressed.
  * PTT uses press/release for momentary microphone activation.
- * Styled with subtle rounded edges, gradient background, white border.
+ * Styled with subtle rounded edges, gradient background, grey border.
  */
 class BottomMenuBar : public QWidget {
     Q_OBJECT
@@ -32,7 +31,7 @@ public slots:
     void setSubRxActive(bool active);   // Toggle SUB RX button inverse colors
     void setTxActive(bool active);      // Toggle TX button inverse colors
     // Paint the PTT button. Driven ONLY by TransmitController::transmittingChanged - never by a
-    // click on this widget, because a click is a request and requests can be refused (APP-005).
+    // click on this widget, because a click is a request and requests can be refused.
     void setPttActive(bool active);
 
     // Whether the operator's right-click latch actually took. MainWindow answers this from

@@ -27,10 +27,7 @@ class Kpa1500MiniPanel;
  * - Row 0: FREQ ENT/SCAN, RATE/KHZ
  * - Row 1: LOCK A/LOCK B, SUB/DIVERSITY
  *
- * Dimensions:
- * - Fixed width: 105px (matches left panel)
- * - Margins: 6, 8, 6, 8
- * - Spacing: 4
+ * Width: RightSidePanelWidth (= left panel); RightSidePanelKpaWidth while setKpa1500SlotReserved(true).
  */
 class RightSidePanel : public QWidget {
     Q_OBJECT
@@ -73,10 +70,9 @@ signals:
     void manualClicked(); // NTCH right-click
     void apfClicked();    // FIL right-click
     void splitClicked();  // A/B right-click
-    // REV right-click - TBD
-    void btoaClicked(); // A→B right-click
-    void autoClicked(); // SPOT right-click
-    void altClicked();  // MODE right-click
+    void btoaClicked();   // A→B right-click
+    void autoClicked();   // SPOT right-click
+    void altClicked();    // MODE right-click
 
     // PF row signals (left click)
     void bsetClicked();
@@ -113,7 +109,7 @@ private:
     int m_kpa1500SlotIdx = -1; // layout index reserved for KPA1500 mini panel
     Kpa1500MiniPanel *m_kpa1500Panel = nullptr;
 
-    // Button pointers (existing 5x2 grid)
+    // 5×2 grid
     QPushButton *m_preBtn;
     QPushButton *m_nbBtn;
     QPushButton *m_nrBtn;
@@ -125,13 +121,13 @@ private:
     QPushButton *m_spotBtn;
     QPushButton *m_modeBtn;
 
-    // New button pointers (PF row)
+    // PF row
     QPushButton *m_bsetBtn;
     QPushButton *m_clrBtn;
     QPushButton *m_ritBtn;
     QPushButton *m_xitBtn;
 
-    // New button pointers (bottom row)
+    // Bottom row
     QPushButton *m_freqEntBtn;
     QPushButton *m_rateBtn;
     QPushButton *m_lockABtn;

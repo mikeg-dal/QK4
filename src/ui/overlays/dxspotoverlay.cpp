@@ -86,7 +86,8 @@ void DxSpotOverlay::layoutLabels() {
             (i == m_spots.size() - 1) || (m_spots[i + 1].frequencyHz - m_spots[clusterStart].frequencyHz > 500);
         if (endOfCluster) {
             int clusterSize = i - clusterStart + 1;
-            // Take only the most recent spots (they're at the end since newer spots replace older)
+            // Keep the cluster's last MAX_PER_FREQUENCY entries: its highest frequencies, since
+            // m_spots is in frequency order
             int startIdx = (clusterSize > MAX_PER_FREQUENCY) ? i - MAX_PER_FREQUENCY + 1 : clusterStart;
             int overflow = clusterSize - MAX_PER_FREQUENCY;
             for (int j = startIdx; j <= i; ++j)
@@ -149,7 +150,7 @@ void DxSpotOverlay::layoutLabels() {
         label.frequencyHz = spot->frequencyHz;
         label.xPixel = xInt;
         label.row = assignedRow;
-        // Bottom-up: row 0 just above the noise-floor anchor (or fallback margin), higher rows stack upward
+        // Bottom-up: row 0 sits on the midpoint, higher rows stack upward
         int y = qBound(TOP_MARGIN, stackBase - (assignedRow + 1) * rh, height() - rh);
         label.rect = QRect(labelLeft, y, textWidth, rh);
         m_labels.append(label);
@@ -202,7 +203,7 @@ void DxSpotOverlay::mousePressEvent(QMouseEvent *event) {
         QPoint pos = event->pos();
         for (const auto &label : m_labels) {
             // WHY: pad the hit rect by 2 px in each direction. The painted text rect is only
-            // 12 px tall and the visible glyph has a 1 px outline halo; without padding the
+            // one text line tall and the visible glyph has a 1 px outline halo; without padding the
             // user has to land pixel-perfect on the rect and easily clicks 1–2 px outside it.
             if (label.rect.adjusted(-2, -2, 2, 2).contains(pos)) {
                 if (button == Qt::LeftButton)

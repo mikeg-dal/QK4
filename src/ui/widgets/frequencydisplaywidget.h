@@ -10,10 +10,10 @@
  * FrequencyDisplayWidget - Inline frequency display with segment-based editing.
  *
  * Features:
- * - Custom-painted frequency with dot separators (XX.XXX.XXX)
+ * - Custom-painted frequency with dot separators (7.024.980 … 1.296.000.000)
  * - Click a digit from 1 Hz to 10 kHz to make it the tuning rate (tuningDigitClicked)
  * - beginEntry() (the FREQ ENT button) enters edit mode; cursor starts at the leftmost digit
- * - In edit mode all 8 digits are shown (incl. a leading zero) so any
+ * - In edit mode all kDigits digits are shown (incl. leading zeros) so any
  *   position is reachable — required to go from <10 MHz to >=10 MHz
  * - All digits change to edit color (VFO theme: cyan for A, green for B)
  * - Type digits to replace at cursor position (auto-advances)
@@ -95,26 +95,26 @@ protected:
 private:
     bool m_entryLocked = false;
 
-    // Enter edit mode with cursor at the specified digit position (0-7)
+    // Enter edit mode with cursor at the specified digit position (0-kMaxDigitIndex)
     void enterEditMode(int digitPosition);
 
     // Exit edit mode, optionally sending the frequency
     void exitEditMode(bool send);
 
-    // Convert mouse X coordinate to digit position (0-7), or -1 if not on a digit
+    // Digit position (0-kMaxDigitIndex) under mouse X; a dot snaps to its neighbour, past the end
+    // gives the last digit
     int digitPositionFromX(int x) const;
 
     // Tuning-rate digit under x, counted from the right, or -1 when x is not on a digit that can be a
     // tuning rate. Strict: unlike digitPositionFromX, a click on a dot or past the end is no digit.
     int tuningDigitAtX(int x) const;
 
-    // Convert character index in display string to digit index (0-7)
+    // Convert character index in display string to digit index (0-kMaxDigitIndex)
     // Returns -1 for dot characters
     int digitIndexFromCharIndex(int charIndex) const;
 
-    // Index of the first m_digits position shown in the display: 1 when the
-    // leading zero is suppressed (<10 MHz and not editing), else 0. In edit
-    // mode all 8 digits are shown so digit 0 stays reachable.
+    // Index of the first m_digits position shown: leading zeros beyond the 8-digit window are
+    // hidden, plus one more below 10 MHz; 0 while editing so every digit is reachable.
     int displayStartIndex() const;
 
     // Format m_digits as display string with dots (e.g., "7.024.980")
@@ -124,9 +124,9 @@ private:
     static QString normalizeDigits(const QString &freq);
 
     // Member variables
-    QString m_digits;          // 8-digit string, left-padded with zeros
+    QString m_digits;          // kDigits digits, left-padded with zeros
     QString m_radioDigits;     // Latest radio value while editing; restored on cancel
-    int m_cursorPosition = -1; // -1 = not editing, 0-7 = digit position
+    int m_cursorPosition = -1; // -1 = not editing, 0-kMaxDigitIndex = digit position
 
     QColor m_normalColor; // White - normal display color
     QColor m_editColor;   // Cyan/Green - edit mode color

@@ -11,7 +11,7 @@ class QTimer;
 class QMouseEvent;
 
 /**
- * @brief Frameless hover popup that plots NetworkMetrics::historyWindowMs() of network metrics as three
+ * @brief Click-opened popup that plots NetworkMetrics::historyWindowMs() of network metrics as three
  *        stacked, independently auto-scaled sparklines (RTT / JIT / BUF) on a rounded,
  *        drop-shadowed dark card. Repaints on its own timer while visible so the traces
  *        scroll live; reads NetworkMetrics history getters on the main thread (no locking).

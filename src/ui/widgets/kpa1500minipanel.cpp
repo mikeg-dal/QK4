@@ -377,8 +377,7 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
         p.drawText(textX, line1Y, textW, rowH, Qt::AlignRight | Qt::AlignVCenter, m_band);
 
         // Line 2: ATU. IN whenever the ATU mode is inline, BYP whenever the relays are bypassed, so
-        // "mode inline but relays bypassed" reads "ATU IN BYP" - the same two facts the IN and BYP
-        // indicators showed when both were lit.
+        // "mode inline but relays bypassed" reads "ATU IN BYP".
         QStringList atu{QStringLiteral("ATU")};
         if (m_atuModeInline)
             atu << QStringLiteral("IN");

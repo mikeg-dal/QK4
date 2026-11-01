@@ -160,7 +160,7 @@ void DualControlButton::paintEvent(QPaintEvent *event) {
     const int topMargin = D::KnobTextInset;
     const int bottomMargin = D::KnobTextInset;
 
-    // Primary baseline: top margin + ascent (vertically centered in upper half)
+    // Primary baseline: top inset + ascent
     int primaryBaseline = topMargin + qMax(fmLabel.ascent(), fmValue.ascent());
 
     // Alt baseline: button height - bottom margin - descent

@@ -18,7 +18,7 @@ class BalOverlay;
  * SideControlPanel - Left-side vertical control panel for QK4
  *
  * Contains 3 groups of 2 DualControlButtons each:
- * - Group 1 (Global/Orange): WPM/PTCH, PWR/DLY
+ * - Group 1 (Global/Orange): WPM/PTCH (CW) or MIC/CMP (voice), PWR/DLY
  * - Group 2 (MainRx/Cyan): BW/HI, SHFT/LO (linked pair - swap together)
  * - Group 3 (RF-SQL): M.RF/M.SQL, S.SQL/S.RF
  *

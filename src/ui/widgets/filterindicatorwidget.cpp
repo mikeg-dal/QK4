@@ -7,7 +7,7 @@
 #include <algorithm>
 
 FilterIndicatorWidget::FilterIndicatorWidget(QWidget *parent) : QWidget(parent) {
-    setFixedSize(62, 62); // 50 * 1.25 = 62
+    setFixedSize(62, 62);
     setCursor(Qt::PointingHandCursor);
 }
 
@@ -252,7 +252,7 @@ void FilterIndicatorWidget::paintEvent(QPaintEvent *) {
     // Line parameters
     int lineY = 40;
     int lineHeight = 3;
-    int lineWidth = 58; // 38 + 20 (10px wider on each side)
+    int lineWidth = 58;
     int lineX = (w - lineWidth) / 2;
 
     // Draw bandwidth shape above the line

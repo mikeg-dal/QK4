@@ -5,9 +5,10 @@ Top-level app widgets that aren't popups, pages, overlays, dialogs, or styling i
 ## Files
 
 ### Main display
-- `vfowidget`, `vforowwidget` — dual-VFO display (freq + mini-pan per VFO).
-- `frequencydisplaywidget` — numeric frequency renderer (tabular figures, RIT/XIT aware).
-- `filterindicatorwidget` — filter bandwidth indicator on VFO row.
+- `vfowidget` — one VFO's panel: frequency, feature labels, multifunction meter, mini-pan toggle.
+- `vforowwidget` — the row above the VFO panels: A/B squares with mode labels, TX, SUB/DIV, SPLIT.
+- `frequencydisplaywidget` — numeric frequency renderer (tabular figures, inline digit entry, click a digit for its tuning step).
+- `filterindicatorwidget` — filter indicator, one per VFO, in the row under the VFO squares (beside RIT/XIT).
 - `txmeterwidget` — multifunction S / Po / ALC / COMP / SWR / Id meter. Scale marks carry the value they denote alongside their position on the bar (`ScaleMark`), so a mark cannot drift away from the value drawn there; `tests/test_meterscale.cpp` asserts the two agree.
 
 ### Menu bars + panels
@@ -22,12 +23,12 @@ Top-level app widgets that aren't popups, pages, overlays, dialogs, or styling i
 ### Small controls
 - `dualcontrolbutton` — custom split-button for paired controls (the six knob keys): fixed `KnobButtonWidth`×`KnobButtonHeight`. The size is a fixed maintainer choice, not measured from the text; `measuredHeight` is the text's minimum, checked by a test.
 - `controlgroupwidget` — labelled +/- control with an optional AUTO toggle.
-- `togglegroupwidget` — pair toggle (e.g. APF on/off + bandwidth) with a third `bothClicked` region between the two buttons.
+- `togglegroupwidget` — pair toggle (DISPLAY popup's LCD / EXT and A / B) with a third `bothClicked` region between the two buttons.
 - `displaymenubutton` — dual-line nav button inside `DisplayPopupWidget`, one per DISPLAY choice.
 
 ### Status bar
-- `nethealthwidget` — TCP health LED for the top status bar.
-- `nethealthpopup` — `K4PopupBase` popup, opened and closed by a click on the LED, plotting the network metrics history NetworkMetrics keeps (`historyWindowMs()`) as three independently auto-scaled sparklines (RTT / JIT / BUF).
+- `nethealthwidget` — network-health signal bars for the top status bar.
+- `nethealthpopup` — `K4PopupBase` popup, opened and closed by a click on the bars, plotting the network metrics history NetworkMetrics keeps (`historyWindowMs()`) as three independently auto-scaled sparklines (RTT / JIT / BUF).
 - `icontextlabel` — icon-plus-value composite used across the top status bar.
 - `powerstatusbutton` — power icon that doubles as connection/power-state indicator and the click target for K4 remote power-off.
 

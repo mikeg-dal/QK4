@@ -25,7 +25,6 @@ void MouseVfoIndicator::paintEvent(QPaintEvent *) {
 
     QRectF r(1, 1, width() - 2, height() - 2);
 
-    // Background fill with rounder corners
     QPainterPath path;
     path.addRoundedRect(r, 8, 8);
     p.fillPath(path, bgColor);

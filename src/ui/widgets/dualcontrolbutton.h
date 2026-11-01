@@ -10,13 +10,14 @@
  * DualControlButton - A dual-function control button for QK4
  *
  * Features:
- * - Primary value (white text) - changes on scroll/drag when active
+ * - Primary value (white text) - changes on scroll
  * - Alternate function (yellow/amber text) - shown below, clicking swaps them
- * - Colored indicator bar on left edge - only shown when button is active in group
+ * - Colored indicator bar on left edge - only shown when button is active in group; its
+ *   Context colour (Global/MainRx/SubRx) shows which receiver the active function targets
  *
  * Behavior:
- * - Click: Swaps primary and alternate labels/values
- * - Scroll (when active): Changes the primary value
+ * - Click: activates an inactive button; on the active one, swaps primary and alternate
+ * - Scroll: activates the button if needed and changes the primary value
  * - Only one button per group shows the indicator bar (is "active")
  *
  * Usage:
@@ -27,11 +28,6 @@
  *   wpmBtn->setAlternateValue("600");
  *   wpmBtn->setContext(DualControlButton::Global);
  *   wpmBtn->setShowIndicator(true);  // Only one per group
- */
-/**
- * @brief Side-panel dual-function control button (see docstring above for behavior). Carries a
- *        Context-colored indicator bar (Global/MainRx/SubRx) so users can see which receiver the
- *        button's active function targets.
  */
 class DualControlButton : public QWidget {
     Q_OBJECT
@@ -71,7 +67,7 @@ public:
     void swapFunctions();
 
 signals:
-    void valueScrolled(int delta); // Scroll wheel changed value (only when indicator shown)
+    void valueScrolled(int delta); // Scroll wheel changed value
     void swapped();                // Primary/alternate were swapped (only when already active)
     void becameActive();           // User clicked to activate this button
 

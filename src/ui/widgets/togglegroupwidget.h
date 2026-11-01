@@ -4,9 +4,8 @@
 #include <QWidget>
 
 /**
- * @brief Pair-toggle widget (e.g., APF on/off + bandwidth). Renders two mutually-exclusive
- *        buttons with an "&" glyph between them; third signal `bothClicked` fires when the
- *        region between buttons is clicked.
+ * @brief Two-way selector with a third "&" key between the sides (DISPLAY popup's LCD / EXT and
+ *        A / B). Emits leftClicked, rightClicked, or bothClicked for "&".
  */
 class ToggleGroupWidget : public QWidget {
     Q_OBJECT

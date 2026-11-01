@@ -11,7 +11,6 @@ void BottomMenuBar::setupUi() {
     setFixedHeight(K4Styles::Dimensions::MenuBarHeight);
 
     auto *layout = new QHBoxLayout(this);
-    // Left margin matches side panel width to align buttons with waterfall above
     layout->setContentsMargins(0, K4Styles::Dimensions::MenuBarMarginV, 10, K4Styles::Dimensions::MenuBarMarginV);
     layout->setSpacing(10); // Equal spacing between all buttons
 
@@ -157,14 +156,9 @@ bool BottomMenuBar::eventFilter(QObject *watched, QEvent *event) {
         if (event->type() == QEvent::MouseButtonPress) {
             auto *me = static_cast<QMouseEvent *>(event);
             if (me->button() == Qt::RightButton) {
-                // REQUEST ONLY. This used to set m_pttLocked and repaint the button itself, which
-                // made the widget lie in both directions when something else held the
-                // transmitter: right-clicking during an XMIT transmission latched and lit a button
-                // whose engage() was refused, and clicking again greyed it out while XMIT was
-                // still keyed and still streaming. Observed on the bench 2026-09-18.
-                //
-                // The colour now comes from transmittingChanged and the latch from
-                // setPttLatched(), both of which follow what actually happened.
+                // WHY request only: another owner may hold the transmitter and engage() can be
+                // refused. The colour comes from setPttActive() (transmittingChanged) and the latch
+                // from setPttLatched().
                 emit pttLatchRequested(!m_pttLocked);
                 return true;
             }

@@ -8,7 +8,7 @@
 #include <limits>
 
 TxMeterWidget::TxMeterWidget(QWidget *parent) : QWidget(parent) {
-    // 5 meters, each ~26px high with spacing (matches KPA1500 meter sizing)
+    // 5 meter rows of 24 px plus 2 px spacing
     setFixedHeight(130);
     setMinimumWidth(200);
     setMaximumWidth(380);
@@ -177,7 +177,7 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
 
     // No background fill - let parent widget show through
 
-    // Layout constants (matched to KPA1500 meter styling)
+    // Layout constants
     const int labelWidth = 40; // Width of label box (Po, ALC, etc.)
     const int rowHeight = 24;  // Height per meter row
     const int barStartX = labelWidth + 4;
@@ -223,10 +223,6 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
 
     // === ALC - Gradient ===
     {
-        // The K4 marks ALC 1/3/5/7. Those are not evenly spaced over 0..7 and so cannot sit on
-        // evenly spaced ticks. NOTE: the radio emits ALC 8 on occasion (observed on hardware);
-        // MaxAlcBars stays 7 because that is what the scale is marked to, so 8 renders as full.
-        // Changing the maximum without knowing the radio's true top of scale would be a guess.
         const QList<ScaleMark> marks = alcMarks();
         drawMeterRow(painter, y, rowHeight, "ALC", m_alcDisplay, m_alcPeak, marks, scaleFont, barStartX, barWidth,
                      barHeight, MeterType::Gradient);
@@ -243,16 +239,13 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
 
     // === SWR - Gradient ===
     {
-        // setTxMeters maps SWR 1.0..3.0 onto the bar, so a mark for SWR s sits at (s - 1) / MaxSwrScale.
-        // The bar clamps at 3, hence "3+" at the right end - the previous infinity symbol occupied
-        // a tick slot of its own, which pushed every numbered mark off its true position.
         const QList<ScaleMark> marks = swrMarks();
         drawMeterRow(painter, y, rowHeight, "SWR", m_swrDisplay, m_swrPeak, marks, scaleFont, barStartX, barWidth,
                      barHeight, MeterType::Gradient);
         y += rowHeight + spacing;
     }
 
-    // === Id (PA Drain Current) - Red ===
+    // === Id (PA Drain Current) - Green ===
     {
         const QList<ScaleMark> marks = currentMarks();
         drawMeterRow(painter, y, rowHeight, "Id", m_currentDisplay, m_currentPeak, marks, scaleFont, barStartX,
@@ -263,7 +256,7 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
 void TxMeterWidget::drawMeterRow(QPainter &painter, int y, int rowHeight, const QString &label, double fillRatio,
                                  double peakRatio, const QList<ScaleMark> &marks, const QFont &scaleFont, int barStartX,
                                  int barWidth, int barHeight, MeterType type) {
-    // Label box on the left (wider for larger font)
+    // Label box on the left
     QRect labelRect(2, y + 2, 36, rowHeight - 4);
     painter.setPen(QColor(K4Styles::Colors::MutedGraphic));
     painter.setBrush(QColor(K4Styles::Colors::Background));
@@ -360,7 +353,7 @@ QList<TxMeterWidget::ScaleMark> affineMarks(const QList<double> &values, const Q
 
 QList<TxMeterWidget::ScaleMark> TxMeterWidget::sMeterMarks() {
     // setSMeter maps S1..S9 to 1..9 and +20/+40/+60 over S9 to 11/13/15, so S1 sits at 1/15 of
-    // the bar - not at the left end, which is where evenly spaced labels used to put it.
+    // the bar.
     return affineMarks({1, 3, 5, 7, 9, 11, 13, 15}, {"1", "3", "5", "7", "9", "+20", "+40", "+60"}, 0.0, MaxSMeter);
 }
 
@@ -383,9 +376,7 @@ QList<TxMeterWidget::ScaleMark> TxMeterWidget::compMarks() {
 }
 
 QList<TxMeterWidget::ScaleMark> TxMeterWidget::swrMarks() {
-    // setTxMeters maps SWR 1.0..3.0 onto the bar. The bar clamps at 3, hence "3+" at the right end - the
-    // previous infinity symbol occupied a tick slot of its own, which pushed every numbered mark
-    // off its true position.
+    // setTxMeters maps SWR 1.0..3.0 onto the bar and clamps at 3, hence "3+" at the right end.
     return affineMarks({1.0, 1.5, 2.0, 2.5, 3.0}, {"1", "1.5", "2", "2.5", "3+"}, MinSwr, MinSwr + MaxSwrScale);
 }
 

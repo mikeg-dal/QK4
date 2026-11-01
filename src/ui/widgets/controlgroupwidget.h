@@ -5,9 +5,9 @@
 #include <QWidget>
 
 /**
- * @brief Labelled +/- control with an optional AUTO toggle. Used inside FeatureMenuBar for
- *        ATTN / NB / NR / NOTCH groups. Emits incrementClicked / decrementClicked / autoClicked;
- *        wheel events are debounced via WheelAccumulator.
+ * @brief Labelled +/- control with an optional AUTO toggle, used by DisplayPopupWidget (SPAN, REF,
+ *        SCALE, AVERAGE, NB, WTRFALL, WTR CLRS). Emits incrementClicked / decrementClicked /
+ *        autoClicked; wheel steps are accumulated via WheelAccumulator.
  */
 class ControlGroupWidget : public QWidget {
     Q_OBJECT

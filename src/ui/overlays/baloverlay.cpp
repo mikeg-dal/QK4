@@ -67,7 +67,6 @@ void BalOverlay::setupUi() {
     // Push labels to the bottom
     layout->addStretch();
 
-    // Main value
     m_mainLabel = new QLabel("MAIN:  50", this);
     QFont valueFont = m_mainLabel->font();
     valueFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
@@ -75,7 +74,6 @@ void BalOverlay::setupUi() {
     m_mainLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(K4Styles::Colors::TextSecondary));
     layout->addWidget(m_mainLabel);
 
-    // Sub value
     m_subLabel = new QLabel("SUB:   50", this);
     m_subLabel->setFont(valueFont);
     m_subLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(K4Styles::Colors::TextSecondary));
@@ -113,6 +111,6 @@ void BalOverlay::wheelEvent(QWheelEvent *event) {
 }
 
 void BalOverlay::mousePressEvent(QMouseEvent *event) {
-    // Don't close on click - allow adjustment via wheel
+    // WHY: overrides the base close-on-click; a click inside is ignored so the wheel can adjust.
     Q_UNUSED(event)
 }

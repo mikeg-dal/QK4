@@ -9,12 +9,10 @@ class QPushButton;
 /**
  * @brief Popup control bar for the ATTN / NB / NR / MANUAL NOTCH features. Shows a toggle, +/-
  *        buttons, value readout, and an extra feature-specific button (e.g., NB filter cycle).
- *        Works in BSET mode by routing CAT with `$` suffix for Sub RX.
+ *        Emits requests only; FeatureMenuController sends the CAT (with `$` for Sub RX in BSET).
  *
  * A K4PopupBase like every other popup: placement, click-away, Escape and the reopen guard come
- * from the base. It was a hand-made Qt::Popup until 2026-10, which Qt closes on an outside press and
- * then replays that press to the widget under it (Qt::WA_NoMouseReplay) — so a second press on the
- * ATTN key closed the bar and the replayed press opened it again.
+ * from the base.
  */
 class FeatureMenuBar : public K4PopupBase {
     Q_OBJECT

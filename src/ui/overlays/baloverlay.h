@@ -9,7 +9,7 @@
  * @brief Sub AF balance overlay for SideControlPanel.
  *
  * Shows SUB AF balance mode (NOR/BAL) with MAIN and SUB values.
- * Integrates with BL CAT command for audio balance control.
+ * Emits balance requests; the owner turns them into BL.
  */
 class BalOverlay : public SideControlOverlay {
     Q_OBJECT

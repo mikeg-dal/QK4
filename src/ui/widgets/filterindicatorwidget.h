@@ -18,8 +18,7 @@ public:
     explicit FilterIndicatorWidget(QWidget *parent = nullptr);
 
     // Direct Observation (PATTERNS.md): wire this widget's setters to the
-    // RadioState signals for the named VFO. Replaces the former
-    // FilterIndicatorController thin-shell. Call once after construction.
+    // RadioState signals for the named VFO. Call once after construction.
     void observe(RadioState *state, Vfo vfo);
 
     // Filter position (1, 2, or 3) - displayed as FIL1/FIL2/FIL3
@@ -45,8 +44,8 @@ public:
     // Shape color (for VFO A/B color coding)
     void setShapeColor(const QColor &fill);
 
-    // Reset to idle state on K4 disconnect: zero bandwidth, 50 decahertz
-    // shift, centered filter position, empty mode, no data sub-mode.
+    // Reset to idle on K4 disconnect: minimum bandwidth, 50 decahertz shift, FIL1, empty mode,
+    // no data sub-mode.
     void resetToDefaults();
 
 signals:
@@ -70,8 +69,7 @@ private:
     static constexpr int kMinBandwidthHz = 50;   // Minimum bandwidth (triangle)
     static constexpr int kMaxBandwidthHz = 5000; // Maximum bandwidth (full trapezoid)
 
-    // Gold palette — pulled from K4Styles::Colors::FilterIndicatorGold so a future palette tweak
-    // propagates here. Shape fill uses 50% alpha so the passband shape shows through.
+    // Shape fill is 50% alpha so the passband shape shows through.
     QColor m_lineColor{QColor(K4Styles::Colors::FilterIndicatorGold)};
     QColor m_textColor{QColor(K4Styles::Colors::FilterIndicatorGold)};
     QColor m_shapeColor{[] {

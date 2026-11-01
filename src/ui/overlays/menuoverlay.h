@@ -53,7 +53,7 @@ private:
 
 /**
  * @brief Full-screen MENU overlay backing the K4's MN menu system. Driven by MenuModel; emits
- *        `menuValueChangeRequested(menuId, "+"/"-"/"/")` back to MainWindow for CAT dispatch.
+ *        `menuValueChangeRequested(menuId, "+"/"-"/"/")` to MenuController for CAT dispatch.
  *        Implements scroll, search, and the dual-panel K4 highlight style.
  */
 class MenuOverlayWidget : public QWidget {

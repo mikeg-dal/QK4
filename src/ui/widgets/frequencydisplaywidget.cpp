@@ -109,9 +109,9 @@ QString FrequencyDisplayWidget::normalizeDigits(const QString &freq) {
 }
 
 int FrequencyDisplayWidget::displayStartIndex() const {
-    // Default to showing the rightmost 8 digits (matches pre-VHF behavior:
-    // HF defaults to "0.000.000" with one suppressed leading zero, 14 MHz reads
-    // "14.074.000", 7 MHz reads "7.024.980"). For higher frequencies, additional
+    // Default to showing the rightmost 8 digits (HF defaults to "0.000.000" with one
+    // suppressed leading zero, 14 MHz reads "14.074.000", 7 MHz reads "7.024.980").
+    // For higher frequencies, additional
     // leading digits are revealed automatically: 144 MHz → "144.100.000",
     // 1.296 GHz → "1.296.000.000". In edit mode show all digits so any position
     // is reachable for typing higher-MHz frequencies.
@@ -124,7 +124,7 @@ int FrequencyDisplayWidget::displayStartIndex() const {
     while (start < kBaseStart && m_digits[start] == '0') {
         ++start;
     }
-    // Mimic old <10 MHz behavior: strip the one remaining leading zero so 7 MHz
+    // Below 10 MHz strip the one remaining leading zero so 7 MHz
     // renders as "7.024.980" not "07.024.980".
     if (start == kBaseStart && m_digits[start] == '0') {
         ++start;
@@ -134,10 +134,10 @@ int FrequencyDisplayWidget::displayStartIndex() const {
 
 QString FrequencyDisplayWidget::formatWithDots() const {
     // Format groups three digits from the right separated by dots:
-    //   "0000007024980" → "7.024.980"
-    //   "0000014074000" → "14.074.000"
-    //   "0000144100000" → "144.100.000"
-    //   "0001296000000" → "1.296.000.000"
+    //   "0007024980" → "7.024.980"
+    //   "0014074000" → "14.074.000"
+    //   "0144100000" → "144.100.000"
+    //   "1296000000" → "1.296.000.000"
 
     QString result;
     int startIdx = displayStartIndex();
@@ -158,7 +158,6 @@ QString FrequencyDisplayWidget::formatWithDots() const {
 }
 
 int FrequencyDisplayWidget::digitIndexFromCharIndex(int charIndex) const {
-    // Map character index in display string to digit index (0-7)
     QString display = formatWithDots();
     if (charIndex < 0 || charIndex >= display.length()) {
         return -1;

@@ -1,13 +1,13 @@
 # ui/overlays/
 
-Widgets that paint on top of other widgets. Not popups — overlays are not self-dismissing; they're driven by app state.
+Widgets that paint on top of other widgets. Not `K4PopupBase` popups — each is owned and positioned by a host widget or controller.
 
 ## Files
 
 - `menuoverlay` — Full-screen MEDF menu overlay. Driven by `MenuController`. Its search box is a plain `Qt::Popup`, not a `K4PopupBase`; a press on the search key while the box is open sets `Qt::WA_NoMouseReplay`, so Windows and X11 do not replay the closing press to the key and reopen the box.
 - `sidecontroloverlay` — Base class for the two mini overlays below. Child widgets over the side panel's knob keys, closed by their own key and by the popup rule (`ui/popups/popupdismissal`): a press outside, Escape, the panel hiding, the window moving or resizing. `showOverGroup()` refuses to reopen during the press that just closed it, so the panel's toggle on `isVisible()` cannot reopen it.
 - `monoverlay` / `baloverlay` — MON / BAL side-control mini overlays.
-- `mousevfoindicator` — small cursor-follow badge on the panadapter. Colours itself cyan (VFO A) or green (VFO B) while the pointer is over it. Purely visual: no CAT, no RadioState.
+- `mousevfoindicator` — small badge in the panadapter's corner showing A (cyan) or B (green): the VFO the scroll wheel tunes, set by the last click-tune. Purely visual: no CAT, no RadioState.
 - `dxspotoverlay` — DX cluster spots painted onto the panadapter. Clicking a spot label emits the frequency for click-to-tune (left → VFO A, right → VFO B).
 
 ## Pattern

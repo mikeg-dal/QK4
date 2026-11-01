@@ -62,7 +62,7 @@ void VFOWidget::setupUi() {
     // Use Maximum horizontal policy so it doesn't expand beyond content width
     m_stackedWidget = new QStackedWidget(this);
     m_stackedWidget->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    m_stackedWidget->setMaximumWidth(270); // Fit all indicators with values (ATT-6, NTCH-A/M, APF-150)
+    m_stackedWidget->setMaximumWidth(270); // The panel column's width
 
     // Page 0: the multifunction meter. Same height as the mini-pan (page 1), so toggling between
     // them never shifts the layout. The feature row is NOT on this page - see below.
@@ -72,10 +72,9 @@ void VFOWidget::setupUi() {
     normalLayout->setContentsMargins(0, 0, 0, 0);
     normalLayout->setSpacing(2);
 
-    // Row 2: Multifunction Meter (S/Po, ALC, COMP, SWR, Id) - replaces old S-meter
-    // Meter fills full width of normal content (both are 200px)
+    // Multifunction meter (S/Po, ALC, COMP, SWR, Id)
     m_txMeter = new TxMeterWidget(m_normalContent);
-    m_txMeter->setFixedWidth(260); // Match expanded indicator row
+    m_txMeter->setFixedWidth(260);
     normalLayout->addWidget(m_txMeter);
 
     // Row 3: AGC, PRE, ATT, NB, NR, NTCH, APF. Its own row below the stack, so it stays visible when
@@ -113,7 +112,6 @@ void VFOWidget::setupUi() {
     m_apfLabel->setMinimumWidth(48); // Wide enough for "APF-150"
     m_apfLabel->setStyleSheet(featureLabelStyle);
 
-    // Add labels to layout
     featuresRow->addWidget(m_agcLabel);
     featuresRow->addWidget(m_preampLabel);
     featuresRow->addWidget(m_attLabel);
@@ -131,12 +129,10 @@ void VFOWidget::setupUi() {
     // ALL QRhiWidgets in the window from initializing properly.
     m_miniPan = nullptr; // Will be created on first showMiniPan() call
 
-    // The stack and the feature row share one column, the size the meter page used to be on its
-    // own (270 x 150). WHY one column and not a third row in mainLayout: this widget is usually
-    // given more height than it needs and mainLayout shares the spare among its rows, so adding a
-    // row moved the frequency display and the meter. With the column the row count is unchanged
-    // and every pixel stays where it was; the feature row sits left-aligned below the stack, where
-    // it was on the meter page.
+    // The stack and the feature row share one fixed 270 x 150 column. WHY one column and not a
+    // third row in mainLayout: this widget is usually given more height than it needs and
+    // mainLayout shares the spare among its rows, so a third row would move the frequency display
+    // and the meter. The feature row sits left-aligned below the stack.
     auto *panelColumn = new QWidget(this);
     panelColumn->setFixedSize(270,
                               K4Styles::Dimensions::VfoPanelHeight + 2 + K4Styles::Dimensions::VfoFeatureRowHeight);
@@ -421,7 +417,6 @@ bool VFOWidget::isMiniPanVisible() const {
     return m_stackedWidget->currentIndex() == 1;
 }
 
-// Multifunction meter methods (S/Po, ALC, COMP, SWR, Id)
 void VFOWidget::setTransmitting(bool isTx) {
     if (m_txMeter)
         m_txMeter->setTransmitting(isTx);

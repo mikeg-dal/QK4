@@ -12,11 +12,11 @@ class TxMeterWidget;
 class FrequencyDisplayWidget;
 
 /**
- * @brief Per-VFO (A or B) panel: frequency display, mode/AGC/pre/att/NB/NR/notch/APF labels,
+ * @brief Per-VFO (A or B) panel: frequency display, AGC/PRE/ATT/NB/NR/NTCH/APF labels,
  *        multifunction S/Po/ALC/COMP/SWR/Id meter, and a stacked mini-panadapter toggle. The
- *        stacked widget swaps index 0 (normal label column) ↔ index 1 (MiniPan) on click. The
- *        `m_pending*` fields cache mini-pan configuration applied from RadioState before the
- *        mini-pan is lazy-constructed.
+ *        stacked widget swaps index 0 (meter) ↔ index 1 (MiniPan) on click; the feature row stays
+ *        below it. The `m_pending*` fields cache mini-pan configuration applied from RadioState
+ *        before the mini-pan is lazy-constructed.
  */
 class VFOWidget : public QWidget {
     Q_OBJECT
@@ -28,7 +28,7 @@ public:
 
     // Setters for radio state
     void setFrequency(const QString &formatted);
-    void setTuningRate(int rate); // 0-5: 1Hz, 10Hz, 100Hz, 1kHz, 10kHz, 100kHz
+    void setTuningRate(int rate); // VT 0-5: 1Hz, 10Hz, 100Hz, 1kHz, 10kHz, 100Hz (KHZ key)
     void setSMeterValue(double value);
     void setAGC(const QString &label, bool active);
     void setPreamp(bool on, int level);
@@ -100,7 +100,7 @@ private:
     VFOType m_type;
     QString m_primaryColor;
 
-    // Tuning rate indicator (0-5: 1Hz to 100kHz)
+    // VT tuning step (0-5; see setTuningRate)
     int m_tuningRate = 3; // Default 1kHz
 
     // Widgets

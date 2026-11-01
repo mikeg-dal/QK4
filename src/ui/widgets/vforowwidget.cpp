@@ -65,7 +65,7 @@ void VfoSquareWidget::paintEvent(QPaintEvent *) {
 VfoRowWidget::VfoRowWidget(QWidget *parent) : QWidget(parent) {
     setupWidgets();
     // Set fixed height to match content (A/B squares + mode labels)
-    // Increased from 55 to 78 to accommodate lock arc padding + TEST label
+    // Room for the lock arc padding and the TEST label
     setFixedHeight(78);
 }
 
