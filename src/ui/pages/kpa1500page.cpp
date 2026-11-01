@@ -22,8 +22,10 @@ Kpa1500Page::Kpa1500Page(KPA1500Client *kpa1500Client, QWidget *parent)
     m_kpa1500EnableCheckbox = new QCheckBox("Enable KPA1500", this);
     m_kpa1500EnableCheckbox->setStyleSheet(K4Styles::Dialog::checkBox());
     m_kpa1500EnableCheckbox->setChecked(RadioSettings::instance()->kpa1500Enabled());
-    connect(m_kpa1500EnableCheckbox, &QCheckBox::toggled, this,
-            [](bool checked) { RadioSettings::instance()->setKpa1500Enabled(checked); });
+    connect(m_kpa1500EnableCheckbox, &QCheckBox::toggled, this, [this](bool checked) {
+        RadioSettings::instance()->setKpa1500Enabled(checked);
+        updateKpa1500Status();
+    });
     form->addRow(QString(), m_kpa1500EnableCheckbox);
 
     m_kpa1500HostEdit = new QLineEdit(this);
@@ -78,13 +80,15 @@ Kpa1500Page::Kpa1500Page(KPA1500Client *kpa1500Client, QWidget *parent)
             return;
         if (m_kpa1500Client->isConnected()) {
             m_kpa1500Client->disconnectFromHost();
-        } else {
-            QString host = m_kpa1500HostEdit->text().trimmed();
-            quint16 port = m_kpa1500PortEdit->text().toUShort();
-            if (!host.isEmpty() && port >= 1024) {
-                m_kpa1500Client->connectToHost(host, port);
-            }
+            return;
         }
+        // WHY only while enabled, and from the saved settings: with Enable off QK4 hides the
+        // KPA1500 card and status indicator, so a connection made here ran with nothing on screen,
+        // and unticking Enable - the only way it was ever closed - had nothing left to do. The
+        // host and port fields save on editingFinished, which runs before this click.
+        RadioSettings *settings = RadioSettings::instance();
+        if (settings->kpa1500Enabled() && !settings->kpa1500Host().isEmpty())
+            m_kpa1500Client->connectToHost(settings->kpa1500Host(), settings->kpa1500Port());
     });
     form->addRow(QString(), m_kpa1500ConnectBtn);
 
@@ -145,6 +149,9 @@ void Kpa1500Page::updateKpa1500Status() {
     if (m_kpa1500SerialLabel)
         m_kpa1500SerialLabel->setText(connected ? m_kpa1500Client->serialNumber() : "--");
 
+    // Connect only while Enable is ticked; Disconnect whenever there is a connection to close.
+    if (m_kpa1500ConnectBtn)
+        m_kpa1500ConnectBtn->setEnabled(connected || RadioSettings::instance()->kpa1500Enabled());
     if (m_kpa1500HostEdit)
         m_kpa1500HostEdit->setEnabled(!connected);
     if (m_kpa1500PortEdit)

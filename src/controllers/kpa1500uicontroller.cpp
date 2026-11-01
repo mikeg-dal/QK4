@@ -100,9 +100,9 @@ void KPA1500UiController::connectIfEnabled() {
 }
 
 void KPA1500UiController::disconnectFromHost() {
-    if (m_client->isConnected()) {
-        m_client->disconnectFromHost();
-    }
+    // WHY not only when connected: a connect still in progress when the K4 dropped used to
+    // complete afterwards and stay up with the K4 gone. The client's disconnect is safe in any state.
+    m_client->disconnectFromHost();
 }
 
 void KPA1500UiController::onConnected() {
