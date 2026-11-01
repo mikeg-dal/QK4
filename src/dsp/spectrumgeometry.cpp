@@ -38,10 +38,6 @@ DataSubMode dataSubModeFromInt(int subMode) {
     }
 }
 
-bool isCw(Mode mode) {
-    return mode == Mode::Cw || mode == Mode::CwR;
-}
-
 bool isData(Mode mode) {
     return mode == Mode::Data || mode == Mode::DataR;
 }

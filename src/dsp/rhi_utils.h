@@ -6,10 +6,8 @@
 #include "dsp/spectrumscale.h"
 #include "dsp/waterfallcolorlut.h"
 #include <QFile>
-#include <QVector>
 #include <rhi/qrhi.h>
 #include <rhi/qshader.h>
-#include <QDebug>
 #include <array>
 
 namespace RhiUtils {
@@ -49,7 +47,7 @@ struct WaterfallUniforms {
     float visibleFraction; // rows drawn / rows stored; 1.0 to show the whole buffer
     float storedRows;      // rows in the texture, for the V snap; 0.0 disables snapping
     float colorLow;        // palette position = clamp((texel - colorLow) * colorGain, 0, 1);
-    float colorGain;       //   WaterfallGeometry::colorUniformsFor. 0 and 1 pass the texel through.
+    float colorGain;       //   WaterfallGeometry::ColorUniforms. 0 and 1 pass the texel through.
     float rowShift;        // rows added to V so row edges land on physical pixels; 0.0 for none
     float pad1, pad2;      // std140: the block is a whole number of 16-byte rows
 };

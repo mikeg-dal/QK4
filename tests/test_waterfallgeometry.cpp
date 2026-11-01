@@ -41,9 +41,7 @@ private slots:
     void oldRefScaleWindowDrewNoiseBlack();
     void higherColorRangeIsBrighter();
     void unknownColorRangeUsesDefault();
-    void shaderMirrorMatchesPaletteFraction();
-    void storedByteEncodesTheRadiosLevel();
-    void noDataDrawsAtPaletteBottomUnderAnyWindow();
+    void noDataDrawsAtPaletteBottom();
     void capturedRowsKeepTheirColourWhenRefSteps();
     void smallerScaleIsBrighterLikeTheK4();
 };
@@ -66,11 +64,11 @@ bool isBlue(const Rgb &c) {
     return c.b >= 100 && c.r == 0 && c.g < c.b;
 }
 
-// Through the GPU path: the byte stored for a level, then the shader's colour uniforms.
+// Through the GPU path: the byte a row captures for a level, then the shader's pass-through uniforms.
 float drawnFraction(float dbm, float refDbm, int colorRangeDb, int scaleDb = 80) {
     const auto window = WaterfallGeometry::colorWindowFor(refDbm, scaleDb, colorRangeDb);
-    return WaterfallGeometry::shaderFractionFor(WaterfallGeometry::storedByteFor(dbm),
-                                                WaterfallGeometry::colorUniformsFor(window));
+    return WaterfallGeometry::shaderFractionFor(WaterfallGeometry::capturedByteFor(dbm, window),
+                                                WaterfallGeometry::ColorUniforms{});
 }
 } // namespace
 
@@ -363,46 +361,11 @@ void TestWaterfallGeometry::unknownColorRangeUsesDefault() {
     QCOMPARE(w.spanDb, 80.0f);   // span = SCALE
 }
 
-// storedByteFor + colorUniformsFor + the shader line must agree with the direct dBm mapping, to
-// within the byte's 1 dB step, for every REF and colour range the radio can send.
-void TestWaterfallGeometry::shaderMirrorMatchesPaletteFraction() {
-    const float tolerance = 0.5f / 80.0f + 1e-4f; // one byte step over an 80 dB (SCALE 80) span
-    for (int ref = -160; ref <= 50; ref += 7) {
-        for (int wbs = 5; wbs <= 30; wbs += 5) {
-            const auto window = WaterfallGeometry::colorWindowFor(static_cast<float>(ref), 80, wbs);
-            for (float dbm = -161.0f; dbm <= 93.0f; dbm += 0.37f) {
-                const float direct = WaterfallGeometry::paletteFractionFor(dbm, window);
-                const float drawn = drawnFraction(dbm, static_cast<float>(ref), wbs);
-                QVERIFY2(
-                    std::abs(direct - drawn) <= tolerance,
-                    qPrintable(
-                        QString("ref %1 wbs %2 dbm %3: %4 vs %5").arg(ref).arg(wbs).arg(dbm).arg(direct).arg(drawn)));
-            }
-        }
-    }
-}
-
-void TestWaterfallGeometry::storedByteEncodesTheRadiosLevel() {
-    // The K4's own encoding: byte = dBm + K4_DBM_OFFSET.
-    QCOMPARE(int(WaterfallGeometry::storedByteFor(-110.0f)), 52);
-    QCOMPARE(int(WaterfallGeometry::storedByteFor(-110.4f)), 52);
-    QCOMPARE(int(WaterfallGeometry::storedByteFor(-109.6f)), 52);
-    QCOMPARE(int(WaterfallGeometry::storedByteFor(93.0f)), 255);
-    QCOMPARE(int(WaterfallGeometry::storedByteFor(500.0f)), 255);
-    // Real data never collides with "no data".
-    QCOMPARE(int(WaterfallGeometry::storedByteFor(-162.0f)), 1);
-    QCOMPARE(int(WaterfallGeometry::storedByteFor(-500.0f)), 1);
-}
-
-void TestWaterfallGeometry::noDataDrawsAtPaletteBottomUnderAnyWindow() {
-    for (int ref = -200; ref <= 50; ref += 10) {
-        for (int wbs = 5; wbs <= 30; ++wbs) {
-            const auto u = WaterfallGeometry::colorUniformsFor(WaterfallGeometry::colorWindowFor(ref, 80, wbs));
-            QCOMPARE(WaterfallGeometry::shaderFractionFor(WaterfallGeometry::NoDataByte, u), 0.0f);
-        }
-    }
-    // The mini-pan's pass-through uniforms leave a stored palette position unchanged.
+void TestWaterfallGeometry::noDataDrawsAtPaletteBottom() {
+    // The pass-through uniforms both widgets send leave a stored palette position unchanged, and
+    // "no data" draws at the bottom of the palette.
     const WaterfallGeometry::ColorUniforms passThrough;
+    QCOMPARE(WaterfallGeometry::shaderFractionFor(WaterfallGeometry::NoDataByte, passThrough), 0.0f);
     QCOMPARE(WaterfallGeometry::shaderFractionFor(255, passThrough), 1.0f);
     QVERIFY(std::abs(WaterfallGeometry::shaderFractionFor(128, passThrough) - 128.0f / 255.0f) < 1e-6f);
 }

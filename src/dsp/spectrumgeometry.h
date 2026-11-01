@@ -24,7 +24,6 @@ enum class DataSubMode { DataA = 0, AfskA = 1, FskD = 2, PskD = 3 };
 Mode modeFromString(const QString &mode);
 DataSubMode dataSubModeFromInt(int subMode);
 
-bool isCw(Mode mode);
 bool isData(Mode mode);
 // AFSK-A and FSK-D: the RTTY sub-modes whose dial frequency is the mark tone.
 bool isRtty(Mode mode, DataSubMode subMode);

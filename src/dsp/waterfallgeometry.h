@@ -75,11 +75,9 @@ int rowForPixel(int pixel, float viewportHeightPx, int writeRow, int visibleRows
 
 // ---- Colour: which dBm lands where in the waterfall palette ----------------------------------
 //
-// The waterfall texture holds each bin's calibrated level, not a position in the palette: one byte
-// per bin, byte = dBm + SpectrumScale::K4_DBM_OFFSET, the same encoding the K4 sends. waterfall.frag
-// places that level in the palette with two uniforms. So the colour window is live: a change of REF
-// or of the radio's colour range recolours the whole history at once, and no row is quantised
-// against whatever REF happened to be current when it was captured.
+// Each waterfall row stores its bins' palette positions under the colour window in effect when the
+// row was captured (capturedByteFor), and waterfall.frag passes them through. So a change of REF or
+// of the radio's colour range recolours only new rows, as on the K4.
 //
 // THE COLOUR WINDOW, fitted to Mike's K4D (photos 2026-10-30, WWV, AutoRef, #WBS 14, SCALE 25/50/80;
 // correct it here, nowhere else):
@@ -107,20 +105,17 @@ ColorWindow colorWindowFor(float refDbm, int scaleDb, int colorRangeDb);
 // with the shader by hand, like rowForPixel.
 float paletteFractionFor(float dbm, const ColorWindow &window);
 
-// The stored byte for a level: dBm + K4_DBM_OFFSET, rounded and clamped to 1..255. 0 is reserved
-// for "no data" (rows not yet written, a cleared history), which the shader draws at palette
-// position 0 whatever the window.
+// The byte reserved for "no data" (rows not yet written, a cleared history), which the shader draws
+// at palette position 0.
 constexpr quint8 NoDataByte = 0;
-quint8 storedByteFor(float dbm);
 
-// waterfall.frag's colorLow / colorGain for a window. The shader reads the byte as a normalised
-// 0..1 texel value v and computes clamp((v - colorLow) * colorGain, 0, 1). colorLow 0 and gain 1
-// pass v through unchanged, which is what the mini-pan sends: it still stores palette positions.
+// waterfall.frag's colorLow / colorGain. The shader reads the byte as a normalised 0..1 texel value
+// v and computes clamp((v - colorLow) * colorGain, 0, 1). Both widgets send the defaults, which
+// pass v through unchanged: rows already hold palette positions.
 struct ColorUniforms {
     float colorLow = 0.0f;
     float colorGain = 1.0f;
 };
-ColorUniforms colorUniformsFor(const ColorWindow &window);
 
 // The byte a waterfall row stores for a level: its palette position under the window in effect when
 // the row is captured, scaled to 1..255 (0 stays "no data"). The panadapter draws these with
@@ -130,7 +125,7 @@ ColorUniforms colorUniformsFor(const ColorWindow &window);
 quint8 capturedByteFor(float dbm, const ColorWindow &window);
 
 // What the shader returns for a stored byte under the given uniforms — the GPU path mirrored end to
-// end, so a test can check that storedByteFor + colorUniformsFor agree with paletteFractionFor.
+// end, so a test can check that capturedByteFor + the shader agree with paletteFractionFor.
 float shaderFractionFor(quint8 storedByte, const ColorUniforms &uniforms);
 
 } // namespace WaterfallGeometry

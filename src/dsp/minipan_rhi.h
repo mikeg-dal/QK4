@@ -7,7 +7,6 @@
 #include <QColor>
 #include <QElapsedTimer>
 #include <QLabel>
-#include <QTimer>
 #include <QVector>
 #include <memory>
 #include "dsp/spectrumgeometry.h"

@@ -1,6 +1,5 @@
 #include "waterfallgeometry.h"
 
-#include "dsp/spectrumscale.h"
 #include "models/radiostate/spectrumdisplaystate.h"
 
 #include <QtGlobal>
@@ -90,21 +89,9 @@ float paletteFractionFor(float dbm, const ColorWindow &window) {
     return qBound(0.0f, (dbm - window.lowDbm) / window.spanDb, 1.0f);
 }
 
-quint8 storedByteFor(float dbm) {
-    const long byte = std::lround(dbm + SpectrumScale::K4_DBM_OFFSET);
-    return static_cast<quint8>(qBound(static_cast<long>(NoDataByte) + 1, byte, 255L));
-}
-
 quint8 capturedByteFor(float dbm, const ColorWindow &window) {
     const long byte = std::lround(paletteFractionFor(dbm, window) * 255.0f);
     return static_cast<quint8>(std::clamp(byte, static_cast<long>(NoDataByte) + 1, 255L));
-}
-
-ColorUniforms colorUniformsFor(const ColorWindow &window) {
-    if (window.spanDb <= 0.0f)
-        return ColorUniforms{};
-    // In texel units: the byte for lowDbm, normalised as the GPU normalises an R8 texel (/255).
-    return ColorUniforms{(window.lowDbm + SpectrumScale::K4_DBM_OFFSET) / 255.0f, 255.0f / window.spanDb};
 }
 
 float shaderFractionFor(quint8 storedByte, const ColorUniforms &uniforms) {

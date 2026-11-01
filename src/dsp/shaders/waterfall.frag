@@ -57,12 +57,12 @@ void main() {
     if (storedRows > 0.0)
         texV = (floor(texV * storedRows) + 0.5) / storedRows;
 
-    // The texel is the bin's level (dBm + K4_DBM_OFFSET, as a normalised byte), not a palette
-    // position, so the colour window applies here and moves the whole history when it changes.
-    // WaterfallGeometry::colorUniformsFor sets it and shaderFractionFor mirrors this line.
+    // The texel is the bin's palette position, fixed when its row was captured
+    // (WaterfallGeometry::capturedByteFor); both widgets pass it through with colorLow 0 and
+    // colorGain 1. WaterfallGeometry::shaderFractionFor mirrors this line.
     float level = texture(waterfallTex, vec2(texU, texV)).r;
     // Byte 0 is "no data" (rows not yet written, a cleared history): palette position 0 under any
-    // window, even one whose bottom edge sits below the byte's own -162 dBm.
+    // uniforms.
     float palettePos = level < 0.5 / 255.0 ? 0.0 : clamp((level - colorLow) * colorGain, 0.0, 1.0);
     outColor = texture(colorLutTex, vec2(palettePos, 0.5));
 }

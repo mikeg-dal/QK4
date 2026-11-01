@@ -8,7 +8,6 @@
 #include <QElapsedTimer>
 #include <QRect>
 #include <QSize>
-#include <QTimer>
 #include <QVector>
 #include <array>
 #include <memory>

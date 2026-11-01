@@ -28,7 +28,7 @@ built in `render()` are not covered there.
 - `panadapter_rhi.{cpp,h}` — Main panadapter (spectrum + waterfall). Click-tune, passband overlays, DX spot overlays, TX markers. Naturally large (RHI pipeline + buffer management).
 - `minipan_rhi.{cpp,h}` — `MiniPanRhiWidget`, the per-VFO mini-pan. Its frequency axis is each MiniPAN frame's own centre and span (3 kHz in CW, 12 kHz in DATA-A, chosen by the radio; `docs/k4-protocol-quirks.md` section 15), and its passband, marker, notch and RTTY space line are placed on that axis by the panadapter's rules in `SpectrumGeometry`, from the dial the controller reports.
 - `panadapter_constants.h` — Shared rendering parameters: RTTY shift, grid cell size, line widths, dash pattern. Texture and history dimensions are **not** here; they live in `panadapter_rhi.h` (`BASE_TEXTURE_WIDTH`, `MAX_WATERFALL_HISTORY`).
-- `waterfallgeometry.{cpp,h}` — `WaterfallGeometry::` namespace. Which stored waterfall row each screen pixel shows (visible-row count, rows drawn one per physical pixel — two device pixels when macOS halves a HiDPI framebuffer onto the panel, with row edges shifted onto the panel's pixel grid wherever the widget sits — ring offsets, the uniforms `waterfall.vert` consumes), and which palette colour a level gets (the colour window from REF and `#WBS`, the stored byte, the shader's `colorLow`/`colorGain`). Mirrors the shaders' math so both can be tested without a GPU; covered by `test_waterfallgeometry`.
+- `waterfallgeometry.{cpp,h}` — `WaterfallGeometry::` namespace. Which stored waterfall row each screen pixel shows (visible-row count, rows drawn one per physical pixel — two device pixels when macOS halves a HiDPI framebuffer onto the panel, with row edges shifted onto the panel's pixel grid wherever the widget sits — ring offsets, the uniforms `waterfall.vert` consumes), and which palette colour a level gets (the colour window from REF, SCALE and `#WBS`, the byte a row captures, the shader's `colorLow`/`colorGain`). Mirrors the shaders' math so both can be tested without a GPU; covered by `test_waterfallgeometry`.
 - `poweraverager.{cpp,h}` — `PowerAverager`: the radio's `#AVG n` as the mean power of each bin over the last n frames, in dB. Power, because averaging dB values pulled the noise ~2.5 dB low and flat; the last n frames, because a running power blend left a strong signal fading for over a second after it stopped. The K4 does not average the stream, so both pans run this client-side. Covered by `test_poweraverager`.
 - `spectrumgeometry.{cpp,h}` — `SpectrumGeometry::` namespace. The frequency axis: operating mode and DATA sub-mode as enums (parsed once in the setters, not compared as strings per frame), the CW display centre shared by the panadapter, its frequency-scale and band-plan overlays and click-tune, passband edges and marker position for primary and secondary VFO, frequency ↔ horizontal position on a display of a given centre and span (both widgets), the manual notch's frequency, the default CW pitch, and the bounds check on a PAN frame's wire-supplied bin count. Pure arithmetic on Qt Core, covered by `test_spectrumgeometry`.
 - `spectrumscale.{cpp,h}` — `SpectrumScale::` namespace. The amplitude axis: dBm → chart fraction, S-unit dBm values, and which values earn a label at a given size. Pure arithmetic, no widget dependency, covered by `test_spectrumscale`.
@@ -61,23 +61,22 @@ belongs.
 
 ## Waterfall brightness
 
-The waterfall is not drawn on the REF..REF+SCALE window. Each stored row holds the bins' levels as
-the K4 sent them (`byte = dBm + K4_DBM_OFFSET`, 0 reserved for "no data"), and `waterfall.frag`
-places a level in the palette with two uniforms, `colorLow` and `colorGain`. The palette itself
-(`waterfallcolorlut.h`) is unchanged.
-
-The window is `WaterfallGeometry::colorWindowFor(REF, SCALE, #WBS)`: bottom of the palette at
-`REF - #WBS`, top `PaletteSpanDb` (40 dB) above it. That is a **hypothesis**, documented and pinned
-by tests in that one function so it can be corrected from K4 screenshots without touching anything
-else. What it rests on: the K4 manual says a higher WTR CLRS (`#WBS`, 5-30) "will use brighter colors
-for a given amount of waterfall signal intensity", and AutoRef parks REF on the average noise. With the
-K4's 14 dB, noise lands at about 0.4 of the palette (mid blue, dark troughs, light-blue peaks), as on
-the K4's own screen; the old REF..REF+SCALE mapping put it at about 0.05, which the palette draws
-black. The 40 dB span and the default of 14 dB before the radio reports `#WBS` are guesses.
+The waterfall is not drawn on the REF..REF+SCALE window. Levels are placed in the palette by a
+colour window, `WaterfallGeometry::colorWindowFor(REF, SCALE, #WBS)`: the window spans SCALE dB, with
+its bottom at `REF - SCALE × #WBS / ColorRangeDivisor` (40). It was fitted to photos of a K4D
+(2026-10-30, WWV, AutoRef, `#WBS` 14, SCALE 25/50/80) and is pinned by tests in that one function so
+it can be corrected from K4 screenshots without touching anything else. What it rests on: the K4
+manual says a higher WTR CLRS (`#WBS`, 5-30) "will use brighter colors for a given amount of
+waterfall signal intensity", the K4's waterfall is brighter at a smaller SCALE, and AutoRef parks REF
+on the average noise. Noise a few dB above REF lands at about 0.4 of the palette (mid blue, dark
+troughs, light-blue peaks), as on the K4's own screen; the old REF..REF+SCALE mapping put it at about
+0.05, which the palette draws black. The `#WBS` term (every photo was at 14) and the default of 14 dB
+before the radio reports `#WBS` are unverified. The palette itself (`waterfallcolorlut.h`) is
+unchanged.
 
 Rows store the palette position under the window in effect when they were captured
-(`WaterfallGeometry::capturedByteFor`) and the shader passes them through (`colorLow` 0,
-`colorGain` 1), so an AutoRef step or a `#WBS` change recolours only new rows. The mini-pan does the
+(`WaterfallGeometry::capturedByteFor`, 0 reserved for "no data") and `waterfall.frag` passes them
+through (`colorLow` 0, `colorGain` 1), so an AutoRef step or a `#WBS` change recolours only new rows. The mini-pan does the
 same with its receiver's REF and the shared `#WBS`.
 
 S-units follow the amateur convention — S9 = -73 dBm, 6 dB per unit, round decades above S9 — and
