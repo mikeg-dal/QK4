@@ -685,34 +685,30 @@ void PopupManager::wireEqPopups() {
 }
 
 void PopupManager::wireLinePopups() {
-    // Line Out popup (shared by MAIN RX and SUB RX)
-    connect(m_lineOutPopup, &LineOutPopupWidget::leftLevelChanged, this, [this](int level) {
+    // Line Out popup (shared by MAIN RX and SUB RX). Each change sends the whole LO SET and applies
+    // it to RadioState first. WHY: the K4 does not echo a client's own SET at AI4, so each handler
+    // used to build its LO from values RadioState never received - moving the right level after the
+    // left sent the old left back to the radio. With R=L the right level follows the left, as the
+    // popup shows.
+    auto sendLineOut = [this](int left, int right, bool rightEqualsLeft) {
         if (!m_connection->isConnected())
             return;
-        // Send full LO command with current state
-        QString cmd = QString("LO%1%2%3;")
-                          .arg(level, 3, 10, QChar('0'))
-                          .arg(m_radioState->lineOutRight(), 3, 10, QChar('0'))
-                          .arg(m_radioState->lineOutRightEqualsLeft() ? 1 : 0);
-        m_connection->sendCAT(cmd);
+        if (rightEqualsLeft)
+            right = left;
+        m_radioState->setLineOut(left, right, rightEqualsLeft);
+        m_connection->sendCAT(QString("LO%1%2%3;")
+                                  .arg(m_radioState->lineOutLeft(), 3, 10, QChar('0'))
+                                  .arg(m_radioState->lineOutRight(), 3, 10, QChar('0'))
+                                  .arg(rightEqualsLeft ? 1 : 0));
+    };
+    connect(m_lineOutPopup, &LineOutPopupWidget::leftLevelChanged, this, [this, sendLineOut](int level) {
+        sendLineOut(level, m_radioState->lineOutRight(), m_radioState->lineOutRightEqualsLeft());
     });
-    connect(m_lineOutPopup, &LineOutPopupWidget::rightLevelChanged, this, [this](int level) {
-        if (!m_connection->isConnected())
-            return;
-        QString cmd = QString("LO%1%2%3;")
-                          .arg(m_radioState->lineOutLeft(), 3, 10, QChar('0'))
-                          .arg(level, 3, 10, QChar('0'))
-                          .arg(m_radioState->lineOutRightEqualsLeft() ? 1 : 0);
-        m_connection->sendCAT(cmd);
+    connect(m_lineOutPopup, &LineOutPopupWidget::rightLevelChanged, this, [this, sendLineOut](int level) {
+        sendLineOut(m_radioState->lineOutLeft(), level, m_radioState->lineOutRightEqualsLeft());
     });
-    connect(m_lineOutPopup, &LineOutPopupWidget::rightEqualsLeftChanged, this, [this](bool enabled) {
-        if (!m_connection->isConnected())
-            return;
-        int left = m_radioState->lineOutLeft();
-        int right = enabled ? left : m_radioState->lineOutRight();
-        QString cmd =
-            QString("LO%1%2%3;").arg(left, 3, 10, QChar('0')).arg(right, 3, 10, QChar('0')).arg(enabled ? 1 : 0);
-        m_connection->sendCAT(cmd);
+    connect(m_lineOutPopup, &LineOutPopupWidget::rightEqualsLeftChanged, this, [this, sendLineOut](bool enabled) {
+        sendLineOut(m_radioState->lineOutLeft(), m_radioState->lineOutRight(), enabled);
     });
     // Connect RadioState to update popup when K4 sends LO response
     connect(m_radioState, &RadioState::lineOutChanged, this, [this]() {

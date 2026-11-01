@@ -126,4 +126,34 @@ void handleACT(AntennaState &state, RadioState &owner, const QString &cmd) {
         emit owner.txAntCfgChanged();
 }
 
+namespace {
+// True if anything changed. `count` is the number of antennas the command carries.
+bool applyAntConfig(ReportedFlag &displayAllFlag, bool *antMask, int count, bool displayAll,
+                    const QVector<bool> &mask) {
+    bool changed = displayAllFlag.set(displayAll);
+    for (int i = 0; i < qMin(static_cast<int>(mask.size()), count); i++) {
+        if (mask[i] != antMask[i]) {
+            antMask[i] = mask[i];
+            changed = true;
+        }
+    }
+    return changed;
+}
+} // namespace
+
+void setMainRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
+    if (applyAntConfig(state.mainRxDisplayAll, state.mainRxAntMask, 7, displayAll, mask))
+        emit owner.mainRxAntCfgChanged();
+}
+
+void setSubRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
+    if (applyAntConfig(state.subRxDisplayAll, state.subRxAntMask, 7, displayAll, mask))
+        emit owner.subRxAntCfgChanged();
+}
+
+void setTxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
+    if (applyAntConfig(state.txDisplayAll, state.txAntMask, 3, displayAll, mask))
+        emit owner.txAntCfgChanged();
+}
+
 } // namespace AntennaHandlers

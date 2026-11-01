@@ -16,7 +16,7 @@ class RadioState;
 // signals through the façade. See PATTERNS.md → Subsystem State.
 struct TextDecodeState {
     // WHY: TD<mode><threshold><lines>; carries each field as one digit, so the K4 cannot express
-    // 10 lines. The parser and the window both bound by these.
+    // 10 lines. The parser, setConfig and the window all bound by these.
     static constexpr int ModeMin = 0;
     static constexpr int ModeMax = 4;
     static constexpr int ThresholdMin = 0;
@@ -47,6 +47,10 @@ void handleTD(TextDecodeState &state, RadioState &owner, const QString &cmd);
 void handleTDSub(TextDecodeState &state, RadioState &owner, const QString &cmd);
 void handleTB(RadioState &owner, const QString &cmd);
 void handleTBSub(RadioState &owner, const QString &cmd);
+
+// Optimistic: a whole TD / TD$ SET as QK4 sends it (TextDecodeController). Clamped to the bounds
+// above; emits textDecodeChanged or textDecodeBChanged once if anything changed.
+void setConfig(TextDecodeState &state, RadioState &owner, bool subRx, int mode, int threshold, int lines);
 
 } // namespace TextDecodeHandlers
 

@@ -1166,6 +1166,22 @@ private slots:
     }
 
     // --- ACM / ACS / ACT (antenna config bitmasks) ---
+    void testSetAntConfigAppliesTheSetOnce() {
+        RadioState rs;
+        QSignalSpy mainSpy(&rs, &RadioState::mainRxAntCfgChanged);
+        QSignalSpy txSpy(&rs, &RadioState::txAntCfgChanged);
+        const QVector<bool> mask{true, false, true, false, false, false, true};
+        rs.setMainRxAntConfig(false, mask);
+        QCOMPARE(rs.mainRxDisplayAll(), false);
+        QCOMPARE(rs.mainRxAntMask(), mask);
+        QCOMPARE(mainSpy.count(), 1);
+        rs.setMainRxAntConfig(false, mask);
+        QCOMPARE(mainSpy.count(), 1);
+        rs.setTxAntConfig(true, {false, true, true, true}); // TX carries 3 antennas; the 4th is ignored
+        QCOMPARE(rs.txAntMask(), (QVector<bool>{false, true, true}));
+        QCOMPARE(txSpy.count(), 1);
+    }
+
     // Format: ACM<displayAll><7 mask bits>; ACT has 3 mask bits.
     void testAcmParsesMask() {
         RadioState rs;
@@ -1327,6 +1343,30 @@ private slots:
         QCOMPARE(rs.textDecodeThresholdB(), 3);
         QCOMPARE(rs.textDecodeLinesB(), 2);
         QCOMPARE(spy.count(), 1);
+    }
+
+    // The K4 does not echo a client's own TD SET at AI4, so TextDecodeController applies it here.
+    void testSetTextDecodeAppliesWholeSetOnce() {
+        RadioState rs;
+        QSignalSpy mainSpy(&rs, &RadioState::textDecodeChanged);
+        QSignalSpy subSpy(&rs, &RadioState::textDecodeBChanged);
+        rs.setTextDecode(3, 5, 4);
+        QCOMPARE(rs.textDecodeMode(), 3);
+        QCOMPARE(rs.textDecodeThreshold(), 5);
+        QCOMPARE(rs.textDecodeLines(), 4);
+        QCOMPARE(mainSpy.count(), 1); // one SET, one signal - not one per field
+        QCOMPARE(subSpy.count(), 0);
+        rs.setTextDecode(3, 5, 4);
+        QCOMPARE(mainSpy.count(), 1); // unchanged, no signal
+        rs.setTextDecodeB(1, 0, 2);
+        QCOMPARE(rs.textDecodeModeB(), 1);
+        QCOMPARE(rs.textDecodeLinesB(), 2);
+        QCOMPARE(subSpy.count(), 1);
+        QCOMPARE(rs.textDecodeMode(), 3); // Main untouched
+        rs.setTextDecode(9, 12, 10);
+        QCOMPARE(rs.textDecodeMode(), 4); // clamped to what TD can carry
+        QCOMPARE(rs.textDecodeThreshold(), 9);
+        QCOMPARE(rs.textDecodeLines(), 9);
     }
 
     // --- TB (text buffer stream — emits every non-empty decoded buffer) ---
@@ -2423,6 +2463,25 @@ private slots:
         QSignalSpy spy(&rs, &RadioState::lineInChanged);
         rs.parseCATCommand("LI0501000;");
         QCOMPARE(spy.count(), 0);
+    }
+
+    // LO is not echoed at AI4: the popup's SET is applied whole, and the next SET builds on it.
+    void testSetLineOutAppliesWholeSetOnce() {
+        RadioState rs;
+        rs.parseCATCommand("LO0100200;");
+        QSignalSpy spy(&rs, &RadioState::lineOutChanged);
+        rs.setLineOut(30, 20, false);
+        QCOMPARE(rs.lineOutLeft(), 30);
+        QCOMPARE(rs.lineOutRight(), 20);
+        QCOMPARE(spy.count(), 1);
+        rs.setLineOut(30, 20, false);
+        QCOMPARE(spy.count(), 1);
+        rs.setLineOut(40, 40, true);
+        QVERIFY(rs.lineOutRightEqualsLeft());
+        QCOMPARE(spy.count(), 2);
+        rs.setLineOut(99, -5, false);
+        QCOMPARE(rs.lineOutLeft(), AudioEffectsState::LineOutMax);
+        QCOMPARE(rs.lineOutRight(), 0);
     }
 
     // --- MI (Mic Input select, 0-4) ---

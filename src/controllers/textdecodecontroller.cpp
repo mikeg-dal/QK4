@@ -235,6 +235,12 @@ void TextDecodeController::sendTextDecodeCmd(TextDecodeWindow *window, bool isMa
             mode = 1;
         }
     }
+    // WHY applied here as well as sent: the K4 does not echo a client's own SET at AI4, so without
+    // it RadioState, the CAT server and TCI would keep the old TD until the radio next reported it.
+    if (isMainRx)
+        m_radioState->setTextDecode(mode, threshold, window->maxLines());
+    else
+        m_radioState->setTextDecodeB(mode, threshold, window->maxLines());
     QString cmdPrefix = isMainRx ? "TD" : "TD$";
     QString cmd = QString("%1%2%3%4;").arg(cmdPrefix).arg(mode).arg(threshold).arg(window->maxLines());
     qCDebug(lcUiTextDecode) << "sending" << cmd;

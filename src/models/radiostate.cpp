@@ -336,6 +336,30 @@ void RadioState::setTxEqBands(const QVector<int> &bands) {
     AudioEffectsHandlers::setTxEqBands(m_audioEffectsState, *this, bands);
 }
 
+void RadioState::setMainRxAntConfig(bool displayAll, const QVector<bool> &mask) {
+    AntennaHandlers::setMainRxAntConfig(m_antennaState, *this, displayAll, mask);
+}
+
+void RadioState::setSubRxAntConfig(bool displayAll, const QVector<bool> &mask) {
+    AntennaHandlers::setSubRxAntConfig(m_antennaState, *this, displayAll, mask);
+}
+
+void RadioState::setTxAntConfig(bool displayAll, const QVector<bool> &mask) {
+    AntennaHandlers::setTxAntConfig(m_antennaState, *this, displayAll, mask);
+}
+
+void RadioState::setLineOut(int left, int right, bool rightEqualsLeft) {
+    AudioEffectsHandlers::setLineOut(m_audioEffectsState, *this, left, right, rightEqualsLeft);
+}
+
+void RadioState::setTextDecode(int mode, int threshold, int lines) {
+    TextDecodeHandlers::setConfig(m_textDecodeState, *this, /*subRx=*/false, mode, threshold, lines);
+}
+
+void RadioState::setTextDecodeB(int mode, int threshold, int lines) {
+    TextDecodeHandlers::setConfig(m_textDecodeState, *this, /*subRx=*/true, mode, threshold, lines);
+}
+
 // Line In optimistic setters
 void RadioState::setLineInSoundCard(int level) {
     AudioEffectsHandlers::setLineInSoundCard(m_audioEffectsState, *this, level);

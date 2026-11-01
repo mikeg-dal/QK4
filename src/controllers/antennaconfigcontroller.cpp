@@ -20,7 +20,9 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
     connect(m_mainRxPopup, &AntennaCfgPopupWidget::configChanged, this, [this](bool displayAll, QVector<bool> mask) {
         if (!m_connection->isConnected())
             return;
-        // ACMzabcdefg;  z=displayAll, a..g=per-antenna enable
+        // ACMzabcdefg;  z=displayAll, a..g=per-antenna enable. Applied here too: the K4 does not
+        // echo a client's own SET at AI4 (RadioState::setMainRxAntConfig).
+        m_radioState->setMainRxAntConfig(displayAll, mask);
         m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACM", displayAll, mask, 7)));
     });
 
@@ -28,6 +30,7 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
     connect(m_subRxPopup, &AntennaCfgPopupWidget::configChanged, this, [this](bool displayAll, QVector<bool> mask) {
         if (!m_connection->isConnected())
             return;
+        m_radioState->setSubRxAntConfig(displayAll, mask);
         m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACS", displayAll, mask, 7)));
     });
 
@@ -35,6 +38,7 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
     connect(m_txPopup, &AntennaCfgPopupWidget::configChanged, this, [this](bool displayAll, QVector<bool> mask) {
         if (!m_connection->isConnected())
             return;
+        m_radioState->setTxAntConfig(displayAll, mask);
         m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACT", displayAll, mask, 3)));
     });
 

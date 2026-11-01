@@ -5,6 +5,7 @@
 
 #include <QMap>
 #include <QString>
+#include <QVector>
 
 class RadioState;
 
@@ -49,6 +50,11 @@ void handleACN(AntennaState &state, RadioState &owner, const QString &cmd);
 void handleACM(AntennaState &state, RadioState &owner, const QString &cmd);
 void handleACS(AntennaState &state, RadioState &owner, const QString &cmd);
 void handleACT(AntennaState &state, RadioState &owner, const QString &cmd);
+
+// Optimistic config setters (AntennaConfigController, as it sends ACM/ACS/ACT).
+void setMainRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask);
+void setSubRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask);
+void setTxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask);
 
 } // namespace AntennaHandlers
 

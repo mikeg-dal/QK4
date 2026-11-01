@@ -448,6 +448,22 @@ void setTxEqBands(AudioEffectsState &state, RadioState &owner, const QVector<int
     }
 }
 
+void setLineOut(AudioEffectsState &state, RadioState &owner, int left, int right, bool rightEqualsLeft) {
+    left = qBound(0, left, AudioEffectsState::LineOutMax);
+    right = qBound(0, right, AudioEffectsState::LineOutMax);
+    bool changed = state.lineOutRightEqualsLeft.set(rightEqualsLeft);
+    if (left != state.lineOutLeft) {
+        state.lineOutLeft = left;
+        changed = true;
+    }
+    if (right != state.lineOutRight) {
+        state.lineOutRight = right;
+        changed = true;
+    }
+    if (changed)
+        emit owner.lineOutChanged();
+}
+
 void setLineInSoundCard(AudioEffectsState &state, RadioState &owner, int level) {
     level = qBound(0, level, 250);
     if (level != state.lineInSoundCard) {

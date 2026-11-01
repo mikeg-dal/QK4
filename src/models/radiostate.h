@@ -479,10 +479,18 @@ public:
     bool txDisplayAll() const { return m_antennaState.txDisplayAll.valueOr(true); }
     QVector<bool> txAntMask() const { return QVector<bool>(m_antennaState.txAntMask, m_antennaState.txAntMask + 3); }
 
+    // Optimistic setters for ACM/ACS/ACT, called as QK4 sends one. WHY: at AI4 the K4 reports only
+    // "changes not made by client" (Programmer's Reference D12, AI), so it never echoes these.
+    void setMainRxAntConfig(bool displayAll, const QVector<bool> &mask);
+    void setSubRxAntConfig(bool displayAll, const QVector<bool> &mask);
+    void setTxAntConfig(bool displayAll, const QVector<bool> &mask);
+
     // Line Out levels (LO command)
     int lineOutLeft() const { return m_audioEffectsState.lineOutLeft; }
     int lineOutRight() const { return m_audioEffectsState.lineOutRight; }
     bool lineOutRightEqualsLeft() const { return m_audioEffectsState.lineOutRightEqualsLeft.isOn(); }
+    // Optimistic: the whole LO SET QK4 sends, applied at once (one lineOutChanged). Not echoed at AI4.
+    void setLineOut(int left, int right, bool rightEqualsLeft);
 
     // Line In levels and source (LI command)
     int lineInSoundCard() const { return m_audioEffectsState.lineInSoundCard; }
@@ -544,6 +552,11 @@ public:
     int textDecodeModeB() const { return m_textDecodeState.textDecodeModeB; }
     int textDecodeThresholdB() const { return m_textDecodeState.textDecodeThresholdB; }
     int textDecodeLinesB() const { return m_textDecodeState.textDecodeLinesB; }
+
+    // Optimistic: the whole TD (Main) or TD$ (Sub) SET QK4 sends, applied at once - one
+    // textDecodeChanged / textDecodeBChanged. Not echoed at AI4. Out-of-range fields are clamped.
+    void setTextDecode(int mode, int threshold, int lines);
+    void setTextDecodeB(int mode, int threshold, int lines);
 
     // XVTR per-band config — backed by m_xvtrBandState.
     const QVector<XvtrBandConfig> &xvtrBands() const { return m_xvtrBandState.bands; }

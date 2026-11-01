@@ -72,4 +72,22 @@ void handleTBSub(RadioState &owner, const QString &cmd) {
         emit owner.textBufferReceived(text, true);
 }
 
+void setConfig(TextDecodeState &state, RadioState &owner, bool subRx, int mode, int threshold, int lines) {
+    mode = qBound(TextDecodeState::ModeMin, mode, TextDecodeState::ModeMax);
+    threshold = qBound(TextDecodeState::ThresholdMin, threshold, TextDecodeState::ThresholdMax);
+    lines = qBound(TextDecodeState::LinesMin, lines, TextDecodeState::LinesMax);
+    int &m = subRx ? state.textDecodeModeB : state.textDecodeMode;
+    int &t = subRx ? state.textDecodeThresholdB : state.textDecodeThreshold;
+    int &l = subRx ? state.textDecodeLinesB : state.textDecodeLines;
+    if (m == mode && t == threshold && l == lines)
+        return;
+    m = mode;
+    t = threshold;
+    l = lines;
+    if (subRx)
+        emit owner.textDecodeBChanged();
+    else
+        emit owner.textDecodeChanged();
+}
+
 } // namespace TextDecodeHandlers
