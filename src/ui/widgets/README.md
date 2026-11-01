@@ -27,7 +27,7 @@ Top-level app widgets that aren't popups, pages, overlays, dialogs, or styling i
 
 ### Status bar
 - `nethealthwidget` — TCP health LED for the top status bar.
-- `nethealthpopup` — `K4PopupBase` popup, opened and closed by a click on the LED, plotting the last 10 s of network metrics as three independently auto-scaled sparklines (RTT / JIT / BUF).
+- `nethealthpopup` — `K4PopupBase` popup, opened and closed by a click on the LED, plotting the network metrics history NetworkMetrics keeps (`historyWindowMs()`) as three independently auto-scaled sparklines (RTT / JIT / BUF).
 - `icontextlabel` — icon-plus-value composite used across the top status bar.
 - `powerstatusbutton` — power icon that doubles as connection/power-state indicator and the click target for K4 remote power-off.
 

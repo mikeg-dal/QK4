@@ -17,10 +17,10 @@
 
 /**
  * @brief Dialog for managing saved K4 connections. Shows the stored RadioEntry list, exposes the
- *        host/port/password/TLS-PSK fields, embeds a mDNS discovery list (K4Discovery), and the
- *        per-entry encode-mode + streaming-latency selectors. Emits connectRequested /
- *        disconnectRequested; also emits streamingLatencyChanged so MainWindow can re-send SL
- *        without reconnecting.
+ *        host/port/password/TLS-PSK fields, lists the radios K4Discovery's UDP broadcast probe
+ *        finds, and the per-entry encode-mode + streaming-latency selectors. Emits
+ *        connectRequested / disconnectRequested; also emits streamingLatencyChanged so
+ *        MainWindow can re-send SL without reconnecting.
  */
 class RadioManagerDialog : public QDialog {
     Q_OBJECT
