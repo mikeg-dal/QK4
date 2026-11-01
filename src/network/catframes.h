@@ -79,7 +79,8 @@ QByteArray setNoiseBlanker(int level, bool on, int filterWidth = -1);
 // Not the receiver noise blanker, which is NB / NB$. Out-of-range modes are clamped.
 QByteArray ddcNoiseBlanker(int mode);
 
-// #AVGnn - panadapter averaging, 01..20 frames (K4 reference: SET/RESP #AVGnn;). Clamped.
+// #AVGnn - panadapter averaging, SpectrumDisplayLimits::AveragingMin..Max frames (Programmer's
+// Reference D12: SET/RESP #AVGnn;). Clamped.
 QByteArray averaging(int frames);
 
 // LKn / LK$n - VFO tuning lock, per VFO.
@@ -103,7 +104,8 @@ QByteArray setMenuValue(int menuId, int value);
 // NOT the PCX form below - that one is the extended QUERY, and the radio ignores it as a set.
 QByteArray setRfPower(double value, LevelsState::PowerRange range);
 
-// NRnnm: nn is the level, m is on/off - the radio's form in both directions (NR050 is level 05, off).
+// NRnnm: nn is the level (clamped to ProcessingLimits::NrLevelMax), m is on/off - the radio's form
+// in both directions (NR050 is level 05, off).
 QByteArray noiseReduction(int level, bool on);
 // GTn, one digit: 0 off, 1 slow, 2 fast - the radio's form in both directions (GT2 at R40).
 QByteArray agcSpeed(int agc);

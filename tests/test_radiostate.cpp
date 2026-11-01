@@ -722,6 +722,34 @@ private slots:
         QCOMPARE(spy.count(), 1);
     }
 
+    void testNrsReportsTheFullSsnrRange() {
+        // Programmer's Reference D12, NRS$: "nn = SSNR level (0-25)". Levels above 20 were clamped
+        // once by a setter that took the range from somewhere else.
+        RadioState rs;
+        rs.parseCATCommand("NRS251;");
+        QCOMPARE(rs.ssnrLevel(), 25);
+        rs.parseCATCommand("NRS$221;");
+        QCOMPARE(rs.ssnrLevelB(), 22);
+    }
+
+    void testNoiseLevelSettersClampToTheK4Ranges() {
+        // One range per level (ProcessingLimits, from D12): NB 0-15, NR 0-10, SSNR 0-25.
+        RadioState rs;
+        rs.setSsnrLevel(25);
+        QCOMPARE(rs.ssnrLevel(), 25);
+        rs.setSsnrLevelB(40);
+        QCOMPARE(rs.ssnrLevelB(), ProcessingLimits::SsnrLevelMax);
+        rs.setNoiseReductionLevel(15);
+        QCOMPARE(rs.noiseReductionLevel(), ProcessingLimits::NrLevelMax);
+        rs.setNoiseBlankerLevelB(99);
+        QCOMPARE(rs.noiseBlankerLevelB(), ProcessingLimits::NbLevelMax);
+
+        // A request past the limit while already at it changes nothing, so it must not emit.
+        QSignalSpy spy(&rs, &RadioState::processingChanged);
+        rs.setNoiseReductionLevel(15);
+        QCOMPARE(spy.count(), 0);
+    }
+
     void testNrsDoesNotShadowNr() {
         // NRS061; must dispatch to handleNRS, NOT handleNR — verify by checking
         // the ssnr fields populate while the nr fields remain at defaults.

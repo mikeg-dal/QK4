@@ -295,6 +295,15 @@ private slots:
         }
     }
 
+    void theNoiseFramesClampToTheK4Ranges() {
+        // Programmer's Reference D12: NR$ "nn = NR level (0-10)", NB$ "nn is NB level (0-15)" and
+        // filter 0-2. The NR builder used to accept up to 99.
+        QCOMPARE(CatFrames::noiseReduction(10, true), QByteArray("NR101;"));
+        QCOMPARE(CatFrames::noiseReduction(15, true), QByteArray("NR101;"));
+        QCOMPARE(CatFrames::noiseReduction(-3, false), QByteArray("NR000;"));
+        QCOMPARE(CatFrames::setNoiseBlanker(20, true, 5), QByteArray("NB1512;"));
+    }
+
     void theKeyerPaddleFrameCarriesAllThreeFields() {
         QCOMPARE(CatFrames::keyerPaddle('B', 'R', 95), QByteArray("KPBR095;"));
         QCOMPARE(CatFrames::keyerPaddle('A', 'N', 125), QByteArray("KPAN125;"));

@@ -232,7 +232,8 @@ void handleAVG(SpectrumDisplayState &state, RadioState &owner, const QString &cm
         return;
     bool ok;
     int avg = cmd.mid(4).toInt(&ok);
-    if (ok && avg >= 1 && avg <= 20 && avg != state.averaging) {
+    if (ok && avg >= SpectrumDisplayLimits::AveragingMin && avg <= SpectrumDisplayLimits::AveragingMax &&
+        avg != state.averaging) {
         state.averaging = avg;
         emit owner.averagingChanged(state.averaging);
     }
@@ -430,7 +431,7 @@ void setWaterfallHeightExt(SpectrumDisplayState &state, RadioState &owner, int p
 }
 
 void setAveraging(SpectrumDisplayState &state, RadioState &owner, int value) {
-    value = qBound(1, value, 20);
+    value = qBound(SpectrumDisplayLimits::AveragingMin, value, SpectrumDisplayLimits::AveragingMax);
     if (state.averaging != value) {
         state.averaging = value;
         emit owner.averagingChanged(value);

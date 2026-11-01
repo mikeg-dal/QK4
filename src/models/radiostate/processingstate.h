@@ -7,6 +7,18 @@
 
 class RadioState;
 
+namespace ProcessingLimits {
+// Ranges are the K4 Programmer's Reference D12. Every control that steps one of these levels and
+// every builder that sends it uses these, never a copy.
+// NB$: "nn is NB level (0-15) ... f is the noise blanker filter mode (0=NONE, 1=NARROW, 2=WIDE)".
+constexpr int NbLevelMax = 15;
+constexpr int NbFilterMax = 2;
+// NR$: "nn = NR level (0-10)" (LMS).
+constexpr int NrLevelMax = 10;
+// NRS$: "nn = SSNR level (0-25)".
+constexpr int SsnrLevelMax = 25;
+} // namespace ProcessingLimits
+
 // Per-VFO signal-processing state: NB / NR / PA / RA / GT (AGC) plus the
 // automatic-notch (NA) and manual-notch (NM) subsystems. Mirrors what the
 // K4 front panel groups under "RX DSP" + preamp/attenuator controls.

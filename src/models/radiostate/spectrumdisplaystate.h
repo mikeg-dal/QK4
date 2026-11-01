@@ -36,6 +36,9 @@ constexpr int WaterfallHeightMax = 100;
 constexpr int FpsUnknown = -1;
 constexpr int FpsMin = 1;
 constexpr int FpsMax = 30;
+// #AVG — panadapter averaging, frames: "#AVGnn; where n is 01 to 20".
+constexpr int AveragingMin = 1;
+constexpr int AveragingMax = 20;
 } // namespace SpectrumDisplayLimits
 
 // Panadapter / waterfall / display-related state — all of the K4's
@@ -71,7 +74,7 @@ struct SpectrumDisplayState {
     int waterfallColor = -1;     // #WFC 0-4
     int waterfallHeight = -1;    // #WFH 0-100%
     int waterfallHeightExt = -1; // #HWFH 0-100%
-    int averaging = -1;          // #AVG 1-20
+    int averaging = -1;          // #AVG, AveragingMin..AveragingMax
     int peakMode = -1;           // #PKM 0/1 — int to preserve -1 sentinel
     int fixedTune = -1;          // #FXT 0=track, 1=fixed
     int fixedTuneMode = -1;      // #FXA 0-4
