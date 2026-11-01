@@ -8,6 +8,8 @@
 #include "ui/overlays/baloverlay.h"
 #include "ui/overlays/monoverlay.h"
 #include "ui/overlays/dxspotoverlay.h"
+#include <QDateTime>
+#include <QSet>
 #include "ui/popups/confirmpopup.h"
 #include "ui/popups/displaypopupwidget.h"
 #include "ui/styling/k4glyphs.h"
@@ -407,6 +409,34 @@ private slots:
         QTest::mouseClick(&overlay, Qt::LeftButton, {}, QPoint(75, rowY));
         QCOMPARE(clicked.count(), 1);
         QCOMPARE(clicked.at(0).at(0).toLongLong(), 13'995'500LL);
+    }
+
+    void busyFrequencyShowsItsNewestSpots() {
+        // Seven spots 1 Hz apart share one pixel; five are shown, stacked a row each, plus "+2". The
+        // five shown are the newest - here the lowest frequencies - not the five highest.
+        DxSpotOverlay overlay;
+        overlay.resize(400, 200);
+        overlay.setFrequencyRange(14'000'000, 10'000);
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        QVector<DxSpot> spots;
+        for (int k = 0; k < 7; ++k) {
+            DxSpot spot;
+            spot.spottedCall = QStringLiteral("K%1AA").arg(k);
+            spot.frequencyHz = 14'000'000 + k;
+            spot.timestamp = now.addSecs(-60 * k); // k = 0 newest
+            spots.append(spot);
+        }
+        overlay.setSpots(spots);
+
+        QSignalSpy clicked(&overlay, &DxSpotOverlay::spotClicked);
+        const int rowHeight = 11 + 4; // default spot font + 4, DxSpotOverlay::rowHeight()
+        QSet<qint64> shown;
+        for (int row = 0; row < 5; ++row) {
+            QTest::mouseClick(&overlay, Qt::LeftButton, {}, QPoint(205, 200 / 2 - rowHeight / 2 - row * rowHeight));
+            if (!clicked.isEmpty())
+                shown.insert(clicked.takeFirst().at(0).toLongLong() - 14'000'000);
+        }
+        QCOMPARE(shown, (QSet<qint64>{0, 1, 2, 3, 4}));
     }
 };
 

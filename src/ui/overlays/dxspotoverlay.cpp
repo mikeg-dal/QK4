@@ -4,6 +4,8 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
+#include <algorithm>
+#include <numeric>
 #include <utility>
 
 DxSpotOverlay::DxSpotOverlay(QWidget *parent) : QWidget(parent) {
@@ -86,11 +88,19 @@ void DxSpotOverlay::layoutLabels() {
             (i == m_spots.size() - 1) || (m_spots[i + 1].frequencyHz - m_spots[clusterStart].frequencyHz > 500);
         if (endOfCluster) {
             int clusterSize = i - clusterStart + 1;
-            // Keep the cluster's last MAX_PER_FREQUENCY entries: its highest frequencies, since
-            // m_spots is in frequency order
-            int startIdx = (clusterSize > MAX_PER_FREQUENCY) ? i - MAX_PER_FREQUENCY + 1 : clusterStart;
             int overflow = clusterSize - MAX_PER_FREQUENCY;
-            for (int j = startIdx; j <= i; ++j)
+            // Keep the cluster's MAX_PER_FREQUENCY newest spots, still in frequency order. WHY: the
+            // cluster's last entries in m_spots (frequency order) were its highest frequencies, so
+            // a fresh spot at the low end of a busy FT8 column was the one hidden behind "+N".
+            QVector<int> kept(clusterSize);
+            std::iota(kept.begin(), kept.end(), clusterStart);
+            if (overflow > 0) {
+                std::partial_sort(kept.begin(), kept.begin() + MAX_PER_FREQUENCY, kept.end(),
+                                  [this](int a, int b) { return m_spots[a].timestamp > m_spots[b].timestamp; });
+                kept.resize(MAX_PER_FREQUENCY);
+                std::sort(kept.begin(), kept.end());
+            }
+            for (int j : kept)
                 filteredSpots.append(&m_spots[j]);
             // If we capped this cluster, record for the "+N" badge
             if (overflow > 0) {
