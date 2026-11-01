@@ -430,6 +430,12 @@ void SpectrumController::wirePan(bool vfoB) {
         if (m_mouseQsyMode != 0)
             tuneFromPan(true, freq, true);
     });
+    // A right-drag held past an edge keeps stepping VFO B, like the drag itself; also off in "Left
+    // Only" mode. It used to arrive as a wheel scroll, which tuned the scroll VFO in every mode.
+    connect(pad, &PanadapterRhiWidget::frequencyRightEdgeScrolled, this, [this](int steps) {
+        if (m_mouseQsyMode != 0)
+            stepVfo(true, steps);
+    });
 
     connect(pad, &PanadapterRhiWidget::frequencyScrolled, this, &SpectrumController::scrollTune);
     // Shift+Wheel: scale is global, so both pads adjust the same value.
@@ -509,10 +515,13 @@ void SpectrumController::tuneToSpot(bool vfoB, qint64 freq) {
 }
 
 void SpectrumController::scrollTune(int steps) {
+    // Scroll follows the mouse VFO focus indicator (last clicked VFO)
+    stepVfo(m_scrollVfoB, steps);
+}
+
+void SpectrumController::stepVfo(bool tuneB, int steps) {
     if (!m_connectionController->isConnected())
         return;
-    // Scroll follows the mouse VFO focus indicator (last clicked VFO)
-    const bool tuneB = m_scrollVfoB;
     if (tuneB ? m_radioState->lockB() : m_radioState->lockA())
         return;
     const quint64 currentFreq = tuneB ? m_radioState->vfoB() : m_radioState->vfoA();

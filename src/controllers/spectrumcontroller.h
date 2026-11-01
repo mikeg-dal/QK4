@@ -86,6 +86,8 @@ private:
     void sendVfoFrequency(bool vfoB, qint64 freq, bool dragging);
     void setScrollVfo(bool vfoB);
     void scrollTune(int steps);
+    // `steps` tuning steps on VFO A or B (honours its lock); scrollTune uses the scroll VFO.
+    void stepVfo(bool tuneB, int steps);
     void zoomSpan(bool vfoB, bool zoomIn);
     void adjustScaleFromWheel(int steps);
     void adjustRefLevelFromWheel(bool vfoB, int steps);

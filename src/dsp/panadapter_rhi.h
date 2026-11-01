@@ -95,6 +95,9 @@ signals:
     // Right-click signals (for tuning opposite VFO)
     void frequencyRightClicked(qint64 freq);
     void frequencyRightDragged(qint64 freq);
+    // A right-drag held past the left (-1) or right (+1) edge, every 100 ms: steps the right-drag
+    // VFO. Separate from frequencyScrolled so the mouse-QSY mode can gate it like right-drag.
+    void frequencyRightEdgeScrolled(int steps);
     // Scale/RefLevel scroll signals (Shift+Wheel, Ctrl+Wheel)
     void scaleScrolled(int steps);
     void refLevelScrolled(int steps);

@@ -1883,17 +1883,11 @@ void PanadapterRhiWidget::mouseMoveEvent(QMouseEvent *event) {
         int x = event->pos().x();
         int w = width();
 
-        if (x < 0) {
-            // Dragging past left edge → emit scroll signal for opposite VFO
+        if (x < 0 || x > w) {
+            // Held past an edge: keep stepping the right-drag VFO
             if (!m_edgeScrollTimer.isValid() || m_edgeScrollTimer.elapsed() >= 100) {
                 m_edgeScrollTimer.restart();
-                emit frequencyScrolled(-1);
-            }
-        } else if (x > w) {
-            // Dragging past right edge → emit scroll signal for opposite VFO
-            if (!m_edgeScrollTimer.isValid() || m_edgeScrollTimer.elapsed() >= 100) {
-                m_edgeScrollTimer.restart();
-                emit frequencyScrolled(1);
+                emit frequencyRightEdgeScrolled(x < 0 ? -1 : 1);
             }
         } else {
             // Normal drag within display bounds
