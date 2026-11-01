@@ -8,9 +8,9 @@ UI widgets, popups, overlays, dialogs, and styling infrastructure. Files are gro
 |---|---|
 | `styling/` | Infrastructure used by every UI file: tokens in `k4constants.h` (colors, dimensions, type roles), `K4Styles` helpers (fonts, stylesheets) and `K4Glyphs` (drawn status-bar glyphs). |
 | `dialogs/` | Modal-ish full windows: `OptionsDialog`, `RadioManagerDialog`, `MacroDialog`, `TextDecodeWindow`. |
-| `pages/` | `OptionsDialog` tab pages: about, station, display, audio input/output, rig control, TCI server, HaliKey (CW keyer), K-Pod, KPA1500, DX cluster. Plus `OptionsPageLayout`, the layout standard every page uses. |
+| `pages/` | `OptionsDialog` tab pages: about, station, display, audio input/output, rig control, TCI server, HaliKey (CW keyer), K-Pod, KPA1500, DX cluster, diagnostics. Plus `OptionsPageLayout`, the layout standard every page uses. |
 | `popups/` | `K4PopupBase` and the popups built on it — band, mode, Fn, display, button row, RX EQ, antenna config, line in/out, mic input/config, VOX, SSB BW, keying weight, confirm, software list. |
-| `overlays/` | Overlays: menu (full-screen), mon/bal (side-control) and their base, mouse VFO indicator and DX spots (panadapter). |
+| `overlays/` | Overlays: menu (covers the spectrum area), mon/bal (side-control) and their base, mouse VFO indicator and DX spots (panadapter). |
 | `widgets/` | The everything-else bucket — VFO widgets, meters, menu bars, side panels and their buttons, memory key row, KPA1500 mini-panel, status bar, notification. |
 
 ## Include convention

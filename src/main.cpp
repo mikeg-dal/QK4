@@ -188,7 +188,7 @@ int main(int argc, char *argv[]) {
         ~LoggingSession() { Logging::shutdown(); }
     } loggingSession;
 
-    // Enable HiDPI scaling for crisp rendering on Retina/4K displays
+    // PassThrough: fractional scale factors (125%, 150%) are used as-is, not rounded.
     QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
     // Must precede QApplication: Qt reads the scale factor once, when it is constructed.
@@ -199,7 +199,7 @@ int main(int argc, char *argv[]) {
     app.setApplicationVersion(QK4_VERSION);
 
     // Identity only. Settings do not depend on it: RadioSettings names its store "QK4"/"QK4"
-    // explicitly, so the AI5QK -> KF5O call-sign change moved nothing and needs no migration.
+    // explicitly.
     app.setOrganizationName("KF5O");
     app.setOrganizationDomain("kf5o.com");
 
@@ -257,11 +257,9 @@ int main(int argc, char *argv[]) {
     // these two on the same footing as the --connect message below, which Qt's versions are not:
     // showHelp() decides on a message box by its own rules, in its own words.
     //
-    // WHY: --help-all is tested by name. addHelpOption() declares BOTH --help and --help-all, and
-    // advertises the second one in the text the first one prints, but the QCommandLineOption it
-    // returns covers only --help. Nothing handled --help-all, and because parse() ignores what it
-    // cannot place rather than exiting, `QK4 --help-all` opened the full GUI - the app advertising
-    // an option that silently does something else entirely. Qt's own listing of its generic
+    // WHY: --help-all is tested by name. addHelpOption() declares both --help and --help-all but
+    // returns an option covering only --help, and parse() ignores the rest, so --help-all would
+    // open the GUI. Qt's own listing of its generic
     // options is not reachable without showHelp()'s ::exit(), so this answers with the same text
     // --help gives rather than pretending to more.
     if (parser.isSet(helpOption) || parser.isSet(QStringLiteral("help-all"))) {
@@ -290,10 +288,8 @@ int main(int argc, char *argv[]) {
     // carry a bare --connect too and exiting silently there is indistinguishable from the app
     // being broken.
     //
-    // WHY: matching the bare strings alone let `--connect=` through. Qt parses an explicit but
-    // empty value as the option being set to nothing, `arguments.contains("--connect")` is false
-    // for it, and the guard below never fired - so the operator got the GUI and no complaint. An
-    // explicit empty value is the same mistake as a bare --connect and has to be caught with it.
+    // WHY: `--connect=` too. Qt parses an explicit empty value as the option set to nothing, which
+    // is the same mistake as a bare --connect.
     bool askedToConnect = false;
     for (const QString &argument : arguments) {
         if (argument == QStringLiteral("-c") || argument == QStringLiteral("--connect") ||

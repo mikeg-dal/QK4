@@ -16,7 +16,7 @@ class QWidget;
  * @brief The one layout standard every Options page is built with: margins, spacing, the page
  *        title, sections, label/field forms, help text, field widths and the scroll area that holds
  *        the page. Geometry comes from the `Options*` tokens in K4Styles::Dimensions, text styles
- *        from the type roles, so the pages cannot drift apart again.
+ *        from the type roles, so the pages cannot drift apart.
  */
 namespace OptionsPageLayout {
 

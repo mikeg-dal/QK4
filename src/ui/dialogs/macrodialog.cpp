@@ -13,9 +13,7 @@
 #include <QTimer>
 
 namespace {
-// Layout constants
 const int RowHeight = 44;
-// Columns use equal stretch factors (33.3% each) - no fixed widths
 } // namespace
 
 // ============== MacroItemWidget ==============
@@ -34,7 +32,7 @@ MacroItemWidget::MacroItemWidget(const QString &functionId, const QString &displ
     m_functionLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
                                        .arg(K4Styles::Colors::TextSecondary)
                                        .arg(K4Styles::Dimensions::FontSizeHeading));
-    layout->addWidget(m_functionLabel, 1); // stretch factor 1
+    layout->addWidget(m_functionLabel, 1);
 
     // Column 2: Label (editable) - 33.3% width, centered
     m_labelDisplay = new QLabel("Unused", this);
@@ -42,7 +40,7 @@ MacroItemWidget::MacroItemWidget(const QString &functionId, const QString &displ
     m_labelDisplay->setStyleSheet(QString("color: %1; font-size: %2px;")
                                       .arg(K4Styles::Colors::TextSecondary)
                                       .arg(K4Styles::Dimensions::FontSizeHeading));
-    layout->addWidget(m_labelDisplay, 1); // stretch factor 1
+    layout->addWidget(m_labelDisplay, 1);
 
     m_labelEdit = new QLineEdit(this);
     m_labelEdit->setMaxLength(12);
@@ -56,7 +54,7 @@ MacroItemWidget::MacroItemWidget(const QString &functionId, const QString &displ
     m_labelEdit->hide();
     m_labelEdit->installEventFilter(this);
     connect(m_labelEdit, &QLineEdit::editingFinished, this, &MacroItemWidget::finishEditing);
-    layout->addWidget(m_labelEdit, 1); // stretch factor 1
+    layout->addWidget(m_labelEdit, 1);
 
     // Column 3: CAT Command (editable) - 33.3% width
     m_commandDisplay = new QLabel("", this);
@@ -65,7 +63,7 @@ MacroItemWidget::MacroItemWidget(const QString &functionId, const QString &displ
                                         .arg(K4Styles::Dimensions::FontSizeHeading)
                                         .arg(K4Styles::Fonts::Data));
     m_commandDisplay->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    layout->addWidget(m_commandDisplay, 1); // stretch factor 1
+    layout->addWidget(m_commandDisplay, 1);
 
     m_commandEdit = new QLineEdit(this);
     m_commandEdit->setMaxLength(64);
@@ -79,7 +77,7 @@ MacroItemWidget::MacroItemWidget(const QString &functionId, const QString &displ
     m_commandEdit->hide();
     m_commandEdit->installEventFilter(this);
     connect(m_commandEdit, &QLineEdit::editingFinished, this, &MacroItemWidget::finishEditing);
-    layout->addWidget(m_commandEdit, 1); // stretch factor 1
+    layout->addWidget(m_commandEdit, 1);
 
     setLayout(layout);
 }
@@ -103,7 +101,6 @@ void MacroItemWidget::setCommand(const QString &command) {
 }
 
 void MacroItemWidget::updateDisplay() {
-    // Show label or status
     if (m_command.isEmpty()) {
         m_labelDisplay->setText("Unused");
         m_labelDisplay->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
@@ -121,7 +118,6 @@ void MacroItemWidget::updateDisplay() {
                                           .arg(K4Styles::Dimensions::FontSizeHeading));
     }
 
-    // Show command
     m_commandDisplay->setText(m_command.isEmpty() ? "" : m_command);
 }
 
@@ -211,14 +207,11 @@ void MacroItemWidget::paintEvent(QPaintEvent *event) {
     painter.setRenderHint(QPainter::Antialiasing);
 
     if (m_selected) {
-        // Selected: full row grey highlight
         painter.fillRect(rect(), QColor(K4Styles::Colors::SelectionDark));
     } else {
-        // Unselected: dark background
         painter.fillRect(rect(), QColor(K4Styles::Colors::OverlayItemBg));
     }
 
-    // Bottom border
     painter.setPen(QColor(K4Styles::Colors::OverlayDivider));
     painter.drawLine(0, height() - 1, width(), height() - 1);
 }
@@ -246,7 +239,6 @@ MacroDialog::MacroDialog(QWidget *parent) : QWidget(parent) {
 }
 
 void MacroDialog::setupUi() {
-    // Main layout
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
@@ -259,7 +251,6 @@ void MacroDialog::setupUi() {
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(0);
 
-    // Header
     m_headerLabel = new QLabel("MACROS", m_contentWidget);
     m_headerLabel->setStyleSheet(QString("background-color: %1; color: %2; font-size: %3px; "
                                          "font-weight: bold; padding: 8px 15px;")
@@ -283,16 +274,16 @@ void MacroDialog::setupUi() {
 
     QLabel *funcHeader = new QLabel("Function", columnHeader);
     funcHeader->setStyleSheet(columnHeaderStyle);
-    headerLayout->addWidget(funcHeader, 1); // stretch factor 1
+    headerLayout->addWidget(funcHeader, 1);
 
     QLabel *labelHeader = new QLabel("Label", columnHeader);
     labelHeader->setAlignment(Qt::AlignCenter);
     labelHeader->setStyleSheet(columnHeaderStyle);
-    headerLayout->addWidget(labelHeader, 1); // stretch factor 1
+    headerLayout->addWidget(labelHeader, 1);
 
     QLabel *cmdHeader = new QLabel("CAT Command", columnHeader);
     cmdHeader->setStyleSheet(columnHeaderStyle);
-    headerLayout->addWidget(cmdHeader, 1); // stretch factor 1
+    headerLayout->addWidget(cmdHeader, 1);
 
     contentLayout->addWidget(columnHeader);
 
@@ -409,7 +400,6 @@ void MacroDialog::setupUi() {
 }
 
 void MacroDialog::populateItems() {
-    // Clear existing
     for (auto *widget : m_itemWidgets) {
         m_listLayout->removeWidget(widget);
         delete widget;
@@ -552,7 +542,6 @@ void MacroDialog::show() {
 }
 
 void MacroDialog::hide() {
-    // Finish any active editing
     for (auto *widget : m_itemWidgets) {
         widget->finishEditing();
     }
@@ -678,7 +667,6 @@ void MacroDialog::onCommandChanged(const QString &functionId, const QString &com
                     break;
                 }
             }
-            // Notify user
             auto *notification = new QLabel(QString("Forbidden command in Startup macro: %1").arg(forbidden), this);
             notification->setStyleSheet(QString("QLabel { color: %1; background: %2; padding: 8px; "
                                                 "border-radius: 4px; font-size: %3px; }")

@@ -148,7 +148,6 @@ void ButtonRowPopup::setupUi() {
 
     mainLayout->addLayout(rowLayout);
 
-    // Initialize popup size from base class
     initPopup();
 }
 

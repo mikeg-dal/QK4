@@ -27,8 +27,8 @@ constexpr QChar kFromClient = QChar(0x2190); // left arrow
 constexpr int kVisibleRows = 4;
 constexpr int kRowHeight = 22;
 
-// Not in K4Styles: this is the only table in the app, and k4styles.cpp is at 782 of its 800-line
-// budget (CONVENTIONS.md rule 7). It moves there when a second table needs it.
+// Not in K4Styles: this is the only table in the app, and k4styles.cpp is already over CONVENTIONS.md
+// rule 7's 800 lines. It moves there when a second table needs it.
 QString clientTableStyle() {
     return QString("QTableWidget { background-color: %1; color: %2; border: 1px solid %3; "
                    "               font-size: %4px; gridline-color: %3; }"
@@ -138,7 +138,7 @@ TciServerPage::TciServerPage(TciController *tciController, AudioController *audi
         }
     });
 
-    // The settings object owns the decision; MainWindow watches it and starts or stops the
+    // The settings object owns the decision; TciController watches it and starts or stops the
     // listener. This page never drives the controller directly, so the toggle behaves the same
     // whether it is changed here or restored at startup.
     connect(m_enableCheckbox, &QCheckBox::toggled, this,

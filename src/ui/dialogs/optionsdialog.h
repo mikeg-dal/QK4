@@ -30,8 +30,8 @@ class DiagnosticsPage;
 
 /**
  * @brief Tabbed Options dialog. Left QListWidget drives a QStackedWidget holding the option
- *        pages (About, Station, Display, Audio Input/Output, Rig Control, TCI Server, CW Keyer,
- *        KPOD, KPA1500, DX Cluster, Diagnostics).
+ *        pages (About, Station, Display, Audio Input/Output, Rig Control, TCI Server, HaliKey,
+ *        K-Pod, KPA1500, DX Cluster, Diagnostics).
  *        Pages are lazy-constructed on first tab activation via @c ensurePageCreated.
  */
 class OptionsDialog : public QDialog {
@@ -81,7 +81,6 @@ private:
     QMediaDevices *m_mediaDevices;
     bool m_pageCreated[PageCount] = {};
 
-    // Page widgets
     AboutPage *m_aboutPage = nullptr;
     StationPage *m_stationPage = nullptr;
     DisplayPage *m_displayPage = nullptr;

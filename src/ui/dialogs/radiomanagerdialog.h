@@ -33,7 +33,7 @@ public:
 signals:
     void connectRequested(const RadioEntry &radio);
     void disconnectRequested();
-    void streamingLatencyChanged(int tier); // Emitted on save while connected
+    void streamingLatencyChanged(int tier); // Emitted when the connected radio's entry is saved
 
 private slots:
     void onConnectClicked();

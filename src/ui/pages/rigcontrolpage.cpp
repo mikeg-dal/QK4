@@ -41,7 +41,6 @@ RigControlPage::RigControlPage(CatServer *catServer, QWidget *parent) : QWidget(
                                     "Default 9299. Configure external apps to use Elecraft K4, host 127.0.0.1, and "
                                     "this port. Commands are forwarded to the real K4.");
 
-    // Connect signals to save settings
     connect(m_catServerPortEdit, &QLineEdit::editingFinished, this, [this]() {
         bool ok;
         quint16 port = m_catServerPortEdit->text().toUShort(&ok);
@@ -58,7 +57,6 @@ RigControlPage::RigControlPage(CatServer *catServer, QWidget *parent) : QWidget(
 
     layout->addStretch();
 
-    // Connect to CatServer signals for status updates
     if (m_catServer) {
         connect(m_catServer, &CatServer::started, this, &RigControlPage::updateCatServerStatus);
         connect(m_catServer, &CatServer::stopped, this, &RigControlPage::updateCatServerStatus);
@@ -66,7 +64,6 @@ RigControlPage::RigControlPage(CatServer *catServer, QWidget *parent) : QWidget(
         connect(m_catServer, &CatServer::clientDisconnected, this, &RigControlPage::updateCatServerStatus);
     }
 
-    // Initialize status display
     updateCatServerStatus();
 }
 

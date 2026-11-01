@@ -8,7 +8,7 @@ Tab pages for `OptionsDialog`. Each is a `QWidget` that plugs into the dialog's 
 - `stationpage` — call sign, grid square, operator name, QTH, and the IARU region that drives the panadapter band-plan overlay (plus its show/hide toggle). Persists via settings.
 - `displaypage` — interface scale: Auto (fit the screen: 50–100% in 5% steps, or 125%) or a fixed 75–150%, with a Restart Now button, since Qt applies a scale only at startup. Persists via settings; applied by `settings/interfacescale`.
 - `rigcontrolpage` — CAT server: status, client count, enable and port.
-- `tciserverpage` — TCI server enable/port, audio on/off, live status and connected-client list. Talks to `TciController`.
+- `tciserverpage` — TCI server enable/port, audio on/off, TCI transmit level, live status and connected-client list. Talks to `TciController`.
 - `audioinputpage` — microphone device and Mic Gain.
 - `audiooutputpage` — speaker device and RX Audio Boost.
 - `cwkeyerpage` — the "HaliKey" page: HaliKey + iambic keyer config, and the K4's remote key-down delay (KZL, via `CwController::setKeyDownInitialDelay`). Port lists come from `HaliKeyPortScan` off the GUI thread; the list shows "Scanning…" until they arrive.

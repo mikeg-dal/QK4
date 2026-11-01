@@ -15,14 +15,14 @@
  * eliminating duplicate CSS definitions and ensuring visual consistency.
  *
  * Style Categories:
- * - Popup buttons: Used in BandPopup, ModePopup, ButtonRowPopup, DisplayPopup
- * - Menu bar buttons: Used in BottomMenuBar, FeatureMenuBar
+ * - Popup buttons: BandPopup, ModePopup and the compact control popups (VOX, MIC, LINE IN/OUT, RX EQ)
+ * - Menu bar buttons: BottomMenuBar, FeatureMenuBar, ConfirmPopup and the compact popups' +/- keys
  * - Selected/Active states: Inverted colors for selected items
  */
 namespace K4Styles {
 
 // =============================================================================
-// Popup Button Styles (BandPopup, ModePopup, ButtonRowPopup, DisplayPopup)
+// Popup Button Styles
 // =============================================================================
 
 /**
@@ -42,7 +42,7 @@ QString popupButtonSelected();
 QString popupValueLabel(const QString &color);
 
 // =============================================================================
-// Menu Bar Button Styles (BottomMenuBar, FeatureMenuBar)
+// Menu Bar Button Styles (also the +/- and value keys of the compact popups)
 // =============================================================================
 
 /**
@@ -58,7 +58,7 @@ QString menuBarButton();
 QString menuBarButtonActive();
 
 /**
- * @brief Compact button for +/- controls in FeatureMenuBar.
+ * @brief Compact button for +/- controls in FeatureMenuBar and the compact popups.
  * Same gradient but no padding, larger font.
  */
 QString menuBarButtonSmall();
@@ -115,7 +115,7 @@ QString compactButton();
 // 24 px two lines of 10 px text need (ATU TUNE, FREQ ENT).
 
 /**
- * @brief Dark gradient button for side panel icons (?, globe).
+ * @brief Dark gradient side-panel key (SidePanelButton::Shade::Dark): icons, memory, KPA1500 and dark PF keys.
  * Includes normal, hover, and pressed states.
  */
 QString sidePanelButton();

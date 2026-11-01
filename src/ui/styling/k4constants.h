@@ -1,17 +1,8 @@
 #ifndef K4CONSTANTS_H
 #define K4CONSTANTS_H
 
-// Lightweight constants-only header — no Qt includes, no function declarations.
-// Carries K4Styles::Colors and K4Styles::Dimensions for files that need only
-// these compile-time values (panadapter renderers, network/hardware modules,
-// status displays). The full k4styles.h header still includes this internally
-// so existing K4Styles::Colors::* and K4Styles::Dimensions::* references are
-// preserved everywhere.
-//
-// Split rationale: k4styles.h pulls in <QPainter>, <QFont>, <QLinearGradient>,
-// <QString> for its function declarations. Files that touch only constants
-// were paying that include cost for no reason. Touching this header rebuilds
-// roughly 23 fewer translation units than touching the full k4styles.h.
+// Constants only: no Qt includes, no functions. Include this instead of k4styles.h when a file needs only
+// K4Styles::Colors / K4Styles::Dimensions; k4styles.h pulls in <QPainter>, <QFont> and friends.
 
 namespace K4Styles {
 
@@ -105,7 +96,7 @@ constexpr const char *OverlayDividerLight = "#3C3C41";     // Lighter divider (d
 constexpr const char *SelectionLight = "#DCDCDC"; // Light panel (selected zone)
 constexpr const char *SelectionDark = "#505055";  // Dark panel (value zone)
 
-// WHY #777: black text on the old #707070 was 4.24:1; #777777 is 4.69:1.
+// WHY #777: black text needs 4.5:1; #707070 gives 4.24:1, #777777 4.69:1.
 constexpr const char *OverlayBackground = "#777777"; // VFO A/B badges on the waterfall (TextOnAccent)
 
 // =============================================================================
@@ -122,7 +113,7 @@ constexpr const char *HoverMid2 = "#454545";
 constexpr const char *HoverBottom = GradientMid1;
 
 // Lighter button gradients (for TX function buttons, REC/STORE/RCL)
-// WHY these two stops: white on the old #888888 top was 3.54:1 and on #777777 4.48:1. Two-line labels (ATU TUNE)
+// WHY these two stops: white on an #888888 top is 3.54:1 and on #777777 4.48:1. Two-line labels (ATU TUNE)
 // reach almost to the top edge, so the top stop itself must pass: #747474 is 4.67:1, #6E6E6E 5.10:1.
 constexpr const char *LightGradientTop = "#747474";
 constexpr const char *LightGradientMid1 = "#6E6E6E";
@@ -149,12 +140,12 @@ constexpr const char *DisabledGradientBottom = Background;
 // =============================================================================
 constexpr const char *ErrorBgDark = "#331111"; // Muted dark-red background for error toasts (with TextRed)
 
-// WHY GradientBottom and not DisabledBackground: TextSecondary on #444 was 3.42:1; on #2a2a2a it is 5.04:1, and the
+// WHY GradientBottom and not DisabledBackground: TextSecondary on #444 is 3.42:1; on #2a2a2a it is 5.04:1, and the
 // darker fill reads as more clearly off beside the green on state.
 constexpr const char *BadgeOffBackground = GradientBottom; // SUB/DIV badge when off (TextSecondary)
 
 // Filter-edge indicator gold. Distinct from AccentAmber (#FFB000): brighter/yellower so it reads
-// clearly against the panadapter's amber passband fill. Used by FilterIndicatorWidget only.
+// clearly against the panadapter's amber passband fill.
 constexpr const char *FilterIndicatorGold = "#FFD040";
 
 // Network-health sparkline series colors (NetHealthPopup). RTT reuses VfoACyan, jitter reuses
@@ -192,7 +183,7 @@ constexpr int BandPlanHatch = 40;
 constexpr int BandPlanDivider = 70;
 constexpr int BandPlanMarker = 220;
 constexpr int BandPlanCaret = 235;
-constexpr int PassbandFill = 64; // Secondary VFO passband over the spectrum
+constexpr int PassbandFill = 64; // VFO passbands over the spectrum and mini-pan
 constexpr int CardTint = 18;     // KPA1500 card: white tint over the panel background
 constexpr int CardBorder = 35;   // KPA1500 card outline (white)
 constexpr int LcdBorder = 20;    // KPA1500 status box outline (white)
@@ -221,7 +212,7 @@ constexpr int ShadowLayers = 8;
 // =============================================================================
 // Button Heights
 // =============================================================================
-constexpr int ButtonHeightLarge = 44;  // Menu overlay nav buttons
+constexpr int ButtonHeightLarge = 44;  // Knob keys; FeatureMenuBar +/- key width
 constexpr int ButtonHeightMedium = 36; // Bottom menu bar, popup buttons
 constexpr int ButtonHeightSmall = 28;  // Function buttons (side panels)
 constexpr int ButtonHeightMini = 24;   // Compact toggle buttons (MON, NORM, BAL, etc.)
@@ -381,8 +372,8 @@ constexpr int VfoIndicatorHeight = 30; // VFO A/B label height on panadapter
 constexpr int VfoInnerMargin = 4;
 
 // Under each VFO's frequency: the multifunction meter OR the mini-pan, then the feature row (AGC, PRE,
-// ATT, NB, NR, NTCH, APF), which stays visible either way. Panel + 2 px layout spacing + row = 150,
-// the height the meter-or-mini-pan block had when the feature row was hidden by the mini-pan.
+// ATT, NB, NR, NTCH, APF), which stays visible either way. Panel + 2 px layout spacing + row = 150
+// (vfowidget.cpp).
 constexpr int VfoPanelHeight = 130;     // Meter (5 bars) or mini-pan; both pages of the VFO's stack
 constexpr int VfoFeatureRowHeight = 18; // The feature indicator row below it
 
@@ -392,7 +383,7 @@ constexpr int VfoFeatureRowHeight = 18; // The feature indicator row below it
 constexpr int DialogMargin = 20;           // Dialog content margins
 constexpr int TabListWidth = 150;          // Options dialog tab list width
 constexpr int InputFieldWidthSmall = 100;  // Port number, small inputs
-constexpr int InputFieldWidthMedium = 120; // Version labels, medium fields
+constexpr int InputFieldWidthMedium = 120; // Compact-popup title column, EQ slider length
 constexpr int CheckboxSize = 18;           // Checkbox indicator dimensions
 constexpr int PaddingSmall = 6;            // Small padding (inputs)
 constexpr int PaddingMedium = 10;          // Medium padding (buttons)

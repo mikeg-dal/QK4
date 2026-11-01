@@ -53,7 +53,7 @@ void TextDecodeWindow::setupUi() {
     m_onOffBtn->setCursor(Qt::PointingHandCursor);
     m_onOffBtn->setStyleSheet(controlButtonStyle(false));
 
-    // WPM button (CW mode only)
+    // Speed button: WPM range in CW, data rate in AFSK/FSK/PSK
     m_wpmBtn = new QPushButton("8-45", titleBar);
     m_wpmBtn->setFixedHeight(ControlButtonHeight);
     m_wpmBtn->setMinimumWidth(40);
@@ -399,8 +399,7 @@ QString TextDecodeWindow::controlButtonStyle(bool selected) const {
 }
 
 void TextDecodeWindow::applyTextFontSize() {
-    // Stylesheet template — colors / scrollbar / padding identical to the original; only the
-    // font-size value changes. Re-applying mergeBlockFormat after the size change re-anchors the
+    // Only the font size varies. Re-applying mergeBlockFormat after the size change re-anchors the
     // 1.5x line spacing on every existing block so scrollback re-flows cleanly.
     m_textDisplay->setStyleSheet(QString("QPlainTextEdit {"
                                          "  background: %1;"

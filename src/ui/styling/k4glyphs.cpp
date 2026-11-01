@@ -104,8 +104,7 @@ Glyph thermometer(int sizePx) {
         const QRectF stemRect(cx - stemWidth / 2.0, stemTop, stemWidth, bulbCenterY - stemTop + 1.0);
         p.drawRoundedRect(stemRect, stemWidth / 2.0, stemWidth / 2.0);
 
-        // Two short tick marks on the right side (purely decorative — reads as
-        // a thermometer at icon size; remove if visual noise).
+        // Two short tick marks on the right side; they make it read as a thermometer at icon size.
         QPen tickPen(color, 1.0);
         tickPen.setCapStyle(Qt::RoundCap);
         p.setPen(tickPen);

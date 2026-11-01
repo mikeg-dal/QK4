@@ -10,7 +10,7 @@
 // Standalone floating window for the K4's on-radio decoder output (CW /
 // AFSK / FSK / PSK / DATA / SSB). One instance per receiver (Main/Sub).
 // Owns its title-bar controls (on/off, WPM range, threshold, data rate)
-// and emits state-change signals for MainWindow to forward as CAT.
+// and emits state-change signals for TextDecodeController to forward as CAT.
 // Resizable + draggable.
 //
 // Intentionally NOT a K4PopupBase subclass. K4PopupBase is for +/-
@@ -18,7 +18,7 @@
 // ESC or close button. TextDecodeWindow is a free-floating tool window
 // with custom title-bar chrome, drag/resize handles, and per-receiver
 // colored borders (cyan for Main RX, green for Sub RX) — none of which
-// fit the K4PopupBase model. Phase B documented exception.
+// fit the K4PopupBase model.
 class TextDecodeWindow : public QWidget {
     Q_OBJECT
 

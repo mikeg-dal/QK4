@@ -6,7 +6,7 @@
 
 /**
  * RxMenuButton - Dual-line button with white primary text and amber secondary text.
- * Similar to FnMenuButton but for MAIN RX / SUB RX popup buttons.
+ * Similar to FnMenuButton but for the MAIN RX / SUB RX / TX row buttons.
  */
 class RxMenuButton : public QWidget {
     Q_OBJECT
@@ -44,7 +44,6 @@ private:
  * Used for MAIN RX, SUB RX, and TX bottom menu popups.
  * Features:
  * - 7 buttons in a horizontal row with primary/alternate text
- * - Gray bottom strip with triangle indicator pointing to trigger button
  * - Customizable button labels (primary white, alternate amber)
  */
 class ButtonRowPopup : public K4PopupBase {

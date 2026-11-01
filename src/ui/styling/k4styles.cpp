@@ -572,8 +572,7 @@ QFont dataFont(int pixelSize, QFont::Weight weight) {
     font.setStyleStrategy(QFont::PreferAntialias);
     // WHY: Inter's default figures are proportional, so a changing frequency or meter readout would shift
     // sideways. The OpenType `tnum` feature gives every digit one advance. Set through QFont because Qt
-    // style sheets have no font-feature-settings. QFont::setFeature is Qt 6.7+; the CI unit-test job
-    // builds against Ubuntu's Qt 6.4, which keeps proportional figures.
+    // style sheets have no font-feature-settings. QFont::setFeature is Qt 6.7+, the app's compile floor.
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     font.setFeature(QFont::Tag("tnum"), 1);
 #endif
@@ -629,9 +628,7 @@ const QString &sectionHeader() {
 }
 
 const QString &statusLabel(const QString &color) {
-    // Not cached — color is dynamic. All callers are settings-page UI on the
-    // main thread (verified by grep across ui/pages/*.cpp); the static scratch
-    // buffer doesn't need thread_local.
+    // Not cached: colour is dynamic. Main-thread only (settings pages), so a plain static scratch is safe.
     static QString s;
     s = QString("color: %1; font-size: %2px; font-weight: bold;").arg(color).arg(Dimensions::FontSizeHeading);
     return s;
@@ -730,12 +727,9 @@ const QString &actionButtonSmall() {
 } // namespace Dialog
 
 const QString &applicationStyleSheet() {
-    // WHY: before this, the theme reached a control only if its constructor remembered to call
-    // setStyleSheet. Three did not - the spot label size spin box, the KPOD+ encode mode dropdown
-    // and the TLS indicator - and Windows 11 in dark mode drew each dark-on-dark, invisible on our
-    // near-black dialogs. macOS, Linux, Windows 10 and Windows 11 light all drew them legibly, so
-    // nothing in development or review could catch it. One app-wide rule set makes forgetting
-    // harmless. Covered types are enforced by tests/test_formcontroltheme.cpp.
+    // WHY: a control whose constructor forgets setStyleSheet is drawn by the OS theme, and Windows 11 dark
+    // mode draws it dark-on-dark on these near-black dialogs. This app-wide fallback makes forgetting
+    // harmless. tests/test_formcontroltheme.cpp requires a rule here for every form-control type in src/.
     static const QString s = Dialog::checkBox() + Dialog::comboBox() + Dialog::lineEdit() + Dialog::spinBox();
     return s;
 }

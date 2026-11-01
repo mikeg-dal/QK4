@@ -20,9 +20,7 @@ KeyingWeightPopupWidget::KeyingWeightPopupWidget(QWidget *parent) : K4PopupBase(
 
 void KeyingWeightPopupWidget::setupUi() {
     auto *layout = new QHBoxLayout(this);
-    // Original tight margins (sm + 8 vertical, sm + 12 horizontal) — base's
-    // contentMargins() returns sm + 12 all around which is 4px taller than
-    // this popup's original layout.
+    // Compact-row margins: sm + 8 vertical, sm + CompactRowContentMargin horizontal.
     int sm = K4Styles::Dimensions::ShadowMargin;
     layout->setContentsMargins(sm + CompactRowContentMargin, sm + 8, sm + CompactRowContentMargin, sm + 8);
     layout->setSpacing(6);
@@ -67,7 +65,6 @@ void KeyingWeightPopupWidget::setupUi() {
 
 QSize KeyingWeightPopupWidget::contentSize() const {
     // Inner content (excludes the base's shadow margins, which it adds back).
-    // Original outer widget was 480x92 (with shadow); inner is 440x52.
     const int contentWidth = CompactRowContentMargin + TitleWidth + 6 + ValueWidth + 6 +
                              K4Styles::Dimensions::NavButtonWidth + 6 + K4Styles::Dimensions::NavButtonWidth + 6 +
                              K4Styles::Dimensions::NavButtonWidth + CompactRowContentMargin;

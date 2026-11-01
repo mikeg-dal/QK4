@@ -9,13 +9,10 @@
 #include <QLabel>
 
 RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QDialog(parent), m_currentIndex(-1), m_discovery(nullptr) {
-    // WHY a tool window and not modal: the dialog has two jobs that modality set against each other.
-    // It must not be buried - an ordinary window disappeared behind the main window at the first
-    // click elsewhere, and since it stays open across a disconnect that left an inert app with the
-    // one control that fixes it hidden. And the globe icon must close it again (d46a802), which
-    // needs the main window to keep taking clicks. Modal (f1b6b82) fixed the first and broke the
-    // second: input to the main window was blocked, so the globe click never arrived. A tool
-    // window floats above its parent on macOS, Windows and Linux without blocking it.
+    // WHY: a tool window, not modal. It must float above the main window (it stays open across a
+    // disconnect, and an ordinary window was buried at the first click elsewhere), yet the main
+    // window must keep taking clicks so the globe icon can close it; modality blocks that. A tool
+    // window does both on macOS, Windows and Linux.
     //
     // Shown with show(), not exec(): exec() nests an event loop, and this dialog is deleted from
     // its own finished() signal.
@@ -49,7 +46,6 @@ void RadioManagerDialog::setupUi() {
     setWindowTitle("Server Manager");
     setFixedSize(580, 395);
 
-    // Dark theme for the dialog
     setStyleSheet(QString("QDialog { background-color: %1; }").arg(K4Styles::Colors::Background));
 
     auto *mainLayout = new QVBoxLayout(this);
@@ -125,7 +121,6 @@ void RadioManagerDialog::setupUi() {
                              .arg(K4Styles::Colors::TextSecondary)
                              .arg(K4Styles::Dimensions::FontSizeReadout);
 
-    // Row 0: Name
     auto *nameLabel = new QLabel("Name", this);
     nameLabel->setStyleSheet(labelStyle);
     m_nameEdit = new QLineEdit(this);
@@ -134,7 +129,6 @@ void RadioManagerDialog::setupUi() {
     formLayout->addWidget(nameLabel, 0, 0);
     formLayout->addWidget(m_nameEdit, 0, 1);
 
-    // Row 1: Host or IP
     auto *hostLabel = new QLabel("Host or IP", this);
     hostLabel->setStyleSheet(labelStyle);
     m_hostEdit = new QLineEdit(this);
@@ -143,7 +137,6 @@ void RadioManagerDialog::setupUi() {
     formLayout->addWidget(hostLabel, 1, 0);
     formLayout->addWidget(m_hostEdit, 1, 1);
 
-    // Row 2: Port
     auto *portLabel = new QLabel("Port", this);
     portLabel->setStyleSheet(labelStyle);
     m_portEdit = new QLineEdit(this);
@@ -154,7 +147,6 @@ void RadioManagerDialog::setupUi() {
     formLayout->addWidget(portLabel, 2, 0);
     formLayout->addWidget(m_portEdit, 2, 1);
 
-    // Row 3: Password
     auto *passwordLabel = new QLabel("Password", this);
     passwordLabel->setStyleSheet(labelStyle);
     m_passwordEdit = new QLineEdit(this);
@@ -164,7 +156,7 @@ void RadioManagerDialog::setupUi() {
     formLayout->addWidget(passwordLabel, 3, 0);
     formLayout->addWidget(m_passwordEdit, 3, 1);
 
-    // Row 4: ID (only visible when TLS is checked)
+    // ID: shown only while TLS is checked
     m_identityLabel = new QLabel("ID", this);
     m_identityLabel->setStyleSheet(labelStyle);
     m_identityEdit = new QLineEdit(this);
@@ -173,7 +165,6 @@ void RadioManagerDialog::setupUi() {
     formLayout->addWidget(m_identityLabel, 4, 0);
     formLayout->addWidget(m_identityEdit, 4, 1);
 
-    // Row 5: TLS Checkbox (below ID field)
     m_tlsCheckbox = new QCheckBox("Use TLS (Encrypted)", this);
     // Same indicator treatment as K4Styles::Dialog::checkBox - see the reasoning there. The colour
     // and size differ from the shared style deliberately, which is why this is not simply replaced
@@ -192,14 +183,11 @@ void RadioManagerDialog::setupUi() {
             .arg(K4Styles::Colors::TextSecondary, K4Styles::Colors::DarkBackground, K4Styles::Colors::AccentAmber));
     formLayout->addWidget(m_tlsCheckbox, 5, 0, 1, 2);
 
-    // The ONE control for this setting. The list shows WHICH radio is armed - see refreshList -
-    // but showing is not editing, and two controls for one setting is what had them disagreeing
-    // about when a change applies.
+    // The one control for connect-at-startup; refreshList only marks which radio holds it.
     m_startupCheckbox = new QCheckBox("Connect to this radio at startup (only one)", this);
     m_startupCheckbox->setStyleSheet(m_tlsCheckbox->styleSheet());
     formLayout->addWidget(m_startupCheckbox, 6, 0, 1, 2);
 
-    // Row 7: Encode Mode dropdown
     auto *encodeModeLabel = new QLabel("Audio Mode", this);
     encodeModeLabel->setStyleSheet(labelStyle);
     m_encodeModeCombo = new QComboBox(this);
@@ -232,8 +220,7 @@ void RadioManagerDialog::setupUi() {
             .arg(K4Styles::Colors::AccentAmber)
             .arg(K4Styles::Dimensions::FontSizeBody));
     // EM0 is 24-bit audio in a 32-bit container, not the "RAW 32-bit float" Elecraft's
-    // documentation describes — measured 2026-09-19, see docs/k4-protocol-quirks.md. The old
-    // label told the operator something untrue about the format they were selecting.
+    // documentation describes — measured 2026-09-19, see docs/k4-protocol-quirks.md.
     m_encodeModeCombo->addItem("EM3 - Opus (float decode)", 3); // Default
     m_encodeModeCombo->addItem("EM2 - Opus (integer decode)", 2);
     m_encodeModeCombo->addItem("EM1 - Uncompressed 16-bit", 1);
@@ -242,7 +229,6 @@ void RadioManagerDialog::setupUi() {
     formLayout->addWidget(encodeModeLabel, 7, 0);
     formLayout->addWidget(m_encodeModeCombo, 7, 1);
 
-    // Row 8: Streaming Latency dropdown
     auto *streamingLatencyLabel = new QLabel("Streaming Latency", this);
     streamingLatencyLabel->setStyleSheet(labelStyle);
     m_streamingLatencyCombo = new QComboBox(this);
@@ -267,7 +253,7 @@ void RadioManagerDialog::setupUi() {
 
     // === BOTTOM: Button Row ===
     auto *buttonLayout = new QHBoxLayout();
-    buttonLayout->setSpacing(16); // More spacing between buttons
+    buttonLayout->setSpacing(16);
 
     m_connectButton = new QPushButton("Connect", this);
     m_connectButton->setStyleSheet(K4Styles::dialogButton());
@@ -300,7 +286,6 @@ void RadioManagerDialog::setupUi() {
 
     mainLayout->addLayout(buttonLayout);
 
-    // Connections
     connect(m_connectButton, &QPushButton::clicked, this, &RadioManagerDialog::onConnectClicked);
     connect(m_newButton, &QPushButton::clicked, this, &RadioManagerDialog::onNewClicked);
     connect(m_saveButton, &QPushButton::clicked, this, &RadioManagerDialog::onSaveClicked);
@@ -326,12 +311,6 @@ void RadioManagerDialog::refreshList() {
         auto *item = new QListWidgetItem(radio.name.isEmpty() ? radio.host : radio.name);
         // A MARKER, NOT A CONTROL. This answers "which one opens at startup" at a glance, which
         // is what was asked for; the checkbox that SETS it is in the form beside the other fields.
-        //
-        // An earlier version put a real checkbox on every row and it was worse three ways over: the
-        // boxes dominated a list whose job is names, the setting gained a second control that
-        // applied at a different time from the first, and the indicator needed stylesheet work to
-        // be visible and clickable at all against this background - it was briefly present,
-        // functional and invisible.
         if (radio.connectAtStartup) {
             item->setText(QStringLiteral("\u25cf  ") + item->text());
             QFont marked = item->font();
@@ -443,10 +422,8 @@ void RadioManagerDialog::onSaveClicked() {
     entry.port = *port;
 
     if (m_currentIndex >= 0 && m_currentIndex < RadioSettings::instance()->radios().size()) {
-        // Update existing
         RadioSettings::instance()->updateRadio(m_currentIndex, entry);
     } else {
-        // Add new
         RadioSettings::instance()->addRadio(entry);
     }
 
@@ -619,12 +596,10 @@ void RadioManagerDialog::populateFieldsFromSelection() {
         m_identityEdit->setText(radio.identity);
         m_identityLabel->setVisible(radio.useTls);
         m_identityEdit->setVisible(radio.useTls);
-        // Set encode mode combo to match saved value
         int encodeModeIndex = m_encodeModeCombo->findData(radio.encodeMode);
         if (encodeModeIndex >= 0) {
             m_encodeModeCombo->setCurrentIndex(encodeModeIndex);
         }
-        // Set streaming latency combo to match saved value
         int latencyIndex = m_streamingLatencyCombo->findData(radio.streamingLatency);
         if (latencyIndex >= 0) {
             m_streamingLatencyCombo->setCurrentIndex(latencyIndex);

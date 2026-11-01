@@ -101,7 +101,6 @@ Kpa1500Page::Kpa1500Page(KPA1500Client *kpa1500Client, QWidget *parent)
     OptionsPageLayout::addHelp(layout, this, "When enabled, QK4 polls the KPA1500 for power, SWR, and status data.");
     layout->addStretch();
 
-    // Connect to KPA1500 signals for real-time status updates
     if (m_kpa1500Client) {
         connect(m_kpa1500Client, &KPA1500Client::connected, this, &Kpa1500Page::updateKpa1500Status);
         connect(m_kpa1500Client, &KPA1500Client::disconnected, this, &Kpa1500Page::updateKpa1500Status);
@@ -110,7 +109,6 @@ Kpa1500Page::Kpa1500Page(KPA1500Client *kpa1500Client, QWidget *parent)
         connect(m_kpa1500Client, &KPA1500Client::bandNumberChanged, this, &Kpa1500Page::updateKpa1500Status);
     }
 
-    // Initialize status display
     updateKpa1500Status();
 }
 
@@ -140,7 +138,6 @@ void Kpa1500Page::updateKpa1500Status() {
             m_kpa1500ConnectBtn->setText("Connect");
     }
 
-    // Update amplifier info labels
     if (m_kpa1500BandLabel)
         m_kpa1500BandLabel->setText(connected ? m_kpa1500Client->bandName() : "--");
     if (m_kpa1500FirmwareLabel)
@@ -148,7 +145,6 @@ void Kpa1500Page::updateKpa1500Status() {
     if (m_kpa1500SerialLabel)
         m_kpa1500SerialLabel->setText(connected ? m_kpa1500Client->serialNumber() : "--");
 
-    // Disable host/port editing while connected
     if (m_kpa1500HostEdit)
         m_kpa1500HostEdit->setEnabled(!connected);
     if (m_kpa1500PortEdit)

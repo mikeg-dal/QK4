@@ -39,7 +39,7 @@ EqBandWidget::EqBandWidget(int bandIndex, const QString &freqLabel, const QStrin
     m_slider->setValue(0);
     m_slider->setFixedSize(32, K4Styles::Dimensions::InputFieldWidthMedium);
 
-    // Vertical slider stylesheet with cyan fill below handle
+    // Vertical slider stylesheet with the accent-colour fill below the handle
     QString sliderStyle = QString("QSlider::groove:vertical {"
                                   "  border: 1px solid %1;"
                                   "  width: 10px;"
@@ -71,7 +71,7 @@ EqBandWidget::EqBandWidget(int bandIndex, const QString &freqLabel, const QStrin
                               .arg(K4Styles::Colors::SelectedMid1)            // handle gradient mid
                               .arg(K4Styles::Colors::SelectedBottom)          // handle gradient bottom
                               .arg(K4Styles::Colors::BorderNormal)            // handle border
-                              .arg(accentColor)                               // fill color (cyan)
+                              .arg(accentColor)                               // fill colour (accent)
                               .arg(K4Styles::Dimensions::SliderBorderRadius); // handle border radius
 
     m_slider->setStyleSheet(sliderStyle);
@@ -341,7 +341,6 @@ QSize RxEqPopupWidget::contentSize() const {
     int cm = K4Styles::Dimensions::PopupContentMargin;
     // 8 bands * 50px + 7 gaps * 8px + labels column ~30px + buttons column ~85px + margins
     int width = 8 * 50 + 7 * 8 + 30 + 85 + 2 * cm;
-    // Height: title ~30px + bands ~250px + margins
     int height = 310 + 2 * cm;
     return QSize(width, height);
 }

@@ -60,7 +60,7 @@ private:
     QLineEdit *m_commandEdit;
 };
 
-// Full-screen macro configuration overlay
+// Macro editor overlay; PopupManager sizes it to the spectrum area
 class MacroDialog : public QWidget {
     Q_OBJECT
 

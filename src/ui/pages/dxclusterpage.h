@@ -16,7 +16,7 @@ class DxClusterController;
 /**
  * @brief OptionsDialog "DX Cluster" tab. Manages the cluster list, per-entry host/port/auto-connect
  *        settings, and the live console for each cluster. Talks to DxClusterController
- *        (which owns one ClientInstance + thread per cluster).
+ *        (which owns one DxClusterInstance — client + thread — per cluster).
  */
 class DxClusterPage : public QWidget {
     Q_OBJECT

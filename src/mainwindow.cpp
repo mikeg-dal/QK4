@@ -85,8 +85,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     m_popupManager =
         new PopupManager(m_radioState, m_connectionController, m_spectrumController, nullptr, nullptr, this, this);
     m_bandNavController = new BandNavigationController(m_radioState, m_connectionController, m_popupManager, this);
-    // Mode label refresh on ESSB toggle is observed directly by
-    // ModeLabelController via RadioState::essbChanged.
     m_macroController = new MacroController(m_connectionController, m_popupManager, /*dialogParent=*/this, this);
     connect(m_macroController, &MacroController::macroDialogRequested, this, [this]() {
         closeAllPopups();
@@ -165,12 +163,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
 
     // SideControlScrollController owns all of SideControlPanel's scroll-handler
     // protocol logic (WPM, pitch, mic, comp, power QRP/QRO, delay, BW/HI/LO/SHIFT,
-    // RF gain, squelch). Extracted from MainWindow's setupUi in PR 10.
+    // RF gain, squelch).
     new SideControlScrollController(m_radioState, m_connectionController, m_sideControlPanel, this);
 
-    // Filter indicator widgets observe RadioState directly (PATTERNS.md
-    // Direct Observation). The former FilterIndicatorController was a
-    // pure-forwarding thin shell and has been deleted.
+    // Filter indicator widgets observe RadioState directly (PATTERNS.md Direct Observation).
     m_filterAWidget->observe(m_radioState, FilterIndicatorWidget::Vfo::A);
     m_filterBWidget->observe(m_radioState, FilterIndicatorWidget::Vfo::B);
     connect(m_filterAWidget, &FilterIndicatorWidget::clicked, m_rightSideController,
@@ -189,36 +185,25 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
+    // BEFORE the audio teardown below: a TCI client may be holding the transmitter, and handing it
+    // back needs a live AudioController, and ~TciController runs after AudioController is destroyed.
+    if (m_tciController) {
+        m_tciController->shutdown();
+    }
+
+    // WHY explicit and here: producers stop before consumers and before anything they read is
+    // destroyed. Qt destroys children in construction order, ConnectionController first, while the
+    // HaliKey worker and sidetone thread still read state through CwController. The destructors
+    // repeat this as a no-op for paths that never reach closeEvent.
+    if (m_hardwareController) {
+        m_hardwareController->shutdownDevices();
+    }
     // Deterministic audio teardown BEFORE the event loop exits. On Linux with
     // the PipeWire Qt Multimedia backend, destroying an active QAudioSink from
     // libc atexit races the PipeWire RT worker thread and segfaults in
     // pw_stream_dequeue_buffer. Stopping the sinks here — while the audio and
     // sidetone thread event loops are still servicing BlockingQueuedConnection
     // — guarantees no live QAudioSink/QAudioSource remains at process exit.
-    // BEFORE the audio teardown below: a TCI client may be holding the transmitter, and handing it
-    // back needs a live AudioController. This used to live in ~TciController, which runs after
-    // AudioController has already been destroyed - see TciController::shutdown().
-    if (m_tciController) {
-        m_tciController->shutdown();
-    }
-
-    // CONC-001. Producers stop before consumers, and before anything they read is destroyed.
-    //
-    // This used to happen only in ~HardwareController, which Qt runs LATE: children are destroyed
-    // in CONSTRUCTION order, and ConnectionController is constructed first (setupControllers), so
-    // it was already freed while the HaliKey worker and the sidetone thread were still running -
-    // and both reach CwController::kpodPlusActive(), which dereferences it. Quitting with a paddle
-    // touched read freed memory: ASAN aborts, release builds read garbage.
-    //
-    // Running it here, explicitly and in order, is the fix. The destructor still calls it for the
-    // paths that never reach closeEvent, but by then it is a no-op.
-    //
-    // 8f17c0e was the same root cause in different code (~TciController reaching an
-    // already-destroyed AudioController), which is why the ordering is stated here rather than
-    // left to Qt's child order to arrange correctly by luck.
-    if (m_hardwareController) {
-        m_hardwareController->shutdownDevices();
-    }
     if (m_audioController) {
         m_audioController->shutdown();
     }
@@ -275,12 +260,10 @@ void MainWindow::setupControllers() {
 }
 
 void MainWindow::setupNotificationWidget() {
-    // Create notification popup for K4 error/status messages (ERxx:)
     m_notificationWidget = new NotificationWidget(this);
 }
 
 void MainWindow::setupConnectionWiring() {
-    // ConnectionController signals
     connect(m_connectionController, &ConnectionController::connectionStateChanged, this,
             &MainWindow::onConnectionStateChanged);
     connect(m_connectionController, &ConnectionController::connectionError, this, &MainWindow::onConnectionError);
@@ -291,12 +274,6 @@ void MainWindow::setupConnectionWiring() {
 }
 
 void MainWindow::setupRadioStateWiring() {
-    // RadioState signals -> UI updates (VFO A)
-    // Frequency display (with RIT/XIT offset) owned by VfoFrequencyController.
-    // Mode + data-sub-mode + ESSB label updates are owned by ModeLabelController.
-    // TX button-row mode-dependent labels are observed by ButtonRowDispatcher.
-    // VOX label refresh on mode change is handled by VfoRowIndicatorController
-    // (K4 VOX state is per-mode-class, so the displayed color depends on current mode).
     // Direct-observation wires — RadioState → widget setter, no MainWindow slot.
     connect(m_radioState, &RadioState::sMeterChanged, m_vfoA, &VFOWidget::setSMeterValue);
     connect(m_radioState, &RadioState::sMeterBChanged, m_vfoB, &VFOWidget::setSMeterValue);
@@ -338,31 +315,9 @@ void MainWindow::setupRadioStateWiring() {
     connect(m_radioState, &RadioState::errorNotificationReceived, this,
             [this](int, const QString &message) { m_notificationWidget->showMessage(message, 2000); });
 
-    // TX meter data + TX state (indicator colors, VFO meter-mode flip,
-    // XIT-aware frequency refresh, PA current calc) owned by TxStateController.
-
-    // SUB / DIV indicator styling + VFO B dim-state + auto-hide mini pan B
-    // are owned by SubDivIndicatorController (created later in constructor).
-
     // VFO Lock indicators — direct-observation.
     connect(m_radioState, &RadioState::lockAChanged, m_vfoRow, &VfoRowWidget::setLockA);
     connect(m_radioState, &RadioState::lockBChanged, m_vfoRow, &VfoRowWidget::setLockB);
-
-    // Side control panel state (BW/SHFT/HI/LO, knob values, CW↔voice display
-    // swap) owned by SideControlDisplayController (created later in ctor).
-
-    // RadioState signals -> Center section updates
-    // VFO-row indicator labels (split / vox / qsk / test / atu / msg bank)
-    // are observed by VfoRowIndicatorController; see setupUi constructor.
-    // RIT/XIT label state + wheel/click handling owned by RitXitController.
-
-    // Filter position indicators
-    // Filter indicator widgets (VFO A/B) observe RadioState directly via
-    // FilterIndicatorWidget::observe() — see setupControllers().
-    // AFX / AGC / APF button labels + APF VFO indicator driven by PopupManager's
-    // wireRxRowButtonLabels() — logical home since PopupManager owns those buttons.
-
-    // Waterfall height reaches the panadapters and mini-pans through SpectrumController.
 }
 
 void MainWindow::setupSpectrumDataRouting() {
@@ -395,13 +350,11 @@ void MainWindow::setupHardwareController() {
     connect(m_hardwareController, &HardwareController::macroRequested, m_macroController,
             &MacroController::executeMacro);
 
-    // Hardware-side errors (HaliKey port-open failures today) → notification overlay
+    // HardwareController errors and device notices (HaliKey, KPOD, KPOD+) → notification overlay
     connect(m_hardwareController, &HardwareController::hardwareError, this, &MainWindow::onHardwareError);
 }
 
 void MainWindow::setupCatServer() {
-    // CAT server for external app integration (WSJT-X, MacLoggerDX, etc.)
-    // Apps connect using their built-in K4 support - no protocol translation needed
     m_catServer = new CatServer(m_radioState, this);
 
     // A client's SET is forwarded only while the radio link is up (Connected = authenticated); the
@@ -436,7 +389,7 @@ void MainWindow::setupCatServer() {
 
     // TX;/RX; from external apps. StreamedFromHere, not RadioLocal: CatServer deliberately does
     // not forward TX;/RX; to the K4 because the audio stream itself keys it, which is
-    // timing-critical for FT8/FT4. The arbiter now records that rather than leaving it implied.
+    // timing-critical for FT8/FT4.
     connect(m_catServer, &CatServer::pttRequested, this, [this](bool on) {
         if (on)
             m_transmitController->engage(TransmitOwner::Owner::CatClient, TransmitOwner::Route::StreamedFromHere);
@@ -472,10 +425,6 @@ void MainWindow::setupCatServer() {
     // runtime-toggleable rather than needing a restart.
     m_tciController = new TciController(m_audioController, m_connectionController, m_radioState, m_transmitController,
                                         m_menuController, this);
-
-    // No PTT-indicator wiring here any more. A TCI client now keys through TransmitController like
-    // every other producer, so the indicator already follows it from one place. Writing it here as
-    // well left two writers whose agreement depended on how quickly the K4's TX echo came back.
 
     // The enable/port/audio settings are TciController's own business and it listens to
     // RadioSettings itself - see TciController::wireSettings. Nothing about which port the TCI
@@ -612,10 +561,8 @@ void MainWindow::setupUi() {
 
     // Middle section: the left panel runs the full height, down beside the bottom menu bar; the
     // content and right panel sit above the bar.
-    // WHY: the bar used to span the whole width with an empty left margin the panel's width, so the
-    // panel's bottom-anchored status group (clock, power, supply, icons, version) stopped short of
-    // the window's bottom edge above an empty strip. Spanning both rows lets it reach the edge
-    // without moving anything else.
+    // WHY: the left panel spans both rows so its bottom-anchored status group reaches the window's
+    // bottom edge.
     auto *middleWidget = new QWidget(centralWidget);
     auto *middleLayout = new QGridLayout(middleWidget);
     middleLayout->setContentsMargins(0, 0, 0, 0);
@@ -664,11 +611,6 @@ void MainWindow::setupUi() {
     // DT updates + RadioState → popup sync. See controllers/modepopupcontroller.h.
     m_modePopupController = new ModePopupController(m_radioState, m_connectionController, this, this);
 
-    // B-SET handling (SPLIT/B-SET label swap + side panel active-receiver
-    // color) is split across VfoRowIndicatorController and
-    // SideControlDisplayController. RIT/XIT redraw on BSET toggle lives in
-    // RitXitController.
-
     // Bottom Menu Bar, row 1 beside the left panel, under the content and right panel
     m_bottomMenuBar = new BottomMenuBar(middleWidget);
     m_popupManager->setBottomMenuBar(m_bottomMenuBar);
@@ -705,24 +647,15 @@ void MainWindow::setupUi() {
         }
     });
 
-    // SideControlPanel scroll signals are owned by SideControlScrollController
-    // (constructed in setupControllers). 14 handlers + the shared HI/LO filter
-    // edge math live there now.
-
     // Connect TX function button signals to CAT commands
     connect(m_sideControlPanel, &SideControlPanel::tuneClicked, this,
             [this]() { m_connectionController->sendCAT("SW16;"); });
     connect(m_sideControlPanel, &SideControlPanel::tuneLpClicked, this,
             [this]() { m_connectionController->sendCAT("SW131;"); });
     connect(m_sideControlPanel, &SideControlPanel::xmitClicked, this, [this]() {
-        // CatKeyedAndStreamed reproduces exactly what XMIT has always done - TX; AND the audio
-        // gate. Whether that is right is an open bench question: TX; may put the K4 into
-        // "transmit from my own input" while QK4 streams over the tunnel. Naming the combination
-        // keeps today's behaviour while making the question a one-word change later.
-        //
-        // The toggle now reads the arbiter rather than RadioState::isTransmitting(). Same answer
-        // whenever the radio has echoed, and a better one before it has: XMIT used to be able to
-        // unkey a transmission it had just started, because the echo had not arrived yet.
+        // WHY CatKeyedAndStreamed: XMIT sends TX; and opens the audio gate.
+        // WHY the arbiter, not RadioState::isTransmitting(): before the TX echo arrives the radio
+        // state would unkey a transmission XMIT just started.
         if (m_transmitController->isTransmitting())
             m_transmitController->release(m_transmitController->owner());
         else
@@ -775,12 +708,8 @@ void MainWindow::setupUi() {
     // Update BAL overlay and button when RadioState changes
     connect(m_radioState, &RadioState::balanceChanged, m_sideControlPanel, &SideControlPanel::updateBalance);
 
-    // RightSidePanel signal-to-CAT wiring lives on RightSideController.
-    // Extracted from MainWindow as part of the Phase 6 → Phase A pass; mirror
-    // of SideControlScrollController. Constructed here because all six of its
-    // dependencies (RadioState, ConnectionController, RightSidePanel,
-    // ModePopupController, FeatureMenuController, MacroController, and the
-    // BottomMenuBar anchor) exist at this point in setupUi().
+    // WHY here: RightSideController needs the ModePopup/FeatureMenu controllers and the
+    // BottomMenuBar, all created just above.
     m_rightSideController =
         new RightSideController(m_radioState, m_connectionController, m_rightSidePanel, m_modePopupController,
                                 m_featureMenuController, m_macroController, m_bottomMenuBar, this);
@@ -837,7 +766,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(8);
 
-    // ===== VFO A (Left - Amber) - Using VFOWidget =====
+    // ===== VFO A (left, cyan) =====
     m_vfoA = new VFOWidget(VFOWidget::VFO_A, parent);
 
     wireVfoWidget(m_vfoA, /*vfoB=*/false);
@@ -882,10 +811,6 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     m_vfoBSquare->installEventFilter(this);
     m_modeALabel->installEventFilter(this);
     m_modeBLabel->installEventFilter(this);
-
-    // SPLIT, MSG bank, B-SET, SUB, DIV and the TX triangles are VfoRowWidget
-    // children read through m_vfoRow where their controllers are built — no
-    // MainWindow member needed.
 
     // RIT/XIT Box with border - constrained size
     // Supports mouse wheel to adjust RIT/XIT offset
@@ -999,14 +924,13 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     centerLayout->addLayout(MemoryKeyRow::create(
         centerWidget, centerWidget->maximumWidth() - centerMargins.left() - centerMargins.right(), memoryKeys));
 
-    // Owns left+right click wiring for the M1-M4 / REC / STORE / RCL buttons.
     new MemoryButtonsController(m_connectionController, memoryKeys.m1, memoryKeys.m2, memoryKeys.m3, memoryKeys.m4,
                                 memoryKeys.rec, memoryKeys.store, memoryKeys.rcl, this);
 
     centerLayout->addStretch(); // Balance below
     layout->addWidget(centerWidget);
 
-    // ===== VFO B (Right - Cyan) - Using VFOWidget =====
+    // ===== VFO B (right, green) =====
     m_vfoB = new VFOWidget(VFOWidget::VFO_B, parent);
 
     // Set Mini-Pan B passband color to green (matching VFO B theme)
@@ -1279,9 +1203,8 @@ void MainWindow::onCatResponse(const QString &response) {
 }
 
 void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
-    // Keep an open Radio Manager honest about which radio is live. It stays open across a
-    // disconnect now, so its Connect/Disconnect button has to follow the connection rather than
-    // the click that started it.
+    // An open Radio Manager stays open across a disconnect, so its Connect/Disconnect button follows
+    // the connection, not the click.
     if (m_radioManager) {
         m_radioManager->setConnectedHost(state == TcpClient::Connected ? m_connectionController->currentRadio().host
                                                                        : QString());
@@ -1302,8 +1225,6 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
     }
 }
 
-// Disconnect-path helper. Each owning controller's reset() absorbs the
-// label writes that used to live here directly.
 void MainWindow::resetUiForDisconnect() {
     m_audioController->stopAudio();
     m_spectrumController->clearDisplays();
@@ -1349,10 +1270,6 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
         m_modePopupController->toggleForVfoB(m_bottomMenuBar);
         return true;
     }
-
-    // Panadapter resize events handled by SpectrumController's eventFilter.
-    // Memory button right-clicks (REC/STORE/RCL) handled by
-    // MemoryButtonsController's own eventFilter.
 
     // RIT / XIT label clicks + wheel routed to RitXitController.
     if (watched == m_ritLabel && event->type() == QEvent::MouseButtonPress)

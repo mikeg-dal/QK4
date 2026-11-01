@@ -44,7 +44,6 @@ void OptionsDialog::setupUi() {
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    // Left side: vertical tab list
     m_tabList = new QListWidget(this);
     m_tabList->setFixedWidth(K4Styles::Dimensions::TabListWidth);
     OptionsPageLayout::configureNavList(m_tabList);
@@ -70,7 +69,6 @@ void OptionsDialog::setupUi() {
     for (int i = 1; i < PageCount; ++i)
         m_pageStack->addWidget(new QWidget(this)); // placeholders
 
-    // Connect tab selection to page switching
     connect(m_tabList, &QListWidget::currentRowChanged, this, [this](int index) {
         ensurePageCreated(index);
         m_pageStack->setCurrentIndex(index);
@@ -94,7 +92,6 @@ void OptionsDialog::setupUi() {
 
 void OptionsDialog::showEvent(QShowEvent *event) {
     QDialog::showEvent(event);
-    // Ensure current page is created (for first show)
     int current = m_tabList->currentRow();
     ensurePageCreated(current);
     refreshPage(current);

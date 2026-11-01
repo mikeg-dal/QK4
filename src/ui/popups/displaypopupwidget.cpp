@@ -48,7 +48,6 @@ void DisplayPopupWidget::setupUi() {
     updateToggleStyles();
     updateMenuButtonLabels();
 
-    // Initialize popup size from base class
     initPopup();
 }
 
@@ -154,7 +153,7 @@ QWidget *DisplayPopupWidget::createRefLevelControlPage() {
     m_refLevelControlGroup = new ControlGroupWidget("REF", page);
     m_refLevelControlGroup->setShowAutoButton(true);
     m_refLevelControlGroup->setValue("-108");
-    // Ref level increment/decrement - MainWindow handles CAT commands with absolute values
+    // Ref level +/-: PopupManager steps it (RadioState::stepRefLevel) and sends #REF
     connect(m_refLevelControlGroup, &ControlGroupWidget::decrementClicked, this,
             &DisplayPopupWidget::refLevelDecrementRequested);
     connect(m_refLevelControlGroup, &ControlGroupWidget::incrementClicked, this,
@@ -265,7 +264,7 @@ QWidget *DisplayPopupWidget::createWaterfallControlPage() {
 
     m_waterfallControlGroup = new ControlGroupWidget("WTRFALL", page);
     updateWaterfallControlGroup();
-    // Just emit signals - MainWindow handles CAT commands and state updates
+    // PopupManager sends #WFH/#HWFH and updates RadioState
     connect(m_waterfallControlGroup, &ControlGroupWidget::decrementClicked, this,
             &DisplayPopupWidget::waterfallHeightDecrementRequested);
     connect(m_waterfallControlGroup, &ControlGroupWidget::incrementClicked, this,
@@ -441,7 +440,6 @@ void DisplayPopupWidget::onMenuItemClicked(MenuItem item) {
         updateRefLevelControlGroup(); // Sync ref level display with A/B
         updateSpanControlGroup();     // Sync span display with A/B
 
-        // Notify MainWindow to update panadapter display
         emit dualPanModeChanged(newMode);
         break;
     }

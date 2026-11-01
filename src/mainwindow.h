@@ -103,11 +103,8 @@ private:
     void setupCatServer();
 
     void updateConnectionState(TcpClient::ConnectionState state);
-    // Disconnect-path helper — owners of their own state each implement a
-    // reset method (VFOWidget::resetToDefaults, SideControlPanel::resetToDefaults,
-    // StatusBarController::clearReadings, SpectrumController::clearDisplays,
-    // KPA1500UiController::disconnectFromHost, RadioState::reset). This helper
-    // covers only the labels MainWindow still owns directly.
+    // Returns every owner of radio-derived state to its disconnected default and closes every
+    // popup except the MENU overlay.
     void resetUiForDisconnect();
 
     // Closes menu overlay, antenna-config popups, and mode popup — i.e.,
@@ -129,8 +126,7 @@ private:
     // Top status bar — owned by StatusBarController (see src/controllers/).
     StatusBarController *m_statusBarController = nullptr;
 
-    // VFO widgets (modular, reusable components). Each owns its own multifunction S/Po/ALC/COMP/
-    // SWR/Id meter (VFOWidget::m_txMeter) so there is no standalone TX meter member here.
+    // VFO widgets. Each owns its own S/Po/ALC/COMP/SWR/Id meter.
     VFOWidget *m_vfoA = nullptr;
     VFOWidget *m_vfoB = nullptr;
 
@@ -158,9 +154,6 @@ private:
     FilterIndicatorWidget *m_filterAWidget = nullptr; // VFO A filter indicator
     FilterIndicatorWidget *m_filterBWidget = nullptr; // VFO B filter indicator
 
-    // Controllers that need no MainWindow call after construction (ButtonRowDispatcher,
-    // ProcessingDisplay, SideControlDisplay/Scroll, MemoryButtons) are parented to the
-    // window and not kept as members.
     QLabel *m_voxLabel = nullptr;
     QLabel *m_qskLabel = nullptr;
     QLabel *m_txAntennaLabel = nullptr;
@@ -179,6 +172,9 @@ private:
     PopupManager *m_popupManager = nullptr;
     BandNavigationController *m_bandNavController = nullptr;
     MacroController *m_macroController = nullptr;
+    // Controllers that need no MainWindow call after construction (ButtonRowDispatcher,
+    // ProcessingDisplay, SideControlDisplay/Scroll, MemoryButtons) are parented to the
+    // window and not kept as members.
     VfoRowIndicatorController *m_vfoRowIndicatorController = nullptr;
     RitXitController *m_ritXitController = nullptr;
     ModeLabelController *m_modeLabelController = nullptr;

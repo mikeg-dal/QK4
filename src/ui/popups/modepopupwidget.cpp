@@ -64,7 +64,6 @@ void ModePopupWidget::setupUi() {
 
     updateButtonStyles();
 
-    // Initialize popup size from base class
     initPopup();
 }
 

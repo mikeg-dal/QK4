@@ -23,11 +23,8 @@ KpodPage::KpodPage(KpodDevice *kpodDevice, KpodPlusDevice *kpodPlusDevice, QWidg
     connect(m_kpodEnableCheckbox, &QCheckBox::toggled, this,
             [](bool checked) { RadioSettings::instance()->setKpodEnabled(checked); });
 
-    // Follow the setting, not just write it. setChecked ran once at construction and nothing ever
-    // re-synced it, so the page was only correct because it happened to be the single writer. A
-    // second writer - anything at all - would have left the box showing a stale value with no
-    // symptom until someone toggled it. setChecked does not re-emit toggled for an unchanged value,
-    // so this cannot loop.
+    // Follow the setting so another writer cannot leave the box stale; setChecked does not re-emit
+    // toggled for an unchanged value, so this cannot loop.
     connect(RadioSettings::instance(), &RadioSettings::kpodEnabledChanged, this, [this](bool enabled) {
         m_kpodEnableCheckbox->setChecked(enabled);
         updateKpodStatus();
@@ -53,7 +50,6 @@ KpodPage::KpodPage(KpodDevice *kpodDevice, KpodPlusDevice *kpodPlusDevice, QWidg
 
     layout->addStretch();
 
-    // Connect to device signals for real-time status updates
     if (m_kpodDevice) {
         connect(m_kpodDevice, &KpodDevice::deviceConnected, this, &KpodPage::updateKpodStatus);
         connect(m_kpodDevice, &KpodDevice::deviceDisconnected, this, &KpodPage::updateKpodStatus);
@@ -63,17 +59,14 @@ KpodPage::KpodPage(KpodDevice *kpodDevice, KpodPlusDevice *kpodPlusDevice, QWidg
         connect(m_kpodPlusDevice, &KpodPlusDevice::deviceDisconnected, this, &KpodPage::updateKpodStatus);
     }
 
-    // Initialize with current status
     updateKpodStatus();
 }
 
 void KpodPage::setupKeyerConfigSection(QFormLayout *form) {
     m_keyerTitle = OptionsPageLayout::addSection(form, this, "KPOD+ Configuration");
 
-    // Encode Mode: Element (KZ) / ASCII (KX). This is the only KPOD+ keyer
-    // setting still configured here — keyer speed, CW pitch, iambic mode and
-    // paddle orientation now mirror the connected K4 (see CwController) and
-    // have no manual control. Encode mode has no K4 equivalent.
+    // Encode Mode: Element (KZ) / ASCII (KX). It has no K4 equivalent; the other keyer settings
+    // mirror the K4.
     m_encodeModeCombo = new QComboBox(this);
     m_encodeModeCombo->setStyleSheet(K4Styles::Dialog::comboBox());
     m_encodeModeCombo->addItem("Element (KZ)", 0);
@@ -104,7 +97,6 @@ void KpodPage::updateKpodStatus() {
     bool kpodPlusDetected = m_kpodPlusDevice && m_kpodPlusDevice->isDetected();
     bool anyDetected = kpodDetected || kpodPlusDetected;
 
-    // Styling
     const QString valueStyle =
         K4Styles::Dialog::labelText(K4Styles::Colors::TextPrimary, K4Styles::Dimensions::FontSizeHeading);
     const QString notDetectedStyle =
@@ -166,26 +158,16 @@ void KpodPage::updateKpodStatus() {
     }
 
     // The checkbox is a PREFERENCE and stays settable whether or not a device is plugged in.
-    //
-    // It used to be greyed out on !anyDetected, which meant the only way to arrive with K-Pod
-    // switched off was to plug a device in, uncheck it, and unplug again. The setting persists
-    // across restarts but could only be CHANGED while the hardware was present - and if you wanted
-    // it off because the device misbehaves, you had to attach the misbehaving device to say so.
-    // The status row above already says whether anything is connected, so disabling the control
-    // added nothing and removed capability.
+    // Switching off a misbehaving device must not require plugging it in.
     m_kpodEnableCheckbox->setStyleSheet(K4Styles::Dialog::checkBox());
 
-    // Show/hide keyer configuration section based on KPOD+ detection
     if (m_form) {
         m_form->setRowVisible(m_keyerTitle, kpodPlusDetected);
         m_form->setRowVisible(m_encodeModeCombo, kpodPlusDetected);
     }
 
-    // Help text. DETECTED, ENABLED and RUNNING are three different things, and this used to conflate
-    // them: "KPOD+ keyer is active" was shown whenever a KPOD+ was merely plugged in, including
-    // with the box unchecked and the device never opened. That is the same conflation as USB-003,
-    // in the UI rather than the CW gate, and it is what told an operator the keyer had taken over
-    // when it had not.
+    // Help text: detected, enabled and running are distinct; never report the KPOD+ keyer active
+    // unless it is enabled.
     const bool enabled = RadioSettings::instance()->kpodEnabled();
     if (!anyDetected) {
         m_kpodHelpLabel->setText(enabled ? "No K-Pod connected. It will be used as soon as one is plugged in."

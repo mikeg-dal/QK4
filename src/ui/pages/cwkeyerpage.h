@@ -14,9 +14,9 @@ class RadioState;
 class CwController;
 
 /**
- * @brief OptionsDialog "CW Keyer" tab. Chooses the HaliKey device type (V1.4 / MIDI / etc.) and
- *        serial port, tests connection, and tunes the sidetone volume. Forwards configuration to
- *        HalikeyDevice via HardwareController.
+ * @brief OptionsDialog "HaliKey" tab: device type (V1.4 serial / MIDI), port and connect, keyer
+ *        settings, sidetone volume, and the K4's key-down delay (KZL, via CwController). Settings
+ *        persist in RadioSettings.
  */
 class CwKeyerPage : public QWidget {
     Q_OBJECT

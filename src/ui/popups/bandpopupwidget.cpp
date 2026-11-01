@@ -30,9 +30,7 @@ const QMap<int, QString> BandNumToName = {
     // by sending BN11..BN22 and observing FA jumps to configured XVTR dial frequencies.
 };
 
-// Button label -> band number. Includes both the legacy "XVTR" → 11 fallback
-// (in case anything still calls it generically) and the per-band "XVTR1".."XVTR12"
-// → 11..22 mapping used by the new sub-grid picker.
+// Button label -> band number: "XVTR1".."XVTR12" -> 11..22, and bare "XVTR" -> 11.
 const QMap<QString, int> buildBandNameToNum() {
     QMap<QString, int> m{
         {"1.8", 0}, {"3.5", 1}, {"5", 2},  {"7", 3},  {"10", 4},  {"14", 5},
@@ -74,7 +72,6 @@ void BandPopupWidget::setupUi() {
     // Update styles to show selected band
     updateButtonStyles();
 
-    // Initialize popup size from base class
     initPopup();
 }
 
@@ -274,8 +271,7 @@ int BandPopupWidget::getBandNumber(const QString &bandName) const {
 
 QString BandPopupWidget::getBandName(int bandNum) const {
     // Transverter bands 11-22 (XVTR Band 1-12) map to "XVTR<n>" so the
-    // sub-grid can highlight the active cell. Callers that just want the
-    // generic "XVTR" label can compare against the prefix.
+    // sub-grid can highlight the active cell.
     if (RadioUtils::isXvtrBandNumber(bandNum)) {
         return QString("XVTR%1").arg(bandNum - 10);
     }

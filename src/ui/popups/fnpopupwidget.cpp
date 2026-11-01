@@ -151,7 +151,6 @@ void FnPopupWidget::setupButtons() {
     // Update labels from saved macros
     updateButtonLabels();
 
-    // Initialize popup size from base class
     initPopup();
 }
 

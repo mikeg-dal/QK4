@@ -11,7 +11,8 @@
 /**
  * @brief DISPLAY bottom-bar popup. Hosts the full panadapter/waterfall control set: REF LEVEL,
  *        SPAN, TUNE-mode, CURSOR A/B, averaging, DDC NB, peak, freeze, waterfall color. Driven
- *        by RadioState setters; emits granular `*Changed` signals for MainWindow to send CAT.
+ *        by RadioState (wired in PopupManager); emits `*Requested` / catCommandRequested signals that
+ *        PopupManager turns into CAT.
  *        Inherits K4PopupBase for shadow/close/positioning.
  */
 class DisplayPopupWidget : public K4PopupBase {
@@ -85,10 +86,10 @@ signals:
     void waterfallColorRangeIncrementRequested(); // WTR CLRS +
     void waterfallColorRangeDecrementRequested(); // WTR CLRS -
 
-    // CAT command signal (for MainWindow to forward to TcpClient)
+    // Raw CAT; PopupManager sends it through ConnectionController
     void catCommandRequested(const QString &cmd);
 
-    // Pan mode changed (for MainWindow to update panadapter display)
+    // Pan mode changed (PopupManager sets the panadapter mode)
     // K4 doesn't echo #DPM commands, so we notify directly
     void dualPanModeChanged(int mode);
 

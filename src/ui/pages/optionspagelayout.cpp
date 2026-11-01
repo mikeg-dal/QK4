@@ -21,7 +21,7 @@ namespace D = K4Styles::Dimensions;
 // selected or hovered. On macOS a selection or hover change repaints only the old and new item
 // rectangles (measured: two 40 px strips of a 598 px list), so anything the style draws past an
 // item's edge - a focus ring, an antialiased edge at a fractional interface scale - stays on screen.
-// Repainting the viewport covers every pixel an item can reach. Eleven rows; the cost is nothing.
+// Repainting the viewport covers every pixel an item can reach. A dozen rows; the cost is nothing.
 class NavRepaintFilter : public QObject {
 public:
     explicit NavRepaintFilter(QListWidget *list) : QObject(list), m_list(list) {}
@@ -179,9 +179,8 @@ void fitDeviceCombo(QComboBox *combo) {
 }
 
 QScrollArea *wrapInScrollArea(QWidget *page, QWidget *parent) {
-    // WHY every page scrolls: a page taller than the dialog was squeezed to fit, its rows crushed
-    // flat and its labels clipped (the HaliKey page once the keyer settings were added). A page
-    // that fits shows no scrollbar.
+    // WHY every page scrolls: a page taller than the dialog would otherwise be squeezed, its rows
+    // crushed and labels clipped. A page that fits shows no scrollbar.
     auto *scroll = new QScrollArea(parent);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);

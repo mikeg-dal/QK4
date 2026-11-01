@@ -26,7 +26,6 @@ CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, C
     auto *layout = OptionsPageLayout::createPage(this);
     OptionsPageLayout::addTitle(layout, this, "HaliKey");
 
-    // Description (dynamic based on device type)
     m_cwKeyerDescLabel = OptionsPageLayout::addDescription(layout, this, QString());
 
     m_portScan = new HaliKeyPortScan(this);
@@ -203,7 +202,6 @@ CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, C
 
     layout->addStretch();
 
-    // Connect to HalikeyDevice signals for status updates
     if (m_halikeyDevice) {
         connect(m_halikeyDevice, &HalikeyDevice::connected, this, &CwKeyerPage::updateCwKeyerStatus);
         connect(m_halikeyDevice, &HalikeyDevice::disconnected, this, &CwKeyerPage::updateCwKeyerStatus);
@@ -338,10 +336,8 @@ void CwKeyerPage::onCwKeyerConnectClicked() {
         return;
 
     if (m_halikeyDevice->isConnected()) {
-        // Disconnect
         m_halikeyDevice->closePort();
     } else {
-        // Connect -- use port name from item data (without annotation suffix)
         QString portName = m_cwKeyerPortCombo->currentData().toString();
         if (!portName.isEmpty()) {
             RadioSettings::instance()->setHalikeyPortName(portName);

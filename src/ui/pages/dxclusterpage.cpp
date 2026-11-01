@@ -228,8 +228,8 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
         QString("QPlainTextEdit { background-color: %1; color: %2; border: 1px solid %3; }")
             .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextPrimary, K4Styles::Colors::DialogBorder));
     // WHY the family list: the system fixed font is Courier New on Windows, far less legible at this
-    // size than Consolas; the list keeps the faces the console used before, with the platform's
-    // own monospace as the fallback.
+    // size than Consolas; Menlo (macOS) and Consolas (Windows) come first, the platform's own
+    // monospace is the fallback.
     QFont consoleFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     consoleFont.setFamilies({QStringLiteral("Menlo"), QStringLiteral("Consolas"), consoleFont.family()});
     consoleFont.setPixelSize(D::FontSizeReadout);

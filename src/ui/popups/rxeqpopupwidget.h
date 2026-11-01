@@ -62,7 +62,7 @@ private:
 /**
  * @brief RX Graphic Equalizer popup with 8 frequency bands.
  *
- * Used for Main RX EQ, Sub RX EQ, and TX EQ (with different titles/colors).
+ * Used for RX EQ and TX EQ (two instances, different titles/colours).
  * Each band adjusts -16 to +16 dB in 1 dB steps.
  *
  * Frequency bands: 100, 200, 400, 800, 1200, 1600, 2400, 3200 Hz

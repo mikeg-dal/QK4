@@ -85,7 +85,7 @@ public:
      *
      * Toggle handlers (e.g. PopupManager::toggleFn) must use this instead of
      * isVisible(): a click on the trigger button dismisses the popup via
-     * click-away (window deactivation on mouse-down) before the button's
+     * click-away (PopupDismissal's app-wide mouse-press filter) before the button's
      * clicked() fires on mouse-up. Plain isVisible() would then read false
      * and the toggle would immediately reopen the popup.
      */

@@ -164,11 +164,11 @@ QSize AntennaCfgPopupWidget::contentSize() const {
     int width, height;
 
     if (m_variant == AntennaCfgVariant::Tx) {
-        // TX: 3 antennas — 50% larger than the pre-bracket sizing
+        // TX: 3 antennas
         width = 390 + 2 * cm;
         height = 135 + 2 * cm;
     } else {
-        // RX: 7 antennas — 50% larger to give the helper text and bracket room
+        // RX: 7 antennas, plus room for the note and its bracket line
         width = 630 + 2 * cm;
         height = 158 + 2 * cm;
     }

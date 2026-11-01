@@ -9,7 +9,7 @@ Popup widgets and their base class. Every popup here inherits from `K4PopupBase`
 
 The popups, grouped by trigger. `rg -l ': public K4PopupBase' src/ui/popups` lists them.
 
-- **Band / mode / display / Fn / button row** (5): `bandpopupwidget`, `modepopupwidget`, `displaypopupwidget`, `fnpopupwidget`, `buttonrowpopup` — main app popups. Most open from `BottomMenuBar`; the mode popup opens from the right panel's MODE key.
+- **Band / mode / display / Fn / button row** (5): `bandpopupwidget`, `modepopupwidget`, `displaypopupwidget`, `fnpopupwidget`, `buttonrowpopup` — main app popups. Most open from `BottomMenuBar`; the mode popup opens from the right panel's MODE key and the VFO A/B mode labels.
 - **Audio effects** (1): `rxeqpopupwidget` — RX EQ and TX EQ (two instances of one class).
 - **Antenna config** (1): `antennacfgpopup` — per-VFO antenna masking.
 - **Audio I/O** (4): `lineinpopup`, `lineoutpopup`, `micinputpopup`, `micconfigpopup`.

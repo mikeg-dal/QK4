@@ -37,11 +37,7 @@ QMargins K4PopupBase::contentMargins() const {
     int sm = K4Styles::Dimensions::ShadowMargin;
     int cm = K4Styles::Dimensions::PopupContentMargin;
 
-    return QMargins(sm + cm, // left
-                    sm + cm, // top
-                    sm + cm, // right
-                    sm + cm  // bottom
-    );
+    return QMargins(sm + cm, sm + cm, sm + cm, sm + cm);
 }
 
 void K4PopupBase::initPopup() {
@@ -177,18 +173,14 @@ void K4PopupBase::paintEvent(QPaintEvent *event) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    // Get content rect for drawing
     QRect cr = contentRect();
 
-    // Draw drop shadow
     K4Styles::drawDropShadow(painter, cr, K4Styles::Dimensions::BorderRadiusLarge);
 
-    // Main popup background
     painter.setBrush(QColor(K4Styles::Colors::PopupBackground));
     painter.setPen(Qt::NoPen);
     painter.drawRoundedRect(cr, K4Styles::Dimensions::BorderRadiusLarge, K4Styles::Dimensions::BorderRadiusLarge);
 
-    // Allow subclass to draw additional content
     paintContent(painter, cr);
 }
 
@@ -213,8 +205,6 @@ void K4PopupBase::paintCompactRowFrame(QPainter &painter, const QRect &contentRe
 }
 
 void K4PopupBase::paintContent(QPainter &painter, const QRect &contentRect) {
-    // Default implementation does nothing
-    // Subclasses can override for custom painting
     Q_UNUSED(painter)
     Q_UNUSED(contentRect)
 }
