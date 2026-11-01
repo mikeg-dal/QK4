@@ -393,8 +393,9 @@ void PanadapterRhiWidget::updateDbmScaleOverlay() {
     const int h = height();
     const int spectrumHeight = static_cast<int>(h * m_spectrumRatio);
 
-    // Overlay covers left side of spectrum area
+    // Overlay covers left side of spectrum area; with no spectrum area (#WFH100) there is no axis.
     m_dbmScaleOverlay->setGeometry(0, 0, amplitudeAxisWidthPx(), spectrumHeight);
+    m_dbmScaleOverlay->setVisible(spectrumHeight > 0);
     m_dbmScaleOverlay->setDbRange(m_minDb, m_maxDb);
     m_dbmScaleOverlay->raise(); // Ensure it's on top
 }
@@ -410,7 +411,8 @@ int PanadapterRhiWidget::amplitudeAxisWidthPx() const {
 void PanadapterRhiWidget::updateBandPlanOverlay() {
     if (!m_bandPlanOverlay)
         return;
-    const bool active = m_bandPlanVisible && !m_bandPlanSegments.isEmpty();
+    // The strip is the top of the spectrum area; at #WFH100 there is none.
+    const bool active = m_bandPlanVisible && !m_bandPlanSegments.isEmpty() && m_spectrumRatio > 0.0f;
     if (m_dbmScaleOverlay)
         m_dbmScaleOverlay->setTopReserved(active ? BandPlanOverlay::kStripH : 0);
     if (!active) {
@@ -452,7 +454,8 @@ void PanadapterRhiWidget::updateFreqScaleOverlay() {
     // its halo, measured rather than fixed so it follows the font size.
     const QFontMetricsF fm(scaleLabelFont(), this);
     const int overlayHeight = qCeil(fm.height() + 2.0 * kHaloPx);
-    const int overlayY = spectrumHeight - overlayHeight / 2;
+    // Kept inside the widget when the boundary is an edge (#WFH0 or #WFH100).
+    const int overlayY = std::clamp(spectrumHeight - overlayHeight / 2, 0, (std::max)(0, h - overlayHeight));
 
     m_freqScaleOverlay->setGeometry(0, overlayY, w, overlayHeight);
     m_freqScaleOverlay->setFrequencyRange(m_centerFreq, displayCenterHz(), m_spanHz, calculateGridInterval(m_spanHz));
@@ -1175,8 +1178,14 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // Begin render pass (clear color = the spectrum background; see K4Styles::Colors)
     cb->beginPass(renderTarget(), QColor(K4Styles::Colors::SpectrumBackground), {1.0f, 0}, nullptr);
 
+    // At #WFH0 or #WFH100 one area has no height. Its draws are skipped (a zero-height viewport is
+    // invalid on Vulkan); waterfall rows are still recorded above, so the history is there when the
+    // area returns.
+    const bool waterfallShown = waterfallHeight >= 1.0f;
+    const bool spectrumShown = spectrumHeight >= 1.0f;
+
     // Draw waterfall (bottom portion)
-    if (m_gpu.waterfallPipeline) {
+    if (waterfallShown && m_gpu.waterfallPipeline) {
         cb->setViewport({0, 0, w, waterfallHeight});
         cb->setGraphicsPipeline(m_gpu.waterfallPipeline.get());
         cb->setShaderResources(m_gpu.waterfallSrb.get());
@@ -1186,7 +1195,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     }
 
     // Draw grid BEHIND spectrum (in spectrum area)
-    if (gridVertexCount > 0) {
+    if (spectrumShown && gridVertexCount > 0) {
         cb->setViewport({0, waterfallHeight, w, spectrumHeight});
         cb->setGraphicsPipeline(m_gpu.overlayLinePipeline.get());
         cb->setShaderResources(m_gpu.overlaySrb.get());
@@ -1196,7 +1205,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     }
 
     // Draw spectrum fill ON TOP of grid (shader-based fullscreen quad)
-    if (!m_currentSpectrum.isEmpty() && m_gpu.spectrumFillPipeline) {
+    if (spectrumShown && !m_currentSpectrum.isEmpty() && m_gpu.spectrumFillPipeline) {
         cb->setViewport({0, waterfallHeight, w, spectrumHeight});
         cb->setGraphicsPipeline(m_gpu.spectrumFillPipeline.get());
         cb->setShaderResources(m_gpu.spectrumFillSrb.get());
@@ -1208,7 +1217,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
 
     // Draw overlays (full viewport for markers and passbands)
     cb->setViewport({0, 0, w, h});
-    for (int i = 0; i < overlayDrawCount; ++i) {
+    for (int i = 0; spectrumShown && i < overlayDrawCount; ++i) {
         const OverlayDraw &draw = overlayDraws[i];
         cb->setGraphicsPipeline(m_gpu.overlayTrianglePipeline.get());
         cb->setShaderResources(draw.srb);
@@ -1576,10 +1585,13 @@ int PanadapterRhiWidget::calculateGridInterval(int spanHz) const {
 
 // Configuration setters
 void PanadapterRhiWidget::setWaterfallHeight(int percent) {
-    // Waterfall height percentage: 50% means 50% waterfall, 50% spectrum
-    // Spectrum ratio = (100 - waterfallHeight) / 100
-    float ratio = (100.0f - qBound(10, percent, 90)) / 100.0f;
-    m_spectrumRatio = qBound(0.1f, ratio, 0.9f);
+    // The waterfall's share of the panadapter, as the K4 draws it: the whole 0-100 % range
+    // ("#WFHnnn; where nnn is 000 to 100 percent", Programmer's Reference D12), so 0 is spectrum only
+    // and 100 waterfall only. QK4 once stopped at 10-90.
+    const int clamped =
+        std::clamp(percent, SpectrumDisplayLimits::WaterfallHeightMin, SpectrumDisplayLimits::WaterfallHeightMax);
+    m_spectrumRatio = static_cast<float>(SpectrumDisplayLimits::WaterfallHeightMax - clamped) /
+                      static_cast<float>(SpectrumDisplayLimits::WaterfallHeightMax);
     updateDbmScaleOverlay();  // Resize dBm scale to match new spectrum area
     updateFreqScaleOverlay(); // Reposition frequency labels at boundary
     update();

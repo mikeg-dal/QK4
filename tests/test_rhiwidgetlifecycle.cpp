@@ -18,6 +18,7 @@
 #include <QTest>
 
 #include <memory>
+#include <utility>
 
 namespace {
 
@@ -94,6 +95,18 @@ private:
 private slots:
     void panadapterSurvivesQRhiChange() { survivesQRhiChange<PanadapterRhiWidget>(); }
     void miniPanSurvivesQRhiChange() { survivesQRhiChange<MiniPanRhiWidget>(); }
+
+    // #WFH is 0-100 (Programmer's Reference D12) and the K4 draws the whole range: 0 is spectrum only,
+    // 100 waterfall only. QK4 drew 10-90 whatever the radio said.
+    void panadapterWaterfallHeightCoversTheK4Range() {
+        PanadapterRhiWidget pad;
+        const QList<std::pair<int, float>> cases = {{0, 1.0f},  {100, 0.0f}, {5, 0.95f}, {95, 0.05f},
+                                                    {50, 0.5f}, {-5, 1.0f},  {150, 0.0f}};
+        for (const auto &[percent, spectrumRatio] : cases) {
+            pad.setWaterfallHeight(percent);
+            QVERIFY2(qAbs(pad.spectrumRatio() - spectrumRatio) < 1e-6f, qPrintable(QString::number(percent)));
+        }
+    }
 };
 
 QTEST_MAIN(RhiWidgetLifecycleTests)
