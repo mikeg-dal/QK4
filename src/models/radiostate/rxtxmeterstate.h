@@ -28,7 +28,7 @@ struct RxTxMeterState {
     double sMeter = 0.0;
     double sMeterB = 0.0;
 
-    // SMH / SMH$ — the radio's own signal level in dBm (Programmer's Reference D5: "SMH$+nnn; where
+    // SMH / SMH$ — the radio's own signal level in dBm (Programmer's Reference D12: "SMH$+nnn; where
     // +nnn is the signal level in dBm"). SMeterDbmUnknown until reported. SM stays the bar graph;
     // anything that needs a level in dBm uses this.
     int sMeterDbm = RxTxMeterLimits::SMeterDbmUnknown;

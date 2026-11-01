@@ -65,8 +65,8 @@ AntennaDisplayController::AntennaDisplayController(RadioState *radioState, BandN
 }
 
 void AntennaDisplayController::onAntennaChanged(int txAnt, int rxAntMain, int rxAntSub) {
-    // K4 AN/AR commands "do not pertain to transverter antennas" (K4 reference
-    // rev D5): on XVTR bands the TX antenna is XV OUT and any RX path is XV IN.
+    // K4 AN and AR: "This command does not pertain to transverter antennas" (K4
+    // reference rev D12): on XVTR bands the TX antenna is XV OUT and any RX path is XV IN.
     // We relabel here rather than via state because the K4 doesn't emit a
     // distinct antenna value — it just stops applying AN/AR.
     const bool xvtrMain = m_bandNav && isXvtrBand(m_bandNav->currentBand(/*forVfoB=*/false));

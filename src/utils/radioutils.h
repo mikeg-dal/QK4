@@ -43,7 +43,7 @@ inline int ditMsForWpm(int wpm) {
     return 1200 / qBound(KEYER_WPM_MIN, wpm, KEYER_WPM_MAX);
 }
 
-// K4 limits from the Programmer's Reference rev. D5, in the unit RadioState stores. Every control
+// K4 limits from the Programmer's Reference rev. D12, in the unit RadioState stores. Every control
 // that steps one of these values and every builder that sends it uses these, never a copy.
 // CW: "CWnn; where nn is sidetone pitch x10 Hz (25-95)".
 constexpr int CW_PITCH_MIN_HZ = 250;
@@ -76,7 +76,7 @@ std::optional<int> nextCwPitch(int currentHz, int steps);
 /// Squelch after `steps`, within 0..SQUELCH_MAX. nullopt as stepWithin().
 std::optional<int> nextSquelch(int current, int steps);
 
-// PC power limits (Programmer's Reference rev. D5): "L = low power (QRP, 0.1-10.0 W) ... H = high
+// PC power limits (Programmer's Reference rev. D12): "L = low power (QRP, 0.1-10.0 W) ... H = high
 // power (QRO, 1-110 W) ... X = milliwatt range (for XVTRs, 0.1-10.0 mW)". QRP and XVTR are in tenths
 // of their unit, as the PC command carries them; QRO is in whole watts.
 constexpr int RF_POWER_TENTHS_MIN = 1;
@@ -148,7 +148,7 @@ struct FilterEdgeLimits {
 };
 
 /// Which of the K4's three per-mode settings groups a mode belongs to; SD and VX name them C / V / D,
-/// ML 0 / 2 / 1. Programmer's Reference rev. D5, SD: "C = CW & direct data, V = voice, D = AF data";
+/// ML 0 / 2 / 1. Programmer's Reference rev. D12, SD: "C=CW & direct data, V=voice, D=AF data";
 /// VX: "C = CW/direct data"; ML: "In CW/direct-data modes this is the sidetone/alert tone level".
 /// Direct data is DATA in the FSK D (DT2) or PSK D (DT3) sub-mode, keyed like CW, so it shares CW's
 /// delay, VOX and monitor level rather than AF data's.
@@ -261,16 +261,17 @@ qint64 snapFreqToStep(qint64 freq, int stepHz);
 qint64 vfoWheelTuneTarget(quint64 currentHz, int steps, int stepHz, bool locked);
 
 /// The VFOs one CAT command would move, as a mask of VfoA and VfoB. Recognises the K4's frequency
-/// SETs (Programmer's Reference rev. D5): FAn / FBn, UP / DN (VFO A) and UPB / DNB (VFO B),
-/// VOsnnnnn (A) and VO$snnnnn (B), and ABn (0 A>B, 1 B>A, 2 swap, 3 all A>B, 4 all B>A, 5 all
-/// swap). A GET (FA;) moves nothing. The trailing ';' is optional. SWnn front-panel key
-/// emulations are not counted: those are the radio's own keys and the radio applies its own rules.
+/// SETs (Programmer's Reference rev. D12): FAn / FBn, UP / DN (VFO A) and UPB / DNB (VFO B),
+/// VOsnnnnn (A) and VO$snnnnn (B; the reference lists both under "VO$ (VFO Offset)"), and ABn
+/// ("0 (FA>FB), 1 (FB>FA), 2 (FA/FB swap), 3 (all A>B), 4 (all B>A), 5 (all A/B)"). A GET (FA;) moves nothing. The
+/// trailing ';' is optional. SWnn front-panel key emulations are not counted: those are the radio's own keys and the
+/// radio applies its own rules.
 enum VfoMask { VfoNone = 0, VfoA = 1, VfoB = 2 };
 
 /// Whether QK4 may send a TD / TD$ SET for a receiver in K4 mode `mdCode` (the MD digit: 3 CW,
 /// 7 CW-R, 6 DATA, 9 DATA-R). TD's argument means something different per mode (Programmer's
-/// Reference D5): text decode in CW and DATA, but in SSB "encode mode (2-tone): 0 = 2-TONE off,
-/// 1 = on", and nothing defined in AM/FM. So TD is a decode command only in CW and DATA; in any other
+/// Reference D12): text decode in CW and DATA, but in SSB "encode mode (2-tone): 0=2-TONE off,
+/// 1=on", and nothing defined in AM/FM. So TD is a decode command only in CW and DATA; in any other
 /// mode a TD1 would arm the two-tone generator and the next PTT would transmit two tones.
 bool textDecodeSetAllowed(int mdCode);
 

@@ -11,7 +11,7 @@ class RadioState;
 //
 // Plain struct — follows Pattern C (see PATTERNS.md → Subsystem State).
 struct LevelsState {
-    // PC command range (K4 reference rev D5):
+    // PC command range (K4 reference rev D12):
     //   L = QRP (0.1–10.0 W) — rfPower stored as W
     //   H = QRO (1–110 W) — rfPower stored as W
     //   X = XVTR (0.1–10.0 mW) — rfPower stored as mW

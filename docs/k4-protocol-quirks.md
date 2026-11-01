@@ -334,7 +334,7 @@ A second tracker in QK4 would move the scale independently of the radio's own sc
   changes — about five a second on a quiet band.
 - `SMH` / `SMH$` (signal level in dBm, `SMH-110`, `SMH$-122`) arrived only in reply to `SMH;` /
   `SMH$;`.
-- Programmer's Reference D5: "SMH$ (High-Resolution S-meter; GET only) RESP format: SMH$+nnn; where
+- Programmer's Reference D12: "SMH$ (High-Resolution S-meter; GET only) RESP format: SMH$+nnn; where
   +nnn is the signal level in dBm. SET format: SMHn; where n is 1 (Automatically delivered when
   s-meter value changes.) … NOTE: SET format is not meta-mode dependent. Requires AI4 for
   delivery." No way to turn delivery off again is documented.
