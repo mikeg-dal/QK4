@@ -71,9 +71,9 @@ Three things that look like one and are not:
 |---|---|
 | **detected** | enumerated on the bus |
 | **enabled** | the operator's setting |
-| **live** (`State::live()`) | we hold a handle and are polling it |
+| **open** (`State::open`) | we hold a handle and are polling it |
 
-Only *live* means the device is doing anything. The CW gate follows it (USB-003), and so does the
+Only *open* means the device is doing anything. The CW gate follows it (USB-003), and so does the
 Options page — both used to follow *detected*, which reported a KPOD+ as owning CW keying while it sat
 closed and switched off.
 

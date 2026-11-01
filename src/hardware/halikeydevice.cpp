@@ -6,6 +6,7 @@
 #include "halikeyworkerbase.h"
 #include "utils/threadshutdown.h"
 #include <QDebug>
+#include <QSerialPortInfo>
 #include <RtMidi.h>
 #include <chrono>
 

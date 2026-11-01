@@ -933,7 +933,6 @@ void PaddleKeyer::endElement(char element) {
     send(fourDigits("KZU", pyRound(elementSeconds * 1000)));
     if ((m_lastKzdMs && *m_lastKzdMs == 0) || m_inherentSidetoneLag < .001)
         measureInherentSidetoneLag();
-    m_endSidetoneTimestamp = sidetoneStart + sidetoneSeconds + m_sidetone.delay();
     m_endElementTimestamp = m_elementKeyedStart + elementSeconds;
     *m_elementTimestamp += elementSeconds + interElementSeconds();
 }

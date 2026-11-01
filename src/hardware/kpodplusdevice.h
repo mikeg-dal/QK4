@@ -1,7 +1,6 @@
 #ifndef KPODPLUSDEVICE_H
 #define KPODPLUSDEVICE_H
 
-#include <QByteArray>
 #include <QObject>
 #include <QString>
 

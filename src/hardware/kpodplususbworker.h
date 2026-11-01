@@ -4,7 +4,6 @@
 #include "hardware/keyertiming.h"
 #include "kpodplusdevice.h" // KpodPlusDeviceInfo struct
 #include "utils/rtsan.h"
-#include <QByteArray>
 #include <QObject>
 #include <QString>
 #include <atomic>

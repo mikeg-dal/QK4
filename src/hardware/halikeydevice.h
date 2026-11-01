@@ -3,10 +3,11 @@
 
 #include <QList>
 #include <QObject>
-#include <QSerialPortInfo>
 #include <QString>
+#include <QStringList>
 #include <QThread>
 #include <atomic>
+#include <functional>
 #include <memory>
 
 class HaliKeyWorkerBase;

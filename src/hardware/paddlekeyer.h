@@ -236,7 +236,6 @@ private:
     std::optional<double> m_firstElementClosedAt;
     std::optional<double> m_elementTimestamp;
     std::optional<double> m_endElementTimestamp;
-    std::optional<double> m_endSidetoneTimestamp;
     double m_sidetoneDelayUsed = 0.0;
     double m_sidetonePendingStep = 0.0;
     double m_sidetoneDelaySeen = 0.0;
