@@ -3,8 +3,6 @@
 
 #include <QWidget>
 #include <QLabel>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QStackedWidget>
 #include <QColor>
 #include "models/radiostate/spectrumdisplaystate.h"

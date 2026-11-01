@@ -3,11 +3,6 @@
 
 #include <QMainWindow>
 #include <QLabel>
-#include <QPushButton>
-#include <QMenuBar>
-#include <QMenu>
-#include <QTimer>
-#include <QThread>
 #include "controllers/connectioncontroller.h"
 #include "settings/radiosettings.h"
 #include "models/radiostate.h"

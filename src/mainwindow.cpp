@@ -49,24 +49,22 @@
 #include "controllers/statusbarcontroller.h"
 #include "settings/radiosettings.h"
 #include <QVBoxLayout>
-#include <QInputDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QAction>
 #include <QCoreApplication>
 #include <QLoggingCategory>
 #include <QMessageBox>
-#include <QDateTime>
 #include <QFrame>
 #include <QEvent>
-#include <QResizeEvent>
-#include <QRegularExpression>
 #include <QMouseEvent>
 #include <QMoveEvent>
 #include <QCloseEvent>
 #include <QScreen>
 #include <QShortcut>
 #include <QStyle>
+#include <QMenu>
+#include <QMenuBar>
 
 // ============== MainWindow Implementation ==============
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new RadioState(this)) {

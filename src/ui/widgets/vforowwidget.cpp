@@ -2,6 +2,8 @@
 #include "ui/styling/k4constants.h"
 #include <QHBoxLayout>
 #include <QResizeEvent>
+#include <QPainter>
+#include <QVBoxLayout>
 
 // ============== VfoSquareWidget Implementation ==============
 

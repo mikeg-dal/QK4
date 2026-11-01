@@ -2,8 +2,6 @@
 #define VFOROWWIDGET_H
 
 #include <QLabel>
-#include <QPainter>
-#include <QVBoxLayout>
 #include <QWidget>
 
 /**

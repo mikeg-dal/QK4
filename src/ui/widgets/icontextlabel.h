@@ -3,7 +3,6 @@
 
 #include "ui/styling/k4glyphs.h"
 
-#include <QPixmap>
 #include <QWidget>
 
 class QMouseEvent;

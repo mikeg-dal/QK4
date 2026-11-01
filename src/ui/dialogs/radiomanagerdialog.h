@@ -8,7 +8,6 @@
 #include <QListWidget>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QSpinBox>
 
 #include <optional>
 

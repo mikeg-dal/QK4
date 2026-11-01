@@ -2,7 +2,6 @@
 #define RIGHTSIDEPANEL_H
 
 #include <QWidget>
-#include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
 

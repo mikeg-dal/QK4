@@ -3,7 +3,6 @@
 
 #include <QObject>
 #include <QPointer>
-#include <QString>
 #include <QVector>
 
 #include "network/tciclientinfo.h"

@@ -5,7 +5,6 @@
 #include "ui/styling/k4constants.h"
 #include "utils/wheelaccumulator.h"
 #include <QLabel>
-#include <QMenu>
 #include <QPushButton>
 #include <QSlider>
 #include <QWidget>

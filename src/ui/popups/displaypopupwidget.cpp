@@ -1,17 +1,9 @@
 #include "ui/popups/displaypopupwidget.h"
 #include "ui/styling/k4constants.h"
 #include "utils/radioutils.h"
-#include <QApplication>
 #include <QHBoxLayout>
-#include <QHideEvent>
 #include <QLabel>
-#include <QKeyEvent>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QPainterPath>
-#include <QScreen>
 #include <QVBoxLayout>
-#include <QWheelEvent>
 
 namespace {
 // Layout constants
