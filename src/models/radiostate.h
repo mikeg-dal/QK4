@@ -75,6 +75,10 @@ public:
     quint64 frequency() const { return m_frequencyVfoState.vfoA; }
     quint64 vfoA() const { return m_frequencyVfoState.vfoA; }
     quint64 vfoB() const { return m_frequencyVfoState.vfoB; }
+    // BN / BN$: the radio's band number for VFO A / VFO B, or FrequencyVfoState::BandUnknown (-1)
+    // until it reports one. 0-10 are 160 m-6 m; RadioUtils::isXvtrBandNumber() names the XVTR bands.
+    int bandNumber() const { return m_frequencyVfoState.bandNumber; }
+    int bandNumberB() const { return m_frequencyVfoState.bandNumberB; }
     int tuningStep() const { return m_dataControlState.tuningStep; }
     int tuningStepB() const { return m_dataControlState.tuningStepB; }
 
@@ -628,6 +632,8 @@ public:
 signals:
     void frequencyChanged(quint64 freq);
     void frequencyBChanged(quint64 freq);
+    void bandNumberChanged(int band);  // BN: VFO A band number
+    void bandNumberBChanged(int band); // BN$: VFO B band number
     void modeChanged(Mode mode);
     void modeBChanged(Mode mode);
     void filterBandwidthChanged(int bw);

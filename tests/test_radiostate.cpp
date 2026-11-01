@@ -747,7 +747,7 @@ private slots:
         // A request past the limit while already at it changes nothing, so it must not emit.
         QSignalSpy spy(&rs, &RadioState::processingChanged);
         rs.setNoiseReductionLevel(15);
-        QCOMPARE(spy.count(), 0);
+        QCOMPARE(spy.size(), 0);
     }
 
     void testNrsDoesNotShadowNr() {
@@ -2247,6 +2247,53 @@ private slots:
         QCOMPARE(spy.count(), 1);
     }
 
+    // --- BN / BN$ (band number; Programmer's Reference D12: "BN$nn; ... 00 = 160 m ...10 = 6 m") ---
+    void testBandNumberUnknownUntilReported() {
+        RadioState rs;
+        QCOMPARE(rs.bandNumber(), -1);
+        QCOMPARE(rs.bandNumberB(), -1);
+    }
+
+    void testBandNumberParsesAndEmitsOnChange() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::bandNumberChanged);
+        rs.parseCATCommand("BN05;"); // 20 m
+        QCOMPARE(rs.bandNumber(), 5);
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 5);
+        rs.parseCATCommand("BN05;");
+        QCOMPARE(spy.size(), 1);     // unchanged, no emit
+        rs.parseCATCommand("BN16;"); // XVTR6
+        QCOMPARE(rs.bandNumber(), 16);
+        QCOMPARE(spy.size(), 2);
+    }
+
+    void testBandNumberSubDoesNotShadowMain() {
+        // BN$ must reach its own handler, not BN with a '$' in the digits.
+        RadioState rs;
+        QSignalSpy mainSpy(&rs, &RadioState::bandNumberChanged);
+        QSignalSpy subSpy(&rs, &RadioState::bandNumberBChanged);
+        rs.parseCATCommand("BN$10;"); // 6 m
+        QCOMPARE(rs.bandNumberB(), 10);
+        QCOMPARE(rs.bandNumber(), -1);
+        QCOMPARE(subSpy.size(), 1);
+        QCOMPARE(mainSpy.size(), 0);
+    }
+
+    void testBandNumberIgnoresSetFormsAndBadValues() {
+        // INCR/DECR, TOGGLE and BAND STACK are client SETs with no band; a CAT-server client's SET
+        // goes through this parser too. Neither these nor malformed or unused numbers move the band.
+        RadioState rs;
+        rs.parseCATCommand("BN03;");
+        QSignalSpy spy(&rs, &RadioState::bandNumberChanged);
+        for (const char *cmd : {"BN+;", "BN-;", "BN/;", "BN^;", "BN>;", "BN;", "BN3;", "BN003;", "BN26;", "BN-1;"})
+            rs.parseCATCommand(QString::fromLatin1(cmd));
+        QCOMPARE(rs.bandNumber(), 3);
+        QCOMPARE(spy.size(), 0);
+        rs.parseCATCommand("BN$/;");
+        QCOMPARE(rs.bandNumberB(), -1);
+    }
+
     // --- LN (VFO Link) ---
     void testVfoLinkEnable() {
         RadioState rs;
@@ -3512,11 +3559,15 @@ private slots:
         rs.parseCATCommand("DR1;");
         rs.parseCATCommand("TD132;");
         rs.parseCATCommand("BL1+25;");
+        rs.parseCATCommand("BN05;");
+        rs.parseCATCommand("BN$11;");
 
         rs.reset();
 
         // Frequency/VFO sentinels (these zero, not -1)
         QCOMPARE(rs.frequency(), quint64(0));
+        QCOMPARE(rs.bandNumber(), -1);
+        QCOMPARE(rs.bandNumberB(), -1);
         QCOMPARE(rs.tuningStep(), -1);
         QCOMPARE(rs.tuningStepB(), -1);
         // Mode/filter
@@ -3672,6 +3723,8 @@ private slots:
         row("RO$+0000", SIGNAL(ritXitBChanged(bool, int)));
         row("LK0", SIGNAL(lockAChanged(bool)));
         row("LK$0", SIGNAL(lockBChanged(bool)));
+        row("BN00", SIGNAL(bandNumberChanged(int)));
+        row("BN$00", SIGNAL(bandNumberBChanged(int)));
         row("NB000", SIGNAL(processingChanged()));
         row("NB0000", SIGNAL(processingChanged()));
         row("NB$000", SIGNAL(processingChangedB()));

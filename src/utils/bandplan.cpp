@@ -157,7 +157,7 @@ const Band *bandAt(int region, qint64 freqHz) {
 
 } // namespace
 
-// WHY a key of its own rather than RadioUtils::getBandFromFrequency: the K4 band table, these
+// WHY a key of its own rather than the K4's band: the K4 band table, these
 // per-region plan tables and bandName() deliberately disagree at the edges. The K4 table follows
 // the radio's band buttons (widest allocation, e.g. 40 m to 7300 kHz everywhere), the plan tables
 // follow each region's actual allocation (Region 1 40 m ends at 7200 kHz) and bandName() is

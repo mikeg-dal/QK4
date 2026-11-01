@@ -108,9 +108,18 @@ int tuningStepToHz(int step);
 /// tuning step above 10 kHz (VT5 wraps back to 100 Hz).
 int tuningStepForDigit(int digitFromRight);
 
-/// Convert frequency (Hz) to K4 band number (0=160m ... 10=6m, 16=XVTR).
-/// Returns -1 for out-of-band frequencies.
-int getBandFromFrequency(quint64 freq);
+// K4 band numbers for the XVTR bands (BN / BN$, XV$). Programmer's Reference D12 states this two
+// ways: the XV$ entry says "BN11 corresponds to XVTR1, etc." and "use XV$n (1-12) or BN$ (11-22)",
+// while the BN$ entry says "16-25 = transverter bands (11-15 reserved for future HF bands)". QK4
+// follows XV$: 11-22 is also what the band popup sends for XVTR1-12, checked against a K4 by
+// sending BN11..BN22 and watching FA move to each configured XVTR dial frequency.
+constexpr int BAND_NUMBER_XVTR_FIRST = 11;
+constexpr int BAND_NUMBER_XVTR_LAST = 22;
+
+/// True for a K4 band number that selects an XVTR band (BAND_NUMBER_XVTR_FIRST..LAST).
+constexpr bool isXvtrBandNumber(int band) {
+    return band >= BAND_NUMBER_XVTR_FIRST && band <= BAND_NUMBER_XVTR_LAST;
+}
 
 /// Get next span step up (zoom out) from current span in Hz.
 /// Clamps at SPAN_MAX.

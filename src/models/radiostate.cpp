@@ -560,6 +560,8 @@ void RadioState::registerCommandHandlers() {
     // BW$, IS$, FP$ — deduplicated via handleIntPair / ModeFilterHandlers.
     m_commandHandlers.append(
         {"BW$", [this](const QString &c) { ModeFilterHandlers::handleBWSub(m_modeFilterState, *this, c); }});
+    m_commandHandlers.append(
+        {"BN$", [this](const QString &c) { FrequencyVfoHandlers::handleBNSub(m_frequencyVfoState, *this, c); }});
     m_commandHandlers.append({"IS$", [this](const QString &c) {
                                   handleIntPair(c, 3, m_modeFilterState.ifShiftB, -99999, 99999,
                                                 &RadioState::ifShiftBChanged);
@@ -627,6 +629,8 @@ void RadioState::registerCommandHandlers() {
     // 2-char base commands
     m_commandHandlers.append({"FA", [this](const QString &c) { handleFA(c); }});
     m_commandHandlers.append({"FB", [this](const QString &c) { handleFB(c); }});
+    m_commandHandlers.append(
+        {"BN", [this](const QString &c) { FrequencyVfoHandlers::handleBN(m_frequencyVfoState, *this, c); }});
     m_commandHandlers.append({"FT", [this](const QString &c) { handleFT(c); }});
     // FP — deduplicated via handleIntPair.
     m_commandHandlers.append({"FP", [this](const QString &c) {

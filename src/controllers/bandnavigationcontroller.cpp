@@ -13,43 +13,26 @@ BandNavigationController::BandNavigationController(RadioState *radioState, Conne
                                                    PopupManager *popupManager, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_connection(connection), m_popupManager(popupManager) {
     connect(m_popupManager, &PopupManager::bandSelected, this, &BandNavigationController::onBandSelected);
-    connect(m_connection, &ConnectionController::catResponseReceived, this, &BandNavigationController::onCatResponse);
+    connect(m_radioState, &RadioState::bandNumberChanged, this, [this](int band) {
+        refreshSelectedBand();
+        emit currentBandChanged(band, /*forVfoB=*/false);
+    });
+    connect(m_radioState, &RadioState::bandNumberBChanged, this, [this](int band) {
+        refreshSelectedBand();
+        emit currentBandChanged(band, /*forVfoB=*/true);
+    });
+    // BSet switches which VFO the popup targets, so the indicator follows it.
+    connect(m_radioState, &RadioState::bSetChanged, this, &BandNavigationController::refreshSelectedBand);
 }
 
-void BandNavigationController::onCatResponse(const QString &response) {
-    // Each ;-delimited piece is a single CAT command. Parse BN / BN$
-    // echoes and ignore everything else — RadioState handles the rest.
-    const QStringList commands = response.split(';', Qt::SkipEmptyParts);
-    for (const QString &cmd : commands) {
-        if (cmd.startsWith("BN$")) {
-            bool ok;
-            const int bandNum = cmd.mid(3, 2).toInt(&ok);
-            if (ok)
-                setCurrentBand(bandNum, /*forVfoB=*/true);
-        } else if (cmd.startsWith("BN")) {
-            bool ok;
-            const int bandNum = cmd.mid(2, 2).toInt(&ok);
-            if (ok)
-                setCurrentBand(bandNum, /*forVfoB=*/false);
-        }
-    }
+int BandNavigationController::currentBand(bool forVfoB) const {
+    return forVfoB ? m_radioState->bandNumberB() : m_radioState->bandNumber();
 }
 
-void BandNavigationController::setCurrentBand(int bandNum, bool forVfoB) {
-    const int previous = forVfoB ? m_currentBandNumB : m_currentBandNum;
-    if (forVfoB) {
-        m_currentBandNumB = bandNum;
-        // Only refresh the popup indicator when BSet is active — that's
-        // when the popup is showing VFO B's band state.
-        if (m_radioState->bSetEnabled())
-            m_popupManager->setSelectedBandByNumber(bandNum);
-    } else {
-        m_currentBandNum = bandNum;
-        if (!m_radioState->bSetEnabled())
-            m_popupManager->setSelectedBandByNumber(bandNum);
-    }
-    if (previous != bandNum)
-        emit currentBandChanged(bandNum, forVfoB);
+void BandNavigationController::refreshSelectedBand() {
+    const int band = currentBand(/*forVfoB=*/m_radioState->bSetEnabled());
+    if (band >= 0)
+        m_popupManager->setSelectedBandByNumber(band);
 }
 
 void BandNavigationController::onBandSelected(const QString &bandName) {
@@ -67,7 +50,7 @@ void BandNavigationController::onBandSelected(const QString &bandName) {
         return;
 
     const bool bSetEnabled = m_radioState->bSetEnabled();
-    const int currentBand = bSetEnabled ? m_currentBandNumB : m_currentBandNum;
+    const int currentBand = this->currentBand(bSetEnabled);
     const QString cmdPrefix = bSetEnabled ? "BN$" : "BN";
 
     if (newBandNum == currentBand) {
@@ -80,6 +63,6 @@ void BandNavigationController::onBandSelected(const QString &bandName) {
         qCDebug(lcUiBandNav) << "Changing band:" << cmd;
         m_connection->sendCAT(cmd);
     }
-    // Request a fresh echo so our cached current-band state updates.
+    // Ask for the band so RadioState's BN / BN$ follows the change even if the radio does not echo it.
     m_connection->sendCAT(bSetEnabled ? "BN$;" : "BN;");
 }

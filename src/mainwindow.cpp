@@ -297,9 +297,9 @@ void MainWindow::setupRadioStateWiring() {
     connect(m_radioState, &RadioState::sMeterChanged, m_vfoA, &VFOWidget::setSMeterValue);
     connect(m_radioState, &RadioState::sMeterBChanged, m_vfoB, &VFOWidget::setSMeterValue);
     // Auto-hide mini pan B when VFOs move to different bands (and SUB RX is off).
-    connect(m_radioState, &RadioState::frequencyChanged, m_spectrumController,
+    connect(m_radioState, &RadioState::bandNumberChanged, m_spectrumController,
             &SpectrumController::checkAndHideMiniPanB);
-    connect(m_radioState, &RadioState::frequencyBChanged, m_spectrumController,
+    connect(m_radioState, &RadioState::bandNumberBChanged, m_spectrumController,
             &SpectrumController::checkAndHideMiniPanB);
 
     // RadioState signals -> status / side-panel readings (direct-observation).
@@ -1302,8 +1302,6 @@ void MainWindow::onCatResponse(const QString &response) {
         m_radioState->parseCATCommand(cmd + ";");
 
         // Menu system routing — MenuController encapsulates the MenuModel.
-        // BN / BN$ are parsed by BandNavigationController which subscribes
-        // to catResponseReceived directly; not handled here.
         if (cmd.startsWith("MEDF")) {
             m_menuController->ingestMedf(cmd + ";");
         } else if (cmd.startsWith("ME")) {

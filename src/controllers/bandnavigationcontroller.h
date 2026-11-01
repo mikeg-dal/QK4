@@ -7,16 +7,13 @@ class RadioState;
 class ConnectionController;
 class PopupManager;
 
-// Routes band-popup selections to the K4's BN / BN$ CAT commands and
-// keeps MainWindow's "last-known current band per VFO" state. BSet
+// Routes band-popup selections to the K4's BN / BN$ CAT commands. BSet
 // selects which VFO the band change targets; a tap on the already-
 // selected band invokes the K4 band stack (BN^ / BN$^) rather than a
 // redundant band change.
 //
-// Owns BN / BN$ CAT echo parsing — subscribes to
-// ConnectionController::catResponseReceived in the constructor and
-// updates its own band-tracking state. MainWindow does not route BN
-// echoes here anymore.
+// The current band per VFO is RadioState's (BN / BN$, reset on disconnect);
+// this controller keeps the band popup's selected-band indicator on it.
 class BandNavigationController : public QObject {
     Q_OBJECT
 
@@ -24,12 +21,12 @@ public:
     explicit BandNavigationController(RadioState *radioState, ConnectionController *connection,
                                       PopupManager *popupManager, QObject *parent = nullptr);
 
-    // Last BN echo from the K4 for the indicated VFO. -1 until first echo.
-    // Bands 0..10 = HF/6m, 11..22 = XVTR Band 1..12.
-    int currentBand(bool forVfoB = false) const { return forVfoB ? m_currentBandNumB : m_currentBandNum; }
+    // The radio's band number for the indicated VFO (RadioState::bandNumber / bandNumberB).
+    // -1 until the radio reports one. RadioUtils::isXvtrBandNumber() names the XVTR bands.
+    int currentBand(bool forVfoB = false) const;
 
 signals:
-    // Emitted when the K4's current band changes (via BN / BN$ echo). The
+    // Emitted when the K4's current band changes (BN / BN$). The
     // antenna-label and other UI controllers that need to know "are we on
     // XVTR" subscribe here. forVfoB distinguishes BN$ (true) from BN (false).
     void currentBandChanged(int band, bool forVfoB);
@@ -38,23 +35,14 @@ private slots:
     // Connected to PopupManager::bandSelected in constructor.
     void onBandSelected(const QString &bandName);
 
-    // Connected to ConnectionController::catResponseReceived. Parses BN
-    // and BN$ echoes; ignores everything else.
-    void onCatResponse(const QString &response);
-
 private:
-    // Record the current band for a VFO, updating the band popup's
-    // selected-band indicator if the selection targets the visible VFO
-    // (A when !BSet, B when BSet).
-    void setCurrentBand(int bandNum, bool forVfoB);
+    // Show the band of the VFO the popup targets (A when !BSet, B when BSet) as selected.
+    void refreshSelectedBand();
 
 private:
     RadioState *m_radioState;           // injected, not owned
     ConnectionController *m_connection; // injected, not owned
     PopupManager *m_popupManager;       // injected, not owned
-
-    int m_currentBandNum = -1;  // last BN echo from the K4
-    int m_currentBandNumB = -1; // last BN$ echo from the K4
 };
 
 #endif // BANDNAVIGATIONCONTROLLER_H

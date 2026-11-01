@@ -134,7 +134,7 @@ The topic → CAT map for step 1. `ls src/models/radiostate/*.h` is authoritativ
 
 | Subsystem | Topic | Main CAT commands |
 |-----------|-------|-------------------|
-| `FrequencyVfoState` | VFO A/B frequency, split, RIT/XIT offsets | FA, FB, FT, RT, RT$, XT, RO, RO$ |
+| `FrequencyVfoState` | VFO A/B frequency, band number, split, RIT/XIT offsets | FA, FB, BN, BN$, FT, RT, RT$, XT, RO, RO$ |
 | `ModeFilterState` | Mode, filter, CW keyer | MD, MD$, BW, BW$, IS, IS$, FP, FP$, CW, KS, KP |
 | `ProcessingState` | NB / NR / PA / RA / GT / NA / NM per VFO | NB, NR, PA, RA, GT, NA, NM (+ `$`) |
 | `AntennaState` | Antenna selection, per-band masks, ATU | AN, AT, ACN, ACM, ACS, ACT, AR, AR$ |

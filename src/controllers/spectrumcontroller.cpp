@@ -707,10 +707,13 @@ void SpectrumController::onMiniSpectrumData(int receiver, const QByteArray &payl
 }
 
 void SpectrumController::checkAndHideMiniPanB() {
-    // Auto-hide mini pan B if SUB RX is off and VFOs are on different bands
-    int bandA = RadioUtils::getBandFromFrequency(m_radioState->vfoA());
-    int bandB = RadioUtils::getBandFromFrequency(m_radioState->vfoB());
-    bool differentBands = (bandA != bandB);
+    // Auto-hide mini pan B if SUB RX is off and VFOs are on different bands. The band is the
+    // radio's own (BN / BN$), not one derived from the frequency: a frequency table cannot know
+    // the K4's band edges in every region or which XVTR band a dial frequency belongs to. Until
+    // the radio has reported both, nothing is hidden.
+    const int bandA = m_radioState->bandNumber();
+    const int bandB = m_radioState->bandNumberB();
+    const bool differentBands = bandA >= 0 && bandB >= 0 && bandA != bandB;
 
     if (!m_radioState->subReceiverEnabled() && differentBands) {
         if (m_radioState->miniPanBEnabled()) {

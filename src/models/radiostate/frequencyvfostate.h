@@ -13,7 +13,7 @@
 class RadioState;
 
 // VFO A/B frequency, split state, and RIT/XIT offset registers.
-// Handles FA, FB, FT, RT, RT$, XT, RO, RO$ — the CAT commands that
+// Handles FA, FB, BN, BN$, FT, RT, RT$, XT, RO, RO$ — the CAT commands that
 // together determine "what frequency is the K4 tuned to right now?"
 //
 // See docs/k4-protocol-quirks.md §2 for the K4's routing of the XIT offset
@@ -21,6 +21,14 @@ class RadioState;
 struct FrequencyVfoState {
     quint64 vfoA = 0;
     quint64 vfoB = 0;
+
+    // BN / BN$ — the band the radio says each VFO is on (Programmer's Reference D12, BN$: "nn is
+    // the band number: 00 = 160 m ...10 = 6 m"; XVTR bands per RadioUtils::isXvtrBandNumber).
+    // BandUnknown until the radio reports one; it never sends a negative band.
+    static constexpr int BandUnknown = -1;
+    static constexpr int BandNumberMax = 25; // highest number D12 gives a meaning (BN$: "16-25")
+    int bandNumber = BandUnknown;
+    int bandNumberB = BandUnknown;
 
     ReportedFlag splitEnabled; // FT
 
@@ -50,6 +58,8 @@ std::optional<quint64> frequencyFromCatDigits(QStringView digits);
 
 void handleFA(FrequencyVfoState &state, RadioState &owner, const QString &cmd);
 void handleFB(FrequencyVfoState &state, RadioState &owner, const QString &cmd);
+void handleBN(FrequencyVfoState &state, RadioState &owner, const QString &cmd);
+void handleBNSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd);
 void handleFT(FrequencyVfoState &state, RadioState &owner, const QString &cmd);
 void handleRT(FrequencyVfoState &state, RadioState &owner, const QString &cmd);
 void handleRTSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd);

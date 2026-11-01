@@ -6,7 +6,7 @@ The subsystem structs composing `RadioState` (`ls src/models/radiostate/*.h` lis
 
 | File | Topic | CAT commands (primary) |
 |---|---|---|
-| `frequencyvfostate.{h,cpp}` | VFO A/B freq, split, RIT/XIT, VFO link/lock | FA, FB, FT, RT, RT$, XT, RO, RO$, LN, LK, LK$ |
+| `frequencyvfostate.{h,cpp}` | VFO A/B freq, band number, split, RIT/XIT, VFO link/lock | FA, FB, BN, BN$, FT, RT, RT$, XT, RO, RO$, LN, LK, LK$ |
 | `modefilterstate.{h,cpp}` | Operating mode, filter, CW keyer | MD, MD$, BW, BW$, IS, IS$, FP, FP$, CW, KS, KP, KZL |
 | `processingstate.{h,cpp}` | NB / NR / PA / RA / GT / NA / NM (per VFO) | NB, NB$, NR, NR$, NRS, NRS$, PA, PA$, RA, RA$, GT, GT$, NA, NA$, NM, NM$ |
 | `antennastate.{h,cpp}` | Antenna selection + per-band masks + ATU | AN, AT, ACN, ACM, ACS, ACT, AR, AR$ (plain `AR` is here; `#AR` is in spectrumdisplaystate) |

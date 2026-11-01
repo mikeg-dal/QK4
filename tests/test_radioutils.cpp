@@ -41,24 +41,15 @@ private slots:
     }
     void testDigitStep_negativeHasNoStep() { QCOMPARE(RadioUtils::tuningStepForDigit(-1), -1); }
 
-    // getBandFromFrequency
-    void testBand_160m() { QCOMPARE(RadioUtils::getBandFromFrequency(1900000), 0); }
-    void testBand_80m() { QCOMPARE(RadioUtils::getBandFromFrequency(3573000), 1); }
-    void testBand_60m() { QCOMPARE(RadioUtils::getBandFromFrequency(5357000), 2); }
-    void testBand_40m() { QCOMPARE(RadioUtils::getBandFromFrequency(7074000), 3); }
-    void testBand_30m() { QCOMPARE(RadioUtils::getBandFromFrequency(10136000), 4); }
-    void testBand_20m() { QCOMPARE(RadioUtils::getBandFromFrequency(14074000), 5); }
-    void testBand_17m() { QCOMPARE(RadioUtils::getBandFromFrequency(18100000), 6); }
-    void testBand_15m() { QCOMPARE(RadioUtils::getBandFromFrequency(21074000), 7); }
-    void testBand_12m() { QCOMPARE(RadioUtils::getBandFromFrequency(24915000), 8); }
-    void testBand_10m() { QCOMPARE(RadioUtils::getBandFromFrequency(28074000), 9); }
-    void testBand_6m() { QCOMPARE(RadioUtils::getBandFromFrequency(50313000), 10); }
-    void testBand_xvtr() { QCOMPARE(RadioUtils::getBandFromFrequency(144174000), 16); }
-    void testBand_outOfBand() { QCOMPARE(RadioUtils::getBandFromFrequency(100000), -1); }
-    void testBand_gapBetweenBands() { QCOMPARE(RadioUtils::getBandFromFrequency(8000000), -1); }
-    void testBand_lowerEdge_20m() { QCOMPARE(RadioUtils::getBandFromFrequency(14000000), 5); }
-    void testBand_upperEdge_20m() { QCOMPARE(RadioUtils::getBandFromFrequency(14350000), 5); }
-    void testBand_justAbove_20m() { QCOMPARE(RadioUtils::getBandFromFrequency(14350001), -1); }
+    // isXvtrBandNumber: BN11..BN22 are XVTR1..12 (Programmer's Reference D12, XV$)
+    void testXvtrBandNumbers() {
+        QVERIFY(!RadioUtils::isXvtrBandNumber(-1));
+        QVERIFY(!RadioUtils::isXvtrBandNumber(0));
+        QVERIFY(!RadioUtils::isXvtrBandNumber(10)); // 6 m
+        QVERIFY(RadioUtils::isXvtrBandNumber(11));  // XVTR1
+        QVERIFY(RadioUtils::isXvtrBandNumber(22));  // XVTR12
+        QVERIFY(!RadioUtils::isXvtrBandNumber(23));
+    }
 
     // getNextSpanUp
     void testSpanUp_min() { QCOMPARE(RadioUtils::getNextSpanUp(5000), 6000); }

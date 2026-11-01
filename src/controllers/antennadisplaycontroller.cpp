@@ -2,16 +2,12 @@
 
 #include "bandnavigationcontroller.h"
 #include "models/radiostate.h"
+#include "utils/radioutils.h"
 
 #include <QLabel>
 #include <QString>
 
 namespace {
-
-// XVTR band number range per K4 BN command (BN11..BN22 = XVTR Band 1..12).
-bool isXvtrBand(int bandNum) {
-    return bandNum >= 11 && bandNum <= 22;
-}
 
 // Format an RX antenna display from an AR (Main) or AR$ (Sub) value. commandPrefix names the
 // command in the unknown-value fallback. K4 AR values (from official K4 protocol documentation):
@@ -69,8 +65,8 @@ void AntennaDisplayController::onAntennaChanged(int txAnt, int rxAntMain, int rx
     // reference rev D12): on XVTR bands the TX antenna is XV OUT and any RX path is XV IN.
     // We relabel here rather than via state because the K4 doesn't emit a
     // distinct antenna value — it just stops applying AN/AR.
-    const bool xvtrMain = m_bandNav && isXvtrBand(m_bandNav->currentBand(/*forVfoB=*/false));
-    const bool xvtrSub = m_bandNav && isXvtrBand(m_bandNav->currentBand(/*forVfoB=*/true));
+    const bool xvtrMain = m_bandNav && RadioUtils::isXvtrBandNumber(m_bandNav->currentBand(/*forVfoB=*/false));
+    const bool xvtrSub = m_bandNav && RadioUtils::isXvtrBandNumber(m_bandNav->currentBand(/*forVfoB=*/true));
 
     if (xvtrMain) {
         m_txAntennaLabel->setText(QStringLiteral("XV OUT"));

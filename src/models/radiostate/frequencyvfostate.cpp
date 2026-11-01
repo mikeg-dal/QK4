@@ -5,6 +5,8 @@
 void FrequencyVfoState::reset() {
     vfoA = 0;
     vfoB = 0;
+    bandNumber = BandUnknown;
+    bandNumberB = BandUnknown;
     splitEnabled.reset();
     ritEnabled.reset();
     xitEnabled.reset();
@@ -61,6 +63,35 @@ void handleFB(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (state.vfoB != freq) {
         state.vfoB = freq;
         emit owner.frequencyBChanged(freq);
+    }
+}
+
+namespace {
+// The band number in a BN / BN$ report: exactly two digits ("BN05", "BN$16"). The INCR/DECR,
+// TOGGLE and BAND STACK forms (BN+, BN$/, BN^ ...) are client SETs, not reports, and carry none.
+std::optional<int> bandNumberFromCat(QStringView digits) {
+    if (digits.size() != 2 || !digits.at(0).isDigit() || !digits.at(1).isDigit())
+        return std::nullopt;
+    const int band = (digits.at(0).unicode() - u'0') * 10 + (digits.at(1).unicode() - u'0');
+    if (band > FrequencyVfoState::BandNumberMax)
+        return std::nullopt;
+    return band;
+}
+} // namespace
+
+void handleBN(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
+    const auto band = bandNumberFromCat(QStringView(cmd).mid(2));
+    if (band && *band != state.bandNumber) {
+        state.bandNumber = *band;
+        emit owner.bandNumberChanged(*band);
+    }
+}
+
+void handleBNSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
+    const auto band = bandNumberFromCat(QStringView(cmd).mid(3));
+    if (band && *band != state.bandNumberB) {
+        state.bandNumberB = *band;
+        emit owner.bandNumberBChanged(*band);
     }
 }
 
