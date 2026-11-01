@@ -44,17 +44,6 @@ IconTextLabel::IconTextLabel(QWidget *parent)
     clear();
 }
 
-void IconTextLabel::setIcon(const QPixmap &pixmap) {
-    // Static-pixmap path; setGlyph() takes precedence when present, since the
-    // glyph factory needs to re-render on color changes.
-    m_glyph = nullptr;
-    if (pixmap.isNull()) {
-        m_iconLabel->clear();
-        return;
-    }
-    m_iconLabel->setPixmap(pixmap.scaled(kIconSize, kIconSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-}
-
 void IconTextLabel::setGlyph(K4Glyphs::Glyph glyph) {
     m_glyph = std::move(glyph);
     // Render once immediately. While the field is still in the empty state,

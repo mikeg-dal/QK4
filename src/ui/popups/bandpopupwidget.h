@@ -36,7 +36,6 @@ public:
 
     // Set the currently selected band by name
     void setSelectedBand(const QString &bandName);
-    QString selectedBand() const { return m_selectedBand; }
 
     // Band number methods for K4 BN command
     void setSelectedBandByNumber(int bandNum);

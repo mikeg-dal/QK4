@@ -40,9 +40,6 @@ public:
     explicit RightSidePanel(QWidget *parent = nullptr);
     ~RightSidePanel() = default;
 
-    // Access main layout for adding content
-    QVBoxLayout *contentLayout() { return m_layout; }
-
     // Drop a KPA1500 mini panel into the reserved slot of this panel's
     // vertical layout. RightSidePanel takes Qt parent ownership but
     // KPA1500UiController constructs the widget and drives its state —

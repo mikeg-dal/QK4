@@ -152,13 +152,6 @@ void ButtonRowPopup::setupUi() {
     initPopup();
 }
 
-void ButtonRowPopup::setButtonLabels(const QStringList &labels) {
-    for (int i = 0; i < qMin(labels.size(), m_buttons.size()); ++i) {
-        m_buttons[i]->setPrimaryText(labels[i]);
-        m_buttons[i]->setAlternateText(QString()); // Clear alternate
-    }
-}
-
 void ButtonRowPopup::setButtonLabel(int index, const QString &primary, const QString &alternate,
                                     bool hasAlternateFunction) {
     if (index >= 0 && index < m_buttons.size()) {

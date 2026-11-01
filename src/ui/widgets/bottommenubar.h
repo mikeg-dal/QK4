@@ -23,15 +23,6 @@ public:
     explicit BottomMenuBar(QWidget *parent = nullptr);
     ~BottomMenuBar() = default;
 
-    // Getters for button positioning (for popup placement)
-    QPushButton *bandButton() const { return m_bandBtn; }
-    QPushButton *displayButton() const { return m_displayBtn; }
-    QPushButton *fnButton() const { return m_fnBtn; }
-    QPushButton *mainRxButton() const { return m_mainRxBtn; }
-    QPushButton *subRxButton() const { return m_subRxBtn; }
-    QPushButton *txButton() const { return m_txBtn; }
-    QPushButton *pttButton() const { return m_pttBtn; }
-
 public slots:
     void setMenuActive(bool active);    // Toggle MENU button inverse colors
     void setDisplayActive(bool active); // Toggle DISPLAY button inverse colors

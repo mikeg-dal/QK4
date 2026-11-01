@@ -37,15 +37,6 @@ public:
     void showOverGroup(QWidget *topWidget, QWidget *bottomWidget);
 
     /**
-     * @brief The overlay is shown, or was just closed by the press now in progress.
-     *
-     * A press on the overlay's own key closes it by click-away before the key's clicked() fires, so
-     * a toggle reading isVisible() would open it again. showOverGroup() itself refuses to reopen in
-     * that window, so the existing toggles stay correct; new toggle code should ask this instead.
-     */
-    bool isVisibleOrJustHidden() const;
-
-    /**
      * @brief Get the context (color theme) of this overlay.
      */
     Context context() const { return m_context; }

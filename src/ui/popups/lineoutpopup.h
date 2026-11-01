@@ -18,8 +18,6 @@ public:
     void setRightLevel(int level); // 0-50
     void setRightEqualsLeft(bool enabled);
 
-    int leftLevel() const { return m_leftLevel; }
-    int rightLevel() const { return m_rightLevel; }
     bool rightEqualsLeft() const { return m_rightEqualsLeft; }
 
 signals:

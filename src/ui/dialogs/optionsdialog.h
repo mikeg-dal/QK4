@@ -5,7 +5,6 @@
 #include <QListWidget>
 #include <QStackedWidget>
 #include <QShowEvent>
-#include <QHideEvent>
 #include <QMediaDevices>
 
 class RadioState;
@@ -63,7 +62,6 @@ public:
 
 protected:
     void showEvent(QShowEvent *event) override;
-    void hideEvent(QHideEvent *event) override;
 
 private:
     void setupUi();

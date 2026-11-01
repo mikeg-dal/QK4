@@ -75,9 +75,8 @@ void FilterIndicatorWidget::setDataSubMode(int subMode) {
     }
 }
 
-void FilterIndicatorWidget::setShapeColor(const QColor &fill, const QColor &outline) {
+void FilterIndicatorWidget::setShapeColor(const QColor &fill) {
     m_shapeColor = fill;
-    m_shapeOutline = outline;
     update();
 }
 

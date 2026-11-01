@@ -182,22 +182,6 @@ int FrequencyDisplayWidget::digitIndexFromCharIndex(int charIndex) const {
     return offset + digitCount;
 }
 
-QRect FrequencyDisplayWidget::charRectAt(int charIndex) const {
-    QString display = formatWithDots();
-    if (charIndex < 0 || charIndex >= display.length()) {
-        return QRect();
-    }
-
-    // Calculate X position by summing widths of preceding characters
-    int x = 0;
-    for (int i = 0; i < charIndex; ++i) {
-        x += (display[i] == '.') ? m_dotWidth : m_charWidth;
-    }
-
-    int charW = (display[charIndex] == '.') ? m_dotWidth : m_charWidth;
-    return QRect(x, 0, charW, height());
-}
-
 int FrequencyDisplayWidget::digitPositionFromX(int x) const {
     QString display = formatWithDots();
 

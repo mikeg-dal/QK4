@@ -185,14 +185,6 @@ void AntennaCfgPopupWidget::setDisplayAll(bool displayAll) {
     }
 }
 
-void AntennaCfgPopupWidget::setAntennaEnabled(int index, bool enabled) {
-    if (index >= 0 && index < m_checkboxes.size()) {
-        m_checkboxes[index]->blockSignals(true);
-        m_checkboxes[index]->setChecked(enabled);
-        m_checkboxes[index]->blockSignals(false);
-    }
-}
-
 void AntennaCfgPopupWidget::setAntennaMask(const QVector<bool> &mask) {
     for (int i = 0; i < qMin(mask.size(), m_checkboxes.size()); i++) {
         m_checkboxes[i]->blockSignals(true);

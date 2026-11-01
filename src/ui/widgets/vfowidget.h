@@ -66,9 +66,6 @@ public:
     void setMiniPanScale(int scale);
     void setMiniPanWaterfallColorRange(int db);
 
-    // Access to mini-pan (may return nullptr if not yet created)
-    MiniPanRhiWidget *miniPan() const { return m_miniPan; }
-
     // Access to frequency display for styling (e.g., dimming when SUB RX off)
     FrequencyDisplayWidget *frequencyDisplay() const { return m_frequencyDisplay; }
 

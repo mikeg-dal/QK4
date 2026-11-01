@@ -95,20 +95,6 @@ public:
                              const QString &accentColor = K4Styles::Colors::VfoACyan, QWidget *parent = nullptr);
 
     /**
-     * @brief Set a band's dB value.
-     * @param bandIndex Band 0-7 (100Hz to 3200Hz)
-     * @param dB Value -16 to +16
-     */
-    void setBandValue(int bandIndex, int dB);
-
-    /**
-     * @brief Get a band's current dB value.
-     * @param bandIndex Band 0-7
-     * @return dB value -16 to +16
-     */
-    int bandValue(int bandIndex) const;
-
-    /**
      * @brief Set all bands at once.
      * @param values Array of 8 dB values
      */
@@ -193,7 +179,6 @@ public:
     explicit EqPresetRowWidget(int presetIndex, QWidget *parent = nullptr);
 
     void setPresetName(const QString &name);
-    QString presetName() const { return m_name; }
     bool hasPreset() const { return !m_name.isEmpty(); }
 
 signals:

@@ -228,9 +228,7 @@ void SideControlPanel::setupUi() {
                                    .arg(K4Styles::Dimensions::FontSizeBody));
     layout->addWidget(m_timeLabel);
 
-    // WHY: setTime() was historically never wired from any controller, leaving the side panel
-    // clock stuck at "00:00:00 Z". Drive it from a self-contained QTimer instead so the
-    // widget owns its own clock display, no external coordination required.
+    // WHY its own timer: the clock is local UTC, so no controller needs to drive it.
     auto *clockTimer = new QTimer(this);
     auto updateClock = [this]() { m_timeLabel->setText(QDateTime::currentDateTimeUtc().toString("HH:mm:ss") + " Z"); };
     connect(clockTimer, &QTimer::timeout, this, updateClock);
@@ -598,10 +596,6 @@ void SideControlPanel::setSubRfGain(int gain) {
     } else {
         m_subSqlBtn->setAlternateValue(value);
     }
-}
-
-void SideControlPanel::setTime(const QString &time) {
-    m_timeLabel->setText(time);
 }
 
 void SideControlPanel::setPowerReading(double watts) {

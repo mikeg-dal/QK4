@@ -53,7 +53,6 @@ public:
     void setPrimaryLabel(const QString &label);
     void setPrimaryValue(const QString &value);
     QString primaryLabel() const { return m_primaryLabel; }
-    QString primaryValue() const { return m_primaryValue; }
 
     // Alternate function (yellow/amber text - bottom line)
     void setAlternateLabel(const QString &label);
@@ -67,7 +66,6 @@ public:
 
     // Show/hide the indicator bar (only one per group should show it)
     void setShowIndicator(bool show);
-    bool showIndicator() const { return m_showIndicator; }
 
     // Swap primary and alternate labels/values
     void swapFunctions();

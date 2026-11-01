@@ -49,7 +49,6 @@ private:
     void updateDisplay();
 
     QString m_functionId;
-    QString m_displayName;
     QString m_label;
     QString m_command;
     bool m_selected = false;
@@ -71,7 +70,6 @@ public:
     void show();
     void hide();
     void loadFromSettings();
-    void saveToSettings();
 
 protected:
     void paintEvent(QPaintEvent *event) override;

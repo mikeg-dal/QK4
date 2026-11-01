@@ -20,9 +20,7 @@ public:
 
     void setShowAutoButton(bool show);
     void setAutoEnabled(bool enabled);
-    bool isAutoEnabled() const { return m_autoEnabled; }
     void setValueFaded(bool faded);
-    bool isValueFaded() const { return m_valueFaded; }
 
     QString label() const { return m_label; }
 

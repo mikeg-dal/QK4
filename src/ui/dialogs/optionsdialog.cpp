@@ -100,10 +100,6 @@ void OptionsDialog::showEvent(QShowEvent *event) {
     refreshPage(current);
 }
 
-void OptionsDialog::hideEvent(QHideEvent *event) {
-    QDialog::hideEvent(event);
-}
-
 void OptionsDialog::ensurePageCreated(int index) {
     if (index < 0 || index >= PageCount || m_pageCreated[index])
         return;

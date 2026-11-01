@@ -58,7 +58,6 @@ public:
     void setSubRfGain(int gain);
 
     // Update status area (mirrors header data)
-    void setTime(const QString &time);
     void setPowerReading(double watts);
     void setSwr(double swr);
     void setVoltage(double volts);

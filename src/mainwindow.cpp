@@ -939,12 +939,12 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // VFO A filter indicator (cyan — matches VFO A square/slider theme)
     m_filterAWidget = new FilterIndicatorWidget(centerWidget);
     const QColor vfoACyan(K4Styles::Colors::VfoACyan);
-    m_filterAWidget->setShapeColor(vfoACyan, vfoACyan);
+    m_filterAWidget->setShapeColor(vfoACyan);
 
     // VFO B filter indicator (green — matches VFO B square/slider theme)
     m_filterBWidget = new FilterIndicatorWidget(centerWidget);
     const QColor vfoBGreen(K4Styles::Colors::VfoBGreen);
-    m_filterBWidget->setShapeColor(vfoBGreen, vfoBGreen);
+    m_filterBWidget->setShapeColor(vfoBGreen);
 
     // Layout: [stretch] [FIL_A] [spacer] [RIT/XIT] [spacer] [FIL_B] [stretch]
     // Spacers push filters outward to align under VFO A/B squares above

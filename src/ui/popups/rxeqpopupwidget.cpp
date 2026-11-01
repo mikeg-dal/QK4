@@ -346,19 +346,6 @@ QSize RxEqPopupWidget::contentSize() const {
     return QSize(width, height);
 }
 
-void RxEqPopupWidget::setBandValue(int bandIndex, int dB) {
-    if (bandIndex >= 0 && bandIndex < m_bands.size()) {
-        m_bands[bandIndex]->setValue(dB);
-    }
-}
-
-int RxEqPopupWidget::bandValue(int bandIndex) const {
-    if (bandIndex >= 0 && bandIndex < m_bands.size()) {
-        return m_bands[bandIndex]->value();
-    }
-    return 0;
-}
-
 void RxEqPopupWidget::setAllBands(const QVector<int> &values) {
     for (int i = 0; i < qMin(values.size(), m_bands.size()); i++) {
         m_bands[i]->setValue(values[i]);

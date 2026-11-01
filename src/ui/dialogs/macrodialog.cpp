@@ -21,7 +21,7 @@ const int RowHeight = 44;
 // ============== MacroItemWidget ==============
 
 MacroItemWidget::MacroItemWidget(const QString &functionId, const QString &displayName, QWidget *parent)
-    : QWidget(parent), m_functionId(functionId), m_displayName(displayName) {
+    : QWidget(parent), m_functionId(functionId) {
     setFixedHeight(RowHeight);
     setCursor(Qt::PointingHandCursor);
 
@@ -542,10 +542,6 @@ void MacroDialog::populateItems() {
 
 void MacroDialog::loadFromSettings() {
     populateItems();
-}
-
-void MacroDialog::saveToSettings() {
-    // Saves happen automatically via onLabelChanged/onCommandChanged
 }
 
 void MacroDialog::show() {

@@ -43,7 +43,7 @@ public:
     void setDataSubMode(int subMode);
 
     // Shape color (for VFO A/B color coding)
-    void setShapeColor(const QColor &fill, const QColor &outline);
+    void setShapeColor(const QColor &fill);
 
     // Reset to idle state on K4 disconnect: zero bandwidth, 50 decahertz
     // shift, centered filter position, empty mode, no data sub-mode.
@@ -79,7 +79,6 @@ private:
         c.setAlpha(128);
         return c;
     }()};
-    QColor m_shapeOutline{QColor(K4Styles::Colors::FilterIndicatorGold)};
 };
 
 #endif // FILTERINDICATORWIDGET_H

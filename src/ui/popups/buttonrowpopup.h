@@ -53,9 +53,6 @@ class ButtonRowPopup : public K4PopupBase {
 public:
     explicit ButtonRowPopup(QWidget *parent = nullptr);
 
-    // Configure button labels (primary text only, clears alternate)
-    void setButtonLabels(const QStringList &labels);
-
     // Configure individual button (primary and alternate text)
     // If hasAlternateFunction is false, alternate text is white (just a label, no right-click function)
     void setButtonLabel(int index, const QString &primary, const QString &alternate = QString(),

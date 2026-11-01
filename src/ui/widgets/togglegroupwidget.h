@@ -17,9 +17,6 @@ public:
     void setLeftSelected(bool selected);
     void setRightSelected(bool selected);
 
-    bool isLeftSelected() const { return m_leftSelected; }
-    bool isRightSelected() const { return m_rightSelected; }
-
 signals:
     void leftClicked();
     void rightClicked();

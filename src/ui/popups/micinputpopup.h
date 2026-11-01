@@ -13,7 +13,6 @@ public:
     explicit MicInputPopupWidget(QWidget *parent = nullptr);
 
     void setCurrentInput(int input); // 0-4
-    int currentInput() const { return m_currentInput; }
 
 signals:
     void inputChanged(int input);

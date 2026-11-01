@@ -22,7 +22,6 @@ public:
 
     explicit DisplayPopupWidget(QWidget *parent = nullptr);
 
-    MenuItem selectedItem() const { return m_selectedItem; }
     bool isLcdEnabled() const { return m_lcdEnabled; }
     bool isExtEnabled() const { return m_extEnabled; }
     bool isVfoAEnabled() const { return m_vfoAEnabled; }

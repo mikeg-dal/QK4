@@ -108,9 +108,6 @@ private:
     // tuning rate. Strict: unlike digitPositionFromX, a click on a dot or past the end is no digit.
     int tuningDigitAtX(int x) const;
 
-    // Get the bounding rectangle for a character at the given index
-    QRect charRectAt(int charIndex) const;
-
     // Convert character index in display string to digit index (0-7)
     // Returns -1 for dot characters
     int digitIndexFromCharIndex(int charIndex) const;

@@ -48,13 +48,6 @@ public:
     void setDisplayAll(bool displayAll);
 
     /**
-     * @brief Set an individual antenna enable state.
-     * @param index Antenna index (0-6 for RX, 0-2 for TX)
-     * @param enabled Whether antenna is in the cycle
-     */
-    void setAntennaEnabled(int index, bool enabled);
-
-    /**
      * @brief Set all antenna states at once.
      * @param mask Vector of enable states
      */

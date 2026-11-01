@@ -22,10 +22,8 @@ class IconTextLabel : public QWidget {
 public:
     explicit IconTextLabel(QWidget *parent = nullptr);
 
-    void setIcon(const QPixmap &pixmap);
     // Bind a procedural glyph (see K4Glyphs). After binding, the glyph's
     // color is driven independently from the value text by setGlyphColor().
-    // Wins over setIcon().
     void setGlyph(K4Glyphs::Glyph glyph);
     // Re-render the bound glyph in the given color. No-op if no glyph is set.
     void setGlyphColor(const QColor &color);

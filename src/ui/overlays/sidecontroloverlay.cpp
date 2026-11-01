@@ -19,10 +19,6 @@ SideControlOverlay::~SideControlOverlay() {
     m_dismissal->stop();
 }
 
-bool SideControlOverlay::isVisibleOrJustHidden() const {
-    return m_dismissal->isVisibleOrJustHidden();
-}
-
 void SideControlOverlay::showEvent(QShowEvent *event) {
     QWidget::showEvent(event);
     // The side panel is the anchor: it hiding, or its window moving or resizing, closes the overlay.
