@@ -39,6 +39,10 @@ public:
     // frames may arrive in one string.
     void onRadioResponse(const QString &response);
 
+    // Whether the radio link is up (authenticated). While it is down a client's SET is dropped, not
+    // forwarded or applied. Down until set.
+    void setRadioLinkUp(bool up) { m_radioLinkUp = up; }
+
     // How long a client waits for the radio before its query is dropped unanswered.
     static constexpr int kRadioQueryTimeoutMs = 1000;
 
@@ -65,6 +69,8 @@ private slots:
 
 private:
     QByteArray handleCommand(const QString &cmd, QTcpSocket *client);
+
+    bool m_radioLinkUp = false;
 
     struct ClientState {
         QByteArray buffer;

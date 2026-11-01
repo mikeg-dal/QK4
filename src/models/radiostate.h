@@ -589,6 +589,35 @@ public:
     QString modeStringFull() const;  // Main RX mode with sub-mode
     QString modeStringFullB() const; // Sub RX mode with sub-mode
 
+    // The values behind the CAT server's GET replies. hasReported() is false until the radio has
+    // reported that value since the last reset(), so a client is never answered from a sentinel the
+    // getters above read as off, 0 or Slow. TX state has no entry: the radio reports it only when it
+    // changes, so it is never known on an idle link.
+    enum class CatField {
+        FrequencyA,
+        FrequencyB,
+        ModeA,
+        ModeB,
+        FilterBandwidth,
+        RfPower,
+        KeyerSpeed,
+        Split,
+        RitA,
+        RitB,
+        Xit,
+        RitXitOffsetA,
+        RitXitOffsetB,
+        AgcA,
+        AgcB,
+        NoiseBlankerA,
+        NoiseBlankerB,
+        NoiseReductionA,
+        NoiseReductionB,
+        Diversity,
+        VoxCurrentMode,
+    };
+    bool hasReported(CatField field) const;
+
     // Static helpers
     static Mode modeFromCode(int code);
     static QString modeToString(Mode mode);

@@ -19,12 +19,34 @@ void FrequencyVfoState::reset() {
 
 namespace FrequencyVfoHandlers {
 
+std::optional<quint64> frequencyFromCatDigits(QStringView digits) {
+    constexpr qsizetype MaxDigits = 11;
+    if (digits.isEmpty() || digits.size() > MaxDigits)
+        return std::nullopt;
+    quint64 value = 0;
+    for (const QChar c : digits) {
+        // WHY not toULongLong(): it skips surrounding whitespace, which would change the digit count
+        // that decides the unit.
+        if (c < u'0' || c > u'9')
+            return std::nullopt;
+        value = value * 10 + static_cast<quint64>(c.unicode() - u'0');
+    }
+    if (digits.size() <= 2)
+        return value * 1'000'000;
+    if (digits.size() <= 5)
+        return value * 1'000;
+    return value;
+}
+
 void handleFA(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() <= 2)
         return;
-    bool ok;
-    const quint64 freq = cmd.mid(2).toULongLong(&ok);
-    if (ok && state.vfoA != freq) {
+    // A CAT-server client's SET is applied here too, and the K4 reads short forms (FA14; = 14 MHz).
+    const auto parsed = frequencyFromCatDigits(QStringView(cmd).mid(2));
+    if (!parsed)
+        return;
+    const quint64 freq = *parsed;
+    if (state.vfoA != freq) {
         state.vfoA = freq;
         state.frequency = freq;
         emit owner.frequencyChanged(freq);
@@ -34,9 +56,11 @@ void handleFA(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
 void handleFB(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() <= 2)
         return;
-    bool ok;
-    const quint64 freq = cmd.mid(2).toULongLong(&ok);
-    if (ok && state.vfoB != freq) {
+    const auto parsed = frequencyFromCatDigits(QStringView(cmd).mid(2));
+    if (!parsed)
+        return;
+    const quint64 freq = *parsed;
+    if (state.vfoB != freq) {
         state.vfoB = freq;
         emit owner.frequencyBChanged(freq);
     }

@@ -20,8 +20,8 @@ rules below still apply to any change to `RadioState`.
 
 CI builds both through the `qk4_tests` aggregate target and runs them with `ctest`
 (`.github/workflows/ci-checks.yml`). Not every row below has a test through the server. At the
-time of writing these replies have none: `OM`, `RVM`/`RVD`, the `KS;` GET, `SM`, `TM`, `FW` and
-`DT` with a stored value. A change to those rows is not caught by CI.
+time of writing these replies have none: `OM`, `RVM`/`RVD`, `SM`, `TM`, and `FW` and `DT` with a
+stored value (`KS` and `FW` are tested only for staying silent before a report). A change to those rows is not caught by CI.
 
 ## Getters read by CatServer and CatFrames
 
@@ -98,6 +98,18 @@ On a signal it reads `noiseBlankerLevel()`, `noiseBlankerEnabled()`, `noiseBlank
 3. **Keep the semantics.** `VX` answers for the current mode's group only; it must not become an
    any-of rollup. Sentinels (−1) mean "no answer yet"; replacing one with 0 makes a real zero and
    "unknown" look the same.
+6. **No reply from a value the radio has not reported.** Several getters read "unknown" as off, 0
+   or Slow for the UI, so the server checks `RadioState::hasReported(CatField)` before answering
+   FA, FB, MD, MD$, FT, RT, RT$, XT, RO, RO$, PC, PCX, GT, GT$, KS, NB, NB$, NR, NR$, DV, VX, FW
+   and IF; SQ, RG, BW, DT and SMH have their own sentinels. `TQ` is the exception: the radio
+   reports TX state only when it changes, so it is never known on an idle link, and a client
+   polling it must not stall. A new reply backed by such a getter needs a `CatField`.
+7. **SETs only while the radio link is up.** `CatServer::setRadioLinkUp()` follows
+   `ConnectionController::connectionStateChanged` (Connected = authenticated); while it is down a
+   client's SET is dropped, neither forwarded nor applied to `RadioState`. While it is up MainWindow
+   forwards the SET and applies it at once (the radio does not report changes made over QK4's own
+   link at AI4). The FA/FB and MD handlers read a SET as the K4 does: FA/FB 1-2 digits MHz, 3-5
+   kHz, 6+ Hz; MD 0 and 8 (N/A) ignored.
 4. **Keep the signal set and arguments** that `CatPushBroadcaster` connects to, and emit only on a
    real change. A signal that fires without a change becomes a push to every AI client.
 5. Before committing a change to any row, run

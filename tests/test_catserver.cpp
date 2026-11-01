@@ -268,7 +268,7 @@ private slots:
 
     void testSplitOff() {
         RadioState rs;
-        // Default: split off
+        rs.parseCATCommand("FT0;");
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
@@ -393,7 +393,7 @@ private slots:
 
     void testRitOffset() {
         RadioState rs;
-        // Default RIT offset = 0
+        rs.parseCATCommand("RO+0000;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -402,6 +402,7 @@ private slots:
 
     void testRitOff() {
         RadioState rs;
+        rs.parseCATCommand("RT0;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -410,6 +411,7 @@ private slots:
 
     void testXitOff() {
         RadioState rs;
+        rs.parseCATCommand("XT0;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -418,6 +420,7 @@ private slots:
 
     void testNoiseBlankerOff() {
         RadioState rs;
+        rs.parseCATCommand("NB0000;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -426,6 +429,7 @@ private slots:
 
     void testNoiseReductionOff() {
         RadioState rs;
+        rs.parseCATCommand("NR000;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -437,7 +441,10 @@ private slots:
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
-        QCOMPARE(sendCommand(server, "VX;"), QString("VXV0;")); // no mode yet: the voice group
+        QCOMPARE(sendCommand(server, "VX;"), QString()); // no mode yet: which group VX means is unknown
+        rs.parseCATCommand("MD2;");
+        rs.parseCATCommand("VXV0;");
+        QCOMPARE(sendCommand(server, "VX;"), QString("VXV0;"));
     }
 
     // =========================================================================
@@ -450,6 +457,8 @@ private slots:
         RadioState rs;
         rs.parseCATCommand("FA00007031740;");
         rs.parseCATCommand("MD3;");
+        for (const char *idle : {"RT0;", "XT0;", "RO+0000;", "FT0;"})
+            rs.parseCATCommand(idle);
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
@@ -462,6 +471,8 @@ private slots:
         RadioState rs;
         rs.parseCATCommand("FA00014250000;");
         rs.parseCATCommand("MD1;");
+        for (const char *idle : {"RT0;", "XT0;", "RO+0000;", "FT0;"})
+            rs.parseCATCommand(idle);
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
@@ -478,6 +489,7 @@ private slots:
         rs.parseCATCommand("RT1;");
         rs.parseCATCommand("RO+0050;");
         rs.parseCATCommand("FT1;");
+        rs.parseCATCommand("XT0;");
         rs.parseCATCommand("TX;");
 
         CatServer server(&rs);
@@ -506,7 +518,7 @@ private slots:
 
     void testDiversityOff() {
         RadioState rs;
-        // Default: diversity off
+        rs.parseCATCommand("DV0;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -537,6 +549,7 @@ private slots:
         QVERIFY(server.start(0));
 
         // Mirror MainWindow's catCommandReceived handler: optimistic local parse.
+        server.setRadioLinkUp(true);
         QObject::connect(&server, &CatServer::catCommandReceived, &rs,
                          [&rs](const QString &cmd) { rs.parseCATCommand(cmd); });
 
@@ -566,6 +579,7 @@ private slots:
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
+        server.setRadioLinkUp(true);
         QSignalSpy spy(&server, &CatServer::catCommandReceived);
 
         QTcpSocket client;
@@ -589,6 +603,7 @@ private slots:
         rs.parseCATCommand("LK1;"); // VFO A locked, B free
         CatServer server(&rs);
         QVERIFY(server.start(0));
+        server.setRadioLinkUp(true);
         QSignalSpy spy(&server, &CatServer::catCommandReceived);
 
         QTcpSocket client;
@@ -1001,6 +1016,88 @@ private slots:
 
         QCOMPARE(sendCommand(server, "SQ;"), QString());
         QCOMPARE(sendCommand(server, "SQ$;"), QString());
+    }
+
+    // CAT-011. Before the radio has reported a value its getter reads as off, 0 or Slow, and the
+    // server used to answer that as a setting (FW-0000001;, KS008;, PC000H;). Every query here
+    // must go unanswered. ID; follows as the one query with a fixed answer, so getting exactly its
+    // reply proves the rest stayed silent without waiting out a timeout per query.
+    void testQueriesAreSilentUntilTheRadioReports() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        const QString unreported = "FA;FB;MD;MD$;FT;RT;RT$;XT;RO;RO$;PC;PCX;GT;GT$;KS;NB;NB$;NR;NR$;"
+                                   "DV;VX;FW;IF;";
+        QCOMPARE(sendCommand(server, unreported + "ID;"), QString("ID017;"));
+
+        // After a disconnect reset() makes every field unknown again, so the silence returns.
+        rs.parseCATCommand("FA00014074000;");
+        rs.parseCATCommand("KS020;");
+        QCOMPARE(sendCommand(server, "FA;"), QString("FA00014074000;"));
+        rs.reset();
+        QCOMPARE(sendCommand(server, "FA;KS;ID;"), QString("ID017;"));
+    }
+
+    // TX state is the one exception: the radio sends it only when it changes, so it is never known
+    // on an idle link, and WSJT-X polls TQ.
+    void testTqAnswersBeforeAnyTransmitReport() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QCOMPARE(sendCommand(server, "TQ;"), QString("TQ0;"));
+    }
+
+    // APP-006. With no radio a client's SET has nothing to change: it is neither forwarded nor
+    // applied, and forwarding resumes once the link is up.
+    void testSetsAreDroppedWhileTheRadioLinkIsDown() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy spy(&server, &CatServer::catCommandReceived);
+
+        QTcpSocket client;
+        client.connectToHost("127.0.0.1", server.port());
+        QVERIFY(client.waitForConnected(1000));
+        client.write("FA14;MD3;");
+        client.flush();
+        QTest::qWait(100);
+        QCOMPARE(spy.count(), 0);
+
+        server.setRadioLinkUp(true);
+        client.write("FA14;");
+        client.flush();
+        QVERIFY(QTest::qWaitFor([&] { return spy.count() == 1; }, kReplyTimeoutMs));
+        QCOMPARE(spy.at(0).at(0).toString(), QString("FA14;"));
+
+        server.setRadioLinkUp(false);
+        client.write("MD3;");
+        client.flush();
+        QTest::qWait(100);
+        QCOMPARE(spy.count(), 1);
+        client.disconnectFromHost();
+    }
+
+    // CAT-004. MainWindow applies a forwarded SET to RadioState as the radio will read it: FA14; is
+    // 14 MHz, not 14 Hz, and an undefined mode leaves the mode alone.
+    void testForwardedShortFormsApplyAsTheRadioReadsThem() {
+        RadioState rs;
+        rs.parseCATCommand("MD3;");
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        server.setRadioLinkUp(true);
+        QObject::connect(&server, &CatServer::catCommandReceived, &rs,
+                         [&rs](const QString &cmd) { rs.parseCATCommand(cmd); });
+
+        QTcpSocket client;
+        client.connectToHost("127.0.0.1", server.port());
+        QVERIFY(client.waitForConnected(1000));
+        client.write("FA14;FB7100;MD8;");
+        client.flush();
+        QVERIFY(QTest::qWaitFor([&] { return rs.vfoB() == 7'100'000; }, kReplyTimeoutMs));
+        QCOMPARE(rs.frequency(), quint64(14'000'000));
+        QCOMPARE(rs.mode(), RadioState::CW);
+        client.disconnectFromHost();
     }
 
     // SMH / SMH$ answer the radio's own dBm reading in its own form (SMH-110, SMH$-122 from a K4D,

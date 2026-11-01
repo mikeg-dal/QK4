@@ -4,9 +4,11 @@
 #include "reportedflag.h"
 
 #include <QString>
+#include <QStringView>
 #include <QtGlobal>
 
 #include <limits>
+#include <optional>
 
 class RadioState;
 
@@ -41,6 +43,11 @@ struct FrequencyVfoState {
 };
 
 namespace FrequencyVfoHandlers {
+/// The frequency in Hz that an FA/FB argument (the digits after "FA"/"FB", no ';') sets, read the
+/// way the K4 reads it (Programmer's Reference D5, FA): 1-2 digits are MHz, 3-5 kHz, 6-11 Hz, so
+/// FA14; is 14 MHz and FA7100; 7.1 MHz. The radio itself always reports 11 digits in Hz. nullopt
+/// for anything but 1-11 ASCII digits. No band check: transverter frequencies pass through.
+std::optional<quint64> frequencyFromCatDigits(QStringView digits);
 
 void handleFA(FrequencyVfoState &state, RadioState &owner, const QString &cmd);
 void handleFB(FrequencyVfoState &state, RadioState &owner, const QString &cmd);

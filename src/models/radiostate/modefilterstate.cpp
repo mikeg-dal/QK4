@@ -32,6 +32,8 @@ void handleMD(ModeFilterState &state, RadioState &owner, const QString &cmd) {
     if (!ok)
         return;
     const int newMode = RadioState::modeFromCode(modeCode);
+    if (newMode == RadioState::Unknown)
+        return;
     if (state.mode != newMode) {
         state.mode = newMode;
         emit owner.modeChanged(static_cast<RadioState::Mode>(newMode));
@@ -51,6 +53,8 @@ void handleMDSub(ModeFilterState &state, RadioState &owner, const QString &cmd) 
     if (!ok)
         return;
     const int newMode = RadioState::modeFromCode(modeCode);
+    if (newMode == RadioState::Unknown)
+        return;
     if (state.modeB != newMode) {
         state.modeB = newMode;
         emit owner.modeBChanged(static_cast<RadioState::Mode>(newMode));

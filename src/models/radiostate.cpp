@@ -118,7 +118,9 @@ RadioState::Mode RadioState::modeFromCode(int code) {
     case 9:
         return DATA_R;
     default:
-        return USB;
+        // 0 and 8 are N/A in the K4 reference (MD$). A CAT-server client's SET is applied through
+        // the same handler, so an undefined code must not read as USB.
+        return Unknown;
     }
 }
 
@@ -1129,6 +1131,71 @@ int RadioState::monitorLevelForCurrentMode() const {
 
 int RadioState::monitorModeCode() const {
     return RadioUtils::monitorModeCode(modeClass());
+}
+
+bool RadioState::hasReported(CatField field) const {
+    const auto &f = m_frequencyVfoState;
+    const auto &m = m_modeFilterState;
+    const auto &p = m_processingState;
+    constexpr int PUnknown = ProcessingState::Unknown;
+    switch (field) {
+    case CatField::FrequencyA:
+        return f.vfoA != 0;
+    case CatField::FrequencyB:
+        return f.vfoB != 0;
+    case CatField::ModeA:
+        return m.mode != Unknown;
+    case CatField::ModeB:
+        return m.modeB != Unknown;
+    case CatField::FilterBandwidth:
+        return m.filterBandwidth >= 0;
+    case CatField::RfPower:
+        return m_levelsState.rfPower >= 0.0;
+    case CatField::KeyerSpeed:
+        return m.keyerSpeed >= 0;
+    case CatField::Split:
+        return f.splitEnabled.isKnown();
+    case CatField::RitA:
+        return f.ritEnabled.isKnown();
+    case CatField::RitB:
+        return f.ritEnabledB.isKnown();
+    case CatField::Xit:
+        return f.xitEnabled.isKnown();
+    case CatField::RitXitOffsetA:
+        return f.ritXitOffset != FrequencyVfoState::RitXitOffsetUnknown;
+    case CatField::RitXitOffsetB:
+        return f.ritXitOffsetB != FrequencyVfoState::RitXitOffsetUnknown;
+    case CatField::AgcA:
+        return p.agcSpeed != PUnknown;
+    case CatField::AgcB:
+        return p.agcSpeedB != PUnknown;
+    case CatField::NoiseBlankerA:
+        return p.noiseBlankerLevel != PUnknown && p.noiseBlankerEnabled.isKnown() &&
+               p.noiseBlankerFilterWidth != PUnknown;
+    case CatField::NoiseBlankerB:
+        return p.noiseBlankerLevelB != PUnknown && p.noiseBlankerEnabledB.isKnown() &&
+               p.noiseBlankerFilterWidthB != PUnknown;
+    case CatField::NoiseReductionA:
+        return p.noiseReductionLevel != PUnknown && p.noiseReductionEnabled.isKnown();
+    case CatField::NoiseReductionB:
+        return p.noiseReductionLevelB != PUnknown && p.noiseReductionEnabledB.isKnown();
+    case CatField::Diversity:
+        return m_rxTxMeterState.diversityEnabled.isKnown();
+    case CatField::VoxCurrentMode:
+        // Which flag VX reports depends on the mode, so the mode must be known too.
+        if (m.mode == Unknown)
+            return false;
+        switch (modeClass()) {
+        case RadioUtils::ModeClass::CwDirect:
+            return m_audioEffectsState.voxCW.isKnown();
+        case RadioUtils::ModeClass::AfData:
+            return m_audioEffectsState.voxData.isKnown();
+        case RadioUtils::ModeClass::Voice:
+            break;
+        }
+        return m_audioEffectsState.voxVoice.isKnown();
+    }
+    return false;
 }
 
 bool RadioState::voxForCurrentMode() const {

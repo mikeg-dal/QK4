@@ -404,14 +404,20 @@ void MainWindow::setupCatServer() {
     // Apps connect using their built-in K4 support - no protocol translation needed
     m_catServer = new CatServer(m_radioState, this);
 
+    // A client's SET is forwarded only while the radio link is up (Connected = authenticated); the
+    // CAT server drops it otherwise, so nothing reaches RadioState with no radio behind it.
+    connect(m_connectionController, &ConnectionController::connectionStateChanged, m_catServer,
+            [this](TcpClient::ConnectionState state) { m_catServer->setRadioLinkUp(state == TcpClient::Connected); });
+    m_catServer->setRadioLinkUp(m_connectionController->connectionState() == TcpClient::Connected);
+
     // Forward CAT commands from external apps to the real K4
     connect(m_catServer, &CatServer::catCommandReceived, this, [this](const QString &command) {
         m_connectionController->sendCAT(command);
-        // Optimistically update RadioState so the panadapter passband tracks immediately,
-        // without waiting for the K4's AI4 roundtrip. Spectrum packets from the K4 arrive
-        // before the CAT echo, so m_centerFreq moves while m_tunedFreq is still stale —
-        // the passband goes off-screen until the echo lands. Mirrors what the VFO scroll
-        // wheel handler already does: sendCAT + parseCATCommand together.
+        // Applied at once as well: the radio does not report a change made over QK4's own link at
+        // AI4, and even when it does, spectrum frames move ahead of the echo and the passband would
+        // leave the screen until it lands. The handlers read a client's SET the way the K4 does (FA
+        // short forms, undefined MD codes ignored), and a SET the radio refuses as out of range is
+        // answered with its current value, which corrects this.
         m_radioState->parseCATCommand(command);
     });
 

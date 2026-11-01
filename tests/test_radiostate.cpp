@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 #include "models/radiostate.h"
 
@@ -3157,11 +3158,106 @@ private slots:
         QCOMPARE(rs.mode(), RadioState::DATA_R);
     }
 
-    void testModeUnknownCodeFallsBackToUsb() {
-        // modeFromCode defaults to USB on any code not in 1-9 (except 8).
+    void testModeUndefinedCodesIgnored() {
+        // 0 and 8 are N/A in the K4 reference. A CAT-server client's MD8; reaches the same handler,
+        // so it must leave the mode alone rather than read as USB.
         RadioState rs;
-        rs.parseCATCommand("MD8;"); // 8 is unassigned
-        QCOMPARE(rs.mode(), RadioState::USB);
+        rs.parseCATCommand("MD3;");
+        rs.parseCATCommand("MD$6;");
+        QSignalSpy spyA(&rs, &RadioState::modeChanged);
+        QSignalSpy spyB(&rs, &RadioState::modeBChanged);
+        for (const char *cmd : {"MD0;", "MD8;", "MD10;", "MD$0;", "MD$8;"})
+            rs.parseCATCommand(cmd);
+        QCOMPARE(rs.mode(), RadioState::CW);
+        QCOMPARE(rs.modeB(), RadioState::DATA);
+        QCOMPARE(spyA.count(), 0);
+        QCOMPARE(spyB.count(), 0);
+
+        RadioState fresh;
+        fresh.parseCATCommand("MD8;");
+        QVERIFY(!fresh.hasReported(RadioState::CatField::ModeA));
+    }
+
+    void testFrequencyShortFormsReadAsTheK4ReadsThem() {
+        // Programmer's Reference D5, FA: 1-2 digits MHz, 3-5 kHz, 6+ Hz. FB uses the same rules.
+        const QList<std::pair<QString, quint64>> cases = {
+            {"7", 7'000'000},      {"14", 14'000'000},  {"100", 100'000},           {"7100", 7'100'000},
+            {"14074", 14'074'000}, {"500000", 500'000}, {"144200000", 144'200'000}, {"00014074000", 14'074'000},
+        };
+        for (const auto &[digits, hz] : cases) {
+            RadioState rs;
+            rs.parseCATCommand("FA" + digits + ";");
+            rs.parseCATCommand("FB" + digits + ";");
+            QCOMPARE(rs.frequency(), hz);
+            QCOMPARE(rs.vfoB(), hz);
+        }
+    }
+
+    void testFrequencyMalformedArgumentsIgnored() {
+        RadioState rs;
+        rs.parseCATCommand("FA00014074000;");
+        QSignalSpy spy(&rs, &RadioState::frequencyChanged);
+        // Whitespace and signs would change the digit count that decides the unit; 12 digits is
+        // more than the radio accepts.
+        for (const char *cmd : {"FA 14;", "FA14 ;", "FA+14;", "FA-7;", "FA000140740000;", "FA7.1;"})
+            rs.parseCATCommand(cmd);
+        QCOMPARE(rs.frequency(), quint64(14'074'000));
+        QCOMPARE(spy.count(), 0);
+    }
+
+    void testHasReportedFollowsTheRadioAndReset_data() {
+        QTest::addColumn<int>("field");
+        QTest::addColumn<QStringList>("reports");
+        using F = RadioState::CatField;
+        auto row = [](const char *name, F f, QStringList reports) {
+            QTest::newRow(name) << static_cast<int>(f) << reports;
+        };
+        row("FA", F::FrequencyA, {"FA00014074000;"});
+        row("FB", F::FrequencyB, {"FB00007100000;"});
+        row("MD", F::ModeA, {"MD2;"});
+        row("MD$", F::ModeB, {"MD$3;"});
+        row("BW", F::FilterBandwidth, {"BW0240;"});
+        row("PC", F::RfPower, {"PC050H;"});
+        row("KS", F::KeyerSpeed, {"KS020;"});
+        row("FT", F::Split, {"FT0;"});
+        row("RT", F::RitA, {"RT0;"});
+        row("RT$", F::RitB, {"RT$0;"});
+        row("XT", F::Xit, {"XT0;"});
+        row("RO", F::RitXitOffsetA, {"RO+0000;"});
+        row("RO$", F::RitXitOffsetB, {"RO$+0000;"});
+        row("GT", F::AgcA, {"GT0;"});
+        row("GT$", F::AgcB, {"GT$0;"});
+        row("NB", F::NoiseBlankerA, {"NB0000;"});
+        row("NB$", F::NoiseBlankerB, {"NB$0000;"});
+        row("NR", F::NoiseReductionA, {"NR000;"});
+        row("NR$", F::NoiseReductionB, {"NR$000;"});
+        row("DV", F::Diversity, {"DV0;"});
+        row("VX voice", F::VoxCurrentMode, {"MD2;", "VXV0;"});
+        row("VX cw", F::VoxCurrentMode, {"MD3;", "VXC0;"});
+    }
+
+    void testHasReportedFollowsTheRadioAndReset() {
+        // Every first report here is the value the getters already show before a report (off, 0),
+        // so only hasReported() can tell the CAT server that the radio has really said it.
+        QFETCH(int, field);
+        QFETCH(QStringList, reports);
+        const auto f = static_cast<RadioState::CatField>(field);
+        RadioState rs;
+        QVERIFY(!rs.hasReported(f));
+        for (const QString &cmd : reports)
+            rs.parseCATCommand(cmd);
+        QVERIFY(rs.hasReported(f));
+        rs.reset();
+        QVERIFY(!rs.hasReported(f));
+    }
+
+    void testVoxReportedOnlyForTheCurrentModeGroup() {
+        RadioState rs;
+        rs.parseCATCommand("MD3;");
+        rs.parseCATCommand("VXV1;"); // voice flag known, but VX in CW reports the CW flag
+        QVERIFY(!rs.hasReported(RadioState::CatField::VoxCurrentMode));
+        rs.parseCATCommand("VXC0;");
+        QVERIFY(rs.hasReported(RadioState::CatField::VoxCurrentMode));
     }
 
     void testModeChangeEmitsQskDelayRefresh() {
