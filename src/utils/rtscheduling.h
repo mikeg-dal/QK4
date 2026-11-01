@@ -97,7 +97,6 @@ public:
 
     void begin();
     void end();
-    bool active() const { return m_token != nullptr; }
 
 private:
     void *m_token = nullptr; // the activity object, retained (macOS only)

@@ -37,18 +37,6 @@ constexpr int KEYING_WEIGHT_MIN = 90;
 constexpr int KEYING_WEIGHT_MAX = 125;
 constexpr int KEYING_WEIGHT_STEP = 5;
 
-/// Dit unit length in ms for a keyer speed, clamped to the K4's range.
-///
-/// WHY this is shared rather than written out at each site: the places that derive an element
-/// length from the speed — the local iambic keyer's element clock and the sidetone's PCM block
-/// length — have to agree exactly. They did not: the
-/// sidetone clamped to 5-60 WPM while the keyer clamped not at all, so above 60 WPM the sidetone
-/// built longer blocks than the keyer's element interval and fell further behind on every element,
-/// with no recovery until keying stopped. One conversion, one clamp, no drift.
-inline int ditMsForWpm(int wpm) {
-    return 1200 / qBound(KEYER_WPM_MIN, wpm, KEYER_WPM_MAX);
-}
-
 // K4 limits from the Programmer's Reference rev. D12, in the unit RadioState stores. Every control
 // that steps one of these values and every builder that sends it uses these, never a copy.
 // CW: "CWnn; where nn is sidetone pitch x10 Hz (25-95)".
