@@ -205,10 +205,8 @@ void ButtonRowDispatcher::onTxClicked(int index) {
             // Optimistic — ES SET is echoed, but also immediately re-paint labels.
             m_radioState->setEssbEnabled(newState);
             m_radioState->setSsbTxBw(bw);
-            if (m_popupManager->anchorForLane(PopupManager::ButtonRowLane::Tx)) {
-                m_popupManager->setTxButtonLabel(5, "SSB BW", RadioUtils::txBandwidthLabel(bw), false);
-                m_popupManager->setTxButtonLabel(6, "ESSB", newState ? "ON" : "OFF", false);
-            }
+            m_popupManager->setTxButtonLabel(5, "SSB BW", RadioUtils::txBandwidthLabel(bw), false);
+            m_popupManager->setTxButtonLabel(6, "ESSB", newState ? "ON" : "OFF", false);
         }
         break;
     }
@@ -239,11 +237,6 @@ void ButtonRowDispatcher::onTxRightClicked(int index) {
 }
 
 void ButtonRowDispatcher::refreshTxButtonsForMode() {
-    // TX popup's anchor is nullptr until setBottomMenuBar is injected
-    // and the popup is first constructed; skip early refreshes.
-    if (!m_popupManager->anchorForLane(PopupManager::ButtonRowLane::Tx))
-        return;
-
     const RadioState::Mode mode = m_radioState->mode();
     if (mode == RadioState::CW || mode == RadioState::CW_R) {
         // CW mode: buttons 5/6 show paddle orientation + iambic mode, and keying weight.

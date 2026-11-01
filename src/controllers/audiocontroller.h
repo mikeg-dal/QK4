@@ -66,9 +66,6 @@ public:
     // released yet.
     void setTxSourceAfterPtt(TxSource source);
 
-    // One block of TCI transmit audio, 48 kHz mono Float32. Ignored unless the source is Tci.
-    void feedTciTxAudio(const QByteArray &f32Mono48k);
-
     // Route a TCI server's transmit audio straight to the TX thread, queued, without passing
     // through the main thread. Returns the connection; disconnecting it stops the audio.
     //

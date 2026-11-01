@@ -382,13 +382,6 @@ void AudioController::setTxSourceAfterPtt(TxSource source) {
         Qt::QueuedConnection);
 }
 
-void AudioController::feedTciTxAudio(const QByteArray &f32Mono48k) {
-    if (!m_txPipeline)
-        return;
-    // Queued: the encode pipeline runs on the TX thread.
-    QMetaObject::invokeMethod(m_txPipeline, &TxAudioPipeline::feedTciTxAudio, Qt::QueuedConnection, f32Mono48k);
-}
-
 QMetaObject::Connection AudioController::routeTciTxAudio(TciServer *server) {
     if (!m_txPipeline || !server)
         return {};
