@@ -4,6 +4,7 @@
 #include <QString>
 #include <QThread>
 #include <QTimer>
+#include "utils/radioutils.h"
 #include "utils/rtscheduling.h"
 #include <cstring>
 #include <libusb-1.0/libusb.h>
@@ -20,7 +21,7 @@ static_assert(LIBUSB_API_VERSION >= 0x01000105, "libusb >= 1.0.21 required");
 // =============================================================================
 
 void KpodPlusUsbWorker::buildKeyerSpeedCmd(int wpm, unsigned char out[8]) {
-    wpm = qBound(8, wpm, 100);
+    wpm = qBound(RadioUtils::KEYER_WPM_MIN, wpm, RadioUtils::KEYER_WPM_MAX);
     std::memset(out, 0, 8);
     out[0] = 'K';
     out[1] = 0x03;

@@ -25,7 +25,8 @@ namespace {
 constexpr int kKpodPlusStuckTimeoutSec = 60;
 
 // WHY 1.5 s: close() is queued behind the element the keyer is sending, and an iambic element plus
-// its space is up to 600 ms at the 8 WPM floor (RadioUtils::ditMsForWpm). Then run() returns.
+// its space is up to 600 ms at the 8 WPM floor (RadioUtils::KEYER_WPM_MIN; a dit is 1200/WPM ms). Then
+// run() returns.
 constexpr std::chrono::milliseconds kKeyerStopTimeout{1500};
 // WHY 2 s: stop() destroys the sidetone QAudioSink, as AudioEngine's does for RX audio.
 constexpr std::chrono::milliseconds kSidetoneStopTimeout{2000};
