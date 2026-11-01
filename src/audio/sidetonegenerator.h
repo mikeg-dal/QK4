@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "hardware/keyertiming.h"
+#include "utils/rtsan.h"
 
 class SidetoneScheduler;
 
@@ -61,9 +62,13 @@ private:
     void closeAudio();
     void onSystemDefaultOutputChanged();
     void rebuildTone();
-    void renderBlock(float *out, int frames, double dacTime, double now);
-    void convert(const float *in, int frames, char *dst) const;
+    // The per-block work on the real-time sidetone thread (CONVENTIONS Rule 16). pump() is not
+    // marked: its QAudioSink calls are Qt's, which RTSan would report and this code cannot vouch
+    // for. It logs nothing per block; dropouts are counted and reported when the stream closes.
+    void renderBlock(float *out, int frames, double dacTime, double now) noexcept QK4_NONBLOCKING;
+    void convert(const float *in, int frames, char *dst) const noexcept QK4_NONBLOCKING;
     void pump();
+    void reportStreamDropouts();
 
     SidetoneScheduler &m_scheduler;
     CwKeying::Clock &m_clock;
@@ -88,14 +93,21 @@ private:
     double m_fallStep = 0;
     bool m_keyed = false;
     double m_envelope = 0.0;
-    std::vector<float> m_cycle; // one exact period of the tone at unit amplitude
+    // One exact period of the tone at unit amplitude. Reserved for the longest period (one second)
+    // when the stream opens, so a pitch change never allocates.
+    std::vector<float> m_cycle;
     size_t m_cycleIndex = 0;
     int m_toneFrequency = 0;
     qint64 m_framesWritten = 0;
     double m_targetQueue = 0; // adapts upward from kTargetQueueSeconds; see pump()
+    // One block each, sized when the stream opens.
     QByteArray m_bytes;
     std::vector<float> m_scratch;
     std::vector<float> m_positions;
+    // Counted by pump(), reported by closeAudio().
+    int m_dryRuns = 0;
+    int m_dryRunsAtCapacity = 0;
+    int m_shortWrites = 0;
 
     static constexpr double kRiseSeconds = .004;
     static constexpr double kFallSeconds = .004;

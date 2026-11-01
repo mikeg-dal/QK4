@@ -97,8 +97,15 @@ void SidetoneGenerator::initAudio() {
     m_envelope = 0.0;
     m_framesWritten = 0;
     m_targetQueue = kTargetQueueSeconds;
+    m_dryRuns = 0;
+    m_dryRunsAtCapacity = 0;
+    m_shortWrites = 0;
     m_toneFrequency = 0;
+    m_cycle.reserve(static_cast<size_t>(m_rate));
     rebuildTone();
+    m_scratch.resize(static_cast<size_t>(m_blockFrames));
+    m_positions.resize(static_cast<size_t>(m_blockFrames));
+    m_bytes.resize(static_cast<qsizetype>(m_blockFrames) * format.bytesPerFrame());
 
     m_audioSink = new QAudioSink(device, format, this);
     m_audioSink->setBufferSize(
@@ -132,6 +139,7 @@ void SidetoneGenerator::closeAudio() {
         m_pumpTimer->stop();
     if (!m_audioSink)
         return;
+    reportStreamDropouts();
     m_pushDevice = nullptr;
     m_audioSink->stop();
     delete m_audioSink;
@@ -190,6 +198,8 @@ void SidetoneGenerator::onSystemDefaultOutputChanged() {
 
 void SidetoneGenerator::setFrequency(int hz) {
     m_frequency.store(hz, std::memory_order_relaxed);
+    if (m_rate > 0)
+        rebuildTone();
 }
 
 void SidetoneGenerator::setVolume(float volume) {
@@ -210,7 +220,7 @@ void SidetoneGenerator::rebuildTone() {
     m_cycleIndex %= m_cycle.size();
 }
 
-void SidetoneGenerator::renderBlock(float *out, int frames, double dacTime, double now) {
+void SidetoneGenerator::renderBlock(float *out, int frames, double dacTime, double now) noexcept {
     m_scheduler.noteBlockTiming(dacTime, now, static_cast<double>(frames) / m_rate);
     const bool idle = !m_keyed && m_envelope <= 0 && !m_scheduler.pendingEdgeHeld();
     if (idle)
@@ -219,7 +229,6 @@ void SidetoneGenerator::renderBlock(float *out, int frames, double dacTime, doub
         std::fill(out, out + frames, 0.0f);
         return;
     }
-    m_positions.resize(static_cast<size_t>(frames));
     int start = 0;
     while (start < frames) {
         const auto edge = m_scheduler.nextKeyEdge(start, frames, dacTime, m_rate);
@@ -234,7 +243,6 @@ void SidetoneGenerator::renderBlock(float *out, int frames, double dacTime, doub
         m_keyed = edge->down;
         start = end;
     }
-    rebuildTone();
     const float volume = m_volume.load(std::memory_order_relaxed);
     for (int i = 0; i < frames; ++i) {
         const double env = .5 * (1 - std::cos(kPi * m_positions[static_cast<size_t>(i)]));
@@ -243,7 +251,7 @@ void SidetoneGenerator::renderBlock(float *out, int frames, double dacTime, doub
     }
 }
 
-void SidetoneGenerator::convert(const float *in, int frames, char *dst) const {
+void SidetoneGenerator::convert(const float *in, int frames, char *dst) const noexcept {
     const int channels = m_format.channelCount();
     const auto sampleFormat = m_format.sampleFormat();
     const int bytesPerSample = m_format.bytesPerSample();
@@ -292,8 +300,6 @@ void SidetoneGenerator::pump() {
         return;
     const double bytesPerSecond = static_cast<double>(m_format.bytesForDuration(1000000));
     const qsizetype blockBytes = static_cast<qsizetype>(m_blockFrames) * bytesPerFrame;
-    m_scratch.resize(static_cast<size_t>(m_blockFrames));
-    m_bytes.resize(blockBytes);
     while (true) {
         const qsizetype freeBytes = m_audioSink->bytesFree();
         const double queued = std::max<qsizetype>(0, m_audioSink->bufferSize() - freeBytes) / bytesPerSecond;
@@ -308,10 +314,9 @@ void SidetoneGenerator::pump() {
             const double cap = m_audioSink->bufferSize() / bytesPerSecond - blockSeconds;
             if (m_targetQueue + blockSeconds <= cap + 1e-9) {
                 m_targetQueue += blockSeconds;
-                qCInfo(lcAudio).nospace()
-                    << "SidetoneGenerator: output ran dry, now keeping " << m_targetQueue * 1000 << " ms queued";
+                ++m_dryRuns;
             } else {
-                qCDebug(lcAudioSidetone) << "output ran dry at the sink's capacity";
+                ++m_dryRunsAtCapacity;
             }
         }
         const double now = m_clock.now();
@@ -322,9 +327,19 @@ void SidetoneGenerator::pump() {
         convert(m_scratch.data(), m_blockFrames, m_bytes.data());
         const qint64 written = m_pushDevice->write(m_bytes.constData(), blockBytes);
         if (written < blockBytes) {
-            qCDebug(lcAudioSidetone) << "short write" << written << "of" << blockBytes;
+            ++m_shortWrites;
             return;
         }
         m_framesWritten += m_blockFrames;
     }
+}
+
+void SidetoneGenerator::reportStreamDropouts() {
+    if (m_dryRuns > 0)
+        qCInfo(lcAudio).nospace() << "SidetoneGenerator: output ran dry " << m_dryRuns << " time(s); kept "
+                                  << m_targetQueue * 1000 << " ms queued";
+    if (m_dryRunsAtCapacity > 0)
+        qCDebug(lcAudioSidetone) << "output ran dry at the sink's capacity" << m_dryRunsAtCapacity << "time(s)";
+    if (m_shortWrites > 0)
+        qCDebug(lcAudioSidetone) << "short writes:" << m_shortWrites;
 }

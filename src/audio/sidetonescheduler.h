@@ -62,9 +62,9 @@ public:
     std::optional<Edge> nextKeyEdge(int start, int frames, double dacTime, int sampleRate) noexcept QK4_NONBLOCKING;
     void easeLag(double seconds) noexcept QK4_NONBLOCKING;
 
-    // ---- state the harness and the mixer inspect ----
-    bool pendingEdgeHeld() const;
-    bool queueEmpty() const;
+    // ---- state the harness and the mixer inspect (the mixer per block, on the audio thread) ----
+    bool pendingEdgeHeld() const noexcept QK4_NONBLOCKING;
+    bool queueEmpty() const noexcept QK4_NONBLOCKING;
     double lag() const;
     void setLag(double seconds);
     void clear(); // stream opened or replaced: drop queued edges and every timing estimate

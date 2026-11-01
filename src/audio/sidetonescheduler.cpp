@@ -265,12 +265,12 @@ std::optional<SidetoneScheduler::Edge> SidetoneScheduler::nextKeyEdge(int start,
 
 // ---- state ----
 
-bool SidetoneScheduler::pendingEdgeHeld() const {
+bool SidetoneScheduler::pendingEdgeHeld() const noexcept {
     std::lock_guard lock(m_mutex);
     return m_pendingKeyEvent.has_value();
 }
 
-bool SidetoneScheduler::queueEmpty() const {
+bool SidetoneScheduler::queueEmpty() const noexcept {
     std::lock_guard lock(m_mutex);
     return m_keyEvents.empty();
 }
