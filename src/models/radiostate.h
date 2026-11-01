@@ -37,7 +37,7 @@
  * - Parsed-prefix order in the handler registry puts `$` variants before the base prefix so that
  *   `RO$` is not mis-matched as `RO`. See the handler-registration site in radiostate.cpp.
  *
- * `RO` vs `RO$` routing (see `memory/MEMORY.md` → "K4 RIT/XIT Offset Registers"):
+ * `RO` vs `RO$` routing (see `docs/k4-protocol-quirks.md` §2):
  * - No split, RIT or XIT: offset lives in `RO` (VFO A).
  * - Split + XIT: offset lives in `RO$` (VFO B — the TX VFO when split).
  * - BSET + RIT: offset lives in `RO$`.
@@ -161,7 +161,7 @@ public:
     double supplyVoltage() const { return m_rxTxMeterState.supplyVoltage; }
     double supplyCurrent() const { return m_rxTxMeterState.supplyCurrent; }
 
-    // PA drain current (SIRF LM field, parsed from centi-amps to amps)
+    // PA drain current in amps (SIRF PM field ÷ 768; see RxTxMeterState::paDrainCurrent)
     double paDrainCurrent() const { return m_rxTxMeterState.paDrainCurrent; }
 
     // Control states
@@ -534,7 +534,7 @@ public:
 
     // ESSB and SSB TX Bandwidth (ES command)
     bool essbEnabled() const { return m_audioEffectsState.essbEnabled.isOn(); } // 0=SSB, 1=ESSB
-    int ssbTxBw() const { return m_audioEffectsState.ssbTxBw; }                 // 30-45 (3.0-4.5 kHz in 100Hz units)
+    int ssbTxBw() const { return m_audioEffectsState.ssbTxBw; } // 100 Hz units; range: AudioEffectsState
 
     // Optimistic setters for VOX Gain/Anti-VOX/ESSB
     void setVoxGainVoice(int gain);
@@ -551,13 +551,13 @@ public:
     void setMicRearPreamp(int preamp);
     void setMicRearBias(int bias);
 
-    // Text Decode (TD$ command) - Main RX. Backed by m_textDecodeState (see
+    // Text Decode (TD command) - Main RX. Backed by m_textDecodeState (see
     // models/radiostate/textdecodestate.h).
     int textDecodeMode() const { return m_textDecodeState.textDecodeMode; }           // 0=off, 2-4=CW WPM
     int textDecodeThreshold() const { return m_textDecodeState.textDecodeThreshold; } // 0=AUTO, 1-9
     int textDecodeLines() const { return m_textDecodeState.textDecodeLines; }         // 1-9 lines
 
-    // Text Decode (TD$$ command) - Sub RX
+    // Text Decode (TD$ command) - Sub RX
     int textDecodeModeB() const { return m_textDecodeState.textDecodeModeB; }
     int textDecodeThresholdB() const { return m_textDecodeState.textDecodeThresholdB; }
     int textDecodeLinesB() const { return m_textDecodeState.textDecodeLinesB; }
@@ -763,8 +763,8 @@ signals:
     void essbChanged(bool enabled, int bw);  // ES: ESSB state and bandwidth
 
     // Text Decode
-    void textDecodeChanged();                                   // TD$ command - Main RX settings changed
-    void textDecodeBChanged();                                  // TD$$ command - Sub RX settings changed
+    void textDecodeChanged();                                   // TD command - Main RX settings changed
+    void textDecodeBChanged();                                  // TD$ command - Sub RX settings changed
     void textBufferReceived(const QString &text, bool isSubRx); // TB$ decoded text
 
 private:
@@ -849,7 +849,7 @@ private:
 
     // Antenna config masks live on m_antennaState (declared above).
 
-    // Text Decode (TD / TD$ / TD$$ + TB / TB$). See
+    // Text Decode (TD / TD$ + TB / TB$). See
     // models/radiostate/textdecodestate.h for the field layout and the handler
     // functions that mutate it.
     TextDecodeState m_textDecodeState;
@@ -1005,7 +1005,7 @@ private:
     void handleOM(const QString &cmd);   // Option Modules
     void handleRV(const QString &cmd);   // Firmware Version (RV.)
     void handleSIFP(const QString &cmd); // Power Supply Info
-    void handleSIRF(const QString &cmd); // RF Deck Status (PA drain current)
+    void handleSIRF(const QString &cmd); // RF board report (PA drain current, PA/LPA temperatures)
 
     void handleSL(const QString &cmd); // Streaming Latency
     void handleMN(const QString &cmd); // Message Bank

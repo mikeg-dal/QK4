@@ -16,8 +16,8 @@ class RadioState;
 // Handles FA, FB, FT, RT, RT$, XT, RO, RO$ — the CAT commands that
 // together determine "what frequency is the K4 tuned to right now?"
 //
-// See memory/MEMORY.md → K4 RIT/XIT Offset Registers for the K4's
-// quirky routing of XIT offset through RO$ when split is on.
+// See docs/k4-protocol-quirks.md §2 for the K4's routing of the XIT offset
+// through RO$ when split is on.
 struct FrequencyVfoState {
     quint64 vfoA = 0;
     quint64 vfoB = 0;

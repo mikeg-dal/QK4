@@ -5,7 +5,7 @@
 
 class RadioState;
 
-// Text-decode state (TD / TD$ / TD$$) and text-buffer pass-through (TB / TB$).
+// Text-decode state (TD / TD$) and text-buffer pass-through (TB / TB$).
 //
 // WHY — Pattern C (plain-struct + façade re-read):
 // Each subsystem is a plain struct, not a QObject. RadioState remains the
@@ -29,7 +29,7 @@ struct TextDecodeState {
     int textDecodeThreshold = -1; // 0=AUTO, 1-9 (CW only)
     int textDecodeLines = -1;     // 1-9 lines
 
-    // Text Decode (TD$$) — Sub RX
+    // Text Decode (TD$) — Sub RX
     int textDecodeModeB = -1;
     int textDecodeThresholdB = -1;
     int textDecodeLinesB = -1;

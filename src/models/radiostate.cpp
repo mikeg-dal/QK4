@@ -574,8 +574,8 @@ void RadioState::registerCommandHandlers() {
     // MainWindow scroll handler, RadioState::setRfGain setter) RF gain is
     // carried as a positive magnitude 0..60; the minus sign is re-added only
     // at the display / CAT dispatch boundary. The handler uses qAbs() to
-    // make that convention explicit. See levelsstate.cpp:80 for the canonical
-    // version of this WHY and test_radiostate.cpp:1702 for the regression test.
+    // make that convention explicit. The canonical version of this WHY is on
+    // LevelsHandlers::handleRG; the regression tests are the RG / RG$ cases in test_radiostate.cpp.
     m_commandHandlers.append(
         {"RG$", [this](const QString &c) { LevelsHandlers::handleRGSub(m_levelsState, *this, c); }});
     m_commandHandlers.append(
@@ -610,8 +610,8 @@ void RadioState::registerCommandHandlers() {
     //   - No split, RIT or XIT active  → offset lives in `RO`  (VFO A, handled below)
     //   - Split + XIT                  → offset lives in `RO$` (VFO B, the TX VFO when split)
     //   - BSET + RIT                   → offset lives in `RO$` (VFO B)
-    // We update `m_ritXitOffsetB` and emit the `B`-variant signal so the VFO B display tracks.
-    // See `~/.claude/projects/.../memory/MEMORY.md` → "K4 RIT/XIT Offset Registers".
+    // We update `FrequencyVfoState::ritXitOffsetB` and emit the `B`-variant signal so the VFO B
+    // display tracks. See `docs/k4-protocol-quirks.md` §2.
     m_commandHandlers.append(
         {"RO$", [this](const QString &c) { FrequencyVfoHandlers::handleROSub(m_frequencyVfoState, *this, c); }});
     m_commandHandlers.append(

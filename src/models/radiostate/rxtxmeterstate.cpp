@@ -241,7 +241,9 @@ void handleSIFP(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
 }
 
 void handleSIRF(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
-    // SIRF V8:..,V5:..,LT:..,LM:..,PA:..,PM:..,PT:.. — RF deck status. We surface:
+    // SIRF V8:..,V5:..,LT:..,LM:..,PA:..,PM:..,PT:.. — the RF board report. Programmer's Reference
+    // D12 says only that SIRF1 enables "AI4 delivery of RFB info reports" and that the response
+    // format "will be documented in a future revision", so the fields below are as observed. We surface:
     //   - PM (peak drain) ÷ 768 → Id (matches K4 front-panel "Id" within ~1 A)
     //   - PT → PA temperature in °C
     //   - LT → Lower-PA temperature in °C
