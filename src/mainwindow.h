@@ -96,6 +96,8 @@ private:
     void setupUi();
     void sizeToScreen();
     void setupVfoSection(QWidget *parent);
+    void wireVfoWidget(VFOWidget *vfo, bool vfoB);
+    void sendBalance(int mode, int offset);
 
     void setupControllers();
     void setupNotificationWidget();

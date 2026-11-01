@@ -47,8 +47,8 @@ Sources: every behaviour here was verified by driving a K4/0 server directly ove
 **K4 behavior.** The K4 applies the new SL tier but does not echo an `SL<n>;` response. There is no query form that returns the current tier either. The tier → packet-size map was verified by socket session: four distinct tiers, bundling 20 / 40 / 60 / 120 ms of audio per packet.
 
 **QK4 encoding.**
-- `src/mainwindow.cpp::onRadioReady` — after the `RDY;` dump, QK4 sends its configured `SL` tier *and* calls `m_radioState->parseCATCommand("SL<n>;")` optimistically so RadioState (and everything downstream — AudioEngine frame sizing, the UI menu) matches what we just requested. Long comment block there explains why this post-RDY override is necessary.
-- `TcpClient` also sends `SL<n>;` after `RDY;` in its fixed post-auth sequence, so `SL` goes out twice on connect. Both carry the same tier.
+- `TcpClient` sends the configured `SL<n>;` after `RDY;` in its fixed post-auth sequence. That is the only send on connect.
+- `src/mainwindow.cpp::onRadioReady` calls `m_radioState->parseCATCommand("SL<n>;")` with the same tier, so RadioState (and everything downstream — AudioEngine frame sizing, the UI menu) matches what was requested. Until 2026-11 it also sent `SL<n>;` a second time; that duplicate is gone.
 - Tier changes at runtime: a MainWindow lambda on `RadioManagerDialog::streamingLatencyChanged` sends `SL<n>;` and calls `parseCATCommand` with the same string. `RadioState` then emits `streamingLatencyChanged`, and `AudioController::onStreamingLatencyChanged` resizes the TX Opus frames.
 
 ---

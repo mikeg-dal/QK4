@@ -696,11 +696,7 @@ void MainWindow::setupUi() {
             // BAL mode: slider controls L/R balance (0-100 maps to -50..+50)
             int offset = value - 50;
             m_audioController->setBalanceOffset(offset);
-            // Send BL command to radio with current mode and new offset
-            QString sign = offset >= 0 ? "+" : "-";
-            QString cmd = QString("BL1%1%2;").arg(sign).arg(qAbs(offset), 2, 10, QChar('0'));
-            m_connectionController->sendCAT(cmd);
-            m_radioState->setBalance(1, offset);
+            sendBalance(1, offset);
         } else {
             // NOR mode: slider controls sub RX volume
             m_audioController->setSubVolume(value / 100.0f);
@@ -774,12 +770,7 @@ void MainWindow::setupUi() {
     connect(m_radioState, &RadioState::dataSubModeChanged, this, refreshMonitorMode);
 
     // Connect balance wheel signal (BL command)
-    connect(m_sideControlPanel, &SideControlPanel::balChangeRequested, this, [this](int mode, int offset) {
-        QString sign = offset >= 0 ? "+" : "-";
-        QString cmd = QString("BL%1%2%3;").arg(mode).arg(sign).arg(qAbs(offset), 2, 10, QChar('0'));
-        m_connectionController->sendCAT(cmd);
-        m_radioState->setBalance(mode, offset);
-    });
+    connect(m_sideControlPanel, &SideControlPanel::balChangeRequested, this, &MainWindow::sendBalance);
 
     // Update BAL overlay and button when RadioState changes
     connect(m_radioState, &RadioState::balanceChanged, m_sideControlPanel, &SideControlPanel::updateBalance);
@@ -849,47 +840,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // ===== VFO A (Left - Amber) - Using VFOWidget =====
     m_vfoA = new VFOWidget(VFOWidget::VFO_A, parent);
 
-    // Connect VFO A click to toggle mini-pan (send CAT to enable Mini-Pan streaming)
-    // The VFO view itself follows miniPanAEnabledChanged (SpectrumController).
-    connect(m_vfoA, &VFOWidget::normalContentClicked, this, [this]() {
-        // WHY: with no radio there is nothing to stream, and setting the state optimistically
-        // would open an empty mini-pan that no #MP echo ever confirms.
-        if (!m_connectionController->isConnected())
-            return;
-        m_radioState->setMiniPanAEnabled(true);
-        m_connectionController->sendCAT("#MP1;"); // Enable Mini-Pan A streaming
-    });
-    connect(m_vfoA, &VFOWidget::miniPanClicked, this, [this]() {
-        m_radioState->setMiniPanAEnabled(false);
-        m_connectionController->sendCAT("#MP0;"); // Disable Mini-Pan A streaming
-    });
-
-    // Connect VFO A frequency entry - send FA command then query to refresh display
-    connect(m_vfoA, &VFOWidget::frequencyEntered, this, [this](const QString &freqString) {
-        // FA accepts 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz
-        // A locked VFO keeps its frequency: ask for it instead, so the display shows it again.
-        const QString set = QString("FA%1;").arg(freqString);
-        if (RadioUtils::catMovesLockedVfo(set, m_radioState->lockA(), m_radioState->lockB())) {
-            // WHY redraw here: the radio's reply would repeat the frequency it already had, and an
-            // unchanged value emits nothing, so the typed digits would stay on screen.
-            m_vfoFrequencyController->refreshVfoA();
-            return;
-        }
-        m_connectionController->sendCAT(set + "FA;");
-    });
-
-    // Connect VFO A wheel tuning - same pattern as panadapter wheel tuning
-    connect(m_vfoA, &VFOWidget::frequencyScrolled, this, [this](int steps) {
-        if (!m_connectionController->isConnected())
-            return;
-        const qint64 newFreq = RadioUtils::vfoWheelTuneTarget(
-            m_radioState->vfoA(), steps, RadioUtils::tuningStepToHz(m_radioState->tuningStep()), m_radioState->lockA());
-        if (newFreq > 0) {
-            const QString cmd = QString::fromLatin1(CatFrames::frequencyA(static_cast<quint64>(newFreq)));
-            m_connectionController->sendCAT(cmd);
-            m_radioState->parseCATCommand(cmd);
-        }
-    });
+    wireVfoWidget(m_vfoA, /*vfoB=*/false);
 
     // Set Mini-Pan A passband color to cyan (matching VFO A theme)
     QColor vfoAPassband(K4Styles::Colors::VfoACyan);
@@ -1063,52 +1014,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     vfoBPassband.setAlpha(K4Styles::Colors::Alpha::PassbandFill);
     m_vfoB->setMiniPanPassbandColor(vfoBPassband);
 
-    // Connect VFO B click to toggle mini-pan (send CAT to enable Mini-Pan streaming)
-    connect(m_vfoB, &VFOWidget::normalContentClicked, this, [this]() {
-        if (!m_connectionController->isConnected())
-            return;
-        // WHY: the K4 refuses the Sub mini-pan while Sub RX is off
-        // (ER105 "Operation requires SUB RX to be ON"), whatever band VFO B is on.
-        if (!m_radioState->subReceiverEnabled()) {
-            qCDebug(lcUi) << "Mini-Pan B blocked: SUB RX is off";
-            return;
-        }
-        // The VFO view itself follows miniPanBEnabledChanged (SpectrumController).
-        m_radioState->setMiniPanBEnabled(true);
-        m_connectionController->sendCAT("#MP$1;"); // Enable Mini-Pan B (Sub RX) streaming
-    });
-    connect(m_vfoB, &VFOWidget::miniPanClicked, this, [this]() {
-        m_radioState->setMiniPanBEnabled(false);
-        m_connectionController->sendCAT("#MP$0;"); // Disable Mini-Pan B streaming
-    });
-
-    // Connect VFO B frequency entry - send FB command then query to refresh display
-    connect(m_vfoB, &VFOWidget::frequencyEntered, this, [this](const QString &freqString) {
-        // FB accepts 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz
-        // A locked VFO keeps its frequency: ask for it instead, so the display shows it again.
-        const QString set = QString("FB%1;").arg(freqString);
-        if (RadioUtils::catMovesLockedVfo(set, m_radioState->lockA(), m_radioState->lockB())) {
-            // WHY redraw here: the radio's reply would repeat the frequency it already had, and an
-            // unchanged value emits nothing, so the typed digits would stay on screen.
-            m_vfoFrequencyController->refreshVfoB();
-            return;
-        }
-        m_connectionController->sendCAT(set + "FB;");
-    });
-
-    // Connect VFO B wheel tuning - same pattern as panadapter wheel tuning
-    connect(m_vfoB, &VFOWidget::frequencyScrolled, this, [this](int steps) {
-        if (!m_connectionController->isConnected())
-            return;
-        const qint64 newFreq = RadioUtils::vfoWheelTuneTarget(m_radioState->vfoB(), steps,
-                                                              RadioUtils::tuningStepToHz(m_radioState->tuningStepB()),
-                                                              m_radioState->lockB());
-        if (newFreq > 0) {
-            const QString cmd = QString::fromLatin1(CatFrames::frequencyB(static_cast<quint64>(newFreq)));
-            m_connectionController->sendCAT(cmd);
-            m_radioState->parseCATCommand(cmd);
-        }
-    });
+    wireVfoWidget(m_vfoB, /*vfoB=*/true);
 
     m_vfoB->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     layout->addWidget(m_vfoB, 1);
@@ -1153,6 +1059,81 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     mainVLayout->addLayout(antennaRow);
 }
 
+// Mini-pan toggle, typed frequency entry and wheel tuning, the same for both VFOs; vfoB picks the
+// Sub forms (#MP$, FB, VFO B's lock and step).
+void MainWindow::wireVfoWidget(VFOWidget *vfo, bool vfoB) {
+    // Click opens the mini-pan. The VFO view itself follows miniPanA/BEnabledChanged
+    // (SpectrumController).
+    connect(vfo, &VFOWidget::normalContentClicked, this, [this, vfoB]() {
+        // WHY: with no radio there is nothing to stream, and setting the state optimistically
+        // would open an empty mini-pan that no #MP echo ever confirms.
+        if (!m_connectionController->isConnected())
+            return;
+        if (vfoB) {
+            // WHY: the K4 refuses the Sub mini-pan while Sub RX is off
+            // (ER105 "Operation requires SUB RX to be ON"), whatever band VFO B is on.
+            if (!m_radioState->subReceiverEnabled()) {
+                qCDebug(lcUi) << "Mini-Pan B blocked: SUB RX is off";
+                return;
+            }
+            m_radioState->setMiniPanBEnabled(true);
+            m_connectionController->sendCAT("#MP$1;");
+        } else {
+            m_radioState->setMiniPanAEnabled(true);
+            m_connectionController->sendCAT("#MP1;");
+        }
+    });
+    connect(vfo, &VFOWidget::miniPanClicked, this, [this, vfoB]() {
+        if (vfoB)
+            m_radioState->setMiniPanBEnabled(false);
+        else
+            m_radioState->setMiniPanAEnabled(false);
+        m_connectionController->sendCAT(vfoB ? "#MP$0;" : "#MP0;");
+    });
+
+    // Typed frequency: send FA/FB then query it to refresh the display.
+    connect(vfo, &VFOWidget::frequencyEntered, this, [this, vfoB](const QString &freqString) {
+        // FA/FB accept 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz
+        // A locked VFO keeps its frequency: ask for it instead, so the display shows it again.
+        const QString query = vfoB ? QStringLiteral("FB;") : QStringLiteral("FA;");
+        const QString set = query.left(2) + freqString + u';';
+        if (RadioUtils::catMovesLockedVfo(set, m_radioState->lockA(), m_radioState->lockB())) {
+            // WHY redraw here: the radio's reply would repeat the frequency it already had, and an
+            // unchanged value emits nothing, so the typed digits would stay on screen.
+            if (vfoB)
+                m_vfoFrequencyController->refreshVfoB();
+            else
+                m_vfoFrequencyController->refreshVfoA();
+            return;
+        }
+        m_connectionController->sendCAT(set + query);
+    });
+
+    // Wheel tuning - same pattern as panadapter wheel tuning
+    connect(vfo, &VFOWidget::frequencyScrolled, this, [this, vfoB](int steps) {
+        if (!m_connectionController->isConnected())
+            return;
+        const qint64 newFreq = RadioUtils::vfoWheelTuneTarget(
+            vfoB ? m_radioState->vfoB() : m_radioState->vfoA(), steps,
+            RadioUtils::tuningStepToHz(vfoB ? m_radioState->tuningStepB() : m_radioState->tuningStep()),
+            vfoB ? m_radioState->lockB() : m_radioState->lockA());
+        if (newFreq > 0) {
+            const auto hz = static_cast<quint64>(newFreq);
+            const QString cmd = QString::fromLatin1(vfoB ? CatFrames::frequencyB(hz) : CatFrames::frequencyA(hz));
+            m_connectionController->sendCAT(cmd);
+            m_radioState->parseCATCommand(cmd);
+        }
+    });
+}
+
+// BLm±nn: the balance mode and offset, sent from both the BAL wheel and the sub-volume slider in
+// BAL mode. Applied to RadioState at once, as the radio does not report it back over this link.
+void MainWindow::sendBalance(int mode, int offset) {
+    const QLatin1StringView sign(offset >= 0 ? "+" : "-");
+    m_connectionController->sendCAT(QString("BL%1%2%3;").arg(mode).arg(sign).arg(qAbs(offset), 2, 10, QChar('0')));
+    m_radioState->setBalance(mode, offset);
+}
+
 void MainWindow::showRadioManager() {
     // Toggle: the globe icon opens the Server Manager and a second click closes it. The dialog is
     // shown modeless (not exec()) so the icon stays clickable while it's open.
@@ -1171,8 +1152,9 @@ void MainWindow::showRadioManager() {
     // Send SL live if changed while connected (K4 does not echo SL, so update optimistically)
     connect(m_radioManager, &RadioManagerDialog::streamingLatencyChanged, this, [this](int tier) {
         if (m_connectionController->isConnected()) {
-            m_connectionController->sendCAT(QString("SL%1;").arg(tier));
-            m_radioState->parseCATCommand(QString("SL%1;").arg(tier));
+            const QString cmd = QString("SL%1;").arg(tier);
+            m_connectionController->sendCAT(cmd);
+            m_radioState->parseCATCommand(cmd);
         }
     });
 
@@ -1222,18 +1204,12 @@ void MainWindow::onHardwareError(const QString &error) {
 void MainWindow::onRadioReady() {
     qCDebug(lcUi) << "Successfully authenticated with K4 radio";
 
-    // WHY we send SL here and also call parseCATCommand optimistically:
-    // The K4 does NOT echo `SL` (streaming latency) responses — it silently applies the new tier
-    // without ever sending back `SL<n>;`. Two consequences:
-    //   (1) We must send `SL<n>;` AFTER the `RDY;` dump so our choice overrides whatever tier
-    //       the radio booted with; sending before RDY would be trampled by the dump's playback.
-    //   (2) Because no echo ever arrives, RadioState would never learn the new value from the
-    //       normal parse path. We update it optimistically so AudioEngine frame sizing and the
-    //       UI display tier match what we just requested. Tier→packet-size map verified in
-    //       `memory/k4-streaming-latency.md`.
-    int sl = m_connectionController->currentRadio().streamingLatency;
-    m_connectionController->sendCAT(QString("SL%1;").arg(sl));
-    m_radioState->parseCATCommand(QString("SL%1;").arg(sl));
+    // WHY parse SL here: TcpClient sends this radio's `SL<n>;` after `RDY;` in its post-auth
+    // sequence (the same tier, from the same RadioEntry), but the K4 does NOT echo `SL` — it
+    // applies the tier silently — so RadioState would never learn it from the normal parse path.
+    // Apply it here so AudioEngine frame sizing and the UI tier match what was requested
+    // (docs/k4-protocol-quirks.md §3). Not sent again: TcpClient's send is the one the radio needs.
+    m_radioState->parseCATCommand(QString("SL%1;").arg(m_connectionController->currentRadio().streamingLatency));
 
     // Start audio engine via AudioController. The boost is applied here rather than read inside
     // AudioController's constructor, which already reaches for settings it should be given (#151).
