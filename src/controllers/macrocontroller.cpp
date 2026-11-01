@@ -9,6 +9,7 @@
 #include <QLoggingCategory>
 #include <QMessageBox>
 #include <QString>
+#include <QStringView>
 
 MacroController::MacroController(ConnectionController *connection, PopupManager *popupManager, QWidget *dialogParent,
                                  QObject *parent)
@@ -30,15 +31,21 @@ void MacroController::executeMacro(const QString &functionId) {
 
     // WHY: RT1 / RT0 / RT/ / SW54 and XT1 / XT0 / XT/ / SW74 are silent SET
     // commands — the K4 does not echo the resulting RT/XT state. Follow up
-    // with a query so the UI reflects the change.
-    const QString &cmd = macro.command;
-    if (cmd.contains("RT1") || cmd.contains("RT0") || cmd.contains("RT/") || cmd.contains("SW54")) {
+    // with a query so the UI reflects the change. Matched as whole commands of
+    // the macro, so SW540 or SW741 does not count.
+    bool ritChanged = false;
+    bool xitChanged = false;
+    for (const QStringView part : QStringView(macro.command).split(u';', Qt::SkipEmptyParts)) {
+        const QStringView c = part.trimmed();
+        ritChanged = ritChanged || c == u"RT1" || c == u"RT0" || c == u"RT/" || c == u"SW54";
+        xitChanged = xitChanged || c == u"XT1" || c == u"XT0" || c == u"XT/" || c == u"SW74";
+    }
+    if (ritChanged) {
         m_connection->sendCAT("RT;");
         m_connection->sendCAT("RT$;");
     }
-    if (cmd.contains("XT1") || cmd.contains("XT0") || cmd.contains("XT/") || cmd.contains("SW74")) {
+    if (xitChanged)
         m_connection->sendCAT("XT;");
-    }
 }
 
 void MacroController::onFunctionTriggered(const QString &functionId) {
