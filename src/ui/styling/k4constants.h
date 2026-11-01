@@ -59,6 +59,12 @@ constexpr const char *MeterOrange = "#FF6600";
 constexpr const char *MeterOrangeRed = "#FF3300";
 constexpr const char *MeterRed = TxRed;
 
+// Panadapter and mini-pan overlays. Data colours, drawn over the spectrum; translucency in Alpha.
+constexpr const char *RttyToneMarker = "#FFC800";  // RTTY mark/space ticks, primary VFO
+constexpr const char *SpectrumGrid = "#A0A0A0";    // Panadapter grid lines
+constexpr const char *TxMarker = "#FF3C3C";        // TX frequency marker in split
+constexpr const char *MiniPanPassband = "#0080FF"; // Mini-pan passband fill
+
 // Id Meter Colors (PA drain current - subtle green theme)
 constexpr const char *MeterIdDark = "#2E7D32";  // Muted forest green
 constexpr const char *MeterIdLight = "#66BB6A"; // Lighter sage green
@@ -184,10 +190,14 @@ constexpr int BandPlanDivider = 70;
 constexpr int BandPlanMarker = 220;
 constexpr int BandPlanCaret = 235;
 constexpr int PassbandFill = 64; // VFO passbands over the spectrum and mini-pan
-constexpr int CardTint = 18;     // KPA1500 card: white tint over the panel background
-constexpr int CardBorder = 35;   // KPA1500 card outline (white)
-constexpr int LcdBorder = 20;    // KPA1500 status box outline (white)
-constexpr int LcdShade = 40;     // KPA1500 status box fill (black)
+constexpr int SpectrumGrid = 77; // Panadapter grid, 30%
+constexpr int RttyTone = 200;    // RTTY tone ticks, primary VFO
+constexpr int SecondaryRttyTone = 160;
+constexpr int TxMarker = 160;
+constexpr int CardTint = 18;   // KPA1500 card: white tint over the panel background
+constexpr int CardBorder = 35; // KPA1500 card outline (white)
+constexpr int LcdBorder = 20;  // KPA1500 status box outline (white)
+constexpr int LcdShade = 40;   // KPA1500 status box fill (black)
 } // namespace Alpha
 
 } // namespace Colors

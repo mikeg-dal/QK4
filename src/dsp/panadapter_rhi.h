@@ -2,6 +2,7 @@
 #define PANADAPTER_RHI_H
 
 #include "dsp/poweraverager.h"
+#include "ui/styling/k4styles.h"
 #include <QRhiWidget>
 #include <rhi/qrhi.h>
 #include <QColor>
@@ -345,23 +346,25 @@ private:
     SpectrumGeometry::DataSubMode m_secondaryDataSubMode = SpectrumGeometry::DataSubMode::DataA;
     int m_secondaryIfShift = 50;
     bool m_secondaryVisible = false;
-    QColor m_secondaryPassbandColor{0, 255, 0, 64}; // Green 25% alpha
-    QColor m_secondaryMarkerColor{0, 255, 0, 255};  // Green 100% alpha
+    QColor m_secondaryPassbandColor{
+        K4Styles::withAlpha(K4Styles::Colors::VfoBGreen, K4Styles::Colors::Alpha::PassbandFill)};
+    QColor m_secondaryMarkerColor{K4Styles::Colors::VfoBGreen};
 
     // Colors
-    QColor m_gridColor{160, 160, 160, 77};      // Light gray with 30% alpha
-    QColor m_passbandColor{0, 191, 255, 64};    // Cyan with 25% alpha (VFO A default)
-    QColor m_frequencyMarkerColor{0, 191, 255}; // VfoACyan, as SpectrumController sets it
-    QColor m_notchColor{255, 0, 0};             // Red
+    QColor m_gridColor{K4Styles::withAlpha(K4Styles::Colors::SpectrumGrid, K4Styles::Colors::Alpha::SpectrumGrid)};
+    QColor m_passbandColor{K4Styles::withAlpha(K4Styles::Colors::VfoACyan, K4Styles::Colors::Alpha::PassbandFill)};
+    QColor m_frequencyMarkerColor{K4Styles::Colors::VfoACyan}; // as SpectrumController sets it
+    QColor m_notchColor{K4Styles::Colors::TxRed};
 
-    // RTTY tone overlay colors
-    QColor m_rttyToneColor{255, 200, 0, 200};        // Yellow-orange for primary VFO
-    QColor m_secondaryRttyToneColor{0, 255, 0, 160}; // Green for secondary VFO
+    // RTTY tone overlay colors: primary VFO, then the other receiver's
+    QColor m_rttyToneColor{K4Styles::withAlpha(K4Styles::Colors::RttyToneMarker, K4Styles::Colors::Alpha::RttyTone)};
+    QColor m_secondaryRttyToneColor{
+        K4Styles::withAlpha(K4Styles::Colors::VfoBGreen, K4Styles::Colors::Alpha::SecondaryRttyTone)};
 
     // TX marker state
     qint64 m_txFreq = 0;
     bool m_txMarkerVisible = false;
-    QColor m_txMarkerColor{255, 60, 60, 160}; // Translucent red
+    QColor m_txMarkerColor{K4Styles::withAlpha(K4Styles::Colors::TxMarker, K4Styles::Colors::Alpha::TxMarker)};
 
     // Display averaging (K4 #AVG control, 1-20)
     // -1 until the radio reports #AVG, so its first report always applies (a legal default here

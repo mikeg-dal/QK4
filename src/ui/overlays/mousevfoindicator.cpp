@@ -21,7 +21,7 @@ void MouseVfoIndicator::paintEvent(QPaintEvent *) {
 
     QColor vfoColor = m_isB ? QColor(K4Styles::Colors::VfoBGreen) : QColor(K4Styles::Colors::VfoACyan);
     QColor borderColor(K4Styles::Colors::AccentAmber);
-    QColor bgColor(0x1A, 0x1A, 0x1A);
+    QColor bgColor(K4Styles::Colors::Background);
 
     QRectF r(1, 1, width() - 2, height() - 2);
 

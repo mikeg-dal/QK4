@@ -11,7 +11,7 @@
 #include <memory>
 #include "dsp/spectrumgeometry.h"
 #include "models/radiostate/spectrumdisplaystate.h"
-#include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 
 // Compact Mini-Pan widget for VFO area using Qt RHI
 // GPU-accelerated via Metal (macOS), DirectX (Windows), Vulkan (Linux)
@@ -178,7 +178,8 @@ private:
     QColor m_spectrumColor{QColor(K4Styles::Colors::VfoACyan)};
 
     // Passband color
-    QColor m_passbandColor{0, 128, 255, 64}; // Blue with 25% alpha
+    QColor m_passbandColor{
+        K4Styles::withAlpha(K4Styles::Colors::MiniPanPassband, K4Styles::Colors::Alpha::PassbandFill)};
 
     // Notch filter visualization
     bool m_notchEnabled = false;

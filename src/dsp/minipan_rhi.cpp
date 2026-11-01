@@ -612,8 +612,9 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
                 m_rttyDashVerts.clear();
                 DashGeometry::appendDashedVerticalLine(m_rttyDashVerts, spaceX, PanadapterConstants::RttyDashLineWidth,
                                                        0.0f, h);
-                // Yellow-orange tone marker, matches main panadapter
-                static const QColor toneColor(255, 200, 0, 200);
+                // Tone marker, matches main panadapter
+                static const QColor toneColor =
+                    K4Styles::withAlpha(K4Styles::Colors::RttyToneMarker, K4Styles::Colors::Alpha::RttyTone);
                 stage(triangles, m_gpu.rttySpaceVbo.get(), m_gpu.rttySpaceUniformBuffer.get(), m_gpu.rttySpaceSrb.get(),
                       m_rttyDashVerts.constData(), m_rttyDashVerts.size(), toneColor);
             }

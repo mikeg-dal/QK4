@@ -273,7 +273,9 @@ private slots:
              QRegularExpression(QStringLiteral("\\b(setPixelSize|paintFont|dataFont)\\(\\s*\\d"))},
             {"literal style-sheet font-size", QRegularExpression(QStringLiteral("font-size:\\s*\\d"))},
             {"hex colour literal", QRegularExpression(QStringLiteral("#[0-9A-Fa-f]{3,8}\\b"))},
-            {"QColor literal", QRegularExpression(QStringLiteral("\\bQColor(::fromRgbF?)?\\(\\s*\\d"))},
+            // Also a named variable or member, `QColor bg(26, ...)` / `QColor m_x{0, 255, 0}`, which the
+            // bare-constructor form alone let through.
+            {"QColor literal", QRegularExpression(QStringLiteral("\\bQColor(::fromRgbF?)?(\\s+\\w+\\s*)?[({]\\s*\\d"))},
             {"Qt::white/black", QRegularExpression(QStringLiteral("\\bQt::(white|black)\\b"))},
             {"style-sheet rgb() literal", QRegularExpression(QStringLiteral("\\brgba?\\(\\s*\\d"))},
             {"style-sheet named colour", QRegularExpression(QStringLiteral(":\\s*(black|white)\\b"))},
@@ -309,6 +311,7 @@ private slots:
     // The scan must still see what it forbids, or it passes by going blind.
     void sourceScanDetectsLiterals() {
         const QString code = stripComments(QStringLiteral("p.setPen(QColor(255, 0, 0)); // QColor(1\n"
+                                                          "QColor bg(0x1A, 0x1A, 0x1A); QColor m_x{0, 255, 0};\n"
                                                           "s = \"color: #aabbcc; font-size: 9px;\";\n"
                                                           "/* Qt::white */ f.setPixelSize(9);"));
         QVERIFY(code.contains(QRegularExpression(QStringLiteral("\\bQColor\\(\\s*\\d"))));
@@ -317,6 +320,9 @@ private slots:
         QVERIFY(code.contains(QRegularExpression(QStringLiteral("setPixelSize\\(\\s*\\d"))));
         QVERIFY(!code.contains(QStringLiteral("Qt::white")));
         QCOMPARE(code.count(QStringLiteral("QColor(")), 1);
+        const QRegularExpression named(QStringLiteral("\\bQColor(::fromRgbF?)?(\\s+\\w+\\s*)?[({]\\s*\\d"));
+        QCOMPARE(code.count(named), 3); // QColor(255, bg(0x1A, m_x{0
+        QVERIFY(!QStringLiteral("QColor c(K4Styles::Colors::Background);").contains(named));
     }
 };
 
