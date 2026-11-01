@@ -142,8 +142,16 @@ private slots:
     void sampleAudioMetrics();
 
 private:
-    // stop() on the worker's own thread, then the thread retired, within one deadline.
-    template <typename Worker> void stopThread(QThread *&thread, Worker *worker, std::chrono::milliseconds timeout);
+    // stop() on the worker's own thread, then the thread retired, within one deadline. With
+    // `stopMissed` (shutdown() already waited out this worker's stop) neither is waited for again:
+    // the stop is still queued there, and the thread is disowned at once if it is still busy.
+    template <typename Worker>
+    void stopThread(QThread *&thread, Worker *worker, std::chrono::milliseconds timeout, bool stopMissed);
+
+    // Set by shutdown() when a worker's stop() missed its deadline, so quitting waits for a stuck
+    // thread once, not again in the destructor.
+    bool m_txStopMissed = false;
+    bool m_rxStopMissed = false;
 
     // Hands the OS microphone permission to the TX pipeline. With `askIfUndetermined`, also asks
     // the OS - on the main thread, the only one Qt allows, and asynchronously, so the prompt never

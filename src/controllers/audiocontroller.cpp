@@ -190,15 +190,22 @@ AudioController::~AudioController() {
     // Each worker is destroyed on its own thread by the finished -> deleteLater wired at
     // construction, after its stop() has run there. A thread that misses its deadline is left
     // running with its worker rather than having either destroyed underneath it.
-    stopThread(m_txThread, m_txPipeline, kTxStopTimeout);
+    stopThread(m_txThread, m_txPipeline, kTxStopTimeout, m_txStopMissed);
     m_txPipeline = nullptr;
-    stopThread(m_audioThread, m_audioEngine, kRxStopTimeout);
+    stopThread(m_audioThread, m_audioEngine, kRxStopTimeout, m_rxStopMissed);
     m_audioEngine = nullptr;
 }
 
 template <typename Worker>
-void AudioController::stopThread(QThread *&thread, Worker *worker, std::chrono::milliseconds timeout) {
+void AudioController::stopThread(QThread *&thread, Worker *worker, std::chrono::milliseconds timeout, bool stopMissed) {
     if (!thread) {
+        return;
+    }
+    if (stopMissed) {
+        // WHY not again: the thread already failed to run stop() within its deadline, so waiting
+        // a second full deadline only doubles the time a quit hangs. Its stop() is still queued
+        // ahead of the quit, so a thread that comes free later still stops its device first.
+        ThreadShutdown::retire(thread, QDeadlineTimer(0), lcAudio());
         return;
     }
     const QDeadlineTimer deadline(timeout);
@@ -253,12 +260,14 @@ void AudioController::shutdown() {
         if (!ThreadShutdown::callBlocking(
                 pipeline, [pipeline]() { pipeline->stop(); }, QDeadlineTimer(kTxStopTimeout))) {
             qCWarning(lcAudio) << "TX audio thread did not stop the microphone in time";
+            m_txStopMissed = true;
         }
     }
     if (m_audioEngine) {
         AudioEngine *engine = m_audioEngine;
         if (!ThreadShutdown::callBlocking(engine, [engine]() { engine->stop(); }, QDeadlineTimer(kRxStopTimeout))) {
             qCWarning(lcAudio) << "RX audio thread did not close the speaker in time";
+            m_rxStopMissed = true;
         }
     }
 }
