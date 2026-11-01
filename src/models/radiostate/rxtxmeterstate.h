@@ -92,7 +92,6 @@ void handleSM(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSMSub(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSMH(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSMHSub(RxTxMeterState &state, RadioState &owner, const QString &cmd);
-void handlePO(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleTM(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleTX(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleRX(RxTxMeterState &state, RadioState &owner, const QString &cmd);

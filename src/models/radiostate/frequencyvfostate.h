@@ -19,7 +19,6 @@ class RadioState;
 // See memory/MEMORY.md → K4 RIT/XIT Offset Registers for the K4's
 // quirky routing of XIT offset through RO$ when split is on.
 struct FrequencyVfoState {
-    quint64 frequency = 0; // Convenience alias for vfoA (legacy)
     quint64 vfoA = 0;
     quint64 vfoB = 0;
 

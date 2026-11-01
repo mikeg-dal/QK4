@@ -14,11 +14,11 @@ The subsystem structs composing `RadioState` (`ls src/models/radiostate/*.h` lis
 | `datacontrolstate.{h,cpp}` | Data sub-mode, rate, tuning step, streaming latency | DT, DT$, DR, DR$, VT, VT$, SL |
 | `spectrumdisplaystate.{h,cpp}` | All `#`-prefix panadapter / waterfall display state | #REF, #SPN, #SCL, #MP, #DPM, #DSM, #FPS, #WFC, #WFH, #AVG, #PKM, #FXT, #FXA, #FRZ, #VFA, #VFB, #AR, #NB$, #NBL$, #REF$, #SPN$, #MP$, #HWFH, #HDPM, #HDSM |
 | `textdecodestate.{h,cpp}` | Text decoder mode / threshold / lines | TD, TD$, TB, TB$ |
-| `rxtxmeterstate.{h,cpp}` | S-meter, TX meter, TX/RX transition, supply V/A, radio identity, SB/DV/TS/BS | SM, SM$, PO, TM, TX, RX, ID, OM, RV., ER, MN, SIFP, SIRF, SB, DV, TS, BS |
+| `rxtxmeterstate.{h,cpp}` | S-meter, TX meter, TX/RX transition, supply V/A, radio identity, SB/DV/TS/BS | SM, SM$, SMH, SMH$, TM, TX, RX, ID, OM, RV., ER, MN, SIFP, SIRF, SB, DV, TS, BS |
 | `levelsstate.{h,cpp}` | RF power, QRP/QRO, mic gain, compression, RF gain A/B, squelch A/B | PC, MG, CP, RG, RG$, SQ, SQ$ |
 | `qskcontrolstate.{h,cpp}` | QSK enable + per-mode TX→RX delay | SD |
 | `powerstate.{h,cpp}` | K4 remote power on/off — `PS1` = on, `PS0` = off | PS |
-| `xvtrbandstate.{h,cpp}` | Per-XVTR-band transverter configuration (12 bands) | XVN, XVM, XVR, XVI, XVO |
+| `xvtrbandstate.{h,cpp}` | Per-XVTR-band transverter configuration (12 bands) | XVN, XVM, XVR |
 | `reportedflag.h` | `ReportedFlag`: an on/off field that is unknown until the radio reports it, so its first report (even "off") always emits | — |
 
 ## File layout per subsystem

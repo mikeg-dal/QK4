@@ -3,7 +3,6 @@
 #include "models/radiostate.h"
 
 void FrequencyVfoState::reset() {
-    frequency = 0;
     vfoA = 0;
     vfoB = 0;
     splitEnabled.reset();
@@ -48,7 +47,6 @@ void handleFA(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     const quint64 freq = *parsed;
     if (state.vfoA != freq) {
         state.vfoA = freq;
-        state.frequency = freq;
         emit owner.frequencyChanged(freq);
     }
 }
@@ -132,8 +130,7 @@ void handleLN(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (!ok)
         return;
     const bool linked = (ln == 1);
-    if (state.vfoLink.set(linked))
-        emit owner.vfoLinkChanged(linked);
+    state.vfoLink.set(linked);
 }
 
 void handleLK(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {

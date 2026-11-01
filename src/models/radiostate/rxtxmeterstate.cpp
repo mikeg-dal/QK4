@@ -95,10 +95,6 @@ void handleSMHSub(RxTxMeterState &state, RadioState &owner, const QString &cmd) 
     applySignalLevel(state.sMeterDbmB, cmd, 4, owner, &RadioState::sMeterDbmBChanged);
 }
 
-void handlePO(RxTxMeterState & /*state*/, RadioState & /*owner*/, const QString & /*cmd*/) {
-    // PO (raw power meter) — unused; forward power already comes from TM.
-}
-
 void handleTM(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     // TMaaabbbcccddd — ALC, CMP, FWD, SWR (each 3 digits).
     if (cmd.length() < 14)

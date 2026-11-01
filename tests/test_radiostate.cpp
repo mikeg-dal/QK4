@@ -2222,10 +2222,8 @@ private slots:
     // --- LN (VFO Link) ---
     void testVfoLinkEnable() {
         RadioState rs;
-        QSignalSpy spy(&rs, &RadioState::vfoLinkChanged);
         rs.parseCATCommand("LN1;");
         QCOMPARE(rs.vfoLink(), true);
-        QCOMPARE(spy.count(), 1);
     }
 
     void testVfoLinkDisable() {
@@ -2677,7 +2675,7 @@ private slots:
     // =========================================================================
     // Phase 0.1 Backfill — RxTxMeter subsystem
     // Handlers: TX/RX (transmit state), SM/SM$ (S-meter — always emits),
-    // TM (TX meter telemetry — always emits), PO (unused),
+    // TM (TX meter telemetry — always emits), PO (not registered; TM carries forward power),
     // SIFP (supply voltage/current), ID/OM/RV. (radio identity — no signals),
     // MN (message bank), SB/DV/TS/BS (control state flags).
     // =========================================================================
@@ -2891,10 +2889,11 @@ private slots:
         QCOMPARE(spy.count(), 0);
     }
 
-    // --- PO (raw power meter, intentionally unused) ---
+    // --- PO (raw power meter): not registered, TM already carries forward power ---
     void testPowerMeterDoesNotCrash() {
         RadioState rs;
-        rs.parseCATCommand("PO050;"); // handler ignores payload
+        QVERIFY(!rs.registeredCommandPrefixes().contains(QStringLiteral("PO")));
+        rs.parseCATCommand("PO050;"); // falls through the dispatcher unhandled
         // No signal, no state change; just must not crash.
     }
 
@@ -3559,7 +3558,6 @@ private slots:
         QCOMPARE(rs.txEqBands(), QVector<int>(8, 0));
         QCOMPARE(rs.displayFps(), SpectrumDisplayLimits::FpsUnknown);
         QCOMPARE(rs.mainRxDisplayAll(), true);
-        QCOMPARE(rs.xvtrBandSelect(), 1);
     }
 
     // Sentinel's functional contract: post-reset, the very next CAT packet
@@ -3646,7 +3644,6 @@ private slots:
         row("RO$+0000", SIGNAL(ritXitBChanged(bool, int)));
         row("LK0", SIGNAL(lockAChanged(bool)));
         row("LK$0", SIGNAL(lockBChanged(bool)));
-        row("LN0", SIGNAL(vfoLinkChanged(bool)));
         row("NB000", SIGNAL(processingChanged()));
         row("NB0000", SIGNAL(processingChanged()));
         row("NB$000", SIGNAL(processingChangedB()));
@@ -3681,11 +3678,8 @@ private slots:
         row("ACM10000000", SIGNAL(mainRxAntCfgChanged()));
         row("ACS10000000", SIGNAL(subRxAntCfgChanged()));
         row("ACT1000", SIGNAL(txAntCfgChanged()));
-        row("XVN1", SIGNAL(xvtrBandSelectChanged(int)));
         row("XVN1;XVM0", SIGNAL(xvtrBandsChanged()));
         row("XVN1;XVR00144", SIGNAL(xvtrBandsChanged()));
-        row("XVN1;XVI28", SIGNAL(xvtrBandsChanged()));
-        row("XVN1;XVO+00000", SIGNAL(xvtrBandsChanged()));
     }
 
     void testFirstReportAfterResetEmits() {

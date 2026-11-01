@@ -626,7 +626,7 @@ implementation becomes, because the protocol has no vocabulary for it.
 
 **Antenna and front end**
 `rxAntennaMain`, `rxAntennaSub`, `txAntenna` (+ names), `preamp`/`preampEnabled`,
-`attenuatorEnabled`/`attenuatorLevel`, `rfGain`, `atuMode`, `xvtrBandSelect`, `isXvtrPowerMode`.
+`attenuatorEnabled`/`attenuatorLevel`, `rfGain`, `atuMode`, `xvtrBands`, `isXvtrPowerMode`.
 TCI has `AGC_GAIN` and nothing else here. Antenna switching and ATU state are completely absent
 from the protocol.
 

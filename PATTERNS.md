@@ -142,11 +142,11 @@ The topic → CAT map for step 1. `ls src/models/radiostate/*.h` is authoritativ
 | `DataControlState` | Data sub-mode, rate, tuning step, streaming latency | DT, DT$, DR, DR$, VT, VT$, SL |
 | `SpectrumDisplayState` | `#` panadapter/waterfall display state | #REF, #SPN, #SCL, #MP, #DPM, #FPS, #WFC, #WBS, #AVG, #FXT, #FXA, #AR … |
 | `TextDecodeState` | Text decoder mode, threshold, lines | TD, TD$, TB, TB$ |
-| `RxTxMeterState` | S-meter, TX meters, RX/TX, supply, identity, message bank, toggles | SM, SM$, SMH, SMH$, PO, TM, TX, RX, ID, OM, RV., ER, MN, SIFP, SB, DV, TS, BS |
+| `RxTxMeterState` | S-meter, TX meters, RX/TX, supply, identity, message bank, toggles | SM, SM$, SMH, SMH$, TM, TX, RX, ID, OM, RV., ER, MN, SIFP, SB, DV, TS, BS |
 | `LevelsState` | TX power, mic gain, compression, RF gain, squelch | PC, MG, CP, RG, RG$, SQ, SQ$ |
 | `QskControlState` | Full break-in and TX-to-RX delay | SD |
 | `PowerState` | Radio power state | PS |
-| `XvtrBandState` | Transverter bands | XVN, XVM, XVR, XVI, XVO |
+| `XvtrBandState` | Transverter bands | XVN, XVM, XVR |
 
 `RadioState` and `MenuModel` are the two `QObject`s in `src/models/`.
 

@@ -657,7 +657,6 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append(
         {"KZL", [this](const QString &c) { ModeFilterHandlers::handleKZL(m_modeFilterState, *this, c); }});
     m_commandHandlers.append({"SM", [this](const QString &c) { handleSM(c); }});
-    m_commandHandlers.append({"PO", [this](const QString &c) { handlePO(c); }});
     m_commandHandlers.append({"TM", [this](const QString &c) { handleTM(c); }});
     m_commandHandlers.append({"TX", [this](const QString &c) { handleTX(c); }});
     m_commandHandlers.append({"RX", [this](const QString &c) { handleRX(c); }});
@@ -720,10 +719,6 @@ void RadioState::registerCommandHandlers() {
         {"XVM", [this](const QString &c) { XvtrBandHandlers::handleXVM(m_xvtrBandState, *this, c); }});
     m_commandHandlers.append(
         {"XVR", [this](const QString &c) { XvtrBandHandlers::handleXVR(m_xvtrBandState, *this, c); }});
-    m_commandHandlers.append(
-        {"XVI", [this](const QString &c) { XvtrBandHandlers::handleXVI(m_xvtrBandState, *this, c); }});
-    m_commandHandlers.append(
-        {"XVO", [this](const QString &c) { XvtrBandHandlers::handleXVO(m_xvtrBandState, *this, c); }});
 
     // Sort by prefix length (longest first) for correct matching
     std::sort(m_commandHandlers.begin(), m_commandHandlers.end(),
@@ -819,10 +814,6 @@ void RadioState::handleSM(const QString &cmd) {
 
 void RadioState::handleSMSub(const QString &cmd) {
     RxTxMeterHandlers::handleSMSub(m_rxTxMeterState, *this, cmd);
-}
-
-void RadioState::handlePO(const QString &cmd) {
-    RxTxMeterHandlers::handlePO(m_rxTxMeterState, *this, cmd);
 }
 
 void RadioState::handleTM(const QString &cmd) {
