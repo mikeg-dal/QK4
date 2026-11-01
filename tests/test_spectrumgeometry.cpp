@@ -41,6 +41,8 @@ private slots:
     void frequencyLabelsTakeOneEvenStep();
     void frequencyLabelStepIsTheSmallestThatFits();
     void fillIsOpaqueDownToTheBottomEdge();
+    void fillBlendsWhenAColumnSpansOneBinOrLess();
+    void fillPeakNeverDropsANarrowCarrier();
 
     void miniPanOverlaysStayPutWhileTuning();
     void miniPanOverlaysLearnTheCwOffsetOnceSettled();
@@ -290,6 +292,47 @@ void TestSpectrumGeometry::fillIsOpaqueDownToTheBottomEdge() {
     }
     // Well above the trace and its glow nothing is drawn.
     QCOMPARE(fillAlphaFor(0.1f, 0.9f, 0.04f, 0.8f, 1.0f), 0.0f);
+}
+
+// SPEC-012. Up to one bin per column the fill keeps the bilinear blend the waterfall uses.
+void TestSpectrumGeometry::fillBlendsWhenAColumnSpansOneBinOrLess() {
+    for (float u = 0.0f; u <= 1.0f; u += 0.01f) {
+        QVERIFY(fillPeakBins(u, 1024.0f, 1.0f, 1024.0f).isEmpty()); // one bin per pixel
+        QVERIFY(fillPeakBins(u, 1024.0f, 1.0f, 2048.0f).isEmpty()); // half a bin per pixel
+        QVERIFY(fillPeakBins(u, 1024.0f, 0.5f, 600.0f).isEmpty());  // 512 visible bins over 600 px
+    }
+}
+
+// SPEC-012. With more bins than columns, a one-bin carrier anywhere in the visible span is drawn at
+// full height by some column: the columns' bin ranges are contiguous, never skip a bin and never
+// overlap. Before, each column sampled one point and a carrier between two points disappeared.
+void TestSpectrumGeometry::fillPeakNeverDropsANarrowCarrier() {
+    const float bins = 1024.0f;
+    for (float spanRatio : {1.0f, 0.75f, 0.5f, 0.25f}) {
+        for (int width = 64; width < 1024; width += 37) {
+            const float visible = bins * spanRatio;
+            if (visible <= static_cast<float>(width))
+                continue; // one bin per column or fewer: the blend case above
+            const int firstVisible = static_cast<int>(std::ceil((1.0f - spanRatio) / 2.0f * bins - 0.5f));
+            const int lastVisible = static_cast<int>(std::floor((1.0f + spanRatio) / 2.0f * bins - 0.5f));
+            int nextExpected = -1;
+            for (int x = 0; x < width; ++x) {
+                const float u = (static_cast<float>(x) + 0.5f) / static_cast<float>(width);
+                const BinRange range = fillPeakBins(u, bins, spanRatio, static_cast<float>(width));
+                const QString where = QString("span %1 width %2 x %3").arg(spanRatio).arg(width).arg(x);
+                QVERIFY2(!range.isEmpty(), qPrintable(where));
+                QVERIFY2(range.last - range.first < FillMaxBinsPerPixel, qPrintable(where));
+                if (nextExpected < 0) {
+                    QVERIFY2(range.first <= firstVisible, qPrintable(where));
+                } else {
+                    QVERIFY2(range.first == nextExpected, qPrintable(where + " skipped or repeated a bin"));
+                }
+                nextExpected = range.last + 1;
+            }
+            QVERIFY2(nextExpected > lastVisible,
+                     qPrintable(QString("span %1 width %2: last bin not drawn").arg(spanRatio).arg(width)));
+        }
+    }
 }
 
 // Bench 2026-10-30: the mini-pan's markers slid while tuning, because they were placed on the last

@@ -74,6 +74,21 @@ int frequencyLabelStepHz(int gridIntervalHz, int spanHz, double widthPx, double 
 // height: there is no fade towards the bottom, which is where the band noise is drawn.
 float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, float glowAlpha);
 
+// The full-tier bins spectrum_fill.frag takes the peak of for one pixel column (SPEC-012) — a mirror
+// of its samplePeak(), kept in sync by hand. When a column spans more than one bin, a carrier one bin
+// wide must not fall between two sample points and flicker or vanish, so the column shows the
+// strongest bin whose centre (i + 0.5) it covers. u is the column's centre in the fill quad's
+// texture space (0..1). Returns an empty range (first > last) when a column spans one bin or less,
+// or covers no bin centre: the shader then blends the two nearest bins, as the waterfall does.
+struct BinRange {
+    int first = 0;
+    int last = -1;
+    bool isEmpty() const { return last < first; }
+};
+BinRange fillPeakBins(float u, float binCount, float spanRatio, float viewportWidth);
+// The most bins one column may cover; the shader loop's bound. 1024 bins over 16 px.
+inline constexpr int FillMaxBinsPerPixel = 64;
+
 // Where the mini-pan's overlays (passband, marker, notch, RTTY tone) are centred, relative to the
 // dial. The MiniPAN frame header carries the frame's own centre, but frames lag the dial: QK4 learns
 // a new dial at once and the radio's frame for it arrives later. Placing the overlays on the last

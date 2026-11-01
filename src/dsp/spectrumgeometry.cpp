@@ -124,6 +124,21 @@ int frequencyLabelStepHz(int gridIntervalHz, int spanHz, double widthPx, double 
     }
 }
 
+BinRange fillPeakBins(float u, float binCount, float spanRatio, float viewportWidth) {
+    const float r = std::clamp(spanRatio, 0.0f, 1.0f);
+    const float binsPerPx = binCount * r / (std::max)(viewportWidth, 1.0f);
+    if (binsPerPx <= 1.0f)
+        return {};
+    // Same window as sampleBilinear(): the visible span centred in the tier.
+    const float centre = ((1.0f - r) / 2.0f + u * r) * binCount;
+    BinRange range;
+    range.first = (std::max)(static_cast<int>(std::ceil(centre - binsPerPx * 0.5f - 0.5f)), 0);
+    range.last =
+        (std::min)(static_cast<int>(std::floor(centre + binsPerPx * 0.5f - 0.5f)), static_cast<int>(binCount) - 1);
+    range.last = (std::min)(range.last, range.first + FillMaxBinsPerPixel - 1);
+    return range;
+}
+
 float fillAlphaFor(float y, float peakY, float glowWidth, float glowIntensity, float glowAlpha) {
     const float distFromPeak = y - peakY;
     if (distFromPeak < -glowWidth * 2.0f)
