@@ -46,8 +46,16 @@ add_library(qk4_logging STATIC
 target_include_directories(qk4_logging PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(qk4_logging PUBLIC Qt6::Core)
 
-# RadioState CAT command parser tests
-add_executable(test_radiostate test_radiostate.cpp
+# App sources several suites test, compiled once as static libraries instead of once per suite.
+# WHY: each suite used to list and compile its own copy - RadioState and its 13 subsystems eight
+# times, the TCI/WebSocket server six, k4styles ten - about 184 of some 400 compiles in a test build.
+# A suite links the library and the linker takes only the objects it uses. A source listed here must
+# not also be listed in a suite that links its library (duplicate symbols), and a suite that defines
+# its own stand-in for one of these classes must not link it (test_popupplacement, which keeps its
+# own list so its -fno-sanitize=vptr applies to those files). The add_compile_options() above (ASAN,
+# UBSAN, RTSan) cover these libraries like every suite.
+# RadioState facade and its subsystems (src/models/radiostate/).
+add_library(qk4_test_radiostate STATIC
     ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
     ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
     ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
@@ -63,27 +71,61 @@ add_executable(test_radiostate test_radiostate.cpp
     ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
     ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
 )
+target_include_directories(qk4_test_radiostate PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(qk4_test_radiostate PUBLIC Qt6::Core qk4_logging)
+# TCI server, its grammar and audio frames, and the WebSocket transport under it.
+add_library(qk4_test_tci STATIC
+    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
+)
+target_include_directories(qk4_test_tci PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(qk4_test_tci PUBLIC Qt6::Core Qt6::Network qk4_logging)
+# Core/Network sources used by three or more suites. No Gui, so non-UI suites stay Gui-free.
+add_library(qk4_test_common STATIC
+    ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/threadshutdown.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/catframes.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/kpa1500antennas.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/spectrumscale.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/dxclusterclient.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/protocol.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
+)
+target_include_directories(qk4_test_common PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(qk4_test_common PUBLIC Qt6::Core Qt6::Network qk4_logging)
+# Styling and the side-panel widgets, plus the two Gui-dependent utilities (QColor, QWheelEvent).
+add_library(qk4_test_widgets STATIC
+    ${CMAKE_SOURCE_DIR}/src/utils/bandplan.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/popupdismissal.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/sidepanelbutton.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/dualcontrolbutton.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/overlays/sidecontroloverlay.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/overlays/monoverlay.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/overlays/baloverlay.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/sidecontrolpanel.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/txmeterwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/pages/optionspagelayout.cpp
+)
+target_include_directories(qk4_test_widgets PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(qk4_test_widgets PUBLIC Qt6::Gui Qt6::Widgets qk4_test_common)
+
+# RadioState CAT command parser tests
+add_executable(test_radiostate test_radiostate.cpp)
+target_link_libraries(test_radiostate qk4_test_radiostate)
 target_include_directories(test_radiostate PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_radiostate Qt6::Core Qt6::Test)
 add_test(NAME RadioStateTests COMMAND test_radiostate)
 
 # RadioState command-registry structural invariant tests
-add_executable(test_radiostate_registry test_radiostate_registry.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/datacontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/frequencyvfostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/levelsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/modefilterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/powerstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/processingstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/qskcontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/rxtxmeterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/spectrumdisplaystate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
-)
+add_executable(test_radiostate_registry test_radiostate_registry.cpp)
+target_link_libraries(test_radiostate_registry qk4_test_radiostate)
 target_include_directories(test_radiostate_registry PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_radiostate_registry Qt6::Core Qt6::Test)
 add_test(NAME RadioStateRegistryTests COMMAND test_radiostate_registry)
@@ -92,22 +134,8 @@ add_test(NAME RadioStateRegistryTests COMMAND test_radiostate_registry)
 # at tests/golden/session.cat.txt is not committed (local developer data,
 # per .gitignore); the test QSKIPs on a fresh checkout. Primarily a local
 # safety net for Phase 1 refactor work.
-add_executable(test_radiostate_golden test_radiostate_golden.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/datacontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/frequencyvfostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/levelsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/modefilterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/powerstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/processingstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/qskcontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/rxtxmeterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/spectrumdisplaystate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
-)
+add_executable(test_radiostate_golden test_radiostate_golden.cpp)
+target_link_libraries(test_radiostate_golden qk4_test_radiostate)
 target_include_directories(test_radiostate_golden PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_radiostate_golden Qt6::Core Qt6::Test)
 add_test(NAME RadioStateGoldenTests COMMAND test_radiostate_golden)
@@ -119,38 +147,22 @@ option(QK4_BUILD_BENCHMARKS "Build the RadioState parse-dispatch microbenchmark"
 # invoke explicitly when checking for perf regressions. Gated behind the
 # QK4_BUILD_BENCHMARKS option so regular CI builds don't compile it.
 if(QK4_BUILD_BENCHMARKS)
-    add_executable(bench_radiostate bench_radiostate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/datacontrolstate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/frequencyvfostate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/levelsstate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/modefilterstate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/powerstate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/processingstate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/qskcontrolstate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/rxtxmeterstate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/spectrumdisplaystate.cpp
-        ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
-    )
+    add_executable(bench_radiostate bench_radiostate.cpp)
+target_link_libraries(bench_radiostate qk4_test_radiostate)
     target_include_directories(bench_radiostate PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_link_libraries(bench_radiostate Qt6::Core Qt6::Test)
 endif()
 
 # RadioUtils shared utility tests
-add_executable(test_radioutils test_radioutils.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp
-)
+add_executable(test_radioutils test_radioutils.cpp)
+target_link_libraries(test_radioutils qk4_test_common)
 target_include_directories(test_radioutils PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_radioutils Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME RadioUtilsTests COMMAND test_radioutils)
 
 # Panadapter amplitude-axis arithmetic: dBm <-> S-units, label placement and decimation.
-add_executable(test_spectrumscale test_spectrumscale.cpp
-    ${CMAKE_SOURCE_DIR}/src/dsp/spectrumscale.cpp
-)
+add_executable(test_spectrumscale test_spectrumscale.cpp)
+target_link_libraries(test_spectrumscale qk4_test_common)
 target_include_directories(test_spectrumscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_spectrumscale Qt6::Core Qt6::Test)
 add_test(NAME SpectrumScaleTests COMMAND test_spectrumscale)
@@ -171,9 +183,8 @@ target_link_libraries(test_spectrumgeometry Qt6::Core Qt6::Test)
 add_test(NAME SpectrumGeometryTests COMMAND test_spectrumgeometry)
 
 # RFC 6455 framing for the TCI server: length forms, masking, fragment reassembly, size limits.
-add_executable(test_websocketframe test_websocketframe.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
-)
+add_executable(test_websocketframe test_websocketframe.cpp)
+target_link_libraries(test_websocketframe qk4_test_tci)
 target_include_directories(test_websocketframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_websocketframe Qt6::Core Qt6::Test)
 add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
@@ -181,30 +192,16 @@ add_test(NAME WebSocketFrameTests COMMAND test_websocketframe)
 # K4 receive audio -> TCI RX_AUDIO samples: rate, channel mapping, and packet-boundary continuity.
 add_executable(test_tciaudiobridge test_tciaudiobridge.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tciaudiobridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
-    ${CMAKE_SOURCE_DIR}/src/dsp/audioupsampler.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/dsp/audioupsampler.cpp)
+target_link_libraries(test_tciaudiobridge qk4_test_tci)
 target_include_directories(test_tciaudiobridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciaudiobridge Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciAudioBridgeTests COMMAND test_tciaudiobridge)
 
 # TCI server, protocol surface: init burst contents and ordering, audio subscription, per-client
 # isolation, CAT sets and the read-only queries. The transmit path is a separate target below.
-add_executable(test_tciserver test_tciserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
-)
+add_executable(test_tciserver test_tciserver.cpp)
+target_link_libraries(test_tciserver qk4_test_tci)
 target_include_directories(test_tciserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciserver Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciServerTests COMMAND test_tciserver)
@@ -212,15 +209,8 @@ add_test(NAME TciServerTests COMMAND test_tciserver)
 # TCI server, transmit path: PTT ownership, TX_CHRONO pacing and TX audio admission. Split from
 # test_tciserver so neither file passes the 800-line limit in CONVENTIONS.md rule 7; both share
 # the socket client in tcitestclient.h.
-add_executable(test_tciservertransmit test_tciservertransmit.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
-)
+add_executable(test_tciservertransmit test_tciservertransmit.cpp)
+target_link_libraries(test_tciservertransmit qk4_test_tci)
 target_include_directories(test_tciservertransmit PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciservertransmit Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciServerTransmitTests COMMAND test_tciservertransmit)
@@ -228,15 +218,8 @@ add_test(NAME TciServerTransmitTests COMMAND test_tciservertransmit)
 # TCI server, answers: the read-only query group and the spec value constraints (AGC vocabulary,
 # squelch range, the one shared RIT/XIT offset). Split from test_tciserver to stay under the
 # 800-line limit in CONVENTIONS.md rule 7.
-add_executable(test_tciqueries test_tciqueries.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
-)
+add_executable(test_tciqueries test_tciqueries.cpp)
+target_link_libraries(test_tciqueries qk4_test_tci)
 target_include_directories(test_tciqueries PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciqueries Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciQueriesTests COMMAND test_tciqueries)
@@ -244,64 +227,45 @@ add_test(NAME TciQueriesTests COMMAND test_tciqueries)
 # TCI client roster: the address/last-seen/last-message table on the options page. Driven over a
 # real socket, because the peer address only exists on a real connection. Split from test_tciserver
 # to stay under the 800-line limit in CONVENTIONS.md rule 7.
-add_executable(test_tciclients test_tciclients.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
-)
+add_executable(test_tciclients test_tciclients.cpp)
+target_link_libraries(test_tciclients qk4_test_tci)
 target_include_directories(test_tciclients PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciclients Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciClientsTests COMMAND test_tciclients)
 
 # TCI sensor reporting: subscription per direction, interval clamping, and the server-to-client
 # telemetry an --audit sweep cannot see because none of it is ever a reply to a query.
-add_executable(test_tcisensors test_tcisensors.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciserverstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
-)
+add_executable(test_tcisensors test_tcisensors.cpp)
+target_link_libraries(test_tcisensors qk4_test_tci)
 target_include_directories(test_tcisensors PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tcisensors Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TciSensorsTests COMMAND test_tcisensors)
 
 # RadioSettings: the connect-at-startup rule, which is enforced in the model rather than only in
 # the dialog because a settings file can also be hand-edited or restored from a backup.
-add_executable(test_radiosettings test_radiosettings.cpp
-    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
-)
+add_executable(test_radiosettings test_radiosettings.cpp)
+target_link_libraries(test_radiosettings qk4_test_common)
 target_include_directories(test_radiosettings PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_radiosettings Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME RadioSettingsTests COMMAND test_radiosettings)
 
 # TCI binary audio framing: the 64-byte header, and the opposite payload rules per direction.
-add_executable(test_tciaudioframe test_tciaudioframe.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciaudioframe.cpp
-)
+add_executable(test_tciaudioframe test_tciaudioframe.cpp)
+target_link_libraries(test_tciaudioframe qk4_test_tci)
 target_include_directories(test_tciaudioframe PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciaudioframe Qt6::Core Qt6::Test)
 add_test(NAME TciAudioFrameTests COMMAND test_tciaudioframe)
 
 # TCI grammar: tokenising, the global one-argument form, and delimiter-safe formatting.
-add_executable(test_tciprotocol test_tciprotocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/tciprotocol.cpp
-)
+add_executable(test_tciprotocol test_tciprotocol.cpp)
+target_link_libraries(test_tciprotocol qk4_test_tci)
 target_include_directories(test_tciprotocol PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tciprotocol Qt6::Core Qt6::Test)
 add_test(NAME TciProtocolTests COMMAND test_tciprotocol)
 
 # WebSocket transport over a real loopback socket: upgrade, session lifecycle, ping/pong, limits.
-add_executable(test_websocketserver test_websocketserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/websocketframe.cpp
-)
+add_executable(test_websocketserver test_websocketserver.cpp)
+target_link_libraries(test_websocketserver qk4_test_tci)
 target_include_directories(test_websocketserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_websocketserver Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME WebSocketServerTests COMMAND test_websocketserver)
@@ -316,9 +280,8 @@ add_test(NAME AudioUpsamplerTests COMMAND test_audioupsampler)
 
 # Waterfall row/pixel mapping: which stored row each screen pixel samples, mirroring the shaders.
 add_executable(test_waterfallgeometry test_waterfallgeometry.cpp
-    ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
-    ${CMAKE_SOURCE_DIR}/src/dsp/spectrumscale.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp)
+target_link_libraries(test_waterfallgeometry qk4_test_common)
 target_include_directories(test_waterfallgeometry PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_waterfallgeometry Qt6::Core Qt6::Test)
 add_test(NAME WaterfallGeometryTests COMMAND test_waterfallgeometry)
@@ -340,35 +303,31 @@ target_link_libraries(test_panadapterdashes Qt6::Core Qt6::Test)
 add_test(NAME PanadapterDashTests COMMAND test_panadapterdashes)
 
 # BandPlan data/lookup tests (QColor needs Qt6::Gui)
-add_executable(test_bandplan test_bandplan.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/bandplan.cpp
-)
+add_executable(test_bandplan test_bandplan.cpp)
+target_link_libraries(test_bandplan qk4_test_widgets)
 target_include_directories(test_bandplan PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_bandplan Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME BandPlanTests COMMAND test_bandplan)
 
 # KPA1500 sub-antenna enable map + antenna labels
-add_executable(test_kpa1500antennas test_kpa1500antennas.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/kpa1500antennas.cpp
-)
+add_executable(test_kpa1500antennas test_kpa1500antennas.cpp)
+target_link_libraries(test_kpa1500antennas qk4_test_common)
 target_include_directories(test_kpa1500antennas PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_kpa1500antennas Qt6::Core Qt6::Test)
 add_test(NAME Kpa1500AntennasTests COMMAND test_kpa1500antennas)
 
 # KPA1500 response parsing (fault code, device info) against a loopback fake amplifier
 add_executable(test_kpa1500client test_kpa1500client.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/kpa1500client.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/kpa1500antennas.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/network/kpa1500client.cpp)
+target_link_libraries(test_kpa1500client qk4_test_common)
 target_include_directories(test_kpa1500client PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_kpa1500client Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME Kpa1500ClientTests COMMAND test_kpa1500client)
 
 # Band-plan strip layout: blocks, tag, sticky labels, marker collisions (QColor via bandplan.cpp)
 add_executable(test_bandplanstrip test_bandplanstrip.cpp
-    ${CMAKE_SOURCE_DIR}/src/dsp/bandplanstrip.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/bandplan.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/dsp/bandplanstrip.cpp)
+target_link_libraries(test_bandplanstrip qk4_test_widgets)
 target_include_directories(test_bandplanstrip PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_bandplanstrip Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME BandPlanStripTests COMMAND test_bandplanstrip)
@@ -384,16 +343,16 @@ add_test(NAME MenuModelTests COMMAND test_menumodel)
 # Menu overlay across disconnect/reconnect (#124) — the overlay against a real MenuModel, offscreen.
 add_executable(test_menuoverlay test_menuoverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/models/menumodel.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/overlays/menuoverlay.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/ui/overlays/menuoverlay.cpp)
+target_link_libraries(test_menuoverlay qk4_test_widgets)
 target_include_directories(test_menuoverlay PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_menuoverlay Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
 add_test(NAME MenuOverlayTests COMMAND test_menuoverlay)
 set_tests_properties(MenuOverlayTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # RX playout: sink size per SL tier and the jitter policy, with a simulated network and device.
-add_executable(test_rxplayout test_rxplayout.cpp ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp)
+add_executable(test_rxplayout test_rxplayout.cpp)
+target_link_libraries(test_rxplayout qk4_test_common)
 target_include_directories(test_rxplayout PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_rxplayout Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME RxPlayoutTests COMMAND test_rxplayout)
@@ -412,9 +371,8 @@ add_test(NAME RtContainersTests COMMAND test_rtcontainers)
 
 # K4 discovery reply parsing: field validation before a reply's address becomes a host. No socket.
 add_executable(test_k4discovery test_k4discovery.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/k4discovery.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/network/k4discovery.cpp)
+target_link_libraries(test_k4discovery qk4_test_common)
 target_include_directories(test_k4discovery PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_k4discovery Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME K4DiscoveryTests COMMAND test_k4discovery)
@@ -428,9 +386,8 @@ target_link_libraries(test_networkmetrics Qt6::Core Qt6::Test)
 add_test(NAME NetworkMetricsTests COMMAND test_networkmetrics)
 
 # Protocol packet parsing tests
-add_executable(test_protocol test_protocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/protocol.cpp
-)
+add_executable(test_protocol test_protocol.cpp)
+target_link_libraries(test_protocol qk4_test_common)
 target_include_directories(test_protocol PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_protocol Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME ProtocolTests COMMAND test_protocol)
@@ -439,10 +396,9 @@ add_test(NAME ProtocolTests COMMAND test_protocol)
 # error per failure, nothing written before authentication, PING/PONG round trip.
 add_executable(test_tcpclient test_tcpclient.cpp
     ${CMAKE_SOURCE_DIR}/src/network/tcpclient.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/protocol.cpp
     ${CMAKE_SOURCE_DIR}/src/network/kzegress.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/pingtracker.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/network/pingtracker.cpp)
+target_link_libraries(test_tcpclient qk4_test_common)
 target_include_directories(test_tcpclient PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_tcpclient Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME TcpClientTests COMMAND test_tcpclient)
@@ -473,15 +429,16 @@ add_test(NAME RtSchedulingTests COMMAND test_rtscheduling)
 
 # ThreadShutdown: a thread that stops in time is joined and deleted with what lives on it; one that
 # misses its deadline is disowned (unparented, reported, left running) instead of crashing or hanging.
-add_executable(test_threadshutdown test_threadshutdown.cpp ${CMAKE_SOURCE_DIR}/src/utils/threadshutdown.cpp)
+add_executable(test_threadshutdown test_threadshutdown.cpp)
+target_link_libraries(test_threadshutdown qk4_test_common)
 target_include_directories(test_threadshutdown PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_threadshutdown Qt6::Core Qt6::Test)
 add_test(NAME ThreadShutdownTests COMMAND test_threadshutdown)
 
 # MidiDeviceWatcher: the macOS CoreMIDI run-loop thread starts and stops within its deadline.
 add_executable(test_mididevicewatcher test_mididevicewatcher.cpp
-    ${CMAKE_SOURCE_DIR}/src/hardware/mididevicewatcher.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/threadshutdown.cpp)
+    ${CMAKE_SOURCE_DIR}/src/hardware/mididevicewatcher.cpp)
+target_link_libraries(test_mididevicewatcher qk4_test_common)
 target_include_directories(test_mididevicewatcher PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_mididevicewatcher Qt6::Core Qt6::Test)
 if(APPLE)
@@ -498,24 +455,8 @@ add_test(NAME CwGateTests COMMAND test_cwgate)
 # CW by CAT: the TCI macro grammar (speed markers, prosign brackets, escaped separators) and the
 # KY/KS commands it becomes. One target because the interesting cases are at the seam, where TCI
 # and the K4 use the same characters for different things.
-add_executable(test_cwmacro test_cwmacro.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/cwmacro.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/catframes.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/datacontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/frequencyvfostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/levelsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/modefilterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/powerstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/processingstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/qskcontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/rxtxmeterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/spectrumdisplaystate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
-)
+add_executable(test_cwmacro test_cwmacro.cpp)
+target_link_libraries(test_cwmacro qk4_test_radiostate qk4_test_tci qk4_test_common)
 target_include_directories(test_cwmacro PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_cwmacro Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME CwMacroTests COMMAND test_cwmacro)
@@ -523,66 +464,31 @@ add_test(NAME CwMacroTests COMMAND test_cwmacro)
 # CatServer command handler tests
 add_executable(test_catserver test_catserver.cpp
     ${CMAKE_SOURCE_DIR}/src/network/catserver.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/catframes.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/catpushbroadcaster.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/protocol.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/datacontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/frequencyvfostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/levelsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/modefilterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/powerstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/processingstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/qskcontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/rxtxmeterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/spectrumdisplaystate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/network/catpushbroadcaster.cpp)
+target_link_libraries(test_catserver qk4_test_radiostate qk4_test_common)
 target_include_directories(test_catserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_catserver Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME CatServerTests COMMAND test_catserver)
 
 # CatPushBroadcaster per-client AI subscription / push tests
 add_executable(test_catpushbroadcaster test_catpushbroadcaster.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/catpushbroadcaster.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/catframes.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/antennastate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/audioeffectsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/datacontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/frequencyvfostate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/levelsstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/modefilterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/powerstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/processingstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/qskcontrolstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/rxtxmeterstate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/spectrumdisplaystate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/textdecodestate.cpp
-    ${CMAKE_SOURCE_DIR}/src/models/radiostate/xvtrbandstate.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/network/catpushbroadcaster.cpp)
+target_link_libraries(test_catpushbroadcaster qk4_test_radiostate qk4_test_common)
 target_include_directories(test_catpushbroadcaster PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_catpushbroadcaster Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME CatPushBroadcasterTests COMMAND test_catpushbroadcaster)
 
 # DX Cluster spot parsing tests
-add_executable(test_dxcluster test_dxcluster.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/dxclusterclient.cpp
-)
+add_executable(test_dxcluster test_dxcluster.cpp)
+target_link_libraries(test_dxcluster qk4_test_common)
 target_include_directories(test_dxcluster PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_dxcluster Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME DxClusterTests COMMAND test_dxcluster)
 
 # DxClusterController: live connections stay matched to the saved list when an entry is removed.
 add_executable(test_dxclustercontroller test_dxclustercontroller.cpp
-    ${CMAKE_SOURCE_DIR}/src/controllers/dxclustercontroller.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/dxclusterclient.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/threadshutdown.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/controllers/dxclustercontroller.cpp)
+target_link_libraries(test_dxclustercontroller qk4_test_common)
 target_include_directories(test_dxclustercontroller PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_dxclustercontroller Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME DxClusterControllerTests COMMAND test_dxclustercontroller)
@@ -626,9 +532,8 @@ add_test(NAME SidetoneSchedulerTests COMMAND test_sidetonescheduler)
 add_executable(test_kpodplususbworker test_kpodplususbworker.cpp
     ${CMAKE_SOURCE_DIR}/src/hardware/kpodplususbworker.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/rtscheduling.cpp
-    ${CMAKE_SOURCE_DIR}/src/hardware/kpodplusdevice.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/threadshutdown.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/hardware/kpodplusdevice.cpp)
+target_link_libraries(test_kpodplususbworker qk4_test_common)
 target_include_directories(test_kpodplususbworker PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${LIBUSB_INCLUDE_DIRS}
@@ -675,21 +580,15 @@ target_link_libraries(test_opusdecoder Qt6::Core Qt6::Test ${OPUS_LIBRARIES})
 add_test(NAME OpusDecoderTests COMMAND test_opusdecoder)
 
 # Meter scale marks — needs the widget TU, so Qt6::Widgets and the K4Styles header it uses.
-add_executable(test_meterscale
-    test_meterscale.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widgets/txmeterwidget.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
-)
+add_executable(test_meterscale test_meterscale.cpp)
+target_link_libraries(test_meterscale qk4_test_widgets)
 target_include_directories(test_meterscale PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_meterscale Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
 add_test(NAME MeterScaleTests COMMAND test_meterscale)
 
 # Idle wake-ups (#92) — widget timers that must not run without work, offscreen.
-add_executable(test_idlewakeups
-    test_idlewakeups.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widgets/txmeterwidget.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
-)
+add_executable(test_idlewakeups test_idlewakeups.cpp)
+target_link_libraries(test_idlewakeups qk4_test_widgets)
 target_include_directories(test_idlewakeups PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_idlewakeups Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
 add_test(NAME IdleWakeupTests COMMAND test_idlewakeups)
@@ -702,10 +601,8 @@ target_link_libraries(test_rxoutputstage Qt6::Core Qt6::Test)
 add_test(NAME RxOutputStageTests COMMAND test_rxoutputstage)
 
 # Form-control theming — renders bare controls under the app-wide fallback stylesheet, offscreen.
-add_executable(test_formcontroltheme
-    test_formcontroltheme.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
-)
+add_executable(test_formcontroltheme test_formcontroltheme.cpp)
+target_link_libraries(test_formcontroltheme qk4_test_widgets)
 target_include_directories(test_formcontroltheme PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(test_formcontroltheme PRIVATE QK4_SOURCE_DIR="${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(test_formcontroltheme Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
@@ -714,10 +611,8 @@ set_tests_properties(FormControlThemeTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 
 # Typography and colour standard: token contrast, no repeated hex values, and a source scan that keeps
 # literal sizes and colours out of src/.
-add_executable(test_tokenstandard
-    test_tokenstandard.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
-)
+add_executable(test_tokenstandard test_tokenstandard.cpp)
+target_link_libraries(test_tokenstandard qk4_test_widgets)
 target_include_directories(test_tokenstandard PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(test_tokenstandard PRIVATE QK4_SOURCE_DIR="${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(test_tokenstandard Qt6::Core Qt6::Gui Qt6::Test)
@@ -730,44 +625,23 @@ target_link_libraries(test_windowfit Qt6::Core Qt6::Test)
 add_test(NAME WindowFitTests COMMAND test_windowfit)
 
 # Left side panel at its minimum size - nothing may overlap, offscreen.
-add_executable(test_sidecontrolpanel
-    test_sidecontrolpanel.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widgets/sidecontrolpanel.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widgets/sidepanelbutton.cpp
+add_executable(test_sidecontrolpanel test_sidecontrolpanel.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/memorykeyrow.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/bottommenubar.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/vforowwidget.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/rightsidepanel.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widgets/kpa1500minipanel.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/kpa1500antennas.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widgets/dualcontrolbutton.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/overlays/sidecontroloverlay.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/popups/popupdismissal.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/overlays/monoverlay.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/overlays/baloverlay.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
-    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/kpa1500minipanel.cpp)
+target_link_libraries(test_sidecontrolpanel qk4_test_widgets qk4_test_common)
 target_include_directories(test_sidecontrolpanel PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(test_sidecontrolpanel PRIVATE QK4_VERSION="test")
 target_link_libraries(test_sidecontrolpanel Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
 add_test(NAME SideControlPanelLayoutTests COMMAND test_sidecontrolpanel)
 set_tests_properties(SideControlPanelLayoutTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # Widgets whose screen must match their own state (review findings D-019..D-043), offscreen.
-add_executable(test_widgetstate
-    test_widgetstate.cpp
+add_executable(test_widgetstate test_widgetstate.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/styling/k4glyphs.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/frequencydisplaywidget.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widgets/sidecontrolpanel.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widgets/sidepanelbutton.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widgets/dualcontrolbutton.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/featuremenubar.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/overlays/sidecontroloverlay.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/popups/popupdismissal.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/overlays/monoverlay.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/overlays/baloverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/popups/k4popupbase.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/popups/confirmpopup.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/popups/lineoutpopup.cpp
@@ -777,14 +651,9 @@ add_executable(test_widgetstate
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/displaymenubutton.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/togglegroupwidget.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/dialogs/macrodialog.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/overlays/dxspotoverlay.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
-    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/ui/overlays/dxspotoverlay.cpp)
+target_link_libraries(test_widgetstate qk4_test_widgets qk4_test_common)
 target_include_directories(test_widgetstate PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(test_widgetstate PRIVATE QK4_VERSION="test")
 target_link_libraries(test_widgetstate Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
 add_test(NAME WidgetStateTests COMMAND test_widgetstate)
 set_tests_properties(WidgetStateTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -858,18 +727,14 @@ endforeach()
 # QK4_TESTS_ONLY build.
 if(NOT QK4_TESTS_ONLY AND QT_GUI_PRIVATE_FOUND)
     add_executable(test_rhiwidgetlifecycle test_rhiwidgetlifecycle.cpp
-        ${CMAKE_SOURCE_DIR}/src/dsp/panadapter_rhi.cpp
-        ${CMAKE_SOURCE_DIR}/src/dsp/minipan_rhi.cpp
-        ${CMAKE_SOURCE_DIR}/src/dsp/bandplanstrip.cpp
-        ${CMAKE_SOURCE_DIR}/src/dsp/spectrumgeometry.cpp
-        ${CMAKE_SOURCE_DIR}/src/dsp/poweraverager.cpp
-        ${CMAKE_SOURCE_DIR}/src/dsp/spectrumscale.cpp
-        ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
-        ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
-        ${CMAKE_SOURCE_DIR}/src/utils/bandplan.cpp
-        ${CMAKE_SOURCE_DIR}/src/utils/panelscale.cpp
-        ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
-    )
+    ${CMAKE_SOURCE_DIR}/src/dsp/panadapter_rhi.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/minipan_rhi.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/bandplanstrip.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/spectrumgeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/poweraverager.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/panelscale.cpp)
+target_link_libraries(test_rhiwidgetlifecycle qk4_test_widgets qk4_test_common)
     target_include_directories(test_rhiwidgetlifecycle PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_link_libraries(test_rhiwidgetlifecycle Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Widgets Qt6::Test)
     qt6_add_shaders(test_rhiwidgetlifecycle "test_rhiwidgetlifecycle_shaders"
@@ -917,30 +782,22 @@ add_test(NAME MicRateTests COMMAND test_micrate)
 
 # Options dialog pages: none wider than the dialog, the DX cluster console takes the spare height,
 # and the page list repaints all of itself on hover and selection (the stale-amber-edge fix). Offscreen.
-add_executable(test_optionspagelayout
-    test_optionspagelayout.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/pages/optionspagelayout.cpp
+add_executable(test_optionspagelayout test_optionspagelayout.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/pages/stationpage.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/pages/displaypage.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/pages/dxclusterpage.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
-    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
     ${CMAKE_SOURCE_DIR}/src/settings/interfacescale.cpp
-    ${CMAKE_SOURCE_DIR}/src/controllers/dxclustercontroller.cpp
-    ${CMAKE_SOURCE_DIR}/src/network/dxclusterclient.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/threadshutdown.cpp
-)
+    ${CMAKE_SOURCE_DIR}/src/controllers/dxclustercontroller.cpp)
+target_link_libraries(test_optionspagelayout qk4_test_widgets qk4_test_common)
 target_include_directories(test_optionspagelayout PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_optionspagelayout Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
 add_test(NAME OptionsPageLayoutTests COMMAND test_optionspagelayout)
 set_tests_properties(OptionsPageLayoutTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # HaliKey port enumeration off the GUI thread - selection rule, queued delivery, superseded scans.
-add_executable(test_halikeyportscan
-    test_halikeyportscan.cpp
-    ${CMAKE_SOURCE_DIR}/src/hardware/halikeyportscan.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/threadshutdown.cpp
-)
+add_executable(test_halikeyportscan test_halikeyportscan.cpp
+    ${CMAKE_SOURCE_DIR}/src/hardware/halikeyportscan.cpp)
+target_link_libraries(test_halikeyportscan qk4_test_common)
 target_include_directories(test_halikeyportscan PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_halikeyportscan Qt6::Core Qt6::Test)
 add_test(NAME HaliKeyPortScanTests COMMAND test_halikeyportscan)
@@ -977,13 +834,9 @@ target_link_libraries(test_logrules Qt6::Core Qt6::Test)
 add_test(NAME LogRulesTests COMMAND test_logrules)
 
 # Options -> Diagnostics: switches reach RadioSettings and change the real categories live. Offscreen.
-add_executable(test_diagnosticspage
-    test_diagnosticspage.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/pages/diagnosticspage.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/pages/optionspagelayout.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
-    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
-)
+add_executable(test_diagnosticspage test_diagnosticspage.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/pages/diagnosticspage.cpp)
+target_link_libraries(test_diagnosticspage qk4_test_widgets qk4_test_common)
 target_include_directories(test_diagnosticspage PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_diagnosticspage Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
 add_test(NAME DiagnosticsPageTests COMMAND test_diagnosticspage)

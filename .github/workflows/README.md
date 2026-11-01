@@ -113,3 +113,7 @@ the app sources they test and CodeQL extracts each of those compiles again.
 The unit, ASAN + UBSAN and RTSan jobs keep a ccache per job (`hendrikmuhs/ccache-action`, saved
 in its post step), so a push recompiles only what changed. `ci-codeql.yml` does not: CodeQL
 extracts each file while it compiles, and a cache hit would leave that file out of the analysis.
+
+App sources that several test suites use are compiled once, as static libraries in
+`tests/CMakeLists.txt` (`qk4_test_*`), instead of once per suite: 324 objects instead of 476 for
+the whole test build.
