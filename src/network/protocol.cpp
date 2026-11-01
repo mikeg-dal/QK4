@@ -102,8 +102,6 @@ void Protocol::processPacket(const QByteArray &payload) {
         // Audio packet structure - see K4Protocol::AudioPacket namespace for offset definitions
         if (payload.size() > K4Protocol::AudioPacket::HEADER_SIZE) {
             emit audioDataReady(payload);
-            quint8 audioSeq = static_cast<quint8>(payload[K4Protocol::AudioPacket::SEQUENCE_OFFSET]);
-            emit audioSequenceReceived(audioSeq);
         }
         break;
     }

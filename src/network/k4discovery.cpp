@@ -61,7 +61,6 @@ void K4Discovery::startDiscovery() {
 
     if (interfaceCount == 0) {
         qCWarning(lcLinkDiscovery) << "No active network interfaces found";
-        emit error("No active network interfaces found");
         m_discoveryActive = false;
         emit discoveryFinished(0);
         return;

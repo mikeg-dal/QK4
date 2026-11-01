@@ -577,10 +577,8 @@ void TcpClient::onCatResponse(const QString &response) {
     if (m_state.load(std::memory_order_acquire) != Connected)
         return;
     const qint64 rtt = m_pings.onCatPayload(response, m_linkClock.elapsed());
-    if (rtt >= 0) {
-        m_latencyMs = static_cast<int>(rtt);
-        emit latencyChanged(m_latencyMs);
-    }
+    if (rtt >= 0)
+        emit latencyChanged(static_cast<int>(rtt));
 }
 
 void TcpClient::sendAuthentication() {

@@ -47,7 +47,6 @@ public:
     void disconnectFromHost();
     bool isConnected() const;
     ConnectionState connectionState() const;
-    bool isUsingTls() const { return m_useTls; }
 
     void sendCAT(const QString &command);
     void sendRaw(const QByteArray &data);
@@ -63,8 +62,6 @@ public:
     void setStartupMacro(const QString &macro) { m_startupMacro = macro; }
 
     Protocol *protocol() { return m_protocol; }
-
-    int latencyMs() const { return m_latencyMs; }
 
 signals:
     void stateChanged(ConnectionState state);
@@ -149,7 +146,6 @@ private:
     // and every PONG's arrival are read from it. See PingTracker for why not a timer per ping.
     QElapsedTimer m_linkClock;
     PingTracker m_pings;
-    int m_latencyMs = -1;
     QString m_startupMacro; // Sent before RDY so state dump reflects macro changes
 };
 

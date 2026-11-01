@@ -31,13 +31,11 @@ public:
     ~K4Discovery() override;
 
     void startDiscovery();
-    QList<K4RadioInfo> discoveredRadios() const { return m_discoveredRadios; }
     static constexpr int TIMEOUT_MS = 5000;
 
 signals:
     void radioFound(const K4RadioInfo &radio);
     void discoveryFinished(int count);
-    void error(const QString &errorMessage);
 
 private slots:
     void onReadyRead();

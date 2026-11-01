@@ -305,7 +305,6 @@ private slots:
     void testAudioPacketRouting() {
         Protocol p;
         QSignalSpy dataSpy(&p, &Protocol::audioDataReady);
-        QSignalSpy seqSpy(&p, &Protocol::audioSequenceReceived);
 
         // Build audio payload: type=0x01, ver=0x01, seq=42, mode=3, framesize=240, rate=0, data
         QByteArray audioPayload;
@@ -321,8 +320,7 @@ private slots:
         p.parse(buildTestPacket(audioPayload));
 
         QCOMPARE(dataSpy.count(), 1);
-        QCOMPARE(seqSpy.count(), 1);
-        QCOMPARE(seqSpy.at(0).at(0).value<quint8>(), quint8(42));
+        QCOMPARE(dataSpy.at(0).at(0).toByteArray(), audioPayload);
     }
 
     // TRN-006. PAN header as the K4 sends it: type, version, sequence, PAN type, receiver, u16 data

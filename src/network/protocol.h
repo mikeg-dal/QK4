@@ -103,7 +103,6 @@ namespace Commands {
 constexpr const char *READY = "RDY;";
 constexpr const char *ENABLE_K4_MODE = "K41;";
 constexpr const char *ENABLE_LONG_ERRORS = "ER1;";
-constexpr const char *PING = "PING;";
 constexpr const char *DISCONNECT = "RRN;";
 } // namespace Commands
 
@@ -144,7 +143,6 @@ public:
 
 signals:
     void audioDataReady(const QByteArray &opusData);
-    void audioSequenceReceived(quint8 seq);
     // receiver: 0 = Main (VFO A), 1 = Sub (VFO B)
     void spectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
                            qint32 sampleRate, float noiseFloor);
