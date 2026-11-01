@@ -99,8 +99,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     });
     m_antennaCfgController = new AntennaConfigController(m_radioState, m_connectionController, this, this);
     m_textDecodeController = new TextDecodeController(m_radioState, m_connectionController, this, this);
-    m_buttonRowDispatcher = new ButtonRowDispatcher(m_radioState, m_connectionController, m_popupManager,
-                                                    m_antennaCfgController, m_textDecodeController, this);
+    new ButtonRowDispatcher(m_radioState, m_connectionController, m_popupManager, m_antennaCfgController,
+                            m_textDecodeController, this);
 
     // IMPORTANT: setupUi() MUST be called BEFORE setupMenuBar()!
     // Qt 6.10.1 bug on macOS Tahoe: calling menuBar() before creating QRhiWidget
@@ -133,14 +133,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
 
     setupHardwareController();
 
-    m_processingDisplayController = new ProcessingDisplayController(m_radioState, m_vfoA, m_vfoB, this);
+    new ProcessingDisplayController(m_radioState, m_vfoA, m_vfoB, this);
 
     m_antennaDisplayController = new AntennaDisplayController(m_radioState, m_bandNavController, m_txAntennaLabel,
                                                               m_rxAntALabel, m_rxAntBLabel, this);
 
-    const VfoRowIndicatorController::Labels rowLabels{
-        m_splitLabel, m_vfoRow->bSetLabel(), m_txTriangle, m_txTriangleB, m_voxLabel, m_qskLabel,
-        m_atuLabel,   m_msgBankLabel};
+    const VfoRowIndicatorController::Labels rowLabels{m_vfoRow->splitLabel(),
+                                                      m_vfoRow->bSetLabel(),
+                                                      m_vfoRow->txTriangle(),
+                                                      m_vfoRow->txTriangleB(),
+                                                      m_voxLabel,
+                                                      m_qskLabel,
+                                                      m_atuLabel,
+                                                      m_vfoRow->msgBankLabel()};
     m_vfoRowIndicatorController =
         new VfoRowIndicatorController(m_radioState, m_spectrumController, m_vfoRow, rowLabels, this);
 
@@ -150,19 +155,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     connect(m_rightSideController, &RightSideController::frequencyEntryRequested, m_vfoFrequencyController,
             &VfoFrequencyController::toggleFrequencyEntry);
 
-    m_subDivIndicatorController = new SubDivIndicatorController(m_radioState, m_spectrumController, m_vfoB, m_subLabel,
-                                                                m_divLabel, m_modeBLabel, this);
+    m_subDivIndicatorController = new SubDivIndicatorController(
+        m_radioState, m_spectrumController, m_vfoB, m_vfoRow->subLabel(), m_vfoRow->divLabel(), m_modeBLabel, this);
 
-    m_txStateController = new TxStateController(m_radioState, m_sideControlPanel, m_vfoFrequencyController, m_vfoA,
-                                                m_vfoB, m_txIndicator, m_txTriangle, m_txTriangleB, this);
+    m_txStateController =
+        new TxStateController(m_radioState, m_sideControlPanel, m_vfoFrequencyController, m_vfoA, m_vfoB, m_txIndicator,
+                              m_vfoRow->txTriangle(), m_vfoRow->txTriangleB(), this);
 
-    m_sideControlDisplayController = new SideControlDisplayController(m_radioState, m_sideControlPanel, this);
+    new SideControlDisplayController(m_radioState, m_sideControlPanel, this);
 
     // SideControlScrollController owns all of SideControlPanel's scroll-handler
     // protocol logic (WPM, pitch, mic, comp, power QRP/QRO, delay, BW/HI/LO/SHIFT,
     // RF gain, squelch). Extracted from MainWindow's setupUi in PR 10.
-    m_sideControlScrollController =
-        new SideControlScrollController(m_radioState, m_connectionController, m_sideControlPanel, this);
+    new SideControlScrollController(m_radioState, m_connectionController, m_sideControlPanel, this);
 
     // Filter indicator widgets observe RadioState directly (PATTERNS.md
     // Direct Observation). The former FilterIndicatorController was a
@@ -917,10 +922,6 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     m_txIndicator = m_vfoRow->txIndicator();
     m_txIndicator->setCursor(Qt::PointingHandCursor);
     m_txIndicator->installEventFilter(this);
-    m_txTriangle = m_vfoRow->txTriangle();
-    m_txTriangleB = m_vfoRow->txTriangleB();
-    m_subLabel = m_vfoRow->subLabel();
-    m_divLabel = m_vfoRow->divLabel();
 
     // Install event filters for clickable labels
     m_vfoASquare->installEventFilter(this);
@@ -928,12 +929,9 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     m_modeALabel->installEventFilter(this);
     m_modeBLabel->installEventFilter(this);
 
-    // SPLIT and MSG Bank labels live in VfoRowWidget (positioned under TX).
-    // B-SET label is also a VfoRowWidget child but is accessed directly via
-    // m_vfoRow->bSetLabel() at VfoRowIndicatorController construction — no
+    // SPLIT, MSG bank, B-SET, SUB, DIV and the TX triangles are VfoRowWidget
+    // children read through m_vfoRow where their controllers are built — no
     // MainWindow member needed.
-    m_splitLabel = m_vfoRow->splitLabel();
-    m_msgBankLabel = m_vfoRow->msgBankLabel();
 
     // RIT/XIT Box with border - constrained size
     // Supports mouse wheel to adjust RIT/XIT offset
@@ -1048,9 +1046,8 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         centerWidget, centerWidget->maximumWidth() - centerMargins.left() - centerMargins.right(), memoryKeys));
 
     // Owns left+right click wiring for the M1-M4 / REC / STORE / RCL buttons.
-    m_memoryButtonsController =
-        new MemoryButtonsController(m_connectionController, memoryKeys.m1, memoryKeys.m2, memoryKeys.m3, memoryKeys.m4,
-                                    memoryKeys.rec, memoryKeys.store, memoryKeys.rcl, this);
+    new MemoryButtonsController(m_connectionController, memoryKeys.m1, memoryKeys.m2, memoryKeys.m3, memoryKeys.m4,
+                                memoryKeys.rec, memoryKeys.store, memoryKeys.rcl, this);
 
     centerLayout->addStretch(); // Balance below
     layout->addWidget(centerWidget);

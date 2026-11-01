@@ -23,19 +23,14 @@ class BottomMenuBar;
 class MenuController;
 class PopupManager;
 class BandNavigationController;
-class ButtonRowDispatcher;
 class MacroController;
-class ProcessingDisplayController;
 class VfoRowIndicatorController;
 class RitXitController;
 class ModeLabelController;
 class VfoFrequencyController;
 class SubDivIndicatorController;
 class TxStateController;
-class SideControlDisplayController;
-class SideControlScrollController;
 class RightSideController;
-class MemoryButtonsController;
 class AntennaConfigController;
 class AntennaDisplayController;
 class TextDecodeController;
@@ -153,16 +148,11 @@ private:
     // Center section - first row with absolute positioning
     VfoRowWidget *m_vfoRow = nullptr;
 
-    // Center section labels (pointers to VfoRowWidget children)
+    // Center section labels MainWindow itself handles (pointers to VfoRowWidget children);
+    // the rest are read from m_vfoRow where their controllers are built.
     QWidget *m_vfoASquare = nullptr; // VfoSquareWidget - used for event filter
-    QLabel *m_txTriangle = nullptr;  // Left triangle (pointing at A) - shown when split OFF
-    QLabel *m_txTriangleB = nullptr; // Right triangle (pointing at B) - shown when split ON
     QLabel *m_txIndicator = nullptr;
     QWidget *m_vfoBSquare = nullptr; // VfoSquareWidget - used for event filter
-    QLabel *m_splitLabel = nullptr;
-    QLabel *m_subLabel = nullptr; // SUB indicator (green when sub RX enabled)
-    QLabel *m_divLabel = nullptr; // DIV indicator (green when diversity enabled)
-    QLabel *m_msgBankLabel = nullptr;
     QWidget *m_ritXitBox = nullptr;
     QLabel *m_ritLabel = nullptr;
     QLabel *m_xitLabel = nullptr;
@@ -171,8 +161,9 @@ private:
     FilterIndicatorWidget *m_filterAWidget = nullptr; // VFO A filter indicator
     FilterIndicatorWidget *m_filterBWidget = nullptr; // VFO B filter indicator
 
-    // Memory buttons (M1-M4, REC, STORE, RCL) live in
-    // MemoryButtonsController — no pointers retained here.
+    // Controllers that need no MainWindow call after construction (ButtonRowDispatcher,
+    // ProcessingDisplay, SideControlDisplay/Scroll, MemoryButtons) are parented to the
+    // window and not kept as members.
     QLabel *m_voxLabel = nullptr;
     QLabel *m_qskLabel = nullptr;
     QLabel *m_txAntennaLabel = nullptr;
@@ -190,19 +181,14 @@ private:
     MenuController *m_menuController = nullptr;
     PopupManager *m_popupManager = nullptr;
     BandNavigationController *m_bandNavController = nullptr;
-    ButtonRowDispatcher *m_buttonRowDispatcher = nullptr;
     MacroController *m_macroController = nullptr;
-    ProcessingDisplayController *m_processingDisplayController = nullptr;
     VfoRowIndicatorController *m_vfoRowIndicatorController = nullptr;
     RitXitController *m_ritXitController = nullptr;
     ModeLabelController *m_modeLabelController = nullptr;
     VfoFrequencyController *m_vfoFrequencyController = nullptr;
     SubDivIndicatorController *m_subDivIndicatorController = nullptr;
     TxStateController *m_txStateController = nullptr;
-    SideControlDisplayController *m_sideControlDisplayController = nullptr;
-    SideControlScrollController *m_sideControlScrollController = nullptr;
     RightSideController *m_rightSideController = nullptr;
-    MemoryButtonsController *m_memoryButtonsController = nullptr;
     TextDecodeController *m_textDecodeController = nullptr;
     AntennaConfigController *m_antennaCfgController = nullptr;
     AntennaDisplayController *m_antennaDisplayController = nullptr;
