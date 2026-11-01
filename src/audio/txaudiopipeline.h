@@ -13,7 +13,7 @@
 #include "audio/audiodiagnostics.h"
 #include "audio/audioresampler.h"
 #include "audio/opusencoder.h"
-#include "audio/spscring.h"
+#include "utils/spscring.h"
 
 /**
  * @brief The transmit audio path: microphone capture, TCI transmit audio, 12 kHz conversion, frame

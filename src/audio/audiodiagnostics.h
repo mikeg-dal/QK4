@@ -8,7 +8,7 @@
 // WHY: the RX audio thread and the TX thread run against deadlines, and a qCDebug there formats a
 // string, allocates and writes a log line whenever someone enables the category (CONVENTIONS.md
 // Rule 16). So those threads fill one of these plain records and push it into a lock-free ring
-// (audio/spscring.h); AudioController drains the rings on its main-thread sampling timer and calls
+// (utils/spscring.h); AudioController drains the rings on its main-thread sampling timer and calls
 // the log functions below. The log lines are the same as before; only the thread that writes them
 // changed.
 namespace AudioDiagnostics {

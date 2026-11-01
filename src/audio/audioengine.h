@@ -12,7 +12,7 @@
 
 #include "audio/audiodiagnostics.h"
 #include "audio/rxplayout.h"
-#include "audio/spscring.h"
+#include "utils/spscring.h"
 
 /**
  * @brief RX playback: the jitter buffer, MX routing, volume and balance, and the speaker sink.
@@ -26,7 +26,7 @@
  * TX lives in TxAudioPipeline on its own thread, so opening a microphone never stalls this one.
  *
  * Thread-safety: all public setters mutate @c std::atomic members. RX audio crosses from the
- * I/O thread on a lock-free single-producer/single-consumer ring (audio/spscring.h): exactly one
+ * I/O thread on a lock-free single-producer/single-consumer ring (utils/spscring.h): exactly one
  * thread may call enqueueAudio(). No mutex is taken on the RX path.
  */
 class AudioEngine : public QObject {

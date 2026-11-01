@@ -1,4 +1,4 @@
-#include "audio/spscring.h"
+#include "utils/spscring.h"
 
 #include <QtTest>
 
@@ -6,8 +6,9 @@
 #include <atomic>
 #include <thread>
 
-// The lock-free hand-off from the I/O thread (decoded RX audio) to the audio thread. Run under
-// ThreadSanitizer as well as plainly: the threaded cases are the ones that matter there.
+// The lock-free rings that carry decoded RX audio from the I/O thread to the audio thread (in
+// place) and the keyer's events and requests (by value). Run under ThreadSanitizer as well as
+// plainly: the threaded cases are the ones that matter there.
 namespace {
 
 struct Packet {
@@ -28,6 +29,8 @@ private slots:
     void uncommittedWriteIsInvisible();
     void threadedProducerConsumerKeepsEveryPacketIntact();
     void threadedFullRingDropsNewestOnly();
+    void byValuePushPopKeepsOrderAndRefusesWhenFull();
+    void threadedByValueKeepsEveryItemInOrder();
 };
 
 void TestSpscRing::emptyRingHasNoFront() {
@@ -158,6 +161,47 @@ void TestSpscRing::threadedFullRingDropsNewestOnly() {
         QCOMPARE(ring.front()->seq, seq);
         ring.pop();
     }
+}
+
+// push()/pop(out), as the keyer's queues use them: the same ring, copied in and out by value.
+void TestSpscRing::byValuePushPopKeepsOrderAndRefusesWhenFull() {
+    SpscRing<double, 4> ring;
+    double out = -1;
+    QVERIFY(!ring.pop(out));
+    QCOMPARE(out, -1.0);
+    for (int round = 0; round < 3; ++round) {
+        for (int i = 0; i < 4; ++i)
+            QVERIFY(ring.push(round * 10 + i));
+        QVERIFY(!ring.push(99));
+        QCOMPARE(ring.size(), std::size_t(4));
+        for (int i = 0; i < 4; ++i) {
+            QVERIFY(ring.pop(out));
+            QCOMPARE(out, double(round * 10 + i));
+        }
+        QVERIFY(ring.empty());
+    }
+}
+
+void TestSpscRing::threadedByValueKeepsEveryItemInOrder() {
+    SpscRing<long long, 16> ring;
+    constexpr long long kCount = 200000;
+    std::thread producer([&] {
+        for (long long v = 0; v < kCount;)
+            if (ring.push(v))
+                ++v;
+    });
+    long long expected = 0;
+    bool bad = false;
+    while (expected < kCount) {
+        long long v;
+        if (!ring.pop(v))
+            continue;
+        bad = bad || v != expected;
+        ++expected;
+    }
+    producer.join();
+    QVERIFY(!bad);
+    QVERIFY(ring.empty());
 }
 
 QTEST_GUILESS_MAIN(TestSpscRing)
