@@ -5,6 +5,7 @@
 #include "ui/overlays/monoverlay.h"
 #include "ui/overlays/baloverlay.h"
 #include "settings/radiosettings.h"
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QFontMetricsF>
 #include <QEvent>
@@ -260,10 +261,19 @@ void SideControlPanel::setupUi() {
 
     iconRow->addWidget(m_helpBtn);
     iconRow->addWidget(m_connectBtn);
+    // The version beside the icons, bottom-aligned with them. WHY here and not on a line below: that
+    // line cost the panel, and so the window, its height (cf46ebf, the 1366x768 fit). The ~46 px
+    // left of the row is too narrow for "V0.8.0-beta.1" at the 10 px floor, so a pre-release
+    // suffix goes on a second line.
+    const QString version = QCoreApplication::applicationVersion();
+    m_versionLabel = new QLabel(version.isEmpty() ? QString() : "V" + QString(version).replace('-', '\n'), this);
+    m_versionLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                      .arg(K4Styles::Colors::TextSecondary)
+                                      .arg(K4Styles::Dimensions::FontSizeCaption));
+    m_versionLabel->setAlignment(Qt::AlignLeft | Qt::AlignBottom);
+    iconRow->addWidget(m_versionLabel, 0, Qt::AlignBottom);
     iconRow->addStretch();
     layout->addLayout(iconRow);
-    // WHY no version label: Help > About QK4 shows the version (QK4 > About on macOS), and the line
-    // cost the panel, and so the window, its height.
 
     // Connect icon button signals
     connect(m_helpBtn, &QPushButton::clicked, this, &SideControlPanel::helpClicked);

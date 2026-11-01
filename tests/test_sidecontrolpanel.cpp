@@ -463,6 +463,44 @@ private slots:
         QCOMPARE(icon->geometry().bottom() + 1, panel->height() - K4Styles::Dimensions::SidePanelMarginV);
         QCOMPARE(functionButtons(panel).first()->mapTo(panel, QPoint()).y(), K4Styles::Dimensions::SidePanelMarginV);
     }
+
+    void versionSitsBesideTheIconsWithoutAddingHeight() {
+        // The version shares the icon row, so it costs the panel no height, and a long pre-release
+        // version still fits the panel's width and the icons' height.
+        const QString saved = QCoreApplication::applicationVersion();
+        QCoreApplication::setApplicationVersion(QString());
+        const int heightWithout = SideControlPanel().minimumSizeHint().height();
+        QCoreApplication::setApplicationVersion(QStringLiteral("0.10.0-beta.12"));
+        QWidget host;
+        auto *panel = new SideControlPanel(&host);
+        panel->setGeometry(0, 0, panel->width(), panel->minimumSizeHint().height());
+        host.resize(panel->size());
+        host.show();
+        QCoreApplication::processEvents();
+        QCoreApplication::setApplicationVersion(saved);
+
+        QCOMPARE(panel->minimumSizeHint().height(), heightWithout);
+        QLabel *version = nullptr;
+        for (QLabel *label : panel->findChildren<QLabel *>())
+            if (label->text().startsWith(QStringLiteral("V0.10.")))
+                version = label;
+        QVERIFY(version);
+        QPushButton *icon = nullptr;
+        for (QPushButton *button : panel->findChildren<QPushButton *>(Qt::FindDirectChildrenOnly))
+            if (button->size() ==
+                QSize(K4Styles::Dimensions::SideIconButtonSize, K4Styles::Dimensions::SideIconButtonSize))
+                icon = button;
+        QVERIFY(icon);
+        const QFontMetrics fm(version->font());
+        const QRect text = fm.boundingRect(QRect(0, 0, 1000, 1000), Qt::AlignLeft, version->text());
+        QVERIFY2(version->geometry().left() + text.width() <= panel->width() - K4Styles::Dimensions::SidePanelMarginH,
+                 qPrintable(QString("version needs %1 px from x=%2 in a %3 px panel")
+                                .arg(text.width())
+                                .arg(version->geometry().left())
+                                .arg(panel->width())));
+        QVERIFY(text.height() <= icon->height());
+        QCOMPARE(version->geometry().bottom(), icon->geometry().bottom());
+    }
 };
 
 // Every key's text stands K4Styles::Dimensions::ButtonTextClearance inside its border, measured in the

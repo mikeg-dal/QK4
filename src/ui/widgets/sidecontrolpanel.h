@@ -210,6 +210,7 @@ private:
     // Icon buttons (at bottom of panel)
     QPushButton *m_helpBtn;
     QPushButton *m_connectBtn;
+    QLabel *m_versionLabel = nullptr; // QK4 version, right of the icons
 
     // TX Function buttons (2x3 grid)
     QPushButton *m_tuneBtn;
