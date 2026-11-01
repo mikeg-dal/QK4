@@ -31,8 +31,6 @@ public:
     void setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA, VFOWidget *vfoB);
 
     QWidget *spectrumContainer() const;
-    PanadapterRhiWidget *panadapterA() const;
-    PanadapterRhiWidget *panadapterB() const;
 
     enum class PanadapterMode { MainOnly, Dual, SubOnly };
     void setPanadapterMode(PanadapterMode mode);
@@ -40,8 +38,7 @@ public:
     void setMouseQsyMode(int mode);
     void setDxClusterController(DxClusterController *controller);
 
-    // Task-level setters that route to both panadapters. Prefer these over
-    // reaching through panadapterA()/panadapterB() — CONVENTIONS Rule 2.
+    // Task-level setters that route to both panadapters (CONVENTIONS Rule 2).
     void setAmplitudeUnits(bool useSUnits);
     void setFskMarkTone(int toneHz);
 

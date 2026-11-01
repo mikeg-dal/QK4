@@ -92,7 +92,6 @@ public:
     void audioLevelsChanged();
 
     void setAudioEnabled(bool enabled);
-    bool audioEnabled() const { return m_audioEnabled; }
 
 signals:
     void listeningChanged(bool listening, quint16 port);

@@ -29,12 +29,6 @@ SpectrumController::SpectrumController(ConnectionController *conn, RadioState *r
 QWidget *SpectrumController::spectrumContainer() const {
     return m_spectrumContainer;
 }
-PanadapterRhiWidget *SpectrumController::panadapterA() const {
-    return m_panA.pad;
-}
-PanadapterRhiWidget *SpectrumController::panadapterB() const {
-    return m_panB.pad;
-}
 
 void SpectrumController::clearDisplays() {
     for (PanUi *ui : {&m_panA, &m_panB}) {

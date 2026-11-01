@@ -104,10 +104,6 @@ void ConnectionController::sendCAT(const QString &command) {
     m_tcpClient->sendCAT(command);
 }
 
-void ConnectionController::sendRawPacket(const QByteArray &packet) {
-    m_tcpClient->sendRaw(packet);
-}
-
 void ConnectionController::setDisplayFps(int fps) {
     m_currentRadio.displayFps = std::clamp(fps, RadioEntry::DisplayFpsMin, RadioEntry::DisplayFpsMax);
     RadioSettings *settings = RadioSettings::instance();

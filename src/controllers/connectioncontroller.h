@@ -11,7 +11,7 @@ class NetworkMetrics;
 
 /**
  * @brief Owns the IO thread + TcpClient + NetworkMetrics. Exposes connection lifecycle and a
- *        thread-safe `sendCAT()` / `sendRawPacket()` interface. Re-emits Protocol's inbound
+ *        thread-safe `sendCAT()` interface. Re-emits Protocol's inbound
  *        signals so callers never reach into `tcpClient()->protocol()`.
  *
  * Rule 2 exception: `tcpClient()` is exposed only for AudioController (TX audio bypass) and
@@ -30,9 +30,6 @@ public:
 
     // Send CAT command to K4 (thread-safe — uses QueuedConnection internally)
     void sendCAT(const QString &command);
-
-    // Send raw binary packet to K4 (for TX audio — thread-safe)
-    void sendRawPacket(const QByteArray &packet);
 
     // State queries
     bool isConnected() const;

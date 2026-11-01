@@ -193,14 +193,6 @@ DxClusterClient::ConnectionState DxClusterController::clusterState(int index) co
     return DxClusterClient::Disconnected;
 }
 
-bool DxClusterController::isAnyConnected() const {
-    for (auto it = m_instances.constBegin(); it != m_instances.constEnd(); ++it) {
-        if (it.value().state == DxClusterClient::Connected)
-            return true;
-    }
-    return false;
-}
-
 QStringList DxClusterController::consoleBuffer(int index) const {
     if (m_instances.contains(index))
         return m_instances[index].consoleBuffer;
@@ -226,13 +218,6 @@ QVector<DxSpot> DxClusterController::spotsForFrequencyRange(qint64 startFreqHz, 
 
 void DxClusterController::setSpotMaxAge(int seconds) {
     m_spotMaxAgeSec = qBound(300, seconds, 1800);
-}
-
-void DxClusterController::clearSpots() {
-    if (!m_spots.isEmpty()) {
-        m_spots.clear();
-        emit spotsUpdated();
-    }
 }
 
 void DxClusterController::clearSpotsFrom(int index) {

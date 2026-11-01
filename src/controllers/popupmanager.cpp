@@ -349,23 +349,9 @@ QWidget *PopupManager::anchorForLane(ButtonRowLane lane) const {
     return nullptr;
 }
 
-void PopupManager::setMainRxButtonLabel(int index, const QString &primary, const QString &alternate,
-                                        bool alternateIsAmber) {
-    m_mainRxRow->setButtonLabel(index, primary, alternate, alternateIsAmber);
-}
-
-void PopupManager::setSubRxButtonLabel(int index, const QString &primary, const QString &alternate,
-                                       bool alternateIsAmber) {
-    m_subRxRow->setButtonLabel(index, primary, alternate, alternateIsAmber);
-}
-
 void PopupManager::setTxButtonLabel(int index, const QString &primary, const QString &alternate,
                                     bool alternateIsAmber) {
     m_txRow->setButtonLabel(index, primary, alternate, alternateIsAmber);
-}
-
-void PopupManager::hideMacroDialog() {
-    m_macroDialog->hide();
 }
 
 int PopupManager::bandNumberForName(const QString &bandName) const {

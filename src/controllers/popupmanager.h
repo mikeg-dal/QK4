@@ -70,10 +70,6 @@ public:
     // calls this and then closes any popups still owned by MainWindow.
     void closeOwnedPopups();
 
-    // Hide macro dialog without triggering close signal — used by
-    // MainWindow's closeEvent to ensure clean shutdown.
-    void hideMacroDialog();
-
     // Band popup accessors — MainWindow::onBandSelected uses the popup's
     // internal band-number↔band-name map (yes, that map really lives on
     // the popup widget). Cleaner fix is a RadioUtils function, tracked as
@@ -103,9 +99,6 @@ public:
     // no longer expose this — they take the lane directly.
     QWidget *anchorForLane(ButtonRowLane lane) const;
 
-    void setMainRxButtonLabel(int index, const QString &primary, const QString &alternate,
-                              bool alternateIsAmber = true);
-    void setSubRxButtonLabel(int index, const QString &primary, const QString &alternate, bool alternateIsAmber = true);
     void setTxButtonLabel(int index, const QString &primary, const QString &alternate, bool alternateIsAmber = true);
 
     // Secondary popups (RX/TX EQ, line in/out, mic input/config, VOX
