@@ -753,6 +753,8 @@ void MainWindow::setupUi() {
 
     // Connect monitor level change (ML command)
     connect(m_sideControlPanel, &SideControlPanel::monLevelChangeRequested, this, [this](int mode, int level) {
+        if (!m_connectionController->isConnected())
+            return;
         QString cmd = QString("ML%1%2;").arg(mode).arg(level, 3, 10, QChar('0'));
         m_connectionController->sendCAT(cmd);
         // Optimistic update
@@ -1129,6 +1131,8 @@ void MainWindow::wireVfoWidget(VFOWidget *vfo, bool vfoB) {
 // BLm±nn: the balance mode and offset, sent from both the BAL wheel and the sub-volume slider in
 // BAL mode. Applied to RadioState at once, as the radio does not report it back over this link.
 void MainWindow::sendBalance(int mode, int offset) {
+    if (!m_connectionController->isConnected())
+        return;
     const QLatin1StringView sign(offset >= 0 ? "+" : "-");
     m_connectionController->sendCAT(QString("BL%1%2%3;").arg(mode).arg(sign).arg(qAbs(offset), 2, 10, QChar('0')));
     m_radioState->setBalance(mode, offset);

@@ -66,7 +66,7 @@ FeatureMenuController::FeatureMenuController(RadioState *radioState, ConnectionC
 
     connect(m_bar, &FeatureMenuBar::extraButtonClicked, this, [this]() {
         // Extra button on NB level view cycles filter: NONE(0) → NARROW(1) → WIDE(2) → NONE(0).
-        if (m_bar->currentFeature() != FeatureMenuBar::NbLevel)
+        if (m_bar->currentFeature() != FeatureMenuBar::NbLevel || !m_connection->isConnected())
             return;
         const bool bSet = m_radioState->bSetEnabled();
         const int curFilter = bSet ? m_radioState->noiseBlankerFilterWidthB() : m_radioState->noiseBlankerFilterWidth();
@@ -198,6 +198,10 @@ void FeatureMenuController::syncBarFromState(FeatureMenuBar::Feature feature) {
 }
 
 void FeatureMenuController::stepCurrentFeature(int direction) {
+    // WHY: every step writes RadioState before the SET; with no radio that would show a level
+    // no radio has, stepped from the unreported sentinel.
+    if (!m_connection->isConnected())
+        return;
     const bool bSet = m_radioState->bSetEnabled();
     const bool up = direction > 0;
     switch (m_bar->currentFeature()) {

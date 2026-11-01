@@ -535,6 +535,8 @@ void SpectrumController::scrollTune(int steps) {
 
 void SpectrumController::zoomSpan(bool vfoB, bool zoomIn) {
     // K4 span steps; "-" zooms out (wider span), "+" zooms in (narrower). Sub uses the $ suffix.
+    if (!m_connectionController->isConnected())
+        return;
     const int currentSpan = vfoB ? m_radioState->spanHzB() : m_radioState->spanHz();
     const int newSpan = RadioUtils::spanAfterZoom(currentSpan, zoomIn);
     if (newSpan == currentSpan)

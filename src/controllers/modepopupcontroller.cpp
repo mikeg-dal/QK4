@@ -15,6 +15,8 @@ ModePopupController::ModePopupController(RadioState *radioState, ConnectionContr
 
     // === User mode selection → CAT dispatch + optimistic DT update ===
     connect(m_popup, &ModePopupWidget::modeSelected, this, [this](const QString &catCmd) {
+        if (!m_connection->isConnected())
+            return;
         m_connection->sendCAT(catCmd);
 
         // WHY: K4 does not echo DT SET commands, so RadioState never learns

@@ -94,6 +94,8 @@ RightSideController::RightSideController(RadioState *radioState, ConnectionContr
     connect(m_panel, &RightSidePanel::diversityClicked, this, [this]() { m_connection->sendCAT("SW152;"); });
     connect(m_panel, &RightSidePanel::freqEntClicked, this, &RightSideController::frequencyEntryRequested);
     connect(m_panel, &RightSidePanel::rateClicked, this, [this]() {
+        if (!m_connection->isConnected())
+            return;
         // Cycle fine rates: 1 Hz → 10 Hz → 100 Hz → 1 Hz
         // WHY VT and not the radio's RATE switch (SW73): on the bench SW73 only toggles
         // 1 Hz ↔ 10 Hz and never reaches 100 Hz, so QK4 sets the step itself with VTn
@@ -106,6 +108,8 @@ RightSideController::RightSideController(RadioState *radioState, ConnectionContr
         m_radioState->parseCATCommand(cmd);
     });
     connect(m_panel, &RightSidePanel::khzClicked, this, [this]() {
+        if (!m_connection->isConnected())
+            return;
         // Set tuning step to 1 kHz (VT3)
         // WHY VT3 and not SW150 (the KHZ hold): on the bench SW150 sets VT2, 100 Hz, not 1 kHz.
         const bool bSet = m_radioState->bSetEnabled();

@@ -408,6 +408,8 @@ void PopupManager::wireDisplayPopup() {
     // K4 does (mean power over n frames, PowerAverager), so one value serves both screens. Applied
     // locally too so the trace changes at once; the radio's echo is then a no-op.
     auto requestAveraging = [this](int frames) {
+        if (!m_connection->isConnected())
+            return;
         frames = qBound(1, frames, 20);
         m_connection->sendCAT(QString::fromLatin1(CatFrames::averaging(frames)));
         m_radioState->setAveraging(frames);
@@ -483,6 +485,8 @@ void PopupManager::wireDisplayPopup() {
 
     // Span +/- (per-VFO selection). + zooms in, - zooms out.
     auto adjustSpan = [this](bool zoomIn) {
+        if (!m_connection->isConnected())
+            return;
         const bool vfoA = m_displayPopup->isVfoAEnabled();
         const bool vfoB = m_displayPopup->isVfoBEnabled();
         const int currentSpan = (vfoB && !vfoA) ? m_radioState->spanHzB() : m_radioState->spanHz();
@@ -545,12 +549,16 @@ void PopupManager::wireEqPopups() {
             [this]() { m_connection->sendCAT(RadioUtils::buildEqCommand("RE", m_radioState->rxEqBands())); });
 
     connect(m_rxEqPopup, &RxEqPopupWidget::bandValueChanged, this, [this](int bandIndex, int dB) {
+        if (!m_connection->isConnected())
+            return;
         // Update optimistic state immediately (UI stays responsive)
         m_radioState->setRxEqBand(bandIndex, dB);
         // Restart debounce timer - will send after 100ms of no changes
         m_rxEqDebounce->start();
     });
     connect(m_rxEqPopup, &RxEqPopupWidget::flatRequested, this, [this]() {
+        if (!m_connection->isConnected())
+            return;
         // Reset all bands to 0 and send CAT command
         QVector<int> flat(8, 0);
         m_radioState->setRxEqBands(flat);
@@ -559,6 +567,8 @@ void PopupManager::wireEqPopups() {
 
     // Preset load: get preset from RadioSettings, apply to sliders, send CAT
     connect(m_rxEqPopup, &RxEqPopupWidget::presetLoadRequested, this, [this](int index) {
+        if (!m_connection->isConnected())
+            return;
         EqPreset preset = RadioSettings::instance()->rxEqPreset(index);
         if (!preset.isEmpty() && preset.bands.size() == 8) {
             m_rxEqPopup->setAllBands(preset.bands);
@@ -618,12 +628,16 @@ void PopupManager::wireEqPopups() {
             [this]() { m_connection->sendCAT(RadioUtils::buildEqCommand("TE", m_radioState->txEqBands())); });
 
     connect(m_txEqPopup, &RxEqPopupWidget::bandValueChanged, this, [this](int bandIndex, int dB) {
+        if (!m_connection->isConnected())
+            return;
         // Update optimistic state immediately (UI stays responsive)
         m_radioState->setTxEqBand(bandIndex, dB);
         // Restart debounce timer - will send after 100ms of no changes
         m_txEqDebounce->start();
     });
     connect(m_txEqPopup, &RxEqPopupWidget::flatRequested, this, [this]() {
+        if (!m_connection->isConnected())
+            return;
         // Reset all bands to 0 and send CAT command
         QVector<int> flat(8, 0);
         m_radioState->setTxEqBands(flat);
@@ -632,6 +646,8 @@ void PopupManager::wireEqPopups() {
 
     // TX EQ Preset load: get preset from RadioSettings, apply to sliders, send CAT
     connect(m_txEqPopup, &RxEqPopupWidget::presetLoadRequested, this, [this](int index) {
+        if (!m_connection->isConnected())
+            return;
         EqPreset preset = RadioSettings::instance()->txEqPreset(index);
         if (!preset.isEmpty() && preset.bands.size() == 8) {
             m_txEqPopup->setAllBands(preset.bands);
