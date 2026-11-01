@@ -75,9 +75,12 @@ jobs:
           build-mode: manual
 
       - name: Build
+        # WHY --parallel 4: a serial build of the app and every test passed the 60-minute limit
+        # (46 min on 2026-11-01, then two timeouts the same day). 4 matches the runner's cores; a
+        # bare --parallel is an unlimited `make -j`, which ran a runner out of memory (ci-checks.yml).
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
+          cmake --build build --parallel 4
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
