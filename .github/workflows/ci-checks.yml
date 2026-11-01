@@ -96,8 +96,17 @@ jobs:
           modules: 'qtmultimedia qtshadertools qtserialport'
           cache: true
 
+      - name: Compiler cache
+        # WHY: most pushes change a few files, but every job rebuilt all of them. ccache keeps the
+        # objects per job across runs (saved in its post step). Not used in ci-codeql.yml: CodeQL
+        # reads each compile as it happens, and a cache hit would hide that file from it.
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: ${{ github.job }}
+          max-size: 500M
+
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build tests
         # `qk4_tests` is a CMake aggregate target defined in tests/CMakeLists.txt
@@ -106,7 +115,9 @@ jobs:
         # test_catserver remains the Phase 0.7 regression gate protecting the
         # RadioState public API contract used by the CAT server (see
         # docs/radiostate-catserver-api-contract.md).
-        run: cmake --build build --target qk4_tests
+        # WHY --parallel 4: serial, this step took 12 min; 4 is the runner's cores (see the RTSan
+        # job for why never a bare --parallel).
+        run: cmake --build build --target qk4_tests --parallel 4
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
@@ -145,12 +156,22 @@ jobs:
           modules: 'qtmultimedia qtshadertools qtserialport'
           cache: true
 
+      - name: Compiler cache
+        # WHY: most pushes change a few files, but every job rebuilt all of them. ccache keeps the
+        # objects per job across runs (saved in its post step). Not used in ci-codeql.yml: CodeQL
+        # reads each compile as it happens, and a cache hit would hide that file from it.
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: ${{ github.job }}
+          max-size: 500M
+
       - name: Configure CMake (sanitizers on for tests)
-        run: cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DQK4_TESTS_SANITIZE=ON
+        run: cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DQK4_TESTS_SANITIZE=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build instrumented tests
         # See unit-tests job comment for why this uses the qk4_tests aggregate.
-        run: cmake --build build-san --target qk4_tests
+        # WHY --parallel 4: serial, this step took 15 min (see the RTSan job for the limit).
+        run: cmake --build build-san --target qk4_tests --parallel 4
 
       - name: Run instrumented tests
         # UBSAN_OPTIONS=halt_on_error=1 makes CI fail fast on any UB detection.
@@ -227,9 +248,18 @@ jobs:
           arch: 'linux_gcc_64'
           cache: true
 
+      - name: Compiler cache
+        # WHY: most pushes change a few files, but every job rebuilt all of them. ccache keeps the
+        # objects per job across runs (saved in its post step). Not used in ci-codeql.yml: CodeQL
+        # reads each compile as it happens, and a cache hit would hide that file from it.
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: ${{ github.job }}
+          max-size: 500M
+
       - name: Configure CMake (RealtimeSanitizer on for tests)
         run: >-
-          cmake -B build-rtsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQK4_TESTS_ONLY=ON -DQK4_TESTS_RTSAN=ON
+          cmake -B build-rtsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQK4_TESTS_ONLY=ON -DQK4_TESTS_RTSAN=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           "-DCMAKE_C_COMPILER=clang-${LLVM_MAJOR}" "-DCMAKE_CXX_COMPILER=clang++-${LLVM_MAJOR}"
 
       - name: Build instrumented tests

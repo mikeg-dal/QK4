@@ -100,3 +100,14 @@ A rename starts a new entry in the Actions sidebar; the old file's runs stay und
 Update the README badge, any `gh run list --workflow <file>` in docs, and any required status check
 in branch protection. CodeQL's results survive a rename only because `ci-codeql.yml` pins its
 `category`; keep that line.
+
+## Build time
+
+The Linux jobs build with `--parallel 4`, the hosted runner's core count, never a bare
+`--parallel`: under Makefiles that is an unlimited `make -j`, which ran the RTSan runner out of
+memory. Built serially, the CodeQL job's build reached 46 min and then passed its 60-min limit
+(2026-11-01), and the unit and ASAN builds took 12 and 15 min.
+
+The unit, ASAN + UBSAN and RTSan jobs keep a ccache per job (`hendrikmuhs/ccache-action`, saved
+in its post step), so a push recompiles only what changed. `ci-codeql.yml` does not: CodeQL
+extracts each file while it compiles, and a cache hit would leave that file out of the analysis.
