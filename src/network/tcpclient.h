@@ -32,12 +32,13 @@ public:
      * @param password Account password. Used as the PSK when @p useTls is true.
      * @param useTls  Select the encrypted transport (TLS + PSK on port 9204).
      * @param identity PSK identity. Only used in TLS mode; empty is accepted.
-     * @param encodeMode Opus encode profile sent to the K4 in the startup macro.
-     *                   Valid range: 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode).
-     * EM3 is the default. Values outside 0-3 are undefined.
-     * @param streamingLatency SL tier (audio packet bundling). Valid range 0–7; there are four
-     *                   distinct tiers — 20/40/60/120 ms per packet, verified in
-     *                   `memory/k4-streaming-latency.md`. Default 3 ≈ 40 ms.
+     * @param encodeMode Audio encode mode, sent as `EMn;` once the radio has accepted the session.
+     *                   0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float
+     *                   decode); 0-3, EM3 the radio's default (Programmer's Reference D12, EM).
+     * @param streamingLatency Streaming audio latency, sent as `SLn;` after `EMn;`. 0-7, 3 the
+     *                   radio's default (Programmer's Reference D12, SL). The tiers give 20/40/60/120
+     *                   ms packets (SL0, SL1-2, SL3-5, SL6-7), so the default is 60 ms; the map is
+     *                   RadioUtils::slTierToFrameSamples().
      *
      * Must be called on the IO thread; callers elsewhere queue it with the functor overload of
      * `QMetaObject::invokeMethod` (checked at compile time).

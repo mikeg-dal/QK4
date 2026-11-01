@@ -8,8 +8,9 @@ namespace {
 constexpr int kSummaryIntervalMs = 2000;
 
 // Buffer-fill thresholds for HealthTier, expressed in milliseconds of decoded audio.
-// Normal steady-state is 1-3 packets (20-60 ms depending on SL). Over 500 ms means packets queued
-// during a network event and never flushed.
+// A packet is 20-120 ms of audio depending on the SL tier (RadioUtils::slTierToFrameSamples), and
+// steady state holds a few of them. Over 500 ms means packets queued during a network event and
+// never flushed.
 constexpr double kBufferMsWarnYellow = 200.0;
 constexpr double kBufferMsWarnOrange = 500.0;
 } // namespace

@@ -11,8 +11,8 @@
  *        packet activity, buffer-fill snapshots, and a derived Green/Yellow/Orange/Red
  *        `HealthTier`. Drives `NetHealthWidget`.
  *
- * Also keeps a 10-second timestamped trail of RTT, jitter, and buffer-depth so the hover popup
- * can plot live sparklines (the scalar getters only expose the latest value).
+ * Also keeps a timestamped trail of RTT, jitter, and buffer-depth (HISTORY_WINDOW_MS, 30 s) so
+ * the hover popup can plot live sparklines (the scalar getters only expose the latest value).
  */
 class NetworkMetrics : public QObject {
     Q_OBJECT
@@ -44,7 +44,7 @@ public:
     quint32 rxUnderruns() const { return m_rxUnderruns - m_rxUnderrunsBase; }
     quint32 rxDroppedPackets() const { return m_rxDropped - m_rxDroppedBase; }
 
-    // 10-second rolling history for the live sparkline popup. Read on the main thread only.
+    // Rolling history (HISTORY_WINDOW_MS) for the live sparkline popup. Read on the main thread only.
     const std::deque<TimedSample> &rttHistory() const { return m_rttHistory; }
     const std::deque<TimedSample> &jitterHistory() const { return m_jitterHistory; }
     const std::deque<TimedSample> &bufferHistory() const { return m_bufferHistory; }

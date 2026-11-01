@@ -70,18 +70,20 @@ TcpClient::TcpClient(QObject *parent)
                 m_startupMacro.clear();
             }
 
-            // Send initialization sequence
-            // RDY triggers comprehensive state dump containing all radio state:
-            // FA, FB, MD, MD$, BW, BW$, IS, IS$, CW, KS, PC, SD (per mode), SQ, RG, SQ$, RG$,
-            // RT, XT, RO, RT$, RO$, BS, AN, AR, AR$, PA, PA$, RA, RA$, NB, NB$, NR, NR$, NM, NM$,
-            // #SPN, #REF, VXC, VXV, VXD, and all menu definitions (MEDF)
-            sendCAT(K4Protocol::Commands::READY);              // Triggers comprehensive state dump
-            sendCAT(K4Protocol::Commands::ENABLE_K4_MODE);     // Enable advanced K4 protocol mode
-            sendCAT(K4Protocol::Commands::ENABLE_LONG_ERRORS); // Request long format error messages
-            // Set audio encode mode (0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode))
+            // RDY asks for the entire radio state. The Programmer's Reference D12 lists it as "RDY
+            // (Entire Radio State)" and leaves its response "to be documented in a future
+            // revision"; what QK4 relies on (every setting it shows, and the MEDF menu definitions)
+            // is what the radio has been seen to send.
+            // WHY no AI command: RDY; enables AI4 on this link (not in the Programmer's Reference
+            // D12; owner-confirmed on a K4). Under AI4 the radio reports only "changes not made by
+            // client" (D12, AI), so a SET QK4 sends here is not echoed back to it.
+            sendCAT(K4Protocol::Commands::READY);
+            sendCAT(K4Protocol::Commands::ENABLE_K4_MODE);     // K41: advanced K4 mode (D12, K4)
+            sendCAT(K4Protocol::Commands::ENABLE_LONG_ERRORS); // ER1: error code and string (D12, ER)
+            // Audio encode mode (0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode))
             qCDebug(lcLinkTcp) << "Sending:" << QString("EM%1;").arg(m_encodeMode);
             sendCAT(QString("EM%1;").arg(m_encodeMode));
-            // Set streaming audio latency (0-7, higher values for high-latency connections)
+            // Streaming audio latency (0-7; higher tiers bundle more audio per packet for slow links)
             qCDebug(lcLinkTcp) << "Sending:" << QString("SL%1;").arg(m_streamingLatency);
             sendCAT(QString("SL%1;").arg(m_streamingLatency));
         }
