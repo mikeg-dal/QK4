@@ -305,7 +305,7 @@ void TciController::wireTransmit() {
                     // holds PTT, which is exactly the case when the client unkeyed itself through
                     // setPtt and the roster was already told. It does not re-emit pttRequested, so
                     // this cannot recurse back into the handler below.
-                    QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+                    QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
                 });
     }
 
@@ -338,7 +338,7 @@ void TciController::wireTransmit() {
                     // right call because it broadcasts trx:false WITHOUT re-emitting pttRequested,
                     // which is what stops this recursing. TransmitController logs the refusal and
                     // who holds it, so this does not log again.
-                    QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+                    QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
                 }
             } else {
                 m_transmitController->release(TransmitOwner::Owner::TciClient);
@@ -364,7 +364,7 @@ void TciController::wireTransmit() {
             if (m_drivingPtt) {
                 return; // this controller asked for it, not the operator
             }
-            QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+            QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
             // WHY no TX source write here: TransmitController is the only thing that moves the gate,
             // and its apply() already sets the source on both edges in the one order that is safe -
             // before the gate on a press, queued behind the close on a release. A second writer here
@@ -392,7 +392,7 @@ void TciController::wireCatSets() {
         connect(m_connectionController, &ConnectionController::connectionStateChanged, this,
                 [this](TcpClient::ConnectionState state) {
                     if (state == TcpClient::Disconnected) {
-                        QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+                        QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
                         emit transmittingChanged(false);
                     }
                 });
@@ -933,8 +933,8 @@ void TciController::start(quint16 port, bool loopbackOnly) {
     connectRxAudioFanout();
 
     bool ok = false;
-    QMetaObject::invokeMethod(m_server, "start", Qt::BlockingQueuedConnection, Q_RETURN_ARG(bool, ok),
-                              Q_ARG(quint16, port), Q_ARG(bool, loopbackOnly));
+    QMetaObject::invokeMethod(m_server, &TciServer::start, Qt::BlockingQueuedConnection, qReturnArg(ok), port,
+                              loopbackOnly);
 
     // A listener that failed to bind serves nobody, so it should not be left paying for the
     // fan-out either.
@@ -947,7 +947,7 @@ void TciController::start(quint16 port, bool loopbackOnly) {
 }
 
 void TciController::stop() {
-    QMetaObject::invokeMethod(m_server, "stop", Qt::BlockingQueuedConnection);
+    QMetaObject::invokeMethod(m_server, &TciServer::stop, Qt::BlockingQueuedConnection);
 
     // AFTER the server is down, mirroring the order in start(). Dropping it first would leave a
     // still-subscribed client silent for the width of the blocking call above rather than

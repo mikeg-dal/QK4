@@ -152,28 +152,29 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     // Promoted to real-time by SidetoneGenerator::start() on the thread itself: sidetone shares the
     // CW perception path with the keyer, and a preempted block write is audible onset jitter.
     m_sidetoneThread->start();
-    QMetaObject::invokeMethod(m_sidetoneGenerator, "start", Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::start, Qt::QueuedConnection);
 
     // Set sidetone to same output device as AudioEngine
     QString savedSidetoneDevice = RadioSettings::instance()->speakerDevice();
     if (!savedSidetoneDevice.isEmpty()) {
-        QMetaObject::invokeMethod(m_sidetoneGenerator, "setOutputDevice", Qt::QueuedConnection,
-                                  Q_ARG(QString, savedSidetoneDevice));
+        QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::setOutputDevice, Qt::QueuedConnection,
+                                  savedSidetoneDevice);
     }
 
     // Follow speaker device changes at runtime
     connect(RadioSettings::instance(), &RadioSettings::speakerDeviceChanged, this, [this](const QString &deviceId) {
-        QMetaObject::invokeMethod(m_sidetoneGenerator, "setOutputDevice", Qt::QueuedConnection,
-                                  Q_ARG(QString, deviceId));
+        QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::setOutputDevice, Qt::QueuedConnection,
+                                  deviceId);
     });
 
     // Set initial sidetone volume from RadioSettings (independent of K4's MON level)
-    QMetaObject::invokeMethod(m_sidetoneGenerator, "setVolume", Qt::QueuedConnection,
-                              Q_ARG(float, RadioSettings::instance()->sidetoneVolume() / 100.0f));
+    QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::setVolume, Qt::QueuedConnection,
+                              RadioSettings::instance()->sidetoneVolume() / 100.0f);
 
     // Update sidetone volume when changed in Options
     connect(RadioSettings::instance(), &RadioSettings::sidetoneVolumeChanged, this, [this](int value) {
-        QMetaObject::invokeMethod(m_sidetoneGenerator, "setVolume", Qt::QueuedConnection, Q_ARG(float, value / 100.0f));
+        QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::setVolume, Qt::QueuedConnection,
+                                  value / 100.0f);
     });
 
     // Sidetone CW frequency + keyer-speed wiring lives on CwController.

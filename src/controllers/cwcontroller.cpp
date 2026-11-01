@@ -45,8 +45,8 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     applyMode();
     applyReversal();
     if (m_radioState->cwPitch() > 0)
-        QMetaObject::invokeMethod(m_sidetone, "setFrequency", Qt::QueuedConnection,
-                                  Q_ARG(int, m_radioState->cwPitch()));
+        QMetaObject::invokeMethod(m_sidetone, &SidetoneGenerator::setFrequency, Qt::QueuedConnection,
+                                  m_radioState->cwPitch());
 
     connect(m_radioState, &RadioState::keyerSpeedChanged, this, [this](int wpm) {
         applySpeed();
@@ -64,7 +64,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     });
 
     connect(m_radioState, &RadioState::cwPitchChanged, this, [this](int pitchHz) {
-        QMetaObject::invokeMethod(m_sidetone, "setFrequency", Qt::QueuedConnection, Q_ARG(int, pitchHz));
+        QMetaObject::invokeMethod(m_sidetone, &SidetoneGenerator::setFrequency, Qt::QueuedConnection, pitchHz);
         // K4 is the source of truth — mirror the CW pitch onto the KPOD+ keyer.
         if (m_kpodPlus->isPolling())
             m_kpodPlus->setCwPitch(pitchHz);
@@ -204,7 +204,7 @@ void CwController::updateInhibit() {
     const bool wanted = CwGate::sidetoneStreamWanted(in);
     if (wanted != m_sidetoneStreamWanted) {
         m_sidetoneStreamWanted = wanted;
-        QMetaObject::invokeMethod(m_sidetone, "setStreamWanted", Qt::QueuedConnection, Q_ARG(bool, wanted));
+        QMetaObject::invokeMethod(m_sidetone, &SidetoneGenerator::setStreamWanted, Qt::QueuedConnection, wanted);
     }
 }
 

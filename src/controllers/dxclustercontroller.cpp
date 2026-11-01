@@ -140,14 +140,13 @@ void DxClusterController::destroyInstance(int index) {
 void DxClusterController::connectCluster(int index, const QString &host, quint16 port, const QString &callsign) {
     qCDebug(lcDxCluster) << "connectCluster index:" << index << host << port << callsign;
     auto &inst = ensureInstance(index);
-    QMetaObject::invokeMethod(inst.client, "connectToHost", Qt::QueuedConnection, Q_ARG(QString, host),
-                              Q_ARG(quint16, port), Q_ARG(QString, callsign));
+    QMetaObject::invokeMethod(inst.client, &DxClusterClient::connectToHost, Qt::QueuedConnection, host, port, callsign);
 }
 
 void DxClusterController::disconnectCluster(int index) {
     if (!m_instances.contains(index))
         return;
-    QMetaObject::invokeMethod(m_instances[index].client, "disconnectFromHost", Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_instances[index].client, &DxClusterClient::disconnectFromHost, Qt::QueuedConnection);
     // WHY: clear spots synchronously so the overlay updates immediately. The async lambda on
     // stateChanged is unreliable here — setState() is a no-op when the socket already
     // self-disconnected (server kick / idle timeout), leaving stale spots on screen.
@@ -182,7 +181,7 @@ void DxClusterController::removeCluster(int index) {
 
 void DxClusterController::disconnectAll() {
     for (auto it = m_instances.begin(); it != m_instances.end(); ++it) {
-        QMetaObject::invokeMethod(it.value().client, "disconnectFromHost", Qt::QueuedConnection);
+        QMetaObject::invokeMethod(it.value().client, &DxClusterClient::disconnectFromHost, Qt::QueuedConnection);
     }
     m_spots.clear();
     emit spotsUpdated();
@@ -211,7 +210,7 @@ QStringList DxClusterController::consoleBuffer(int index) const {
 void DxClusterController::sendCommand(int index, const QString &command) {
     if (!m_instances.contains(index))
         return;
-    QMetaObject::invokeMethod(m_instances[index].client, "sendCommand", Qt::QueuedConnection, Q_ARG(QString, command));
+    QMetaObject::invokeMethod(m_instances[index].client, &DxClusterClient::sendCommand, Qt::QueuedConnection, command);
 }
 
 QVector<DxSpot> DxClusterController::spotsForFrequencyRange(qint64 startFreqHz, qint64 endFreqHz) const {

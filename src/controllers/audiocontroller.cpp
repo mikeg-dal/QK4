@@ -211,8 +211,8 @@ void AudioController::startAudio(float mainVolume, float subVolume, float micGai
     // The RX sink is sized from the SL tier, so the tier goes ahead of start() in the same queue.
     const int sl = m_connectionController->currentRadio().streamingLatency;
     const int frameSamples = RadioUtils::slTierToFrameSamples(sl);
-    QMetaObject::invokeMethod(m_audioEngine, "setRxPacketFrameSamples", Qt::QueuedConnection, Q_ARG(int, frameSamples));
-    QMetaObject::invokeMethod(m_audioEngine, "start", Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_audioEngine, &AudioEngine::setRxPacketFrameSamples, Qt::QueuedConnection, frameSamples);
+    QMetaObject::invokeMethod(m_audioEngine, &AudioEngine::start, Qt::QueuedConnection);
     m_metricsTimer->start();
 
     // Volume setters are atomic — safe as direct calls from any thread
@@ -233,12 +233,12 @@ void AudioController::stopAudio() {
     if (m_metricsTimer)
         m_metricsTimer->stop();
     if (m_txPipeline) {
-        QMetaObject::invokeMethod(m_txPipeline, "stop", Qt::QueuedConnection);
+        QMetaObject::invokeMethod(m_txPipeline, &TxAudioPipeline::stop, Qt::QueuedConnection);
     }
     if (m_audioEngine) {
         m_audioEngine->setTransmitting(false);
         m_audioEngine->setRadioTransmitting(false);
-        QMetaObject::invokeMethod(m_audioEngine, "stop", Qt::QueuedConnection);
+        QMetaObject::invokeMethod(m_audioEngine, &AudioEngine::stop, Qt::QueuedConnection);
     }
 }
 
@@ -281,8 +281,7 @@ void AudioController::setPttActive(bool active) {
     const qint64 nowNs =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
             .count();
-    QMetaObject::invokeMethod(m_txPipeline, "setPttActive", Qt::QueuedConnection, Q_ARG(bool, active),
-                              Q_ARG(qint64, nowNs));
+    QMetaObject::invokeMethod(m_txPipeline, &TxAudioPipeline::setPttActive, Qt::QueuedConnection, active, nowNs);
     // The K4 stops sending RX audio while transmitting; the RX side must not count that as underruns.
     m_audioEngine->setTransmitting(active);
 
@@ -378,7 +377,7 @@ void AudioController::feedTciTxAudio(const QByteArray &f32Mono48k) {
     if (!m_txPipeline)
         return;
     // Queued: the encode pipeline runs on the TX thread.
-    QMetaObject::invokeMethod(m_txPipeline, "feedTciTxAudio", Qt::QueuedConnection, Q_ARG(QByteArray, f32Mono48k));
+    QMetaObject::invokeMethod(m_txPipeline, &TxAudioPipeline::feedTciTxAudio, Qt::QueuedConnection, f32Mono48k);
 }
 
 QMetaObject::Connection AudioController::routeTciTxAudio(TciServer *server) {
@@ -438,14 +437,14 @@ void AudioController::setSubMuted(bool muted) {
 
 void AudioController::setMicDevice(const QString &deviceId) {
     if (m_txPipeline)
-        QMetaObject::invokeMethod(m_txPipeline, "setMicDevice", Qt::QueuedConnection, Q_ARG(QString, deviceId));
+        QMetaObject::invokeMethod(m_txPipeline, &TxAudioPipeline::setMicDevice, Qt::QueuedConnection, deviceId);
 }
 
 void AudioController::setOutputDevice(const QString &deviceId) {
     if (m_audioEngine)
-        QMetaObject::invokeMethod(m_audioEngine, "setOutputDevice", Qt::QueuedConnection, Q_ARG(QString, deviceId));
+        QMetaObject::invokeMethod(m_audioEngine, &AudioEngine::setOutputDevice, Qt::QueuedConnection, deviceId);
     if (m_txPipeline)
-        QMetaObject::invokeMethod(m_txPipeline, "setOutputDeviceHint", Qt::QueuedConnection, Q_ARG(QString, deviceId));
+        QMetaObject::invokeMethod(m_txPipeline, &TxAudioPipeline::setOutputDeviceHint, Qt::QueuedConnection, deviceId);
 }
 
 void AudioController::setMicGain(float gain) {
@@ -454,21 +453,21 @@ void AudioController::setMicGain(float gain) {
     qCDebug(lcAudioTx, "mic slider %.0f%% -> gain %.4f", static_cast<double>(gain) * 100.0,
             static_cast<double>(gain * gain * gain));
     if (m_txPipeline)
-        QMetaObject::invokeMethod(m_txPipeline, "setMicGain", Qt::QueuedConnection, Q_ARG(float, gain));
+        QMetaObject::invokeMethod(m_txPipeline, &TxAudioPipeline::setMicGain, Qt::QueuedConnection, gain);
 }
 
 void AudioController::setTciTxGain(float gain) {
     qCDebug(lcAudioTx, "TCI TX slider %.0f%% -> gain %.4f", static_cast<double>(gain) * 100.0,
             static_cast<double>(gain * gain * gain));
     if (m_txPipeline)
-        QMetaObject::invokeMethod(m_txPipeline, "setTciTxGain", Qt::QueuedConnection, Q_ARG(float, gain));
+        QMetaObject::invokeMethod(m_txPipeline, &TxAudioPipeline::setTciTxGain, Qt::QueuedConnection, gain);
 }
 
 void AudioController::onStreamingLatencyChanged(int tier) {
     const int frameSamples = RadioUtils::slTierToFrameSamples(tier);
     m_txPipeline->setFrameSamples(frameSamples);
     // The RX sink is resized too: the tier sets how much audio each received packet carries.
-    QMetaObject::invokeMethod(m_audioEngine, "setRxPacketFrameSamples", Qt::QueuedConnection, Q_ARG(int, frameSamples));
+    QMetaObject::invokeMethod(m_audioEngine, &AudioEngine::setRxPacketFrameSamples, Qt::QueuedConnection, frameSamples);
 }
 
 void AudioController::sampleAudioMetrics() {
