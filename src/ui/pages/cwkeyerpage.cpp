@@ -318,9 +318,10 @@ void CwKeyerPage::updateCwKeyerDescription() {
         return;
 
     int type = m_cwKeyerDeviceTypeCombo->currentData().toInt();
-    if (type == 1) {
+    if (type == HaliKeyPortScan::kMidiType) {
+        // WHY no PTT here: the footswitch/PTT input is deliberately not wired (CwController).
         m_cwKeyerDescLabel->setText("Connect a HaliKey MIDI paddle interface to send CW via the K4's keyer. "
-                                    "The HaliKey MIDI uses standard MIDI note events to detect paddle and PTT inputs.");
+                                    "The HaliKey MIDI uses standard MIDI note events to detect paddle inputs.");
     } else {
         m_cwKeyerDescLabel->setText("Connect a HaliKey paddle interface to send CW via the K4's keyer. "
                                     "The HaliKey uses serial port flow control signals to detect paddle inputs.");
