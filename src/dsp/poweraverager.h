@@ -2,6 +2,7 @@
 #define DSP_POWERAVERAGER_H
 
 #include <QVector>
+#include "models/radiostate/spectrumdisplaystate.h"
 
 // The radio's #AVG n as QK4 draws it: the mean POWER of each bin over the last n frames, in dB.
 //
@@ -17,7 +18,7 @@
 // Not thread-safe; used on the GUI thread by the panadapter and the mini-pan.
 class PowerAverager {
 public:
-    static constexpr int MaxLength = 20; // #AVG range 1..20
+    static constexpr int MaxLength = SpectrumDisplayLimits::AveragingMax; // #AVG 1..20, D12
 
     // Frames to average (#AVG level, clamped 1..MaxLength). Changing it restarts the average.
     void setLength(int frames);

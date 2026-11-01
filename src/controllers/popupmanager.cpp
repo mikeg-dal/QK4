@@ -926,13 +926,14 @@ void PopupManager::wireKeyingWeightPopup() {
             QString iambicStr = QString("IAMB %1").arg(iambic);
             m_txRow->setButtonLabel(5, paddleStr, iambicStr, true);
             // Button 6: keying weight ratio
-            if (weight >= 90 && weight <= 125) {
+            if (weight >= RadioUtils::KEYING_WEIGHT_MIN && weight <= RadioUtils::KEYING_WEIGHT_MAX) {
                 QString weightStr = QString::number(weight / 100.0, 'f', 2);
                 m_txRow->setButtonLabel(6, "WEIGHT", weightStr, false);
             }
         }
         // Update weight popup if visible
-        if (m_keyingWeightPopup->isVisible() && weight >= 90 && weight <= 125) {
+        if (m_keyingWeightPopup->isVisible() && weight >= RadioUtils::KEYING_WEIGHT_MIN &&
+            weight <= RadioUtils::KEYING_WEIGHT_MAX) {
             m_keyingWeightPopup->setWeight(weight);
         }
     });
@@ -1049,7 +1050,7 @@ void PopupManager::showKeyingWeightAbove(ButtonRowLane lane) {
         return;
     QWidget *anchor = anchorForLane(lane);
     const int weight = m_radioState->keyingWeight();
-    if (weight >= 90 && weight <= 125)
+    if (weight >= RadioUtils::KEYING_WEIGHT_MIN && weight <= RadioUtils::KEYING_WEIGHT_MAX)
         m_keyingWeightPopup->setWeight(weight);
     if (anchor)
         m_keyingWeightPopup->showAboveWidget(anchor);

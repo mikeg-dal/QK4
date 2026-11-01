@@ -4,6 +4,7 @@
 #include <QMetaType>
 #include <QString>
 #include <QVector>
+#include "utils/radioutils.h"
 
 // One run of CW text to be keyed at one speed.
 //
@@ -42,12 +43,12 @@ namespace CwMacro {
 // TCI defines the step as 5 WPM per marker.
 constexpr int kSpeedStepWpm = 5;
 
-// The K4's documented KS range (K4 manual: "KSnnn, where nnn is the keyer speed, from 8 to 100
-// WPM"). Clamped here as well as in CatFrames::keyerSpeed so a segment states the speed that will
-// actually be used - a macro of ten '>' markers asks for a speed no radio will key at, and a
-// segment claiming 75 WPM while the radio does 50 would be a lie about what happened.
-constexpr int kMinWpm = 8;
-constexpr int kMaxWpm = 100;
+// The K4's KS range (RadioUtils::KEYER_WPM_MIN/MAX, Programmer's Reference D12). Clamped here as
+// well as in CatFrames::keyerSpeed so a segment states the speed that will actually be used - a
+// macro of ten '>' markers asks for a speed no radio will key at, and a segment claiming 75 WPM
+// while the radio does 50 would be a lie about what happened.
+constexpr int kMinWpm = RadioUtils::KEYER_WPM_MIN;
+constexpr int kMaxWpm = RadioUtils::KEYER_WPM_MAX;
 
 // Splits a CW_MACROS payload into speed-homogeneous segments, resolving > and < against baseWpm.
 // Returns empty for text that carries nothing to key.

@@ -3,6 +3,7 @@
 #include "connectioncontroller.h"
 #include "models/radiostate.h"
 #include "network/catframes.h"
+#include "models/radiostate/processingstate.h"
 
 #include <QString>
 #include <QWidget>
@@ -12,9 +13,10 @@ namespace {
 // K4 CAT limits for the feature bar's +/- steps.
 constexpr int AttStepDb = 3; // RA+ / RA- move the attenuator 3 dB
 constexpr int AttMaxDb = 21;
-constexpr int NbLevelMax = 15;
-constexpr int NrLevelMax = 10;
-constexpr int SsnrLevelMax = 20;
+// NB / NR / SSNR level limits come from ProcessingLimits (Programmer's Reference D12).
+constexpr int NbLevelMax = ProcessingLimits::NbLevelMax;
+constexpr int NrLevelMax = ProcessingLimits::NrLevelMax;
+constexpr int SsnrLevelMax = ProcessingLimits::SsnrLevelMax;
 constexpr int NotchStepHz = 10;
 constexpr int NotchMinHz = 150;
 constexpr int NotchMaxHz = 5000;

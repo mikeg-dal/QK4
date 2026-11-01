@@ -215,7 +215,7 @@ void setPaddleOrientation(ModeFilterState &state, RadioState &owner, QChar orien
 }
 
 void setKeyingWeight(ModeFilterState &state, RadioState &owner, int weight) {
-    weight = qBound(90, weight, 125);
+    weight = std::clamp(weight, RadioUtils::KEYING_WEIGHT_MIN, RadioUtils::KEYING_WEIGHT_MAX);
     if (state.keyingWeight != weight) {
         state.keyingWeight = weight;
         emit owner.keyerPaddleChanged(state.iambicMode, state.paddleOrientation, state.keyingWeight);

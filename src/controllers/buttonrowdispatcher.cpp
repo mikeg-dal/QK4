@@ -258,7 +258,7 @@ void ButtonRowDispatcher::refreshTxButtonsForMode() {
             // KP state not yet received from the K4 — render defaults.
             m_popupManager->setTxButtonLabel(5, "PDL NOR", "IAMB A", true);
         }
-        if (weight >= 90 && weight <= 125) {
+        if (weight >= RadioUtils::KEYING_WEIGHT_MIN && weight <= RadioUtils::KEYING_WEIGHT_MAX) {
             const QString weightStr = QString::number(weight / 100.0, 'f', 2);
             m_popupManager->setTxButtonLabel(6, "WEIGHT", weightStr, false);
         } else {

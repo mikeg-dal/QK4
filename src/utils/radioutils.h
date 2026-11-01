@@ -26,10 +26,16 @@ constexpr int SPAN_MAX = 368000;
 constexpr int SPAN_THRESHOLD_UP = 144000;
 constexpr int SPAN_THRESHOLD_DOWN = 140000;
 
-// K4 keyer speed range. The manual gives "from 8 to 100 WPM" and the KS command documents the
-// same, so a speed outside it cannot come from the radio.
+// K4 keyer speed range. Programmer's Reference D12, KS: "KSnnn; where nnn is the keyer speed, from
+// 8 to 100 WPM", so a speed outside it cannot come from the radio.
 constexpr int KEYER_WPM_MIN = 8;
 constexpr int KEYER_WPM_MAX = 100;
+
+// Keying weight, in hundredths. Programmer's Reference D12, KP: "nnn = keying weight (090-125).
+// Weight value should be constrained to multiples of 5".
+constexpr int KEYING_WEIGHT_MIN = 90;
+constexpr int KEYING_WEIGHT_MAX = 125;
+constexpr int KEYING_WEIGHT_STEP = 5;
 
 /// Dit unit length in ms for a keyer speed, clamped to the K4's range.
 ///

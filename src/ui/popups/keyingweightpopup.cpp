@@ -1,13 +1,14 @@
 #include "ui/popups/keyingweightpopup.h"
 #include "ui/styling/k4styles.h"
+#include "utils/radioutils.h"
 #include <QHBoxLayout>
 #include <QPainter>
 #include <QWheelEvent>
 
 namespace {
-const int MinWeight = 90;
-const int MaxWeight = 125;
-const int WeightStep = 5;
+const int MinWeight = RadioUtils::KEYING_WEIGHT_MIN;
+const int MaxWeight = RadioUtils::KEYING_WEIGHT_MAX;
+const int WeightStep = RadioUtils::KEYING_WEIGHT_STEP;
 const int TitleWidth = 150;
 const int ValueWidth = 80;
 } // namespace

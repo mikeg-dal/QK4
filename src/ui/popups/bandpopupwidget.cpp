@@ -1,6 +1,7 @@
 #include "ui/popups/bandpopupwidget.h"
 #include "models/radiostate.h"
 #include "ui/styling/k4styles.h"
+#include "utils/radioutils.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 
@@ -275,7 +276,7 @@ QString BandPopupWidget::getBandName(int bandNum) const {
     // Transverter bands 11-22 (XVTR Band 1-12) map to "XVTR<n>" so the
     // sub-grid can highlight the active cell. Callers that just want the
     // generic "XVTR" label can compare against the prefix.
-    if (bandNum >= 11 && bandNum <= 22) {
+    if (RadioUtils::isXvtrBandNumber(bandNum)) {
         return QString("XVTR%1").arg(bandNum - 10);
     }
     return BandNumToName.value(bandNum, QString());
