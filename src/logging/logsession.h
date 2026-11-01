@@ -26,7 +26,6 @@ void setSessionHeader(const QStringList &lines);
 // install(). The command line's rules are appended to config's and --log-file keeps the file on.
 void apply(bool fileEnabled, LogConfig config);
 
-QString activeRules();
 QString logDirectory();
 QString currentLogFile(); // empty when no file is being written
 

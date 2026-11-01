@@ -93,10 +93,6 @@ void apply(bool fileEnabled, LogConfig config) {
     }
 }
 
-QString activeRules() {
-    return g_rules;
-}
-
 QString logDirectory() {
     return Logging::logDirectory(currentPathInputs());
 }
