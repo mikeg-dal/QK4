@@ -257,9 +257,9 @@ QByteArray cwAbort() {
 
 QByteArray setNoiseBlanker(int level, bool on, int filterWidth) {
     QString cmd =
-        QString("NB%1%2").arg(qBound(0, level, ProcessingLimits::NbLevelMax), 2, 10, QChar('0')).arg(on ? 1 : 0);
+        QString("NB%1%2").arg(std::clamp(level, 0, ProcessingLimits::NbLevelMax), 2, 10, QChar('0')).arg(on ? 1 : 0);
     if (filterWidth >= 0) {
-        cmd += QString::number(qBound(0, filterWidth, ProcessingLimits::NbFilterMax));
+        cmd += QString::number(std::clamp(filterWidth, 0, ProcessingLimits::NbFilterMax));
     }
     return (cmd + QLatin1Char(';')).toUtf8();
 }
@@ -270,7 +270,7 @@ QByteArray ddcNoiseBlanker(int mode) {
 
 QByteArray averaging(int frames) {
     return QString("#AVG%1;")
-        .arg(qBound(SpectrumDisplayLimits::AveragingMin, frames, SpectrumDisplayLimits::AveragingMax), 2, 10,
+        .arg(std::clamp(frames, SpectrumDisplayLimits::AveragingMin, SpectrumDisplayLimits::AveragingMax), 2, 10,
              QLatin1Char('0'))
         .toUtf8();
 }
@@ -305,7 +305,7 @@ QByteArray setFilterBandwidth(int bwHz) {
 
 QByteArray noiseReduction(int level, bool on) {
     return QString("NR%1%2;")
-        .arg(qBound(0, level, ProcessingLimits::NrLevelMax), 2, 10, QChar('0'))
+        .arg(std::clamp(level, 0, ProcessingLimits::NrLevelMax), 2, 10, QChar('0'))
         .arg(on ? 1 : 0)
         .toUtf8();
 }

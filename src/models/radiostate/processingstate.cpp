@@ -4,6 +4,8 @@
 
 #include <QtGlobal>
 
+#include <algorithm>
+
 void ProcessingState::reset() {
     *this = ProcessingState();
 }
@@ -22,14 +24,14 @@ void handleNB(ProcessingState &state, RadioState &owner, const QString &cmd) {
     const int enabled = nbStr.mid(2, 1).toInt(&ok2);
     if (!ok1 || !ok2)
         return;
-    const int newLevel = qMin(level, ProcessingLimits::NbLevelMax);
+    const int newLevel = (std::min)(level, ProcessingLimits::NbLevelMax);
     const bool newEnabled = (enabled == 1);
     int newFilter = state.noiseBlankerFilterWidth;
     if (nbStr.length() >= 4) {
         bool ok3;
         const int filter = nbStr.mid(3, 1).toInt(&ok3);
         if (ok3)
-            newFilter = qMin(filter, ProcessingLimits::NbFilterMax);
+            newFilter = (std::min)(filter, ProcessingLimits::NbFilterMax);
     }
     const bool enabledChanged = state.noiseBlankerEnabled.set(newEnabled);
     if (!enabledChanged && newLevel == state.noiseBlankerLevel && newFilter == state.noiseBlankerFilterWidth)
@@ -50,14 +52,14 @@ void handleNBSub(ProcessingState &state, RadioState &owner, const QString &cmd) 
     const int enabled = nbStr.mid(2, 1).toInt(&ok2);
     if (!ok1 || !ok2)
         return;
-    const int newLevel = qMin(level, ProcessingLimits::NbLevelMax);
+    const int newLevel = (std::min)(level, ProcessingLimits::NbLevelMax);
     const bool newEnabled = (enabled == 1);
     int newFilter = state.noiseBlankerFilterWidthB;
     if (nbStr.length() >= 4) {
         bool ok3;
         const int filter = nbStr.mid(3, 1).toInt(&ok3);
         if (ok3)
-            newFilter = qMin(filter, ProcessingLimits::NbFilterMax);
+            newFilter = (std::min)(filter, ProcessingLimits::NbFilterMax);
     }
     const bool enabledChanged = state.noiseBlankerEnabledB.set(newEnabled);
     if (!enabledChanged && newLevel == state.noiseBlankerLevelB && newFilter == state.noiseBlankerFilterWidthB)
@@ -319,7 +321,7 @@ void handleNMSub(ProcessingState &state, RadioState &owner, const QString &cmd) 
 }
 
 void setNoiseBlankerLevel(ProcessingState &state, RadioState &owner, int level) {
-    level = qBound(0, level, ProcessingLimits::NbLevelMax);
+    level = std::clamp(level, 0, ProcessingLimits::NbLevelMax);
     if (state.noiseBlankerLevel != level) {
         state.noiseBlankerLevel = level;
         emit owner.processingChanged();
@@ -327,7 +329,7 @@ void setNoiseBlankerLevel(ProcessingState &state, RadioState &owner, int level) 
 }
 
 void setNoiseBlankerLevelB(ProcessingState &state, RadioState &owner, int level) {
-    level = qBound(0, level, ProcessingLimits::NbLevelMax);
+    level = std::clamp(level, 0, ProcessingLimits::NbLevelMax);
     if (state.noiseBlankerLevelB != level) {
         state.noiseBlankerLevelB = level;
         emit owner.processingChangedB();
@@ -335,7 +337,7 @@ void setNoiseBlankerLevelB(ProcessingState &state, RadioState &owner, int level)
 }
 
 void setNoiseBlankerFilter(ProcessingState &state, RadioState &owner, int filter) {
-    filter = qBound(0, filter, ProcessingLimits::NbFilterMax);
+    filter = std::clamp(filter, 0, ProcessingLimits::NbFilterMax);
     if (state.noiseBlankerFilterWidth != filter) {
         state.noiseBlankerFilterWidth = filter;
         emit owner.processingChanged();
@@ -343,7 +345,7 @@ void setNoiseBlankerFilter(ProcessingState &state, RadioState &owner, int filter
 }
 
 void setNoiseBlankerFilterB(ProcessingState &state, RadioState &owner, int filter) {
-    filter = qBound(0, filter, ProcessingLimits::NbFilterMax);
+    filter = std::clamp(filter, 0, ProcessingLimits::NbFilterMax);
     if (state.noiseBlankerFilterWidthB != filter) {
         state.noiseBlankerFilterWidthB = filter;
         emit owner.processingChangedB();
@@ -351,7 +353,7 @@ void setNoiseBlankerFilterB(ProcessingState &state, RadioState &owner, int filte
 }
 
 void setNoiseReductionLevel(ProcessingState &state, RadioState &owner, int level) {
-    level = qBound(0, level, ProcessingLimits::NrLevelMax);
+    level = std::clamp(level, 0, ProcessingLimits::NrLevelMax);
     if (state.noiseReductionLevel != level) {
         state.noiseReductionLevel = level;
         emit owner.processingChanged();
@@ -359,7 +361,7 @@ void setNoiseReductionLevel(ProcessingState &state, RadioState &owner, int level
 }
 
 void setNoiseReductionLevelB(ProcessingState &state, RadioState &owner, int level) {
-    level = qBound(0, level, ProcessingLimits::NrLevelMax);
+    level = std::clamp(level, 0, ProcessingLimits::NrLevelMax);
     if (state.noiseReductionLevelB != level) {
         state.noiseReductionLevelB = level;
         emit owner.processingChangedB();
@@ -367,7 +369,7 @@ void setNoiseReductionLevelB(ProcessingState &state, RadioState &owner, int leve
 }
 
 void setSsnrLevel(ProcessingState &state, RadioState &owner, int level) {
-    level = qBound(0, level, ProcessingLimits::SsnrLevelMax);
+    level = std::clamp(level, 0, ProcessingLimits::SsnrLevelMax);
     if (state.ssnrLevel != level) {
         state.ssnrLevel = level;
         emit owner.processingChanged();
@@ -375,7 +377,7 @@ void setSsnrLevel(ProcessingState &state, RadioState &owner, int level) {
 }
 
 void setSsnrLevelB(ProcessingState &state, RadioState &owner, int level) {
-    level = qBound(0, level, ProcessingLimits::SsnrLevelMax);
+    level = std::clamp(level, 0, ProcessingLimits::SsnrLevelMax);
     if (state.ssnrLevelB != level) {
         state.ssnrLevelB = level;
         emit owner.processingChangedB();

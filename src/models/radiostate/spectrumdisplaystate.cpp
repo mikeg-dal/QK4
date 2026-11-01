@@ -4,6 +4,8 @@
 
 #include <QtGlobal>
 
+#include <algorithm>
+
 void SpectrumDisplayState::reset() {
     refLevel = SpectrumDisplayLimits::RefLevelUnknown;
     refLevelB = SpectrumDisplayLimits::RefLevelUnknown;
@@ -431,7 +433,7 @@ void setWaterfallHeightExt(SpectrumDisplayState &state, RadioState &owner, int p
 }
 
 void setAveraging(SpectrumDisplayState &state, RadioState &owner, int value) {
-    value = qBound(SpectrumDisplayLimits::AveragingMin, value, SpectrumDisplayLimits::AveragingMax);
+    value = std::clamp(value, SpectrumDisplayLimits::AveragingMin, SpectrumDisplayLimits::AveragingMax);
     if (state.averaging != value) {
         state.averaging = value;
         emit owner.averagingChanged(value);
