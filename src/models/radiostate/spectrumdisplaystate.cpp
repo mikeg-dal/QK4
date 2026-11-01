@@ -163,7 +163,7 @@ void handleFPS(SpectrumDisplayState &state, RadioState &owner, const QString &cm
         return;
     bool ok;
     int fps = cmd.mid(4).toInt(&ok);
-    if (ok && fps >= 12 && fps <= 30 && fps != state.displayFps) {
+    if (ok && fps >= SpectrumDisplayLimits::FpsMin && fps <= SpectrumDisplayLimits::FpsMax && fps != state.displayFps) {
         state.displayFps = fps;
         emit owner.displayFpsChanged(state.displayFps);
     }
@@ -185,7 +185,8 @@ void handleWFH(SpectrumDisplayState &state, RadioState &owner, const QString &cm
         return;
     bool ok;
     int height = cmd.mid(4).toInt(&ok);
-    if (ok && height >= 0 && height <= 100 && height != state.waterfallHeight) {
+    if (ok && height >= SpectrumDisplayLimits::WaterfallHeightMin &&
+        height <= SpectrumDisplayLimits::WaterfallHeightMax && height != state.waterfallHeight) {
         state.waterfallHeight = height;
         emit owner.waterfallHeightChanged(state.waterfallHeight);
     }
@@ -196,7 +197,8 @@ void handleHWFH(SpectrumDisplayState &state, RadioState &owner, const QString &c
         return;
     bool ok;
     int height = cmd.mid(5).toInt(&ok);
-    if (ok && height >= 0 && height <= 100 && height != state.waterfallHeightExt) {
+    if (ok && height >= SpectrumDisplayLimits::WaterfallHeightMin &&
+        height <= SpectrumDisplayLimits::WaterfallHeightMax && height != state.waterfallHeightExt) {
         state.waterfallHeightExt = height;
         emit owner.waterfallHeightExtChanged(state.waterfallHeightExt);
     }
@@ -358,7 +360,7 @@ void setRefLevel(SpectrumDisplayState &state, RadioState &owner, int level) {
 }
 
 void setScale(SpectrumDisplayState &state, RadioState &owner, int scale) {
-    if (scale >= 10 && scale <= 150 && scale != state.scale) {
+    if (scale >= SpectrumDisplayLimits::ScaleMin && scale <= SpectrumDisplayLimits::ScaleMax && scale != state.scale) {
         state.scale = scale;
         emit owner.scaleChanged(state.scale);
     }
@@ -412,7 +414,7 @@ void setMiniPanBEnabled(SpectrumDisplayState &state, RadioState &owner, bool ena
 }
 
 void setWaterfallHeight(SpectrumDisplayState &state, RadioState &owner, int percent) {
-    percent = qBound(10, percent, 90);
+    percent = std::clamp(percent, SpectrumDisplayLimits::WaterfallHeightMin, SpectrumDisplayLimits::WaterfallHeightMax);
     if (state.waterfallHeight != percent) {
         state.waterfallHeight = percent;
         emit owner.waterfallHeightChanged(percent);
@@ -420,7 +422,7 @@ void setWaterfallHeight(SpectrumDisplayState &state, RadioState &owner, int perc
 }
 
 void setWaterfallHeightExt(SpectrumDisplayState &state, RadioState &owner, int percent) {
-    percent = qBound(10, percent, 90);
+    percent = std::clamp(percent, SpectrumDisplayLimits::WaterfallHeightMin, SpectrumDisplayLimits::WaterfallHeightMax);
     if (state.waterfallHeightExt != percent) {
         state.waterfallHeightExt = percent;
         emit owner.waterfallHeightExtChanged(percent);

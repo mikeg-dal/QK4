@@ -10,6 +10,8 @@
 #include <QPoint>
 #include <QWidget>
 
+#include <algorithm>
+
 MenuController::MenuController(ConnectionController *connection, SpectrumController *spectrum, QWidget *parentWidget,
                                QObject *parent)
     : QObject(parent), m_connection(connection), m_spectrum(spectrum), m_parentWidget(parentWidget),
@@ -88,16 +90,21 @@ void MenuController::onMenuValueChangeRequested(int menuId, const QString &actio
 
         int newValue = item->currentValue;
         if (action == "+") {
-            newValue = qMin(item->currentValue + 1, 30);
+            newValue = (std::min)(item->currentValue + 1, item->maxValue);
         } else if (action == "-") {
-            newValue = qMax(item->currentValue - 1, 12);
+            newValue = (std::max)(item->currentValue - 1, item->minValue);
         }
+        if (newValue == item->currentValue)
+            return;
 
         m_menuModel->updateValue(menuId, newValue);
 
         if (m_connection->isConnected()) {
-            qCDebug(lcUiMenu) << "Display FPS change:" << QString("#FPS%1;").arg(newValue);
-            m_connection->sendCAT(QString("#FPS%1;").arg(newValue));
+            // "#FPSnn;" (Programmer's Reference D12). The radio may grant less; the read-back puts
+            // what it granted in the menu through RadioState::displayFpsChanged.
+            const QString cmd = QString("#FPS%1;").arg(newValue, 2, 10, QChar('0'));
+            qCDebug(lcUiMenu) << "Display FPS change:" << cmd;
+            m_connection->sendCAT(cmd + "#FPS;");
         }
 
         m_connection->setDisplayFps(newValue);

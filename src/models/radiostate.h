@@ -400,10 +400,7 @@ public:
     int dualPanModeExt() const { return m_spectrumDisplayState.dualPanModeExt; }
     int displayModeLcd() const { return m_spectrumDisplayState.displayModeLcd; }
     int displayModeExt() const { return m_spectrumDisplayState.displayModeExt; }
-    int displayFps() const {
-        return reportedOr(m_spectrumDisplayState.displayFps, SpectrumDisplayLimits::FpsUnknown,
-                          SpectrumDisplayLimits::FpsDefault);
-    }
+    int displayFps() const { return m_spectrumDisplayState.displayFps; } // FpsUnknown until reported
     int waterfallColor() const { return m_spectrumDisplayState.waterfallColor; }
     int waterfallHeight() const { return m_spectrumDisplayState.waterfallHeight; }       // #WFHxx
     int waterfallHeightExt() const { return m_spectrumDisplayState.waterfallHeightExt; } // #HWFHxx
@@ -701,7 +698,7 @@ signals:
     void dualPanModeExtChanged(int mode);        // #HDPM: EXT 0=A, 1=B, 2=Dual
     void displayModeLcdChanged(int mode);        // #DSM: LCD 0=spectrum, 1=spectrum+waterfall
     void displayModeExtChanged(int mode);        // #HDSM: EXT 0=spectrum, 1=spectrum+waterfall
-    void displayFpsChanged(int fps);             // #FPS: Display frame rate 12-30
+    void displayFpsChanged(int fps);             // #FPS: Display frame rate 1-30
     void waterfallColorChanged(int color);       // #WFC: 0-4
     void waterfallHeightChanged(int percent);    // #WFHxx: LCD 0-100%
     void waterfallHeightExtChanged(int percent); // #HWFHxx: EXT 0-100%

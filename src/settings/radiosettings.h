@@ -2,6 +2,7 @@
 #define RADIOSETTINGS_H
 
 #include "logging/logrules.h"
+#include "models/radiostate/spectrumdisplaystate.h"
 #include <QMap>
 #include <QObject>
 #include <QSettings>
@@ -49,11 +50,25 @@ struct RadioEntry {
     quint16 port = K4Protocol::DEFAULT_PORT;
     bool useTls = false; // Use TLS/PSK encryption (port 9204)
     QString identity;    // TLS-PSK identity (optional, empty = default)
-    // Audio encode mode. See docs/k4-protocol-quirks.md -> "Audio encode modes EM0-EM3".
-    int encodeMode =
-        3; // 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode); EM3 default
-    int streamingLatency = 3; // Remote streaming audio latency: 0-7 (default 3)
-    int displayFps = 15;      // Display FPS: 12-30 (default 15, good balance for large monitors)
+    // Ranges are the K4 Programmer's Reference D12; RadioSettings clamps every entry to them when it
+    // is saved or loaded.
+    // EM: 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode). The
+    // radio's default is EM3. See docs/k4-protocol-quirks.md -> "Audio encode modes EM0-EM3".
+    static constexpr int EncodeModeMin = 0;
+    static constexpr int EncodeModeMax = 3;
+    static constexpr int EncodeModeDefault = 3;
+    // SL: remote streaming audio latency, 0-7; the radio's default is 3.
+    static constexpr int StreamingLatencyMin = 0;
+    static constexpr int StreamingLatencyMax = 7;
+    static constexpr int StreamingLatencyDefault = 3;
+    // #FPS: desired panadapter frame rate. QK4 asks for 15 unless the operator chose another.
+    static constexpr int DisplayFpsMin = SpectrumDisplayLimits::FpsMin;
+    static constexpr int DisplayFpsMax = SpectrumDisplayLimits::FpsMax;
+    static constexpr int DisplayFpsDefault = 15;
+
+    int encodeMode = EncodeModeDefault;
+    int streamingLatency = StreamingLatencyDefault;
+    int displayFps = DisplayFpsDefault;
 
     // Connect to this radio automatically when QK4 starts.
     //

@@ -64,12 +64,6 @@ void SpectrumController::setFskMarkTone(int toneHz) {
             ui->pad->setFskMarkTone(toneHz);
 }
 
-void SpectrumController::setWaterfallHeight(int percent) {
-    for (PanUi *ui : {&m_panA, &m_panB})
-        if (ui->pad)
-            ui->pad->setWaterfallHeight(percent);
-}
-
 void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA, VFOWidget *vfoB) {
     m_vfoA = vfoA;
     m_vfoB = vfoB;

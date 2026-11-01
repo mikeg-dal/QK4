@@ -44,7 +44,6 @@ public:
     // reaching through panadapterA()/panadapterB() — CONVENTIONS Rule 2.
     void setAmplitudeUnits(bool useSUnits);
     void setFskMarkTone(int toneHz);
-    void setWaterfallHeight(int percent);
 
     // Clear both panadapter displays — used when the K4 disconnects to
     // prevent stale spectrum data from sitting on-screen.

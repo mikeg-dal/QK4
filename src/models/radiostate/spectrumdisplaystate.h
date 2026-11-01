@@ -12,9 +12,10 @@ class RadioState;
 // Ranges and defaults for the K4's panadapter amplitude window, shared by the CAT parser and every
 // place QK4 adjusts them (wheel, display popup, renderer), so they cannot disagree.
 namespace SpectrumDisplayLimits {
-// #REF / #REF$ — bottom of the window, dBm.
+// Ranges are the K4 Programmer's Reference D12.
+// #REF$ / #HREF$ — bottom of the window, dBm: "-200 to 60".
 constexpr int RefLevelMin = -200;
-constexpr int RefLevelMax = 50;
+constexpr int RefLevelMax = 60;
 // Before the radio has reported a REF (and after reset()): outside the legal range, so the first
 // #REF always emits, and anything that steps REF has nothing to step from.
 constexpr int RefLevelUnknown = -999;
@@ -28,9 +29,13 @@ constexpr int ScaleDefault = 75;
 // for the same signal (K4 Operating Manual rev D6, DISPLAY → WTR CLRS).
 constexpr int WaterfallColorRangeMin = 5;
 constexpr int WaterfallColorRangeMax = 30;
-// #FPS — display frame rate. Unknown until the radio reports one; displayFps() reads it as FpsDefault.
+// #WFH / #HWFH — waterfall share of the panadapter, percent: "000 to 100".
+constexpr int WaterfallHeightMin = 0;
+constexpr int WaterfallHeightMax = 100;
+// #FPS — desired panadapter frame rate: "1 to 30". Unknown until the radio reports one.
 constexpr int FpsUnknown = -1;
-constexpr int FpsDefault = 30;
+constexpr int FpsMin = 1;
+constexpr int FpsMax = 30;
 } // namespace SpectrumDisplayLimits
 
 // Panadapter / waterfall / display-related state — all of the K4's

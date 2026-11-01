@@ -18,7 +18,7 @@ QK4 source tree. Qt 6 C++ desktop app for remote control of an Elecraft K4 ham r
 | `utils/` | Shared helpers: frequency/band/span math, window fit, wheel accumulation, macro ids. Architecture Rule 1 lives here. |
 
 Top-level:
-- `main.cpp` — Qt app bootstrap: settings identity migration (AI5QK → KF5O), High-DPI rounding policy and interface scale, OpenSSL TLS backend, the log handler and `--log-*` options (`logging/`), fonts.
+- `main.cpp` — Qt app bootstrap: app identity (KF5O), High-DPI rounding policy and interface scale, OpenSSL TLS backend, the log handler and `--log-*` options (`logging/`), fonts.
 - `mainwindow.cpp` / `mainwindow.h` — top-level window, layout construction, controller coordination.
 
 ## Architecture rules

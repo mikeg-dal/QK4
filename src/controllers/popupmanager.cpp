@@ -439,24 +439,22 @@ void PopupManager::wireDisplayPopup() {
         const int current = isExt ? m_radioState->waterfallHeightExt() : m_radioState->waterfallHeight();
         if (current < 0)
             return; // the radio has not reported a height yet — nothing to step from
-        const int next = qBound(10, current + delta, 90);
-        const QString cmd =
-            isExt ? QString("#HWFH%1;").arg(next, 2, 10, QChar('0')) : QString("#WFH%1;").arg(next, 2, 10, QChar('0'));
+        const int next = std::clamp(current + delta, SpectrumDisplayLimits::WaterfallHeightMin,
+                                    SpectrumDisplayLimits::WaterfallHeightMax);
+        if (next == current)
+            return;
+        // "#WFHnnn; where nnn is 000 to 100 percent" (Programmer's Reference D12).
+        const QString cmd = QString(isExt ? "#HWFH%1;" : "#WFH%1;").arg(next, 3, 10, QChar('0'));
         m_connection->sendCAT(cmd);
-        // Optimistic updates — K4 may not echo this command.
-        if (!isExt) {
-            m_radioState->setWaterfallHeight(next);
-            m_spectrum->setWaterfallHeight(next);
-            m_displayPopup->setWaterfallHeight(next);
-            m_vfoA->setMiniPanWaterfallHeight(next);
-            m_vfoB->setMiniPanWaterfallHeight(next);
-        } else {
+        // Applied at once in case the radio does not echo it; the panadapters, mini-pans and this
+        // popup follow RadioState's waterfallHeightChanged / waterfallHeightExtChanged.
+        if (isExt)
             m_radioState->setWaterfallHeightExt(next);
-            m_displayPopup->setWaterfallHeightExt(next);
-        }
+        else
+            m_radioState->setWaterfallHeight(next);
     };
     // WTR CLRS +/- : the radio's waterfall colour range, #WBS (LCD) or #HWBS (EXT), 5-30
-    // (Programmer's Reference D5: "#WBSn; where n is 5 to 30"). Nothing is sent until the radio has
+    // (Programmer's Reference D12: "#WBSn; where n is 5 to 30"). Nothing is sent until the radio has
     // reported a value to step from; the radio's echo (AI5) and the optimistic parse update both
     // pans and this popup through RadioState.
     auto adjustWaterfallColorRange = [this](int delta) {
@@ -504,10 +502,11 @@ void PopupManager::wireDisplayPopup() {
 
     // Scale +/- (global — no A/B variants).
     auto adjustScale = [this](int delta) {
-        int currentScale = m_radioState->scale();
+        const int currentScale = m_radioState->scale();
         if (currentScale < 0)
-            currentScale = 75; // Default if not yet received
-        const int newScale = qBound(10, currentScale + delta, 150);
+            return; // the radio has not reported a scale yet — nothing to step from
+        const int newScale =
+            std::clamp(currentScale + delta, SpectrumDisplayLimits::ScaleMin, SpectrumDisplayLimits::ScaleMax);
         if (newScale == currentScale)
             return;
         m_connection->sendCAT(QString("#SCL%1;").arg(newScale));

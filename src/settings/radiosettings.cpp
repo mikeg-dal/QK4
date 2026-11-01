@@ -900,6 +900,10 @@ RadioEntry RadioSettings::sanitized(RadioEntry radio) {
     Logging::registerSecret(radio.password);
     Logging::registerSecret(radio.identity);
     radio.port = remotePort(radio.port, defaultRadioPort(radio.useTls));
+    radio.encodeMode = std::clamp(radio.encodeMode, RadioEntry::EncodeModeMin, RadioEntry::EncodeModeMax);
+    radio.streamingLatency =
+        std::clamp(radio.streamingLatency, RadioEntry::StreamingLatencyMin, RadioEntry::StreamingLatencyMax);
+    radio.displayFps = std::clamp(radio.displayFps, RadioEntry::DisplayFpsMin, RadioEntry::DisplayFpsMax);
     return radio;
 }
 
@@ -920,13 +924,20 @@ void RadioSettings::load() {
         entry.useTls = m_settings.value("useTls", false).toBool();
         entry.port = remotePort(storedInt(m_settings.value("port"), 0), defaultRadioPort(entry.useTls));
         entry.identity = m_settings.value("identity").toString();
-        entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus)
-        entry.streamingLatency = m_settings.value("streamingLatency", 3).toInt(); // Default SL3
-        entry.displayFps = m_settings.value("displayFps", 15).toInt();            // Default 15 FPS
+        // Clamped while still wide, so a huge stored number cannot wrap into range when narrowed.
+        const auto storedIn = [this](const char *key, int fallback, int lo, int hi) {
+            return static_cast<int>(std::clamp<qint64>(storedInt(m_settings.value(key), fallback), lo, hi));
+        };
+        entry.encodeMode =
+            storedIn("encodeMode", RadioEntry::EncodeModeDefault, RadioEntry::EncodeModeMin, RadioEntry::EncodeModeMax);
+        entry.streamingLatency = storedIn("streamingLatency", RadioEntry::StreamingLatencyDefault,
+                                          RadioEntry::StreamingLatencyMin, RadioEntry::StreamingLatencyMax);
+        entry.displayFps =
+            storedIn("displayFps", RadioEntry::DisplayFpsDefault, RadioEntry::DisplayFpsMin, RadioEntry::DisplayFpsMax);
         entry.connectAtStartup = m_settings.value("connectAtStartup", false).toBool();
-        Logging::registerSecret(entry.password);
-        Logging::registerSecret(entry.identity);
-        m_radios.append(entry);
+        // The same range rules as an edited entry, so a hand-edited or old file cannot send the
+        // radio EM9 or SL12.
+        m_radios.append(sanitized(entry));
     }
     m_settings.endArray();
     sortRadios();

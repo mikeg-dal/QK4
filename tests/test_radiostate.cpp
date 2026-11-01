@@ -1527,7 +1527,7 @@ private slots:
         QCOMPARE(rs.displayModeExt(), 1);
     }
 
-    // --- #FPS (display FPS, 12-30) ---
+    // --- #FPS (display FPS, 1-30 — Programmer's Reference D12) ---
     void testDisplayFpsParses() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::displayFpsChanged);
@@ -1539,8 +1539,30 @@ private slots:
     void testDisplayFpsBelowRangeIgnored() {
         RadioState rs;
         rs.parseCATCommand("#FPS24;");
-        rs.parseCATCommand("#FPS08;"); // below 12
+        rs.parseCATCommand("#FPS00;");
+        rs.parseCATCommand("#FPS31;");
         QCOMPARE(rs.displayFps(), 24);
+        // QK4 once refused everything under 12; the radio accepts 1-30.
+        rs.parseCATCommand("#FPS01;");
+        QCOMPARE(rs.displayFps(), 1);
+        rs.parseCATCommand("#FPS08;");
+        QCOMPARE(rs.displayFps(), 8);
+    }
+
+    // --- #WFH range (Programmer's Reference D12: 000 to 100) ---
+    void testWaterfallHeightTakesTheFullRange() {
+        RadioState rs;
+        rs.parseCATCommand("#WFH000;");
+        QCOMPARE(rs.waterfallHeight(), 0);
+        rs.parseCATCommand("#WFH100;");
+        QCOMPARE(rs.waterfallHeight(), 100);
+        rs.parseCATCommand("#WFH101;");
+        QCOMPARE(rs.waterfallHeight(), 100);
+        // The optimistic setter used by the DISPLAY popup follows the same range, no longer 10-90.
+        rs.setWaterfallHeight(5);
+        QCOMPARE(rs.waterfallHeight(), 5);
+        rs.setWaterfallHeightExt(95);
+        QCOMPARE(rs.waterfallHeightExt(), 95);
     }
 
     // --- #WFC (waterfall color, 0-4) ---
@@ -1847,17 +1869,17 @@ private slots:
         QCOMPARE(rs.refLevel(), -129);
         rs.parseCATCommand("#REF-200;");
         QCOMPARE(rs.refLevel(), -200);
-        rs.parseCATCommand("#REF50;");
-        QCOMPARE(rs.refLevel(), 50);
+        rs.parseCATCommand("#REF60;"); // "-200 to 60" (Programmer's Reference D12); 50 was QK4's old cap
+        QCOMPARE(rs.refLevel(), 60);
 
         QSignalSpy spy(&rs, &RadioState::refLevelChanged);
         rs.parseCATCommand("#REF-201;"); // below range
-        rs.parseCATCommand("#REF51;");   // above range
+        rs.parseCATCommand("#REF61;");   // above range
         rs.parseCATCommand("#REF;");     // GET form, no value
         rs.parseCATCommand("#REFxx;");   // not a number
-        rs.parseCATCommand("#REF50;");   // unchanged
+        rs.parseCATCommand("#REF60;");   // unchanged
         QCOMPARE(spy.count(), 0);
-        QCOMPARE(rs.refLevel(), 50);
+        QCOMPARE(rs.refLevel(), 60);
     }
 
     // --- REF +/- (Ctrl+Wheel and the Display popup, SPEC-003) ---
@@ -1921,7 +1943,7 @@ private slots:
         rs.parseCATCommand("#REF-198;");
         QCOMPARE(rs.stepRefLevel(false, -5), std::optional<int>(SpectrumDisplayLimits::RefLevelMin));
         QCOMPARE(rs.stepRefLevel(false, -1), std::nullopt); // already at the floor — nothing to send
-        rs.parseCATCommand("#REF49;");
+        rs.parseCATCommand("#REF58;");
         QCOMPARE(rs.stepRefLevel(false, +5), std::optional<int>(SpectrumDisplayLimits::RefLevelMax));
         QCOMPARE(rs.stepRefLevel(false, +1), std::nullopt);
     }
@@ -3179,7 +3201,7 @@ private slots:
     }
 
     void testFrequencyShortFormsReadAsTheK4ReadsThem() {
-        // Programmer's Reference D5, FA: 1-2 digits MHz, 3-5 kHz, 6+ Hz. FB uses the same rules.
+        // Programmer's Reference D12, FA: 1-2 digits MHz, 3-5 kHz, 6+ Hz. FB uses the same rules.
         const QList<std::pair<QString, quint64>> cases = {
             {"7", 7'000'000},      {"14", 14'000'000},  {"100", 100'000},           {"7100", 7'100'000},
             {"14074", 14'074'000}, {"500000", 500'000}, {"144200000", 144'200'000}, {"00014074000", 14'074'000},
@@ -3535,7 +3557,7 @@ private slots:
         QCOMPARE(rs.apfBandwidth(), 0);
         QCOMPARE(rs.rxEqBands(), QVector<int>(8, 0));
         QCOMPARE(rs.txEqBands(), QVector<int>(8, 0));
-        QCOMPARE(rs.displayFps(), 30);
+        QCOMPARE(rs.displayFps(), SpectrumDisplayLimits::FpsUnknown);
         QCOMPARE(rs.mainRxDisplayAll(), true);
         QCOMPARE(rs.xvtrBandSelect(), 1);
     }

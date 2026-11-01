@@ -358,11 +358,7 @@ void MainWindow::setupRadioStateWiring() {
     // AFX / AGC / APF button labels + APF VFO indicator driven by PopupManager's
     // wireRxRowButtonLabels() — logical home since PopupManager owns those buttons.
 
-    // RadioState waterfall height -> mini-pans (panadapter wiring is in SpectrumController)
-    connect(m_radioState, &RadioState::waterfallHeightChanged, this, [this](int percent) {
-        m_vfoA->setMiniPanWaterfallHeight(percent);
-        m_vfoB->setMiniPanWaterfallHeight(percent);
-    });
+    // Waterfall height reaches the panadapters and mini-pans through SpectrumController.
 }
 
 void MainWindow::setupSpectrumDataRouting() {
@@ -1260,9 +1256,11 @@ void MainWindow::onRadioReady() {
     m_connectionController->sendCAT("#DSM;");  // Display mode (LCD) - not in RDY
     m_connectionController->sendCAT("#HDSM;"); // Display mode (EXT) - not in RDY
     m_connectionController->sendCAT("#FRZ;");  // Freeze - not in RDY
-    m_connectionController->sendCAT(
-        "#FPS15;"); // Set display FPS to 15 on connect (12 default is too slow for large monitors)
-    m_connectionController->sendCAT("#FPS;"); // Query back to confirm and update menu
+    // The operator's saved frame rate for this radio (15 unless changed; the radio's own 12 is too
+    // slow for large monitors). The query reads back what the radio granted: it may not grant it.
+    const int displayFps = m_connectionController->currentRadio().displayFps;
+    m_connectionController->sendCAT(QString("#FPS%1;").arg(displayFps, 2, 10, QChar('0')));
+    m_connectionController->sendCAT("#FPS;");
     m_connectionController->sendCAT("#SCL;"); // Panadapter scale - not in RDY, needed for dB range
     m_connectionController->sendCAT("PS;");   // Remote power state - not in RDY, drives the status-bar power button
     // WHY: the K4 streams SM (bars) unprompted but sends SMH (dBm) only when asked or after SMH1
@@ -1273,7 +1271,7 @@ void MainWindow::onRadioReady() {
     // Note: ML and KP commands come in RDY; dump - no need to query
 
     // Create synthetic "Display FPS" menu item (will update from radio echo)
-    m_menuController->addSyntheticDisplayFpsItem(15);
+    m_menuController->addSyntheticDisplayFpsItem(displayFps);
 
     // Startup macro is sent pre-RDY by TcpClient so the state dump reflects changes.
 

@@ -38,7 +38,9 @@ public:
     bool isConnected() const;
     TcpClient::ConnectionState connectionState() const;
     const RadioEntry &currentRadio() const { return m_currentRadio; }
-    void setDisplayFps(int fps) { m_currentRadio.displayFps = fps; }
+    // The operator's display frame rate for this radio: kept for the session and saved with the
+    // radio's entry, so the next connect asks for it again.
+    void setDisplayFps(int fps);
 
     // Access to owned objects
     // Prefer using re-emitted signals below instead of reaching into tcpClient/protocol directly.

@@ -15,10 +15,9 @@ Every persisted value goes through `RadioSettings`. Adding a setting:
 2. Keys are managed inside `RadioSettings`. Callers do not use `QSettings` directly.
 3. Settings are plain reads/writes; no async or atomic contract.
 
-Two places construct a `QSettings` of their own:
-
-- `RadioSettings::startupInterfaceScale()` reads the scale before `QApplication` exists, so it cannot use the singleton.
-- `main.cpp` copies the old `AI5QK` organisation store to the `KF5O` one, once, after the call-sign change.
+One place constructs a `QSettings` of its own: `RadioSettings::startupInterfaceScale()` reads the
+scale before `QApplication` exists, so it cannot use the singleton. The store is named "QK4"/"QK4"
+explicitly, so the application's organisation (KF5O) does not decide where settings live.
 
 ## Storage
 

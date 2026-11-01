@@ -6,6 +6,7 @@
 #include "utils/macroids.h"
 #include "utils/threadshutdown.h"
 #include <QLoggingCategory>
+#include <algorithm>
 #include <chrono>
 
 namespace {
@@ -105,6 +106,18 @@ void ConnectionController::sendCAT(const QString &command) {
 
 void ConnectionController::sendRawPacket(const QByteArray &packet) {
     m_tcpClient->sendRaw(packet);
+}
+
+void ConnectionController::setDisplayFps(int fps) {
+    m_currentRadio.displayFps = std::clamp(fps, RadioEntry::DisplayFpsMin, RadioEntry::DisplayFpsMax);
+    RadioSettings *settings = RadioSettings::instance();
+    const QVector<RadioEntry> radios = settings->radios();
+    const qsizetype index = radios.indexOf(m_currentRadio); // same name, host and port
+    if (index < 0 || radios.at(index).displayFps == m_currentRadio.displayFps)
+        return;
+    RadioEntry saved = radios.at(index);
+    saved.displayFps = m_currentRadio.displayFps;
+    settings->updateRadio(static_cast<int>(index), saved);
 }
 
 bool ConnectionController::isConnected() const {

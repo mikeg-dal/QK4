@@ -98,6 +98,9 @@ private slots:
             raw.setArrayIndex(0);
             raw.setValue(QStringLiteral("name"), QStringLiteral("Wrapped"));
             raw.setValue(QStringLiteral("port"), 70000);
+            raw.setValue(QStringLiteral("encodeMode"), 9);                  // EM is 0-3
+            raw.setValue(QStringLiteral("streamingLatency"), 4294967299LL); // wraps to 3 as an int
+            raw.setValue(QStringLiteral("displayFps"), 0);                  // #FPS is 1-30
             raw.setArrayIndex(1);
             raw.setValue(QStringLiteral("name"), QStringLiteral("Zero"));
             raw.setValue(QStringLiteral("port"), 0);
@@ -121,6 +124,9 @@ private slots:
         m_loaded[QStringLiteral("encodeMode")] = s->kpodPlusEncodeMode();
         for (const RadioEntry &r : s->radios()) {
             m_loaded[QStringLiteral("radio:") + r.name] = r.port;
+            m_loaded[QStringLiteral("em:") + r.name] = r.encodeMode;
+            m_loaded[QStringLiteral("sl:") + r.name] = r.streamingLatency;
+            m_loaded[QStringLiteral("fps:") + r.name] = r.displayFps;
         }
         m_loaded[QStringLiteral("dxPort")] = s->dxClusters().isEmpty() ? 0 : s->dxClusters().first().port;
     }
@@ -138,6 +144,15 @@ private slots:
         QCOMPARE(m_loaded.value(QStringLiteral("radio:Wrapped")).toInt(), int(K4Protocol::DEFAULT_PORT));
         QCOMPARE(m_loaded.value(QStringLiteral("radio:Zero")).toInt(), int(K4Protocol::TLS_PORT));
         QCOMPARE(m_loaded.value(QStringLiteral("dxPort")).toInt(), int(kDefaultDxClusterPort));
+        // EM, SL and #FPS held to the radio's ranges (Programmer's Reference D12), and clamped
+        // before narrowing: the SL value would read as 3 if it were cast to int first.
+        QCOMPARE(m_loaded.value(QStringLiteral("em:Wrapped")).toInt(), RadioEntry::EncodeModeMax);
+        QCOMPARE(m_loaded.value(QStringLiteral("sl:Wrapped")).toInt(), RadioEntry::StreamingLatencyMax);
+        QCOMPARE(m_loaded.value(QStringLiteral("fps:Wrapped")).toInt(), RadioEntry::DisplayFpsMin);
+        // Missing values take the defaults.
+        QCOMPARE(m_loaded.value(QStringLiteral("em:Zero")).toInt(), RadioEntry::EncodeModeDefault);
+        QCOMPARE(m_loaded.value(QStringLiteral("sl:Zero")).toInt(), RadioEntry::StreamingLatencyDefault);
+        QCOMPARE(m_loaded.value(QStringLiteral("fps:Zero")).toInt(), RadioEntry::DisplayFpsDefault);
     }
 
     void settersApplyTheSameRules() {
@@ -150,8 +165,14 @@ private slots:
         s->setHalikeyDeviceType(0);
         RadioEntry r = makeRadio(QStringLiteral("NoPort"), QStringLiteral("10.0.0.9"));
         r.port = 0;
+        r.encodeMode = -1;
+        r.streamingLatency = 8;
+        r.displayFps = 31;
         s->addRadio(r);
         QCOMPARE(s->radios().first().port, K4Protocol::DEFAULT_PORT);
+        QCOMPARE(s->radios().first().encodeMode, RadioEntry::EncodeModeMin);
+        QCOMPARE(s->radios().first().streamingLatency, RadioEntry::StreamingLatencyMax);
+        QCOMPARE(s->radios().first().displayFps, RadioEntry::DisplayFpsMax);
     }
 
     void aRadioEntryHasAPortByDefault() {

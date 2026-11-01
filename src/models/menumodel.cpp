@@ -1,4 +1,6 @@
 #include "menumodel.h"
+
+#include "models/radiostate/spectrumdisplaystate.h"
 #include <QSet>
 #include <QUrl>
 #include <algorithm>
@@ -38,9 +40,9 @@ void MenuModel::addSyntheticDisplayFpsItem(int currentValue) {
     item.category = "APP SETTINGS";
     item.type = "DEC";
     item.flag = 0;
-    item.minValue = 12;
-    item.maxValue = 30;
-    item.defaultValue = 30;
+    item.minValue = SpectrumDisplayLimits::FpsMin;
+    item.maxValue = SpectrumDisplayLimits::FpsMax;
+    item.defaultValue = currentValue; // the K4 states no default; the operator's saved rate
     item.currentValue = currentValue;
     item.step = 1;
     addMenuItem(item);
