@@ -133,12 +133,6 @@ QString sidePanelButtonActive();
  */
 QString sidePanelButtonLight();
 
-/**
- * @brief Panel button with disabled state support.
- * Used for KPA1500 panel buttons (STANDBY, ATU, ANT, TUNE).
- */
-QString panelButtonWithDisabled();
-
 // =============================================================================
 // Dialog Button Styles
 // =============================================================================
@@ -329,12 +323,6 @@ const QString &spinBox();
 
 /// Checkbox with indicator sizing (enabled)
 const QString &checkBox();
-
-/// Checkbox with indicator sizing (disabled/gray text)
-const QString &checkBoxDisabled();
-
-/// Dialog action button (dark bg, padding 10px 20px)
-const QString &actionButton();
 
 /// Small action button (padding 6px 12px)
 const QString &actionButtonSmall();

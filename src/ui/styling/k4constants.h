@@ -307,7 +307,6 @@ constexpr int MenuBarHeight = ButtonHeightMedium + 2 * MenuBarMarginV; // Bottom
 // =============================================================================
 constexpr int SmallIconSize = 20;        // Lock icons, health indicator, small controls
 constexpr int NetHealthGlyphHeight = 16; // The four signal bars, drawn inside a MinClickTarget square
-constexpr int CompactButtonSize = 32;    // Side panel icons, EQ +/- buttons
 constexpr int FormLabelWidth = 80;       // Form field labels, numeric value displays
 constexpr int VfoSquareSize = 45;        // VFO A/B indicator squares and mode labels
 constexpr int NavButtonWidth = 54;       // Navigation buttons in overlays
@@ -353,14 +352,13 @@ static_assert(FontSizeTextDecodeMin >= FontSizeFloor && FontSizeTextDecodeMin <=
 // =============================================================================
 // Slider Dimensions
 // =============================================================================
-constexpr int SliderGrooveHeight = 6;     // Horizontal slider groove height
-constexpr int SliderHandleWidth = 16;     // Slider handle width
-constexpr int SliderHandleHeight = 16;    // Explicit handle height (robust on fractional DPI)
-constexpr int SliderHandleMargin = -5;    // Vertical margin for handle positioning
-constexpr int SliderBorderRadius = 3;     // Groove border radius
-constexpr int SliderHandleRadius = 8;     // Handle border radius (half of width)
-constexpr int SliderMinHeight = 20;       // Minimum widget height to prevent handle clipping
-constexpr int SliderValueLabelWidth = 40; // Width for percentage value labels
+constexpr int SliderGrooveHeight = 6;  // Horizontal slider groove height
+constexpr int SliderHandleWidth = 16;  // Slider handle width
+constexpr int SliderHandleHeight = 16; // Explicit handle height (robust on fractional DPI)
+constexpr int SliderHandleMargin = -5; // Vertical margin for handle positioning
+constexpr int SliderBorderRadius = 3;  // Groove border radius
+constexpr int SliderHandleRadius = 8;  // Handle border radius (half of width)
+constexpr int SliderMinHeight = 20;    // Minimum widget height to prevent handle clipping
 
 // =============================================================================
 // Network-Health Sparkline Popup (NetHealthPopup)

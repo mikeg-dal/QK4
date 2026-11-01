@@ -449,41 +449,6 @@ QString sidePanelButtonLight() {
                                  Colors::LightGradientBottom));
 }
 
-QString panelButtonWithDisabled() {
-    return QString(R"(
-        QPushButton {
-            background: %1;
-            color: %2;
-            border: %3px solid %4;
-            border-radius: %5px;
-            font-size: %6px;
-            font-weight: bold;
-            padding: 2px 4px;
-        }
-        QPushButton:hover {
-            background: %7;
-            border-color: %8;
-        }
-        QPushButton:pressed {
-            background: %9;
-        }
-        QPushButton:disabled {
-            color: %10;
-        }
-    )")
-        .arg(gradientCss(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2, Colors::GradientBottom))
-        .arg(Colors::TextPrimary)
-        .arg(Dimensions::BorderWidth)
-        .arg(Colors::BorderNormal)
-        .arg(Dimensions::BorderRadius)
-        .arg(Dimensions::FontSizeCaption)
-        .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom))
-        .arg(Colors::AccentAmber)
-        .arg(gradientCssReversed(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2,
-                                 Colors::GradientBottom))
-        .arg(Colors::TextDisabled);
-}
-
 QString dialogButton() {
     return QString(R"(
         QPushButton {
@@ -747,37 +712,6 @@ const QString &checkBox() {
                                  .arg(Dimensions::BorderRadiusLarge)
                                  .arg(Dimensions::CheckboxSize)
                                  .arg(Colors::TextSecondary, Colors::DarkBackground, Colors::AccentAmber);
-    return s;
-}
-
-const QString &checkBoxDisabled() {
-    // Same indicator problem as checkBox(), and the same fix - but deliberately NOT the same
-    // colours. A disabled control still has to READ as disabled, so the outline is MutedGraphic
-    // rather than text grey, a checked box fills with DisabledBackground rather than amber, and
-    // there is no hover rule at all. The operator can see what it is set to and see that they
-    // cannot change it. Note this is NOT the dialog border grey: at #333 on a #0d0d0d dialog it
-    // would have been as invisible as the bug being fixed here.
-    static const QString s = QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
-                                     "QCheckBox::indicator { width: %4px; height: %4px;"
-                                     "  border: 1px solid %5; border-radius: 3px;"
-                                     "  background-color: %6; }"
-                                     "QCheckBox::indicator:checked { background-color: %7;"
-                                     "  border-color: %7; }")
-                                 .arg(Colors::TextSecondary)
-                                 .arg(Dimensions::FontSizeHeading)
-                                 .arg(Dimensions::BorderRadiusLarge)
-                                 .arg(Dimensions::CheckboxSize)
-                                 .arg(Colors::MutedGraphic, Colors::DarkBackground, Colors::DisabledBackground);
-    return s;
-}
-
-const QString &actionButton() {
-    static const QString s = QString("QPushButton { background-color: %1; color: %2; border: 1px solid %3; "
-                                     "             padding: 10px 20px; font-size: %4px; border-radius: 4px; }"
-                                     "QPushButton:hover { background-color: %5; }")
-                                 .arg(Colors::DarkBackground, Colors::TextPrimary, Colors::DialogBorder)
-                                 .arg(Dimensions::FontSizeHeading)
-                                 .arg(Colors::GradientBottom);
     return s;
 }
 
