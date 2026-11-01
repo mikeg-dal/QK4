@@ -64,7 +64,6 @@ public:
     // release.
     Q_INVOKABLE void releaseLocalPtt();
 
-    bool isListening() const;
     quint16 port() const;
     int clientCount() const;
     int audioClientCount() const { return m_audioClients.size(); }
@@ -87,7 +86,6 @@ public:
     // Replaces the stored telemetry. Never broadcasts - the sensor timer decides when anything
     // goes out, and to whom. Cheap enough to call on every meter update.
     void setSensors(const TciSensorReadings &readings);
-    const TciSensorReadings &sensors() const { return m_sensors; }
 
     // Frame interleaved stereo float samples as RX_AUDIO and send to every client that asked for
     // audio. A no-op when nobody has.
@@ -99,14 +97,13 @@ signals:
     // blocking on this thread.
     void listeningChanged(bool listening, quint16 port);
 
-    // A client asked for audio, or stopped. The audio source uses these to start and stop work
-    // rather than producing frames nobody wants.
+    // The first client asked for audio. The audio source resets its history; it skips all work
+    // while audioClientCount() is 0, so stopping needs no signal.
     void audioStartRequested(int receiver);
-    void audioStopRequested();
     void clientCountChanged(int count);
 
     // The roster, whenever it changes - a client arriving or leaving, or one of them saying
-    // something. Throttled for traffic; see noteClientActivity.
+    // something. Throttled for traffic; see announceClients.
     void clientsChanged(const QVector<TciClientInfo> &clients);
 
     // A client asserted or released PTT via `trx:<n>,<bool>`.

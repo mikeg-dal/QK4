@@ -19,9 +19,6 @@ static QString bandNumberToLabel(const QString &bn) {
 // Poll commands - based on KPA1500 Programming Reference
 // ^AI = ATU Inline state, ^AN = Antenna selection
 // Note: ^FS is Fan Speed and ^FC is Fan Minimum Speed (neither is a fault); the fault code is ^FL.
-// ^VM1 (PA voltage) and ^VM2 (PA current) were removed — nothing in QK4
-// displays them today; if/when a UI consumer is added, restore them here
-// alongside the parser branches and re-introduce paVoltage/paCurrent state.
 const QString KPA1500Client::POLL_COMMANDS =
     "^BN;^WS;^TM;^RVM;^OS;^FL;^AI;^AM;^AN;^IP;^SN;^PC;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
 
@@ -71,10 +68,6 @@ void KPA1500Client::disconnectFromHost() {
 
 bool KPA1500Client::isConnected() const {
     return m_state == Connected;
-}
-
-KPA1500Client::ConnectionState KPA1500Client::connectionState() const {
-    return m_state;
 }
 
 void KPA1500Client::sendCommand(const QString &command) {
@@ -276,7 +269,7 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
     }
     // ^FS - Fan Speed (0-5), NOT fault status
     else if (cmd.startsWith("FS")) {
-        // Fan speed - ignore for now (could add m_fanSpeed if needed)
+        // Fan speed: not displayed.
     }
     // ^FLhh - current fault, two hex digits; 00 is "no fault condition"
     else if (cmd.startsWith("FL")) {

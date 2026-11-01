@@ -48,11 +48,9 @@ bool WebSocketServer::start(quint16 port, bool loopbackOnly) {
     }
     const QHostAddress address = loopbackOnly ? QHostAddress(QHostAddress::LocalHost) : QHostAddress(QHostAddress::Any);
     if (!m_server->listen(address, port)) {
-        m_errorString = m_server->errorString();
-        emit errorOccurred(m_errorString);
+        emit errorOccurred(m_server->errorString());
         return false;
     }
-    m_errorString.clear();
     m_livenessTimer->start();
     emit started(m_server->serverPort());
     return true;

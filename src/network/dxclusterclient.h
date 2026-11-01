@@ -40,8 +40,6 @@ public:
     explicit DxClusterClient(QObject *parent = nullptr);
     ~DxClusterClient();
 
-    ConnectionState connectionState() const { return m_state; }
-
     // Static for testability — parses a single DX spot line
     static bool parseSpotLine(const QString &line, DxSpot &spot);
 

@@ -33,7 +33,6 @@ public:
 
     explicit NetworkMetrics(QObject *parent = nullptr);
 
-    HealthTier healthTier() const { return m_tier; }
     int rttCurrent() const { return m_rttCurrent; }
     double rttAvg() const { return m_rttAvg; }
     double rttJitter() const { return m_rttJitter; }

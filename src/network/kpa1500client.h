@@ -10,8 +10,8 @@
 /**
  * @brief TCP client for a KPA1500 linear amplifier's remote head server. Polls the amp with
  *        `POLL_COMMANDS` on a user-configurable interval, parses the pipelined responses, and
- *        exposes cached state (power, SWR, voltage/current, temperature, band, ATU mode +
- *        inline state, operating state, faults, firmware). Drives Kpa1500MiniPanel + Kpa1500Page.
+ *        signals each change (power, SWR, temperature, band, antenna, ATU mode + inline state,
+ *        operating state, faults, firmware). Drives Kpa1500MiniPanel + Kpa1500Page.
  */
 class KPA1500Client : public QObject {
     Q_OBJECT
@@ -34,7 +34,6 @@ public:
     void connectToHost(const QString &host, quint16 port);
     void disconnectFromHost();
     bool isConnected() const;
-    ConnectionState connectionState() const;
 
     void sendCommand(const QString &command);
 
@@ -44,20 +43,9 @@ public:
     void startPolling(int intervalMs);
     void stopPolling();
 
-    // State getters. Power, SWR and temperature read kUnknownReading (-999) until the amplifier has
-    // reported them on the current connection.
     QString bandName() const { return m_bandName; }
-    int bandNumber() const { return m_bandNumber; } // ^BN: 0-10, -1 until known
-    double forwardPower() const { return m_forwardPower; }
-    double reflectedPower() const { return m_reflectedPower; }
-    double drivePower() const { return m_drivePower; }
-    double swr() const { return m_swr; }
-    double paTemperature() const { return m_paTemperature; }
-    OperatingState operatingState() const { return m_operatingState; }
     FaultStatus faultStatus() const { return m_faultStatus; }
     QString faultCode() const { return m_faultCode; }
-    bool atuModeInline() const { return m_atuModeInline; } // ^AM: ATU mode (enabled/disabled)
-    bool atuInline() const { return m_atuInline; }         // ^AI: ATU relay state (in-circuit/bypassed)
     int antenna() const { return m_antenna; }
     // Connector (1 = ANT1, 2 = ANT2) an antenna is routed through on the current band, from the
     // amp's ^AEbbALL enable map. 0 when disabled or the map has not been read yet.

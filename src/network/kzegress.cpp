@@ -10,7 +10,6 @@
 #include <windows.h>
 #else
 #include <QSocketNotifier>
-#include <cerrno>
 #include <fcntl.h>
 #include <unistd.h>
 #endif

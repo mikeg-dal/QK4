@@ -102,7 +102,6 @@ public:
     bool isListening() const;
     quint16 port() const;
     int clientCount() const { return m_sessions.size(); }
-    QString errorString() const { return m_errorString; }
 
     // Ignored for an unknown id, so a send racing a disconnect is not an error.
     Q_INVOKABLE void sendText(int clientId, const QString &text);
@@ -176,7 +175,6 @@ private:
     int m_handshakeTimeoutMs = HANDSHAKE_TIMEOUT_MS;
     QHash<int, Session> m_sessions;
     int m_nextClientId = 1;
-    QString m_errorString;
 };
 
 #endif // NETWORK_WEBSOCKETSERVER_H

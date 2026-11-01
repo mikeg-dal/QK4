@@ -97,7 +97,7 @@ QString sanitiseForKy(const QString &text) {
     return out;
 }
 
-// Splits at kKyChunkChars, PREFERRING a word boundary, and carries the space to the START of the
+// Splits at kKyMaxChars, PREFERRING a word boundary, and carries the space to the START of the
 // next chunk rather than leaving it at the end of this one.
 //
 // WHY the space moves: the radio trims trailing spaces from KY text. A chunk that happens to end

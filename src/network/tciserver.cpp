@@ -131,10 +131,6 @@ void TciServer::broadcast(const QString &text) {
     announceClients(/*force=*/false);
 }
 
-bool TciServer::isListening() const {
-    return m_socketServer->isListening();
-}
-
 quint16 TciServer::port() const {
     return m_socketServer->port();
 }
@@ -201,11 +197,9 @@ void TciServer::onClientDisconnected(int clientId) {
     m_txSensorClients.remove(clientId);
     updateSensorTimer();
 
-    const bool hadAudio = m_audioClients.remove(clientId);
-    // Fail closed: if the last audio consumer vanished, stop producing.
-    if (hadAudio && m_audioClients.isEmpty()) {
-        emit audioStopRequested();
-    }
+    // Fail closed: once the last audio consumer has vanished, audioClientCount() is 0 and the
+    // bridge stops producing.
+    m_audioClients.remove(clientId);
     emit clientCountChanged(clientCount());
 }
 
@@ -244,11 +238,8 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
         } else if (name == QLatin1String("audio_stop")) {
             int receiver = MAIN_RECEIVER;
             command.argAsInt(0, &receiver);
-            const bool had = m_audioClients.remove(clientId);
+            m_audioClients.remove(clientId);
             sendTo(clientId, message(name, QString::number(receiver)));
-            if (had && m_audioClients.isEmpty()) {
-                emit audioStopRequested();
-            }
         } else if (name == QLatin1String("cw_keyer_speed") || name == QLatin1String("cw_macros_speed")) {
             // BEFORE answerReadOnly, which reports this pair and would otherwise answer the query
             // and swallow the set.

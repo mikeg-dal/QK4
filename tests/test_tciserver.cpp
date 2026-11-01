@@ -241,7 +241,6 @@ private slots:
     void stopsAudioWhenTheLastSubscriberLeaves() {
         TciServer server;
         QVERIFY(server.start(0));
-        QSignalSpy stopped(&server, &TciServer::audioStopRequested);
 
         TciTestClient client;
         QVERIFY(client.connectTo(server.port()));
@@ -250,8 +249,7 @@ private slots:
         QTRY_COMPARE(server.audioClientCount(), 1);
 
         client.send("audio_stop:0;");
-        QTRY_COMPARE(stopped.count(), 1);
-        QCOMPARE(server.audioClientCount(), 0);
+        QTRY_COMPARE(server.audioClientCount(), 0);
 
         client.close();
         server.stop();
@@ -261,7 +259,6 @@ private slots:
         // Fail closed: a client that disappears mid-stream must not leave the source running.
         TciServer server;
         QVERIFY(server.start(0));
-        QSignalSpy stopped(&server, &TciServer::audioStopRequested);
 
         TciTestClient client;
         QVERIFY(client.connectTo(server.port()));
@@ -270,8 +267,7 @@ private slots:
         QTRY_COMPARE(server.audioClientCount(), 1);
 
         client.close();
-        QTRY_COMPARE(stopped.count(), 1);
-        QCOMPARE(server.audioClientCount(), 0);
+        QTRY_COMPARE(server.audioClientCount(), 0);
         server.stop();
     }
 
