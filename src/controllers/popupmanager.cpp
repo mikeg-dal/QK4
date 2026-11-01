@@ -135,8 +135,6 @@ PopupManager::PopupManager(RadioState *radioState, ConnectionController *connect
     wireDisplayPopup();
 
     // --- RadioState → DisplayPopup state sync ---
-    // These used to live in MainWindow::setupRadioStateWiring; they
-    // logically belong with the popup that consumes them.
     connect(m_radioState, &RadioState::dualPanModeLcdChanged, m_displayPopup, &DisplayPopupWidget::setDualPanModeLcd);
     connect(m_radioState, &RadioState::dualPanModeExtChanged, m_displayPopup, &DisplayPopupWidget::setDualPanModeExt);
     connect(m_radioState, &RadioState::displayModeLcdChanged, m_displayPopup, &DisplayPopupWidget::setDisplayModeLcd);
@@ -527,7 +525,7 @@ void PopupManager::wireDisplayPopup() {
 }
 
 void PopupManager::wireEqPopups() {
-    // Create RX EQ popup (Main RX - cyan theme)
+    // RX EQ popup (Main RX - cyan theme)
     // Debounce timer for RX EQ - sends command 100ms after last slider change
     m_rxEqDebounce->setSingleShot(true);
     m_rxEqDebounce->setInterval(100);
@@ -606,7 +604,7 @@ void PopupManager::wireEqPopups() {
         m_rxEqPopup->updatePresetName(i, preset.name);
     }
 
-    // Create TX EQ popup (amber theme)
+    // TX EQ popup (amber theme)
     // Debounce timer for TX EQ - sends command 100ms after last slider change
     m_txEqDebounce->setSingleShot(true);
     m_txEqDebounce->setInterval(100);
@@ -687,7 +685,7 @@ void PopupManager::wireEqPopups() {
 }
 
 void PopupManager::wireLinePopups() {
-    // Create Line Out popup (shared by MAIN RX and SUB RX)
+    // Line Out popup (shared by MAIN RX and SUB RX)
     connect(m_lineOutPopup, &LineOutPopupWidget::leftLevelChanged, this, [this](int level) {
         if (!m_connection->isConnected())
             return;
@@ -723,7 +721,7 @@ void PopupManager::wireLinePopups() {
         m_lineOutPopup->setRightEqualsLeft(m_radioState->lineOutRightEqualsLeft());
     });
 
-    // Create Line In popup (TX menu button index 3)
+    // Line In popup (TX menu button index 2)
     connect(m_lineInPopup, &LineInPopupWidget::soundCardLevelChanged, this, [this](int level) {
         if (!m_connection->isConnected())
             return;
@@ -763,7 +761,7 @@ void PopupManager::wireLinePopups() {
 }
 
 void PopupManager::wireMicPopups() {
-    // Create Mic Input popup (TX menu button index 3, left-click)
+    // Mic Input popup (TX menu button index 3, left-click)
     connect(m_micInputPopup, &MicInputPopupWidget::inputChanged, this, [this](int input) {
         if (!m_connection->isConnected())
             return;
@@ -774,7 +772,7 @@ void PopupManager::wireMicPopups() {
     connect(m_radioState, &RadioState::micInputChanged, this,
             [this](int input) { m_micInputPopup->setCurrentInput(input); });
 
-    // Create Mic Config popup (TX menu button index 3, right-click)
+    // Mic Config popup (TX menu button index 3, right-click)
     connect(m_micConfigPopup, &MicConfigPopupWidget::biasChanged, this, [this](int bias) {
         if (!m_connection->isConnected())
             return;
@@ -819,7 +817,7 @@ void PopupManager::wireMicPopups() {
 }
 
 void PopupManager::wireVoxAndSsbPopups() {
-    // Create VOX Gain / Anti-VOX popup (TX menu button index 4)
+    // VOX Gain / Anti-VOX popup (TX menu button index 4)
     connect(m_voxPopup, &VoxPopupWidget::valueChanged, this, [this](int value) {
         if (!m_connection->isConnected())
             return;
@@ -863,7 +861,7 @@ void PopupManager::wireVoxAndSsbPopups() {
     connect(m_radioState, &RadioState::voxChanged, this,
             [this](bool) { m_voxPopup->setVoxEnabled(m_radioState->voxForCurrentMode()); });
 
-    // Create SSB TX Bandwidth popup (TX menu button index 5)
+    // SSB TX Bandwidth popup (TX menu button index 5)
     connect(m_ssbBwPopup, &SsbBwPopupWidget::bandwidthChanged, this, [this](int bw) {
         if (!m_connection->isConnected())
             return;
@@ -893,7 +891,7 @@ void PopupManager::wireVoxAndSsbPopups() {
 }
 
 void PopupManager::wireKeyingWeightPopup() {
-    // Create Keying Weight popup (TX menu button index 6 in CW mode)
+    // Keying Weight popup (TX menu button index 6 in CW mode)
     connect(m_keyingWeightPopup, &KeyingWeightPopupWidget::weightChanged, this, [this](int weight) {
         if (!m_connection->isConnected())
             return;

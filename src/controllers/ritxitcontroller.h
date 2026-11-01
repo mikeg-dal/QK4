@@ -21,8 +21,8 @@ class QWheelEvent;
 // BSET + XIT aware (see docs/k4-protocol-quirks.md §2).
 //
 // Emits displayRefreshRequested whenever the displayed RIT/XIT offset
-// changes — MainWindow listens and re-runs its frequency-display logic
-// (which applies RIT offset to the shown VFO frequency).
+// changes — VfoFrequencyController::refresh() re-renders the VFO
+// frequencies (which apply the RIT offset).
 class RitXitController : public QObject {
     Q_OBJECT
 
@@ -44,7 +44,7 @@ public:
 
 signals:
     // Emitted whenever the displayed RIT/XIT offset or enabled-state
-    // changes. MainWindow listens and refreshes VFO frequency display
+    // changes. VfoFrequencyController refreshes the VFO frequency display
     // (since displayed frequency depends on RIT offset).
     void displayRefreshRequested();
 

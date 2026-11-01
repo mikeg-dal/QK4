@@ -15,9 +15,8 @@ class QWidget;
 // RadioState updates, and keeps the popup's displayed values in sync
 // with RadioState changes from the radio.
 //
-// MainWindow wires the RightSidePanel button-click signals to
-// toggleFeature() and is otherwise out of the loop. See PATTERNS.md →
-// Controller Pattern.
+// RightSideController wires the RightSidePanel right-clicks to
+// toggleFeature(). See PATTERNS.md → Controller Pattern.
 class FeatureMenuController : public QObject {
     Q_OBJECT
 

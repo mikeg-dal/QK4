@@ -46,11 +46,11 @@ public:
     void stopAudio();
     void shutdown();
 
-    // PTT control — forwards to AudioEngine (runs on the audio thread).
+    // PTT control — forwards to TxAudioPipeline (runs on the TX thread).
     void setPttActive(bool active);
 
     // Which source feeds the transmitter. Mirrors TxAudioPipeline::TxSource so callers need not reach
-    // through to the engine (CONVENTIONS.md rule 2).
+    // through to the pipeline (CONVENTIONS.md rule 2).
     //
     // WHY a remote PTT must set this first: setPttActive() opens the microphone, so keying without
     // selecting the source would transmit the room.
@@ -95,7 +95,7 @@ public:
     void setSubMuted(bool muted);
 
     // Device selection + mic gain — used by Options dialog tabs. Each dispatches via
-    // QMetaObject::invokeMethod to the audio thread internally. Task-level API only —
+    // QMetaObject::invokeMethod to the audio or TX thread internally. Task-level API only —
     // per CONVENTIONS.md Rule 2, callers do not get direct access to AudioEngine.
     void setMicDevice(const QString &deviceId);
     void setOutputDevice(const QString &deviceId);
@@ -107,7 +107,7 @@ public:
 
 signals:
     // PTT changed by SOMEBODY - this says nothing about who. Every local unkey in QK4 (the Esc
-    // shortcut, the PTT button, the HaliKey PTT line, the side panel, CatServer) funnels through
+    // shortcut, the PTT button, XMIT, CatServer — all via TransmitController) funnels through
     // setPttActive, so one signal here reaches all of them; the TCI side needs to know because it
     // otherwise goes on believing a client still holds the transmitter.
     void pttActiveChanged(bool active);
@@ -124,7 +124,7 @@ signals:
     // control stream.
     void rxAudioAvailable(const QByteArray &pcm12kStereo);
 
-    // Microphone trouble the OPERATOR has to see, relayed from AudioEngine on the audio thread.
+    // Microphone trouble the OPERATOR has to see, relayed from TxAudioPipeline on the TX thread.
     //
     // WHY IT HAS TO REACH THE SCREEN: a local PTT press keys the K4 by streaming audio, so a
     // microphone QK4 cannot use is a PTT button that does nothing whatever. Every cause already

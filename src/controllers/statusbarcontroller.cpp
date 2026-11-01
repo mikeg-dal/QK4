@@ -20,8 +20,7 @@
 #include <QWidget>
 
 namespace {
-// 1 Hz clock tick. Sub-second drift on the status-bar clock is imperceptible;
-// saves 50× timer overhead vs 50 ms updates.
+// 1 Hz clock tick. Sub-second drift on the status-bar clock is imperceptible.
 constexpr int kClockUpdateIntervalMs = 1000;
 
 // Generic "safe-for-ham-radio" PA/LPA thresholds — we don't have the K4's
@@ -259,10 +258,9 @@ void StatusBarController::showConnected() {
 }
 
 void StatusBarController::showError(const QString &errorMessage) {
-    // The status bar carries the STATE, not the story. The whole failure message used to be
-    // written into this label in red, which crammed a sentence naming a host and a port into a
-    // slot sized for the word "K4" and looked nothing like the themed banner every device
-    // notification uses. MainWindow sends the text to the NotificationWidget instead; what stays
+    // The status bar carries the STATE, not the story: a sentence naming a host and a port does
+    // not fit a slot sized for the word "K4", and the themed banner is where every device
+    // notification goes. MainWindow sends the text to the NotificationWidget; what stays
     // here is a red "K4", which is the part that should persist after the banner times out.
     Q_UNUSED(errorMessage)
     m_errorShown = true;

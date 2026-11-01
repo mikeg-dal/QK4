@@ -55,9 +55,8 @@ class KpodPlusDevice;
 // The keyer keys nothing unless the radio is ready, the mode is CW or CW-R, and the KPOD+ does not
 // own CW (CwGate::keyerInhibited). The sidetone's output stream is open only while, in addition, a
 // HaliKey port is open (CwGate::sidetoneStreamWanted), so nothing is pumped while idle (#92). Raising the inhibit
-// releases whatever is keyed (an open straight-key KZD gets its KZU) and drops paddle events at the door. It replaces
-// the per-lever gating the iambic keyer needed: the keyer reads its paddles from time-stamped history, so a single
-// release is all a gate needs.
+// releases whatever is keyed (an open straight-key KZD gets its KZU) and drops paddle events at the door. The
+// keyer reads its paddles from time-stamped history, so a single release is all a gate needs.
 //
 // Threading invariants
 // --------------------

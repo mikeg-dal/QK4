@@ -21,10 +21,10 @@ class RadioState;
 class ConnectionController;
 
 /**
- * @brief Owns hardware-side workers: KPOD USB knob (main thread), HaliKey CW paddle
- *        (HalikeyDevice — holds its own worker thread), PaddleKeyer (real-time keyer thread)
+ * @brief Owns hardware-side workers: KPOD USB knob (hidapi on its own worker thread), HaliKey CW
+ *        paddle (HalikeyDevice — holds its own worker thread), PaddleKeyer (real-time keyer thread)
  *        with its sidetone scheduler and clock, SidetoneGenerator (sidetone thread). Translates
- *        KPOD button presses → macroRequested for MainWindow dispatch.
+ *        KPOD button presses → macroRequested (MacroController::executeMacro).
  *
  * CW-keying orchestration (PaddleKeyer + HaliKey paddle wiring, the KPOD+ keyer-active gate,
  * the keyer's link to the K4) lives on CwController — see
@@ -40,7 +40,7 @@ public:
 
     // WHY (CONVENTIONS Rule 2 documented exception): these accessors return raw
     // pointers to owned sub-objects. OptionsDialog's per-device pages (KpodPage,
-    // KpodPlusPage, HaliKeyPage) need direct handles to construct their config
+    // CwKeyerPage) need direct handles to construct their config
     // widgets, observe per-device signals, and invoke device-specific setters
     // that don't belong on a generic controller façade. Wrapping all of this in
     // HardwareController would inflate its surface area without collapsing any
@@ -62,16 +62,12 @@ public:
     /// Stop every input producer this controller owns — HaliKey, the iambic keyer, the sidetone,
     /// KPOD and KPOD+ — and join their threads. Idempotent; the destructor calls it too.
     ///
-    /// WHY this is public rather than left to the destructor, which is where it used to live
-    /// entirely: CONC-001. The HaliKey worker and the sidetone thread both reach
-    /// CwController::kpodPlusActive(), which reads ConnectionController. Qt destroys children in
-    /// CONSTRUCTION order, and ConnectionController is constructed before HardwareController, so it
-    /// was already freed while these threads were still running and still dereferencing it.
+    /// WHY public (CONC-001): MainWindow::closeEvent runs it while ConnectionController, which the
+    /// HaliKey worker, the keyer and the sidetone reach, is still alive. Qt destroys children in
+    /// CONSTRUCTION order, and ConnectionController is constructed before HardwareController.
     ///
-    /// The order inside is unchanged and still load-bearing: HaliKey stops paddle events first,
-    /// then the keyer (which produces KZ), then the sidetone (which consumes them). Producers
-    /// before consumers. What changed is only that MainWindow::closeEvent can now run it while
-    /// everything it touches is still alive.
+    /// The order inside is load-bearing: HaliKey stops paddle events first, then the keyer (which
+    /// produces KZ), then the sidetone (which consumes them). Producers before consumers.
     void shutdownDevices();
 
 private:
@@ -84,9 +80,8 @@ private:
 
     /// Apply one lifecycle event to a device and carry out what the policy decides.
     ///
-    /// This is the ONLY place either device is opened, closed, or reported to the operator. Before
-    /// it, that was spread across two lambdas per device plus the worker's own presence timer, and
-    /// the worker's copy did not know the "Enable K-Pod" setting existed — which is USB-002.
+    /// This is the ONLY place either device is opened, closed, or reported to the operator
+    /// (USB-002).
     void applyKpod(UsbDeviceLifecycle::Event event);
     void applyKpodPlus(UsbDeviceLifecycle::Event event);
 
@@ -99,7 +94,7 @@ private:
 
 public:
 signals:
-    // KPOD button press → MainWindow dispatches macro
+    // KPOD button press → MacroController::executeMacro
     void macroRequested(const QString &functionId);
 
     /// The KPOD+ is taking over CW keying, or giving it back.
@@ -110,11 +105,9 @@ signals:
     /// but switched off never raises this (USB-003).
     void kpodPlusOwnsCw(bool owns);
 
-    // Hardware error (port open failure, MIDI subsystem error, etc.) → MainWindow
-    // shows it on the notification overlay. Currently fed by HalikeyDevice's
-    // connectionError signal; future device errors can route here too. Prefix the
-    // emitted message with the device name (e.g. "HaliKey: <text>") so the user
-    // can tell where it came from.
+    // Device notice for the notification overlay: HaliKey connectionError and the KPOD / KPOD+
+    // lifecycle messages. Prefix the emitted message with the device name (e.g. "HaliKey: <text>")
+    // so the user can tell where it came from.
     void hardwareError(const QString &message);
 
     // A MIDI device was plugged in, removed or changed (macOS; never emitted elsewhere, where every
@@ -132,11 +125,11 @@ private:
     RadioState *m_radioState;
     ConnectionController *m_connectionController;
 
-    // KPOD USB tuning knob
     // shutdownDevices() runs once. closeEvent calls it, and so does the destructor for the paths
     // that never reach closeEvent — a fatal error, or a window that was never shown.
     bool m_devicesShutDown = false;
 
+    // KPOD USB tuning knob
     KpodDevice *m_kpodDevice;
 
     // KPOD+ USB keyer device (libusb, vendor-specific class)

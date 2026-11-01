@@ -26,9 +26,8 @@ public:
     int currentBand(bool forVfoB = false) const;
 
 signals:
-    // Emitted when the K4's current band changes (BN / BN$). The
-    // antenna-label and other UI controllers that need to know "are we on
-    // XVTR" subscribe here. forVfoB distinguishes BN$ (true) from BN (false).
+    // Emitted when the K4's current band changes (BN / BN$). AntennaDisplayController
+    // subscribes to swap to XV IN / XV OUT. forVfoB distinguishes BN$ (true) from BN (false).
     void currentBandChanged(int band, bool forVfoB);
 
 private slots:

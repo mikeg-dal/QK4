@@ -38,9 +38,8 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
         m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACT", displayAll, mask, 3)));
     });
 
-    // RadioState → popup state updates. MainWindow's own label-update slot
-    // for antennaChanged / antennaNameChanged stays in place; these
-    // observers are independent.
+    // RadioState → popup state. The VFO-row labels are updated separately
+    // by AntennaDisplayController.
     connect(m_radioState, &RadioState::mainRxAntCfgChanged, this, [this]() {
         m_mainRxPopup->setDisplayAll(m_radioState->mainRxDisplayAll());
         m_mainRxPopup->setAntennaMask(m_radioState->mainRxAntMask());

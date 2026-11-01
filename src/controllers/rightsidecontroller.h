@@ -14,12 +14,11 @@ class QWidget;
 // Owns the signal-to-CAT wiring for RightSidePanel. Every primary (left-click)
 // and secondary (right-click) button on the right-side panel routes through
 // here — direct CAT dispatch for SW commands, plus delegations to
-// ModePopupController (MODE button), FeatureMenuController (PRE/NB/NR/NTCH/FIL
+// ModePopupController (MODE button), FeatureMenuController (PRE/NB/NR/NTCH
 // right-click → feature menus), and MacroController (PF1-4 right-clicks fall
 // through to user-configured macros).
 //
-// Extracted from MainWindow as part of the Phase 6 → Phase A architectural
-// pass. Mirror of SideControlScrollController for RightSidePanel.
+// Mirror of SideControlScrollController for RightSidePanel.
 //
 // B-SET-aware logic lives here:
 //   - APF toggle (FIL right-click) routes AP/; vs AP$/; based on bSet state

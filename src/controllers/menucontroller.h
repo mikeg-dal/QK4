@@ -15,10 +15,9 @@ class QWidget;
 // IDs the K4 reports dynamically (Mouse L/R QSY, FSK Mark-Tone, Spectrum
 // Amplitude Units).
 //
-// MainWindow retains: onBandSelected (the BandPopup is separate) and the
-// bottom menu bar wiring (menuClicked → showMenuOverlay). MEDF/ME CAT
-// routing goes through ingestMedf() / ingestMe() task methods below;
-// model is kept private.
+// MainWindow wires the bottom menu bar (menuClicked → toggleOverlay) and
+// routes MEDF/ME through the ingestMedf() / ingestMe() task methods below;
+// the model is kept private.
 //
 // See PATTERNS.md → Controller Pattern.
 class MenuController : public QObject {
@@ -58,8 +57,7 @@ public:
     void setDisplayFps(int fps);
 
     // Menu overlay geometry (relative to parent) is derived from the
-    // spectrum container. This is called automatically by toggleOverlay()
-    // but exposed in case MainWindow needs to reposition on layout change.
+    // spectrum container. Called by toggleOverlay().
     void repositionOverlay();
 
 signals:

@@ -15,15 +15,14 @@ class AudioController;
  * itself — asks this controller instead of writing the audio gate and the indicator by hand. It
  * holds a TransmitOwner::State, and executes the TransmitOwner::Effects each decision returns.
  *
- * WHY it exists: before it, seven call sites wrote the PTT indicator and five independently wrote
- * the audio gate, only one of them put TX;/RX; on the wire, and no disconnect path released
- * anything. AUDIT.md calls that the G1 violation; AUD-001, INT-001 and INT-002 are symptoms.
+ * WHY one owner: the PTT indicator, the audio gate and TX;/RX; on the wire must move together, and
+ * every disconnect path must release them (AUD-001, INT-001, INT-002).
  *
  * The decision itself lives in models/transmitowner.h so it can be unit-tested without an audio
  * device or a socket. This class is only the execution half: ordering, marshalling and signals.
  *
  * Threading: main thread only. Every caller is already on main — CatServer's readyRead, TciServer's
- * queued hop into TciController, the widget signals — and AudioController marshals to the audio
+ * queued hop into TciController, the widget signals — and AudioController marshals to the TX
  * thread itself.
  */
 class TransmitController : public QObject {
@@ -64,11 +63,6 @@ signals:
     /// Emitted whenever the holder changes, including to and from Owner::None. TciController
     /// consumes it in wireTransmit to tell its clients they lost the transmitter — which is why it
     /// carries the previous owner, not just the current one.
-    ///
-    /// That consumer was missing until #147: this signal was emitted and read by nobody while the
-    /// comment said otherwise, and a local takeover from a TCI client left the roster, the chrono
-    /// and m_pttOwner stale because of it. Worth keeping in mind before adding another producer
-    /// here with no consumer — a signal nothing listens to reads as working code.
     void ownerChanged(TransmitOwner::Owner previous, TransmitOwner::Owner current);
 
 private:

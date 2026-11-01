@@ -41,8 +41,7 @@ void SubDivIndicatorController::onSubRxEnabledChanged(bool enabled) {
 
     setVfoBDimmed(!enabled);
 
-    // Auto-hide mini pan B if VFOs are on different bands — only makes
-    // sense with SUB RX on.
+    // SUB RX off: hide mini pan B if the VFOs are on different bands.
     if (!enabled)
         m_spectrum->checkAndHideMiniPanB();
 }

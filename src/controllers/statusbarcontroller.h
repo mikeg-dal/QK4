@@ -18,10 +18,9 @@ class RadioState;
 // (temperature, voltage), KPA1500 status, K4 connection status, NetHealthWidget,
 // and the K4 remote-power button on the right.
 //
-// Observes RadioState directly for voltage and power-state updates so MainWindow
-// no longer needs to route those slots. The bar dropped its W / SWR / A readouts
-// (redundant with the rest of the UI); future at-a-glance fields are added as
-// IconTextLabel instances and wired to whatever RadioState signal feeds them.
+// Observes RadioState directly for voltage and power-state updates. New
+// at-a-glance fields are IconTextLabel instances wired to whatever RadioState
+// signal feeds them.
 //
 // The power button on the right is the click target for the K4 remote power-off
 // flow: a ConfirmPopup is shown above it, and on confirm the controller sends
@@ -53,8 +52,8 @@ public:
     void showDisconnected();
     void showConnecting();                       // amber bold — same style for Connecting + Authenticating
     void showConnected();                        // green bold
-    void showError(const QString &errorMessage); // red bold — survives the disconnect that follows // red bold —
-                                                 // "Error: <message>"
+    void showError(const QString &errorMessage); // red bold "K4" (the message goes to the notification
+                                                 // banner) — survives the disconnect that follows
 
 private:
     void onPowerButtonClicked();

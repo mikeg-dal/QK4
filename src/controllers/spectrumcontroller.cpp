@@ -80,9 +80,9 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     m_panA.pad->setObjectName("A");
     // dB range and spectrum/waterfall split follow the radio's #SCL/#REF/#WFH (wired below)
     m_panA.pad->setGridEnabled(true);
-    // Primary VFO A: cyan passband and marker, set from the theme like VFO B's below. WHY: the marker
-    // was left at the widget's default, a darker cyan (0, 140, 200), so VFO A's line looked thinner
-    // and fainter than VFO B's full-strength green one (bench 2026-10-30).
+    // Primary VFO A: cyan passband and marker, set from the theme like VFO B's below. WHY: the widget's
+    // default marker is a darker cyan (0, 140, 200), which makes VFO A's line look thinner and
+    // fainter than VFO B's full-strength green one.
     QColor vfoAPassbandAlpha(K4Styles::Colors::VfoACyan);
     vfoAPassbandAlpha.setAlpha(K4Styles::Colors::Alpha::PassbandFill);
     m_panA.pad->setPassbandColor(vfoAPassbandAlpha);
@@ -327,8 +327,8 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     });
 
     // WHY the secondary (other VFO's) passband is only ever set by updatePanadapterPassbands():
-    // it applies the other receiver's RIT offset. Separate lambdas that pushed the raw dial ran
-    // after it on a frequency change and overwrote the RIT-adjusted position. Frequency changes
+    // it applies the other receiver's RIT offset. Anything else setting it would overwrite the
+    // RIT-adjusted position with the raw dial. Frequency changes
     // already reach it above; mode, sub-mode, bandwidth and IF shift changes go through it here.
     connect(m_radioState, &RadioState::modeChanged, this, &SpectrumController::updatePanadapterPassbands);
     connect(m_radioState, &RadioState::dataSubModeChanged, this, &SpectrumController::updatePanadapterPassbands);
@@ -360,7 +360,7 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
 
 void SpectrumController::createPanOverlays(PanUi &ui, const QString &buttonStyle, const QString &indicatorStyle) {
     // Creation order is stacking order: buttons, VFO badge, mouse-VFO indicator, then the spot
-    // overlay (which updateSpotOverlays() lowers beneath the rest).
+    // overlay (which updateSpotOverlay() lowers beneath the rest).
     auto makeButton = [&](const char *text) {
         auto *btn = new QPushButton(text, ui.pad);
         btn->setStyleSheet(buttonStyle);

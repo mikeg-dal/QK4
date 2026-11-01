@@ -17,11 +17,7 @@ class SideControlPanel;
 // Each handler clamps the new value to the K4's documented range, dispatches
 // the appropriate CAT command, and optimistically updates RadioState since
 // most of these commands are silent SETs (no echo from the K4). The HI/LO
-// cut paths share applyFilterEdgeChange() — the audit flagged the previous
-// inline-in-MainWindow versions as structurally identical with ~50 LOC of
-// duplicated arithmetic.
-//
-// Extracted from MainWindow as part of the Phase 6 structural audit.
+// cut paths share applyFilterEdgeChange().
 class SideControlScrollController : public QObject {
     Q_OBJECT
 

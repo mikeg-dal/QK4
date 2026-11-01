@@ -18,7 +18,7 @@ TxStateController::TxStateController(RadioState *radioState, SideControlPanel *s
       m_txTriangle(txTriangle), m_txTriangleB(txTriangleB) {
     connect(m_radioState, &RadioState::transmitStateChanged, this, &TxStateController::onTransmitStateChanged);
     connect(m_radioState, &RadioState::txMeterChanged, this, &TxStateController::onTxMeterChanged);
-    // paDrainCurrentChanged now fires from BOTH paths in RxTxMeterState:
+    // paDrainCurrentChanged fires from BOTH paths in RxTxMeterState:
     //   - handleSIRF (every ~0.3 Hz) — ground truth from K4's PM field. Used to (re)calibrate
     //     the radio's actual efficiency at the current power/band.
     //   - handleTM   (every ~10 Hz)  — live derivation: fwdPower / (V × calibrated_efficiency).
@@ -69,9 +69,6 @@ void TxStateController::onTransmitStateChanged(bool transmitting) {
 void TxStateController::onTxMeterChanged(int alc, int comp, double fwdPower, double swr) {
     m_sideControlPanel->setPowerReading(fwdPower);
 
-    // PA drain current comes straight from the K4's SIRF stream (LM field, parsed in
-    // RxTxMeterState). No more efficiency-based estimation — paDrainCurrent() tracks
-    // the value the K4's own front-panel "Id" meter shows.
     const double paCurrent = m_radioState->paDrainCurrent();
 
     // Route meter tuple + current to the active TX VFO only.

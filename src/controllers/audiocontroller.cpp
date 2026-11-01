@@ -20,7 +20,7 @@
 #include <chrono>
 
 namespace {
-// 20 Hz: often enough for the buffer sparkline, a tenth of the events the audio thread used to post.
+// 20 Hz: often enough for the buffer sparkline.
 constexpr int kMetricsSampleMs = 50;
 // No RX packet for this many ticks (250 ms, two SL7 packets) and the stream counts as stopped.
 constexpr int kStreamIdleTicks = 5;
@@ -145,7 +145,7 @@ AudioController::AudioController(ConnectionController *connController, RadioStat
             m_audioEngine->setRadioTransmitting(transmitting);
     });
 
-    // SL tier changes → update TX frame size
+    // SL tier changes → TX frame size and RX sink size
     connect(m_radioState, &RadioState::streamingLatencyChanged, this, &AudioController::onStreamingLatencyChanged);
 
     // SUB RX mute/unmute
@@ -484,7 +484,7 @@ void AudioController::sampleAudioMetrics() {
     } else if (m_ticksSinceRxPacket < kStreamIdleTicks) {
         ++m_ticksSinceRxPacket;
     }
-    // Depth only while audio is flowing, as before: the engine's last value goes stale when the
+    // Depth only while audio is flowing: the engine's last value goes stale when the
     // stream stops, and an idle connection should not draw a flat line at it. "Flowing" spans a
     // few ticks so SL6-7's 120 ms packets still give a sample every tick.
     if (m_ticksSinceRxPacket < kStreamIdleTicks)

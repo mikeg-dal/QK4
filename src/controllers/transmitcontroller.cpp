@@ -39,19 +39,17 @@ TransmitController::TransmitController(RadioState *radioState, ConnectionControl
                                        QObject *parent)
     : QObject(parent), m_radioState(radioState), m_connection(connection), m_audio(audio) {
 
-    // INT-002: the radio's own transmit state was never fed back. A radio-side RX — the front
-    // panel, a footswitch plugged into the K4, a fault, a tune timeout — left QK4 encoding and
-    // sending mic frames, which re-key the radio. transmitStateChanged had three consumers and not
-    // one of them touched PTT.
+    // INT-002: feed back the radio's own transmit state. A radio-side RX — the front panel, a
+    // footswitch plugged into the K4, a fault, a tune timeout — would otherwise leave QK4 encoding
+    // and sending mic frames, which re-key the radio.
     connect(m_radioState, &RadioState::transmitStateChanged, this, [this](bool transmitting) {
         const Owner previous = m_state.owner;
         const bool was = m_state.transmitting();
         apply(TransmitOwner::radioReports(m_state, transmitting), previous, was);
     });
 
-    // Losing the radio releases whatever was held. AUD-001 was this not happening: the gate
-    // survived a disconnect, and the next mic-device change reopened the microphone and streamed
-    // the room at a radio nobody had keyed.
+    // Losing the radio releases whatever was held (AUD-001): a gate surviving a disconnect lets the
+    // next mic-device change reopen the microphone and stream the room at a radio nobody had keyed.
     connect(m_connection, &ConnectionController::connectionStateChanged, this,
             [this](TcpClient::ConnectionState state) {
                 if (state == TcpClient::Disconnected)

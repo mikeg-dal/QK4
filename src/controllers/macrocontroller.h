@@ -9,15 +9,15 @@ class PopupManager;
 class QWidget;
 
 // Dispatches macro invocations from the Fn popup, KPOD hardware buttons,
-// and the PF1-PF4 right-side-panel buttons. Translates built-in function
+// the PF1-PF4 right-side-panel buttons and keyboard F1-F12. Translates built-in function
 // IDs (ScrnCap, Macros, SwList, Update, DxList) into their specific
 // behavior and looks up user-configured macros from RadioSettings for
 // CAT dispatch.
 //
 // Emits macroDialogRequested (Macros built-in) and softwareListRequested
-// (SwList built-in) so MainWindow can close its own popups (antenna/mode)
-// in addition to PopupManager-owned ones before showing the dialog/popup —
-// MacroController does not have a direct handle on those.
+// (SwList built-in) so MainWindow can close every popup (closeAllPopups)
+// before showing the dialog/popup — MacroController does not have a direct
+// handle on the other controllers' popups.
 class MacroController : public QObject {
     Q_OBJECT
 
@@ -27,8 +27,8 @@ public:
     MacroController(ConnectionController *connection, PopupManager *popupManager, QWidget *dialogParent,
                     QObject *parent = nullptr);
 
-    // Public entry point for PF1-PF4 clicks and HardwareController's
-    // macroRequested signal. Looks up the CAT command for the given
+    // Public entry point for PF1-PF4 clicks, keyboard F1-F12 and
+    // HardwareController's macroRequested signal. Looks up the CAT command for the given
     // functionId in RadioSettings and dispatches it. Silently no-ops if
     // the function has no configured macro.
     void executeMacro(const QString &functionId);

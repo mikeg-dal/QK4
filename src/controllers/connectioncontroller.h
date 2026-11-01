@@ -12,10 +12,12 @@ class NetworkMetrics;
 /**
  * @brief Owns the IO thread + TcpClient + NetworkMetrics. Exposes connection lifecycle and a
  *        thread-safe `sendCAT()` interface. Re-emits Protocol's inbound
- *        signals so callers never reach into `tcpClient()->protocol()`.
+ *        signals so callers other than the Rule 2 exceptions below need not reach into
+ *        `tcpClient()->protocol()`.
  *
- * Rule 2 exception: `tcpClient()` is exposed only for AudioController (TX audio bypass) and
- * CwController (keyer-thread KZD/KZU). See CONVENTIONS.md rule 2 for the rationale.
+ * Rule 2 exception: `tcpClient()` is exposed only for AudioController (TX packets to sendRaw, RX
+ * decode via protocol()) and CwController (keyer-thread KZD/KZU, KPOD+ keyer bytes). See
+ * CONVENTIONS.md rule 2 for the rationale.
  */
 class ConnectionController : public QObject {
     Q_OBJECT

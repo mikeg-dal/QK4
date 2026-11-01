@@ -13,11 +13,9 @@ class QLabel;
 // display color + mode label color). Also calls SpectrumController to
 // auto-hide mini pan B when SUB RX turns off.
 //
-// Previously two separate inline lambdas in MainWindow::setupRadioStateWiring
-// totaling ~80 LOC. Extracting preserves the cross-field logic: DIV badge
-// is green only when BOTH diversity AND sub RX are enabled (K4 constraint —
-// DIV requires SUB), so both handlers need to consult the other signal's
-// current state.
+// Cross-field logic: the DIV badge is green only when BOTH diversity AND sub
+// RX are enabled (K4 constraint — DIV requires SUB), so both handlers need to
+// consult the other signal's current state.
 class SubDivIndicatorController : public QObject {
     Q_OBJECT
 

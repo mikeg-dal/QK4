@@ -115,7 +115,7 @@ void RitXitController::applyLabels(bool ritEnabled, bool xitEnabled, int offset)
 void RitXitController::applyDisplay(bool ritEnabled, bool xitEnabled, int offset) {
     applyLabels(ritEnabled, xitEnabled, offset);
 
-    // RIT offset shifts the rendered VFO frequency; let MainWindow refresh.
+    // RIT offset shifts the rendered VFO frequency; VfoFrequencyController re-renders it.
     emit displayRefreshRequested();
 
     // Panadapter passband + TX marker positions depend on the RIT state.

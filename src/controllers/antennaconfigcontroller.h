@@ -10,11 +10,8 @@ class QWidget;
 
 // Owns the three antenna-configuration popups (Main RX, Sub RX, TX) and
 // keeps their displayed mask / display-all / per-antenna names in sync
-// with RadioState. MainWindow retains the three antenna labels in the
-// VFO row (m_rxAntALabel, m_txAntennaLabel, m_rxAntBLabel) and their
-// onAntennaChanged / onAntennaNameChanged slots — this controller's job
-// is the popup surface, not the label surface. Labels may migrate in a
-// future pass (direct observation from VfoRowWidget).
+// with RadioState. The three VFO-row antenna labels are
+// AntennaDisplayController's; this controller owns only the popups.
 //
 // See PATTERNS.md → Controller Pattern.
 class AntennaConfigController : public QObject {

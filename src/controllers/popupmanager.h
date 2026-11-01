@@ -29,15 +29,11 @@ class QWidget;
 // Fn (macro trigger) popup, and the full-screen macro configuration
 // dialog. Also encapsulates the increment/decrement/toggle action handlers
 // for DisplayPopup (scale, ref level, span, averaging, waterfall height,
-// DDC NB level — ~160 LOC of inline handlers previously in MainWindow's
-// setupDisplayPopup()).
+// DDC NB level).
 //
-// MainWindow retains: the Fn popup's functionTriggered signal (routes to
-// MainWindow::executeMacro because macro execution is radio-state + CAT
-// logic at the app level, not a popup lifecycle concern), and the band
-// popup's bandSelected signal (routes to MainWindow::onBandSelected).
-// Both are exposed as signals on PopupManager so MainWindow connects to
-// them at construction without reaching into owned widgets.
+// The Fn popup's macro trigger goes to MacroController and the band popup's
+// bandSelected to BandNavigationController; both are re-emitted as signals
+// here so no one reaches into the owned widgets.
 //
 // See PATTERNS.md → Controller Pattern.
 class PopupManager : public QObject {
@@ -49,8 +45,8 @@ public:
 
     // BottomMenuBar and VFO widgets must be injected after construction
     // because they are created by MainWindow::setupUi() AFTER controllers.
-    // Use setters. setupUi wires BottomMenuBar signals to PopupManager at
-    // connect-time, so PopupManager must exist before setupUi() runs.
+    // Use setters. setupUi wires BottomMenuBar signals to MainWindow slots
+    // that call PopupManager, so PopupManager must exist before setupUi() runs.
     void setBottomMenuBar(BottomMenuBar *bottomMenuBar);
     void setVfos(VFOWidget *vfoA, VFOWidget *vfoB);
 
@@ -59,44 +55,35 @@ public:
     void toggleDisplay();
     void toggleFn();
 
-    // Task-level macro dialog open (called from MainWindow::openMacroDialog).
+    // Task-level macro dialog open (Fn → Macros, via MacroController::macroDialogRequested).
     void openMacroDialog();
 
     // Task-level open of the read-only Software List popup (Fn → SW LIST).
     // Reads firmware versions from RadioState and anchors above the Fn button.
     void openSoftwareList();
 
-    // Close the popups PopupManager owns. MainWindow's closeAllPopups()
-    // calls this and then closes any popups still owned by MainWindow.
+    // Close the popups PopupManager owns. MainWindow::closeAllPopups()
+    // calls this after closing the other controllers' popups.
     void closeOwnedPopups();
 
-    // Band popup accessors — MainWindow::onBandSelected uses the popup's
+    // Band popup accessors — BandNavigationController uses the popup's
     // internal band-number↔band-name map (yes, that map really lives on
-    // the popup widget). Cleaner fix is a RadioUtils function, tracked as
-    // future work.
+    // the popup widget).
     int bandNumberForName(const QString &bandName) const;
     void setSelectedBandByNumber(int bandNum);
 
     // Identifies which of the three button-row lanes a secondary popup
     // should anchor against. ButtonRowDispatcher invokes secondary popups
     // by naming the lane it is currently in; PopupManager resolves the
-    // lane to the right anchor widget internally — eliminating the
-    // earlier circular pattern where callers fetched a popup anchor from
-    // PopupManager only to pass it back into PopupManager's own show*
-    // call.
+    // lane to the right anchor widget internally.
     enum class ButtonRowLane { MainRx, SubRx, Tx };
 
     void toggleMainRx();
     void toggleSubRx();
     void toggleTx();
 
-    // WHY (CONVENTIONS Rule 2 documented exception): a single anchor
-    // resolver is retained for external callers (currently only
-    // AntennaConfigController) that need a QWidget to position their
-    // own popups against. The previous three-getter API (mainRxPopupAnchor
-    // / subRxPopupAnchor / txPopupAnchor) was collapsed here to one
-    // method taking the lane enum. Internal PopupManager show* methods
-    // no longer expose this — they take the lane directly.
+    // WHY (CONVENTIONS Rule 2 documented exception): ButtonRowDispatcher
+    // needs a row widget to anchor AntennaConfigController's popups against.
     QWidget *anchorForLane(ButtonRowLane lane) const;
 
     void setTxButtonLabel(int index, const QString &primary, const QString &alternate, bool alternateIsAmber = true);
@@ -118,16 +105,16 @@ public:
     void showKeyingWeightAbove(ButtonRowLane lane);
 
 signals:
-    // User picked a band from the band popup. MainWindow::onBandSelected
-    // handles the band-switch logic (radio-state mutation + CAT commands).
+    // User picked a band from the band popup. BandNavigationController::onBandSelected
+    // handles the band-switch logic (CAT commands).
     void bandSelected(const QString &bandName);
 
-    // Fn popup invoked a macro binding. MainWindow::executeMacro resolves
+    // Fn popup invoked a macro binding. MacroController::onFunctionTriggered resolves
     // the binding to its CAT command and sends it.
     void macroFunctionTriggered(const QString &functionId);
 
-    // Button-row popup click events — MainWindow's app-level dispatch
-    // slots handle the per-index semantics (which secondary popup to show,
+    // Button-row popup click events — ButtonRowDispatcher handles the
+    // per-index semantics (which secondary popup to show,
     // which CAT command to send). PopupManager just forwards the clicks.
     void mainRxButtonClicked(int index);
     void mainRxButtonRightClicked(int index);

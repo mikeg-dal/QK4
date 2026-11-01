@@ -11,8 +11,7 @@ class QWidget;
 // Owns the two floating text-decode windows (Main RX + Sub RX), their CAT
 // dispatch keeping the K4 in sync with user-driven config changes, and the
 // RadioState observers that keep the windows' operating mode and data rate
-// in sync with the radio. Replaces ~180 lines of inline wiring + two
-// ~30-line popup-button handler blocks in MainWindow.
+// in sync with the radio.
 //
 // See PATTERNS.md → Controller Pattern. Constructor takes RadioState and
 // ConnectionController by pointer (not owned); parentWidget is used as the

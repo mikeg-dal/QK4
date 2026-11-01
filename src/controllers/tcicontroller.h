@@ -53,12 +53,10 @@ public:
 
     // Hand the transmitter back BEFORE the owning objects start being destroyed. Idempotent.
     //
-    // WHY this cannot wait for the destructor, which is where it used to live: both this controller
-    // and AudioController are MainWindow children, and QObjectPrivate::deleteChildren() destroys
-    // children in CONSTRUCTION order. AudioController is constructed first, so by the time
-    // ~TciController ran, m_audioController was a dangling pointer - and the `if (m_audioController)`
-    // guard could not see it, because the pointer was non-null, just freed. Quitting while
-    // connected segfaulted in AudioController::pttActiveChanged every time.
+    // WHY this cannot wait for the destructor: both this controller and AudioController are
+    // MainWindow children, and QObjectPrivate::deleteChildren() destroys children in CONSTRUCTION
+    // order. AudioController is constructed first, so by the time ~TciController runs,
+    // AudioController is already gone.
     //
     // MainWindow::closeEvent calls this while everything is still alive, alongside the audio and
     // sidetone teardown that is there for the same class of reason.
@@ -71,12 +69,11 @@ public:
 
     // Both answer from a MAIN-THREAD CACHE, never by reaching into the server.
     //
-    // WHY: the server and its sessions live on the TCI thread. clientCount() used to return
-    // WebSocketServer::m_sessions.size(), and the options page calls it from the main thread while
-    // that QHash is being inserted into and erased from by socket events on the TCI thread. That is
-    // a data race, not a stale read - QHash::size() dereferences d, and an insert that rehashes
-    // frees the old d. The cache is fed by clientCountChanged, which is the same signal that
-    // prompted the re-read, so it carries no less information.
+    // WHY: the server and its sessions live on the TCI thread, and the options page calls these
+    // from the main thread while socket events on the TCI thread insert into and erase from the
+    // server's session QHash. Reading it from here would be a data race, not a stale read -
+    // QHash::size() dereferences d, and an insert that rehashes frees the old d. The cache is fed
+    // by clientCountChanged, so it carries no less information.
     bool isListening() const { return m_listening; }
     int clientCount() const { return m_clientCount; }
 
@@ -84,12 +81,12 @@ public:
     // QHash from here.
     QVector<TciClientInfo> clients() const { return m_clients; }
 
-    // Carrying audio is separable from carrying CAT. Off means no RX frames are sent and no TX
-    // audio is accepted; the control half keeps working.
     // Call when QK4's own audio levels move. rx_volume reports QK4's mix, and nothing in
     // RadioState changes when a slider does, so there is no radio event to ride on.
     void audioLevelsChanged();
 
+    // Carrying audio is separable from carrying CAT. Off means no RX frames are sent and no TX
+    // audio is accepted; the control half keeps working.
     void setAudioEnabled(bool enabled);
 
 signals:
@@ -98,8 +95,8 @@ signals:
     void clientsChanged(const QVector<TciClientInfo> &clients);
 
 private:
-    // Constructor wiring, in four groups rather than one 287-line block with 46 connect() calls
-    // (banned shape #3, src/controllers/README.md). Called in this order; each is independent.
+    // Constructor wiring, in five groups (banned shape #3, src/controllers/README.md). Called in
+    // this order; each is independent.
     void wireAudioAndClients();
     void wireSettings();
     void wireTransmit();
@@ -162,12 +159,12 @@ private:
 
     MenuController *m_menuController;
 
-    // Main-thread only. See isListening()/clientCount().
     // Set while THIS controller is driving PTT, so the pttActiveChanged that comes back is not
     // mistaken for the operator acting. Without it a client's own key would be read as a local
     // takeover and cancel itself immediately.
     bool m_drivingPtt = false;
 
+    // Main-thread only. See isListening()/clientCount().
     bool m_listening = false;
     // start()/stop() calls posted to the TCI thread whose listeningChanged has not come back yet.
     // Only the answer that brings this to 0 is applied, so a stop+start (a port change) or a quick

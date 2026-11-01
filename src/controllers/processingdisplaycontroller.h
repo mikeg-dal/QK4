@@ -14,8 +14,7 @@ class VFOWidget;
 // single rollup handler is the natural fit.
 //
 // This is a presentation-only controller; it sends no CAT and owns no
-// widgets. It exists to lift the ~60-LOC onProcessingChanged pair out
-// of MainWindow and keep per-VFO display mirroring in one place.
+// widgets.
 //
 // See PATTERNS.md → Controller Pattern.
 class ProcessingDisplayController : public QObject {

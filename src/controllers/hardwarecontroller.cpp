@@ -46,7 +46,7 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     connect(m_kpodDevice, &KpodDevice::encoderRotated, this, &HardwareController::onKpodEncoderRotated);
     connect(m_kpodDevice, &KpodDevice::pollError, this, &HardwareController::onKpodPollError);
 
-    // KPOD button signals → macro execution via MainWindow
+    // KPOD button signals → macroRequested (MacroController)
     connect(m_kpodDevice, &KpodDevice::buttonTapped, this,
             [this](int buttonNum) { emit macroRequested(QString("K-pod.%1T").arg(buttonNum)); });
     connect(m_kpodDevice, &KpodDevice::buttonHeld, this,
@@ -116,9 +116,8 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
         m_kpodPlusDevice->setStuckTimeout(kKpodPlusStuckTimeoutSec);
     };
 
-    // Auto-start polling on device arrival. The KPOD+ keyer-active gate +
-    // EP02 keyer-data routing are wired by CwController, which observes the
-    // same deviceConnected / deviceInfoReady signals independently.
+    // Lifecycle → policy, as for the KPOD. The policy opens the device and raises kpodPlusOwnsCw,
+    // which gates QK4's keyer through CwController::setKpodPlusGate.
     m_applyKpodPlusConfig = applyKpodPlusConfig;
     connect(m_kpodPlusDevice, &KpodPlusDevice::deviceInfoReady, this, [this]() {
         applyKpodPlus(m_kpodPlusDevice->isDetected() ? UsbDeviceLifecycle::Event::Detected
@@ -130,7 +129,7 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
 
     // =========================================================================
     // HaliKey CW paddle device — device type injected here so HalikeyDevice
-    // itself doesn't reach into RadioSettings (Phase 3 layering cleanup).
+    // itself doesn't reach into RadioSettings.
     // =========================================================================
     m_halikeyDevice = new HalikeyDevice(RadioSettings::instance()->halikeyDeviceType(), this);
     connect(RadioSettings::instance(), &RadioSettings::halikeyDeviceTypeChanged, m_halikeyDevice,
@@ -212,17 +211,15 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     // =========================================================================
     // Device notifications — one policy for all four devices
     // =========================================================================
-    // Only the HaliKey used to reach NotificationWidget. The KPOD and KPOD+ announced their arrival
-    // and departure to a label on the Options page and nowhere else, so a KPOD+ that vanished
-    // mid-session said nothing at all — despite taking the whole CW chain with it, because it owns
-    // keying while attached and QK4's keyer is gated off behind it.
+    // Every device reaches NotificationWidget: a KPOD+ that vanishes mid-session takes the whole CW
+    // chain with it, because it owns keying while attached and QK4's keyer is gated off behind it.
     //
     // Each message names the device the operator recognises, and says what STOPPED WORKING rather
     // than what failed internally. "KPOD+ disconnected" is not actionable on its own; "CW keying
     // has returned to QK4's keyer" tells them why the paddle now feels different.
     //
     // WHY pollError is NOT wired to a popup: it comes from a polling loop and can repeat at the
-    // poll rate. A popup per failed poll would bury the screen. It stays a log line, now naming
+    // poll rate. A popup per failed poll would bury the screen. It stays a log line naming
     // which device produced it.
 
     // connectionError only, NOT disconnected. An unplug raises both - the worker's error handler
@@ -240,8 +237,7 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
 
     // The KPOD/KPOD+ notifications are raised by applyKpod()/applyKpodPlus() from the policy's
     // Effects, not from deviceDisconnected. That signal cannot distinguish a pulled cable from our
-    // own stopPolling(), and it arrives twice per unplug on both devices — which is exactly what
-    // defeated the one-shot "expected stop" flag this replaces.
+    // own stopPolling(), and it arrives twice per unplug on both devices.
 }
 
 void HardwareController::applyKpod(UsbDeviceLifecycle::Event event) {
@@ -269,13 +265,11 @@ void HardwareController::applyKpodPlus(UsbDeviceLifecycle::Event event) {
         // a paddle event landing in that window would reach QK4's own keyer and sidetone.
         emit kpodPlusOwnsCw(true);
         m_kpodPlusDevice->startPolling();
-        // WHY the config push belongs HERE and not on deviceConnected: the old handler guarded on
-        // !isPolling(), which m_polling had already made false by the time the signal arrived, so
-        // the push never ran and the device kept whatever WPM and pitch it was last given
-        // (USB-006). It also never ran on re-enable. Pushing from the policy's open decision covers
-        // both, and is safe despite the open being asynchronous: startPolling() and every setter
-        // queue to the SAME worker thread, and Qt delivers queued events in order, so openDevice
-        // has run before the first config command is handled.
+        // WHY the config push belongs HERE and not on deviceConnected: by then isPolling() is
+        // already false, and deviceConnected does not fire on re-enable (USB-006). Pushing from the
+        // policy's open decision covers both, and is safe despite the open being asynchronous: startPolling() and every
+        // setter queue to the SAME worker thread, and Qt delivers queued events in order, so openDevice has run before
+        // the first config command is handled.
         if (m_applyKpodPlusConfig)
             m_applyKpodPlusConfig();
     }
@@ -454,7 +448,7 @@ void HardwareController::onKpodEncoderRotatedWithRocker(int ticks, int rockerPos
 
 void HardwareController::onKpodPollError(const QString &error) {
     // Deliberately a log line and not a notification: this arrives from a polling loop and can
-    // repeat at the poll rate, so a popup per occurrence would bury the screen. The user-visible
-    // signal for "the device is gone" is the deviceDisconnected notification, which fires once.
+    // repeat at the poll rate, so a popup per occurrence would bury the screen. The operator hears
+    // that the device is gone once, from applyKpod() / applyKpodPlus().
     qCWarning(lcHardware) << "KPOD/KPOD+ poll error:" << error;
 }
