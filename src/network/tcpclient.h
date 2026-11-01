@@ -10,6 +10,7 @@
 #include "connect_failure.h"
 #include "pingtracker.h"
 #include "protocol.h"
+#include "settings/radiosettings.h"
 #include "utils/latencyhistogram.h"
 
 class KzEgress;
@@ -44,7 +45,8 @@ public:
      * `QMetaObject::invokeMethod` (checked at compile time).
      */
     void connectToHost(const QString &host, quint16 port, const QString &password, bool useTls = false,
-                       const QString &identity = QString(), int encodeMode = 3, int streamingLatency = 3);
+                       const QString &identity = QString(), int encodeMode = RadioEntry::EncodeModeDefault,
+                       int streamingLatency = RadioEntry::StreamingLatencyDefault);
     void disconnectFromHost();
     bool isConnected() const;
     ConnectionState connectionState() const;
@@ -120,9 +122,9 @@ private:
     quint16 m_port;
     QString m_password; // Also used as PSK when TLS enabled
     bool m_useTls;
-    QString m_identity;     // TLS-PSK identity (optional)
-    int m_encodeMode;       // Audio encode mode (0-3)
-    int m_streamingLatency; // Remote streaming audio latency (0-7)
+    QString m_identity;                                           // TLS-PSK identity (optional)
+    int m_encodeMode = RadioEntry::EncodeModeDefault;             // Audio encode mode (0-3)
+    int m_streamingLatency = RadioEntry::StreamingLatencyDefault; // Remote streaming audio latency (0-7)
     // WHY atomic: m_state is written on the IO thread (this object's affinity)
     // by setState() and read on the main thread via connectionState() →
     // ConnectionController::connectionState() → MainWindow seeding paths. A

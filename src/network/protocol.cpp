@@ -33,26 +33,27 @@ void Protocol::parse(const QByteArray &data) {
         // Discard any data before the start marker
         m_readOffset = startPos;
 
-        // Check if we have enough data for the header (4 marker + 4 length = 8 bytes)
+        // Check if we have enough data for the header (start marker + length)
         const qsizetype available = m_buffer.size() - m_readOffset;
-        if (available < 8) {
+        if (available < K4Protocol::FRAME_HEADER_SIZE) {
             break;
         }
 
         const char *packet = m_buffer.constData() + m_readOffset;
 
         // Read payload length (big-endian uint32)
-        const quint32 payloadLength = qFromBigEndian<quint32>(reinterpret_cast<const uchar *>(packet + 4));
+        const quint32 payloadLength =
+            qFromBigEndian<quint32>(reinterpret_cast<const uchar *>(packet + K4Protocol::MARKER_SIZE));
         if (payloadLength > K4Protocol::MAX_PAYLOAD_SIZE) {
             // Not a packet: waiting for this many bytes would stall every packet behind it.
             qCWarning(lcCatRx) << "Invalid K4 packet: announced length" << payloadLength << "exceeds"
                                << K4Protocol::MAX_PAYLOAD_SIZE;
-            m_readOffset += 4;
+            m_readOffset += K4Protocol::MARKER_SIZE;
             continue;
         }
 
-        // Calculate total packet size: start(4) + length(4) + payload + end(4)
-        const qint64 totalPacketSize = 4 + 4 + qint64(payloadLength) + 4;
+        // Calculate total packet size: start marker + length + payload + end marker
+        const qint64 totalPacketSize = qint64(payloadLength) + K4Protocol::FRAME_OVERHEAD;
 
         // Check if we have the complete packet
         if (available < totalPacketSize) {
@@ -60,14 +61,15 @@ void Protocol::parse(const QByteArray &data) {
         }
 
         // Verify end marker
-        if (std::memcmp(packet + totalPacketSize - 4, K4Protocol::END_MARKER.constData(), 4) != 0) {
+        if (std::memcmp(packet + totalPacketSize - K4Protocol::MARKER_SIZE, K4Protocol::END_MARKER.constData(),
+                        K4Protocol::MARKER_SIZE) != 0) {
             // Invalid packet, skip past the start marker and try again
             qCWarning(lcCatRx) << "Invalid K4 packet: bad end marker";
-            m_readOffset += 4;
+            m_readOffset += K4Protocol::MARKER_SIZE;
             continue;
         }
 
-        const QByteArray payload = m_buffer.mid(m_readOffset + 8, payloadLength);
+        const QByteArray payload = m_buffer.mid(m_readOffset + K4Protocol::FRAME_HEADER_SIZE, payloadLength);
         m_readOffset += totalPacketSize;
 
         // WHY m_readOffset is a member: a slot reached from here may reset() the protocol (a
@@ -91,8 +93,8 @@ void Protocol::processPacket(const QByteArray &payload) {
     switch (type) {
     case K4Protocol::CAT: {
         // CAT response: [0x00][0x00][0x00][ASCII data]
-        if (payload.size() > 3) {
-            QString response = QString::fromLatin1(payload.mid(3));
+        if (payload.size() > K4Protocol::CatPacket::HEADER_SIZE) {
+            QString response = QString::fromLatin1(payload.mid(K4Protocol::CatPacket::HEADER_SIZE));
             qCDebug(lcCatRx) << response;
             emit catResponseReceived(response);
         }
@@ -151,16 +153,16 @@ void Protocol::processPacket(const QByteArray &payload) {
 
 QByteArray Protocol::buildPacket(const QByteArray &payload) {
     QByteArray packet;
-    packet.reserve(payload.size() + 12);
+    packet.reserve(payload.size() + K4Protocol::FRAME_OVERHEAD);
 
     // Start marker
     packet.append(K4Protocol::START_MARKER);
 
     // Payload length (big-endian)
     quint32 length = payload.size();
-    char lengthBytes[4];
+    char lengthBytes[K4Protocol::LENGTH_SIZE];
     qToBigEndian(length, reinterpret_cast<uchar *>(lengthBytes));
-    packet.append(lengthBytes, 4);
+    packet.append(lengthBytes, K4Protocol::LENGTH_SIZE);
 
     // Payload
     packet.append(payload);
@@ -172,31 +174,30 @@ QByteArray Protocol::buildPacket(const QByteArray &payload) {
 }
 
 QByteArray Protocol::buildCATPacket(const QString &command) {
-    QByteArray payload;
-    payload.append(static_cast<char>(K4Protocol::CAT));
-    payload.append('\x00');
-    payload.append('\x00');
-    payload.append(command.toLatin1());
-
-    return buildPacket(payload);
+    // One spelling of the CAT frame: writeCATPacket's, into a buffer sized for it.
+    const QByteArray text = command.toLatin1();
+    QByteArray packet(qsizetype(kCatPacketOverhead) + text.size(), Qt::Uninitialized);
+    writeCATPacket(std::string_view(text.constData(), std::size_t(text.size())), packet.data(),
+                   std::size_t(packet.size()));
+    return packet;
 }
 
 std::size_t Protocol::writeCATPacket(std::string_view command, char *out, std::size_t capacity) {
-    const std::size_t payloadLength = 3 + command.size();
+    const std::size_t payloadLength = K4Protocol::CatPacket::HEADER_SIZE + command.size();
     const std::size_t total = kCatPacketOverhead + command.size();
     if (total > capacity)
         return 0;
     char *p = out;
-    std::memcpy(p, K4Protocol::START_MARKER.constData(), 4);
-    p += 4;
+    std::memcpy(p, K4Protocol::START_MARKER.constData(), K4Protocol::MARKER_SIZE);
+    p += K4Protocol::MARKER_SIZE;
     qToBigEndian(static_cast<quint32>(payloadLength), reinterpret_cast<uchar *>(p));
-    p += 4;
+    p += K4Protocol::LENGTH_SIZE;
     *p++ = static_cast<char>(K4Protocol::CAT);
     *p++ = '\x00';
     *p++ = '\x00';
     std::memcpy(p, command.data(), command.size());
     p += command.size();
-    std::memcpy(p, K4Protocol::END_MARKER.constData(), 4);
+    std::memcpy(p, K4Protocol::END_MARKER.constData(), K4Protocol::MARKER_SIZE);
     return total;
 }
 
@@ -223,7 +224,7 @@ QByteArray Protocol::buildAudioPacket(const QByteArray &audioData, quint8 sequen
     // Byte 7+:   Audio data (format depends on encode mode)
 
     QByteArray payload;
-    payload.reserve(7 + audioData.size());
+    payload.reserve(K4Protocol::AudioPacket::HEADER_SIZE + audioData.size());
 
     payload.append(static_cast<char>(K4Protocol::Audio)); // 0x01
     payload.append(static_cast<char>(0x01));              // Version

@@ -21,6 +21,12 @@ namespace K4Protocol {
 inline const QByteArray START_MARKER = QByteArray::fromHex("FEFDFCFB");
 inline const QByteArray END_MARKER = QByteArray::fromHex("FBFCFDFE");
 
+// Frame layout around the payload: START_MARKER, the big-endian payload length, END_MARKER.
+constexpr int MARKER_SIZE = 4;
+constexpr int LENGTH_SIZE = 4;
+constexpr int FRAME_HEADER_SIZE = MARKER_SIZE + LENGTH_SIZE;    // before the payload
+constexpr int FRAME_OVERHEAD = FRAME_HEADER_SIZE + MARKER_SIZE; // 12: header plus END_MARKER
+
 // Payload types (first byte of payload)
 enum PayloadType : quint8 {
     CAT = 0x00,    // CAT command (ASCII)
@@ -49,6 +55,11 @@ constexpr int MAX_BUFFER_SIZE = 1024 * 1024; // CatServer: 1 MB of client input 
 // A whole 222 s CAT session captured on port 9200, menus included, was 108 KB; 256 KiB is over twice
 // that. The bound also caps how long a bogus length can stall parsing.
 constexpr quint32 MAX_PAYLOAD_SIZE = 256 * 1024;
+
+// CAT packet (Type 0x00): [0x00][0x00][0x00][ASCII command or response]
+namespace CatPacket {
+constexpr int HEADER_SIZE = 3; // type byte and two zero bytes
+} // namespace CatPacket
 
 // PAN packet byte offsets (Type 0x02)
 namespace PanPacket {
@@ -130,7 +141,7 @@ public:
     // The same packet as buildCATPacket, framed into a caller's buffer: no allocation, for the KZ
     // egress on the I/O thread. Returns the packet length, or 0 if it does not fit in `capacity`.
     static std::size_t writeCATPacket(std::string_view command, char *out, std::size_t capacity);
-    static constexpr std::size_t kCatPacketOverhead = 4 + 4 + 3 + 4; // markers, length, CAT header
+    static constexpr std::size_t kCatPacketOverhead = K4Protocol::FRAME_OVERHEAD + K4Protocol::CatPacket::HEADER_SIZE;
 
     // Build authentication data (SHA-384 hash as hex string)
     static QByteArray buildAuthData(const QString &password);

@@ -1,6 +1,7 @@
 #include "tcpclient.h"
 #include "logging/logcategories.h"
 #include "network/kzegress.h"
+#include "network/tlsbackend.h"
 #include <QDateTime>
 #include <QHostInfo>
 #include <QLoggingCategory>
@@ -20,8 +21,7 @@ static_assert(static_cast<int>(ConnectFailure::Phase::Connected) == TcpClient::C
 TcpClient::TcpClient(QObject *parent)
     : QObject(parent), m_socket(new QSslSocket(this)), m_protocol(new Protocol(this)), m_authTimer(new QTimer(this)),
       m_connectTimer(new QTimer(this)), m_pingTimer(new QTimer(this)), m_retryTimer(new QTimer(this)),
-      m_port(K4Protocol::DEFAULT_PORT), m_useTls(false), m_encodeMode(3), m_streamingLatency(3),
-      m_authResponseReceived(false), m_kzEgress(new KzEgress(this)) {
+      m_port(K4Protocol::DEFAULT_PORT), m_useTls(false), m_authResponseReceived(false), m_kzEgress(new KzEgress(this)) {
     connect(m_kzEgress, &KzEgress::framesReady, this, &TcpClient::writeKzFrames);
 
     // Socket signals
@@ -195,22 +195,8 @@ void TcpClient::attemptConnection() {
         sslConfig.setProtocol(QSsl::TlsV1_2OrLater);
         sslConfig.setPeerVerifyMode(QSslSocket::VerifyNone); // PSK doesn't use certificates
 
-        // Filter to only TLS 1.2+ PSK ciphers
-        QList<QSslCipher> tls12PskCiphers;
-        if (m_retryCount == 0) {
-            qCDebug(lcLinkTcp) << "=== Available PSK Ciphers ===";
-        }
-        for (const QSslCipher &cipher : QSslConfiguration::supportedCiphers()) {
-            if (cipher.name().contains("PSK")) {
-                if (m_retryCount == 0) {
-                    qCDebug(lcLinkTcp) << "  " << cipher.name() << "(" << cipher.protocolString() << ")";
-                }
-                // Only include TLS 1.2+ ciphers
-                if (cipher.protocol() == QSsl::TlsV1_2 || cipher.protocol() == QSsl::TlsV1_3) {
-                    tls12PskCiphers.append(cipher);
-                }
-            }
-        }
+        // Only TLS 1.2+ PSK ciphers
+        const QList<QSslCipher> tls12PskCiphers = TlsBackend::tlsPskCiphers();
         if (m_retryCount == 0) {
             qCDebug(lcLinkTcp) << "=== Offering" << tls12PskCiphers.size() << "TLS 1.2+ PSK ciphers ===";
             for (const QSslCipher &cipher : tls12PskCiphers) {

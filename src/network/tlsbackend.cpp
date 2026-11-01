@@ -133,11 +133,8 @@ int runSelfCheck() {
 
     QStringList psk;
     if (supportsSsl) {
-        for (const QSslCipher &cipher : QSslConfiguration::supportedCiphers()) {
-            if (cipher.name().contains(QLatin1String("PSK")) &&
-                (cipher.protocol() == QSsl::TlsV1_2 || cipher.protocol() == QSsl::TlsV1_3))
-                psk << cipher.name();
-        }
+        for (const QSslCipher &cipher : tlsPskCiphers())
+            psk << cipher.name();
     }
     const QString libssl = loadedLibSslPath();
     const bool pass = active == OpenSsl && supportsSsl && !psk.isEmpty();

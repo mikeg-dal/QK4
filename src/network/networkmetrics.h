@@ -1,6 +1,7 @@
 #ifndef NETWORKMETRICS_H
 #define NETWORKMETRICS_H
 
+#include "audio/rxplayout.h"
 #include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
@@ -27,9 +28,8 @@ public:
         float value;
     };
 
-    // WHY 96: the RX queue holds decoded audio at 12 kHz, stereo, Float32 - 12000 x 2 x 4 bytes per
-    // second, so 96 bytes are one millisecond of playback.
-    static constexpr double kDecodedBytesPerMs = 96.0;
+    // The RX queue holds decoded audio at 12 kHz, stereo, Float32; RxPlayout owns that size.
+    static constexpr double kDecodedBytesPerMs = RxPlayout::BYTES_PER_MS;
 
     explicit NetworkMetrics(QObject *parent = nullptr);
 
