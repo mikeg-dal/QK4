@@ -106,7 +106,9 @@ in branch protection. CodeQL's results survive a rename only because `ci-codeql.
 The Linux jobs build with `--parallel 4`, the hosted runner's core count, never a bare
 `--parallel`: under Makefiles that is an unlimited `make -j`, which ran the RTSan runner out of
 memory. Built serially, the CodeQL job's build reached 46 min and then passed its 60-min limit
-(2026-11-01), and the unit and ASAN builds took 12 and 15 min.
+(2026-11-01), and the unit and ASAN builds took 12 and 15 min. CodeQL builds only the `QK4`
+target: with 4 jobs the full build still took 31 min, because the test executables recompile
+the app sources they test and CodeQL extracts each of those compiles again.
 
 The unit, ASAN + UBSAN and RTSan jobs keep a ccache per job (`hendrikmuhs/ccache-action`, saved
 in its post step), so a push recompiles only what changed. `ci-codeql.yml` does not: CodeQL
