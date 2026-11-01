@@ -98,10 +98,6 @@ signals:
     void clientCountChanged(int count);
     void clientsChanged(const QVector<TciClientInfo> &clients);
 
-    // A TCI client keyed or unkeyed the transmitter, so the UI can follow it the way it already
-    // follows CatServer::pttRequested.
-    void transmittingChanged(bool transmitting);
-
 private:
     // Constructor wiring, in four groups rather than one 287-line block with 46 connect() calls
     // (banned shape #3, src/controllers/README.md). Called in this order; each is independent.
@@ -110,6 +106,9 @@ private:
     void wireTransmit();
     void wireCatSets();
     void wireSnapshot();
+
+    // Tell the server that whichever client held PTT no longer does.
+    void releaseClientPtt();
 
     // Reads RadioState on the MAIN thread and pushes a whole snapshot across to the TCI thread.
     // RadioState is main-thread-only and CI-enforced with no locking on its getters, so the TCI

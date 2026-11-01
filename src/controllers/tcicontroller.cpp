@@ -307,7 +307,7 @@ void TciController::wireTransmit() {
                     // holds PTT, which is exactly the case when the client unkeyed itself through
                     // setPtt and the roster was already told. It does not re-emit pttRequested, so
                     // this cannot recurse back into the handler below.
-                    QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
+                    releaseClientPtt();
                 });
     }
 
@@ -340,13 +340,12 @@ void TciController::wireTransmit() {
                     // right call because it broadcasts trx:false WITHOUT re-emitting pttRequested,
                     // which is what stops this recursing. TransmitController logs the refusal and
                     // who holds it, so this does not log again.
-                    QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
+                    releaseClientPtt();
                 }
             } else {
                 m_transmitController->release(TransmitOwner::Owner::TciClient);
             }
             m_drivingPtt = false;
-            emit transmittingChanged(transmitting);
         });
 
         // QK4 ITSELF KEYED OR UNKEYED - Esc, the PTT button, the HaliKey PTT line, the side panel,
@@ -362,17 +361,16 @@ void TciController::wireTransmit() {
         // fixed here in the other direction - the operator acts, nothing happens, and nothing
         // anywhere says why. Taking over is also the only option that leaves the audio path
         // matching what the operator can hear.
-        connect(m_audioController, &AudioController::pttActiveChanged, this, [this](bool active) {
+        connect(m_audioController, &AudioController::pttActiveChanged, this, [this]() {
             if (m_drivingPtt) {
                 return; // this controller asked for it, not the operator
             }
-            QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
+            releaseClientPtt();
             // WHY no TX source write here: TransmitController is the only thing that moves the gate,
             // and its apply() already sets the source on both edges in the one order that is safe -
             // before the gate on a press, queued behind the close on a release. A second writer here
             // is what put the room microphone on the air in #161: it switched the source while the
             // queued gate close was still in flight.
-            emit transmittingChanged(active);
         });
 
         // TX audio itself is routed in setAudioEnabled: TCI thread -> TX thread, not through here.
@@ -394,8 +392,7 @@ void TciController::wireCatSets() {
         connect(m_connectionController, &ConnectionController::connectionStateChanged, this,
                 [this](TcpClient::ConnectionState state) {
                     if (state == TcpClient::Disconnected) {
-                        QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
-                        emit transmittingChanged(false);
+                        releaseClientPtt();
                     }
                 });
 
@@ -654,7 +651,12 @@ void TciController::releaseClientTransmitter() {
     // emits ownerChanged, which is now wired in wireTransmit and does exactly that - for this path
     // and for a local takeover alike. Telling it here as well would be a second route to the same
     // state, and two routes are how the takeover case came to be missed in the first place.
-    emit transmittingChanged(false);
+}
+
+// WHY queued: the server lives on the TCI thread. releaseLocalPtt broadcasts trx:false without
+// re-emitting pttRequested, so no caller here can recurse through it.
+void TciController::releaseClientPtt() {
+    QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
 }
 
 void TciController::sendCwMacro(const QVector<CwMacroSegment> &segments) {
