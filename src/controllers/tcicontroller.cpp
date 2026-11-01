@@ -199,6 +199,8 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     m_bridge->moveToThread(m_tciThread);
     m_tciThread->start();
 
+    connect(m_server, &TciServer::listeningChanged, this, &TciController::onServerListeningChanged);
+
     // The wiring lives in helpers rather than one block - see each for what it covers.
     wireAudioAndClients();
     wireTransmit();
@@ -932,35 +934,38 @@ void TciController::start(quint16 port, bool loopbackOnly) {
     // client can arrive, or the first audio subscription races the wiring that serves it.
     connectRxAudioFanout();
 
-    bool ok = false;
-    QMetaObject::invokeMethod(m_server, &TciServer::start, Qt::BlockingQueuedConnection, qReturnArg(ok), port,
-                              loopbackOnly);
-
-    // A listener that failed to bind serves nobody, so it should not be left paying for the
-    // fan-out either.
-    if (!ok) {
-        disconnectRxAudioFanout();
-    }
-    // Blocking, so the result is authoritative by the time it lands here.
-    m_listening = ok;
-    emit listeningChanged(ok, ok ? port : quint16(0));
+    // WHY queued, not blocking: this runs on the main thread whenever the TCI setting or port
+    // changes, and a blocking call would freeze the window for as long as the TCI thread is busy,
+    // with no limit. The result comes back as TciServer::listeningChanged.
+    ++m_serverRequestsInFlight;
+    TciServer *server = m_server;
+    QMetaObject::invokeMethod(
+        server, [server, port, loopbackOnly]() { server->start(port, loopbackOnly); }, Qt::QueuedConnection);
 }
 
 void TciController::stop() {
-    QMetaObject::invokeMethod(m_server, &TciServer::stop, Qt::BlockingQueuedConnection);
+    ++m_serverRequestsInFlight;
+    QMetaObject::invokeMethod(m_server, &TciServer::stop, Qt::QueuedConnection);
+}
 
-    // AFTER the server is down, mirroring the order in start(). Dropping it first would leave a
-    // still-subscribed client silent for the width of the blocking call above rather than
-    // disconnected.
-    disconnectRxAudioFanout();
+// The TCI thread's answer to one start() or stop(). Queued to this thread; a request still in
+// flight when this controller is destroyed is dropped with it (~QObject removes pending events).
+void TciController::onServerListeningChanged(bool listening, quint16 port) {
+    if (m_serverRequestsInFlight > 0 && --m_serverRequestsInFlight > 0) {
+        return; // a later request is still coming; its answer is the one that counts
+    }
 
-    m_listening = false;
-    // The server emits clientDisconnected for each session it tears down, so the queued
-    // clientCountChanged would converge on its own - but not before this function returns, and a
-    // page repainting on listeningChanged would show a listener that is down with clients still
-    // attached to it.
-    m_clientCount = 0;
-    m_clients.clear();
-    emit clientsChanged(m_clients);
-    emit listeningChanged(false, 0);
+    if (!listening) {
+        // AFTER the server is down, mirroring the order in start(). A listener that failed to
+        // bind serves nobody either, so it should not be left paying for the fan-out.
+        disconnectRxAudioFanout();
+        // The server emits clientDisconnected for each session it tears down, so the queued
+        // clientCountChanged would converge on its own - but a page repainting on listeningChanged
+        // would show a listener that is down with clients still attached to it.
+        m_clientCount = 0;
+        m_clients.clear();
+        emit clientsChanged(m_clients);
+    }
+    m_listening = listening;
+    emit listeningChanged(listening, port);
 }

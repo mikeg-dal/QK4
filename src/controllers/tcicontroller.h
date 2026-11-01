@@ -65,7 +65,8 @@ public:
     // sidetone teardown that is there for the same class of reason.
     void shutdown();
 
-    // Both marshal to the TCI thread. start() is idempotent.
+    // Both post to the TCI thread and return at once; listeningChanged reports the result once
+    // every request posted so far has finished. start() is idempotent.
     void start(quint16 port, bool loopbackOnly = true);
     void stop();
 
@@ -138,6 +139,7 @@ private:
     // TCI do not pay a queued cross-thread event per received audio packet.
     void connectRxAudioFanout();
     void disconnectRxAudioFanout();
+    void onServerListeningChanged(bool listening, quint16 port);
     QMetaObject::Connection m_rxAudioFanout;
 
     // Set once the transmitter has been handed back, so closeEvent and the destructor cannot do it
@@ -170,6 +172,10 @@ private:
     bool m_drivingPtt = false;
 
     bool m_listening = false;
+    // start()/stop() calls posted to the TCI thread whose listeningChanged has not come back yet.
+    // Only the answer that brings this to 0 is applied, so a stop+start (a port change) or a quick
+    // off/on lands on the last request instead of flickering through the ones before it.
+    int m_serverRequestsInFlight = 0;
     int m_clientCount = 0;
     QVector<TciClientInfo> m_clients;
 };

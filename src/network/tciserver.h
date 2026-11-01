@@ -94,6 +94,11 @@ public:
     Q_INVOKABLE void sendRxAudio(const std::vector<float> &interleavedStereo, int sampleRate = 48000);
 
 signals:
+    // After every start() and stop(): whether the listener is now up, and on which port (0 when
+    // down). Lets the owner on another thread post start/stop and learn the result without
+    // blocking on this thread.
+    void listeningChanged(bool listening, quint16 port);
+
     // A client asked for audio, or stopped. The audio source uses these to start and stop work
     // rather than producing frames nobody wants.
     void audioStartRequested(int receiver);

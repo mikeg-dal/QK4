@@ -136,6 +136,30 @@ private slots:
 
     // ---- over a real socket -------------------------------------------------------------------
 
+    // TciController posts start/stop to the TCI thread and learns the result only from this.
+    void reportsListeningAfterEveryStartAndStop() {
+        TciServer server;
+        QSignalSpy spy(&server, &TciServer::listeningChanged);
+        QVERIFY(server.start(0));
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), true);
+        QVERIFY(spy.at(0).at(1).value<quint16>() != 0); // the port actually bound, not the 0 asked for
+        QCOMPARE(spy.at(0).at(1).value<quint16>(), server.port());
+
+        // A second listener on the same port cannot bind; it says so rather than staying silent.
+        TciServer clash;
+        QSignalSpy clashSpy(&clash, &TciServer::listeningChanged);
+        QVERIFY(!clash.start(server.port()));
+        QCOMPARE(clashSpy.count(), 1);
+        QCOMPARE(clashSpy.at(0).at(0).toBool(), false);
+        QCOMPARE(clashSpy.at(0).at(1).value<quint16>(), quint16(0));
+
+        server.stop();
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(1).at(0).toBool(), false);
+        QCOMPARE(spy.at(1).at(1).value<quint16>(), quint16(0));
+    }
+
     void sendsTheBurstOnConnect() {
         TciServer server;
         QVERIFY(server.start(0));

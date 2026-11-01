@@ -39,7 +39,9 @@ TciServer::~TciServer() {
 }
 
 bool TciServer::start(quint16 port, bool loopbackOnly) {
-    return m_socketServer->start(port, loopbackOnly);
+    const bool ok = m_socketServer->start(port, loopbackOnly);
+    emit listeningChanged(ok, ok ? this->port() : quint16(0));
+    return ok;
 }
 
 void TciServer::stop() {
@@ -71,6 +73,7 @@ void TciServer::stop() {
     if (hadClients) {
         announceClients(/*force=*/true);
     }
+    emit listeningChanged(false, 0);
 }
 
 QVector<TciClientInfo> TciServer::clients() const {
