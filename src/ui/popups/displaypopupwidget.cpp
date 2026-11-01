@@ -490,7 +490,9 @@ void DisplayPopupWidget::onMenuItemClicked(MenuItem item) {
         }
 
         // Server-authoritative: set, then read back. The K4 does not echo #FXT/#FXA
-        // SETs at AI4 (QK4's operating mode), so we append a GET; the reply flows
+        // SETs (observed). QK4's link runs at AI4, which RDY; enables (owner-confirmed on
+        // a K4, not in D12), and AI4 does not report changes made over this link (D12:
+        // "4 = Immediate notification of changes not made by client"). So we append a GET; the reply flows
         // through RadioState -> setFixedTuneMode() and updates the label. No
         // optimistic write here, so the displayed mode can never diverge from the radio.
         emit catCommandRequested(RadioUtils::fixedTuneSetCommand(next) + "#FXA;#FXT;");

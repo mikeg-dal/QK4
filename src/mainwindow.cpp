@@ -415,9 +415,11 @@ void MainWindow::setupCatServer() {
     // Forward CAT commands from external apps to the real K4
     connect(m_catServer, &CatServer::catCommandReceived, this, [this](const QString &command) {
         m_connectionController->sendCAT(command);
-        // Applied at once as well: the radio does not report a change made over QK4's own link at
-        // AI4, and even when it does, spectrum frames move ahead of the echo and the passband would
-        // leave the screen until it lands. The handlers read a client's SET the way the K4 does (FA
+        // Applied at once as well: RDY; puts QK4's link in AI4 (owner-confirmed on a K4; not in
+        // the Programmer's Reference D12), and AI4 does not report a change made over this link
+        // (D12: "4 = Immediate notification of changes not made by client"). Where a reply does
+        // come, spectrum frames move ahead of it and the passband would leave the screen until it
+        // lands. The handlers read a client's SET the way the K4 does (FA
         // short forms, undefined MD codes ignored), and a SET the radio refuses as out of range is
         // answered with its current value, which corrects this.
         m_radioState->parseCATCommand(command);

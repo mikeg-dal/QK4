@@ -455,8 +455,9 @@ void PopupManager::wireDisplayPopup() {
     };
     // WTR CLRS +/- : the radio's waterfall colour range, #WBS (LCD) or #HWBS (EXT), 5-30
     // (Programmer's Reference D12: "#WBSn; where n is 5 to 30"). Nothing is sent until the radio has
-    // reported a value to step from; the radio's echo (AI5) and the optimistic parse update both
-    // pans and this popup through RadioState.
+    // reported a value to step from. The optimistic parse updates both pans and this popup through
+    // RadioState: QK4's link runs at AI4 (RDY; enables it), which does not report a change made
+    // over this link (D12: "4 = Immediate notification of changes not made by client").
     auto adjustWaterfallColorRange = [this](int delta) {
         const bool isExt = m_displayPopup->isExtEnabled() && !m_displayPopup->isLcdEnabled();
         const int current = isExt ? m_radioState->waterfallColorRangeExt() : m_radioState->waterfallColorRange();
