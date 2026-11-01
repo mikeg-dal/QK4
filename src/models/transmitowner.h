@@ -8,9 +8,8 @@
 //
 // WHY this exists at all: QK4 had no owner of "are we transmitting". Several producers each wrote
 // an audio gate and a button independently, only one of them put TX;/RX; on the wire, the radio's
-// own TX state was never fed back, and no disconnect path released anything. That is the G1
-// violation in AUDIT.md, and AUD-001 / INT-001 / INT-002 are three symptoms of it rather than three
-// bugs.
+// own TX state was never fed back, and no disconnect path released anything. AUD-001 / INT-001 /
+// INT-002 were three symptoms of that rather than three bugs.
 //
 // The design separates three things that were tangled into one:
 //

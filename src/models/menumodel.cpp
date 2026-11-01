@@ -1,7 +1,6 @@
 #include "menumodel.h"
 
 #include "models/radiostate/spectrumdisplaystate.h"
-#include <QSet>
 #include <QUrl>
 #include <algorithm>
 #include <utility>
@@ -68,16 +67,6 @@ QList<int> MenuModel::itemIds(const QString &nameFilter) const {
         ids.append(item->id);
     }
     return ids;
-}
-
-QStringList MenuModel::getCategories() const {
-    QSet<QString> categories;
-    for (const auto &item : m_items) {
-        categories.insert(item.category);
-    }
-    QStringList result = categories.values();
-    result.sort();
-    return result;
 }
 
 void MenuModel::clear() {

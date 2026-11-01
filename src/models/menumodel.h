@@ -79,7 +79,6 @@ public:
     // Ids of every item whose name contains nameFilter (case-insensitive; empty matches all),
     // ordered by name for display.
     QList<int> itemIds(const QString &nameFilter = QString()) const;
-    QStringList getCategories() const;
 
     int count() const { return m_items.size(); }
     void clear();

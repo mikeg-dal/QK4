@@ -85,7 +85,6 @@ public:
     // Mode and filter — backed by m_modeFilterState.
     Mode mode() const { return static_cast<Mode>(m_modeFilterState.mode); }
     Mode modeB() const { return static_cast<Mode>(m_modeFilterState.modeB); }
-    QString modeString() const;
     int filterBandwidth() const { return m_modeFilterState.filterBandwidth; }
     int filterBandwidthB() const { return m_modeFilterState.filterBandwidthB; }
     int filterPosition() const { return m_modeFilterState.filterPosition; }
@@ -291,7 +290,6 @@ public:
     // State is tracked internally (toggled when SW44 is sent)
     bool bSetEnabled() const { return m_rxTxMeterState.bSetEnabled.isOn(); }
     void setBSetEnabled(bool enabled);
-    void toggleBSet() { setBSetEnabled(!bSetEnabled()); }
     // Mode and DATA sub-mode of the receiver B SET points the filter controls at: VFO B's while
     // B SET is on, VFO A's otherwise. Their limits must come from the receiver they adjust.
     Mode filterTargetMode() const { return bSetEnabled() ? modeB() : mode(); }
@@ -322,7 +320,6 @@ public:
     int monitorLevelCW() const { return m_audioEffectsState.monitorLevelCW; }
     int monitorLevelData() const { return m_audioEffectsState.monitorLevelData; }
     int monitorLevelVoice() const { return m_audioEffectsState.monitorLevelVoice; }
-    int monitorLevelForCurrentMode() const;
     // Returns the ML mode code (0/1/2) for the current operating mode
     int monitorModeCode() const;
     // Settings group (SD / VX letter, ML digit) of VFO A's mode and DATA sub-mode: CW and direct
@@ -372,7 +369,6 @@ public:
 
     // Panadapter REF level (Sub)
     int refLevelB() const { return m_spectrumDisplayState.refLevelB; }
-    void setRefLevelB(int level);
 
     // Step Main's or Sub's REF by `steps` dB and apply it optimistically; returns the level to send
     // as #REF / #REF$, or nothing (AutoRef on, no REF reported yet, at the limit). Every REF +/- in
@@ -471,39 +467,22 @@ public:
 
     // Antenna Configuration Masks (ACM/ACS/ACT) — backed by m_antennaState.
     bool mainRxDisplayAll() const { return m_antennaState.mainRxDisplayAll.valueOr(true); }
-    bool mainRxAntEnabled(int index) const {
-        return (index >= 0 && index < 7) ? m_antennaState.mainRxAntMask[index] : false;
-    }
     QVector<bool> mainRxAntMask() const {
         return QVector<bool>(m_antennaState.mainRxAntMask, m_antennaState.mainRxAntMask + 7);
     }
 
     bool subRxDisplayAll() const { return m_antennaState.subRxDisplayAll.valueOr(true); }
-    bool subRxAntEnabled(int index) const {
-        return (index >= 0 && index < 7) ? m_antennaState.subRxAntMask[index] : false;
-    }
     QVector<bool> subRxAntMask() const {
         return QVector<bool>(m_antennaState.subRxAntMask, m_antennaState.subRxAntMask + 7);
     }
 
     bool txDisplayAll() const { return m_antennaState.txDisplayAll.valueOr(true); }
-    bool txAntEnabled(int index) const { return (index >= 0 && index < 3) ? m_antennaState.txAntMask[index] : false; }
     QVector<bool> txAntMask() const { return QVector<bool>(m_antennaState.txAntMask, m_antennaState.txAntMask + 3); }
-
-    // Optimistic setters for antenna config (radio doesn't echo)
-    void setMainRxAntConfig(bool displayAll, const QVector<bool> &mask);
-    void setSubRxAntConfig(bool displayAll, const QVector<bool> &mask);
-    void setTxAntConfig(bool displayAll, const QVector<bool> &mask);
 
     // Line Out levels (LO command)
     int lineOutLeft() const { return m_audioEffectsState.lineOutLeft; }
     int lineOutRight() const { return m_audioEffectsState.lineOutRight; }
     bool lineOutRightEqualsLeft() const { return m_audioEffectsState.lineOutRightEqualsLeft.isOn(); }
-
-    // Optimistic setters for Line Out
-    void setLineOutLeft(int level);
-    void setLineOutRight(int level);
-    void setLineOutRightEqualsLeft(bool enabled);
 
     // Line In levels and source (LI command)
     int lineInSoundCard() const { return m_audioEffectsState.lineInSoundCard; }
@@ -568,14 +547,6 @@ public:
 
     // XVTR per-band config — backed by m_xvtrBandState.
     const QVector<XvtrBandConfig> &xvtrBands() const { return m_xvtrBandState.bands; }
-
-    // Optimistic setters for Text Decode
-    void setTextDecodeMode(int mode);
-    void setTextDecodeThreshold(int threshold);
-    void setTextDecodeLines(int lines);
-    void setTextDecodeModeB(int mode);
-    void setTextDecodeThresholdB(int threshold);
-    void setTextDecodeLinesB(int lines);
 
     // Optimistic setters for data sub-mode (radio doesn't echo DT SET commands)
     void setDataSubMode(int subMode);
@@ -891,9 +862,6 @@ private:
 
     // Parse bool from cmd character at charPos, store in member if changed, emit void signal
     void handleBoolPair(const QString &cmd, int charPos, ReportedFlag &member, void (RadioState::*signal)());
-
-    // Parse bool from cmd character at charPos, store in member if changed, emit signal(bool)
-    void handleBoolPairVal(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)(bool));
 
     // =========================================================================
     // Individual Command Handlers (grouped by function)

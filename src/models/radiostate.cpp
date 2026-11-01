@@ -1,6 +1,5 @@
 #include "radiostate.h"
 #include "utils/radioutils.h"
-#include <QDateTime>
 #include <QDebug>
 #include <QThread>
 #include <algorithm>
@@ -146,10 +145,6 @@ QString RadioState::modeToString(Mode mode) {
         break;
     }
     return "";
-}
-
-QString RadioState::modeString() const {
-    return modeToString(mode());
 }
 
 QString RadioState::dataSubModeToString(int subMode) {
@@ -317,10 +312,6 @@ void RadioState::setSpanHz(int spanHz) {
     SpectrumDisplayHandlers::setSpanHz(m_spectrumDisplayState, *this, spanHz);
 }
 
-void RadioState::setRefLevelB(int level) {
-    SpectrumDisplayHandlers::setRefLevelB(m_spectrumDisplayState, *this, level);
-}
-
 std::optional<int> RadioState::stepRefLevel(bool vfoB, int steps) {
     return SpectrumDisplayHandlers::stepRefLevel(m_spectrumDisplayState, *this, vfoB, steps);
 }
@@ -343,29 +334,6 @@ void RadioState::setTxEqBand(int index, int dB) {
 
 void RadioState::setTxEqBands(const QVector<int> &bands) {
     AudioEffectsHandlers::setTxEqBands(m_audioEffectsState, *this, bands);
-}
-
-// Antenna config setters — delegate to AntennaHandlers namespace.
-void RadioState::setMainRxAntConfig(bool displayAll, const QVector<bool> &mask) {
-    AntennaHandlers::setMainRxAntConfig(m_antennaState, *this, displayAll, mask);
-}
-void RadioState::setSubRxAntConfig(bool displayAll, const QVector<bool> &mask) {
-    AntennaHandlers::setSubRxAntConfig(m_antennaState, *this, displayAll, mask);
-}
-void RadioState::setTxAntConfig(bool displayAll, const QVector<bool> &mask) {
-    AntennaHandlers::setTxAntConfig(m_antennaState, *this, displayAll, mask);
-}
-
-void RadioState::setLineOutLeft(int level) {
-    AudioEffectsHandlers::setLineOutLeft(m_audioEffectsState, *this, level);
-}
-
-void RadioState::setLineOutRight(int level) {
-    AudioEffectsHandlers::setLineOutRight(m_audioEffectsState, *this, level);
-}
-
-void RadioState::setLineOutRightEqualsLeft(bool enabled) {
-    AudioEffectsHandlers::setLineOutRightEqualsLeft(m_audioEffectsState, *this, enabled);
 }
 
 // Line In optimistic setters
@@ -404,28 +372,6 @@ void RadioState::setMicRearPreamp(int preamp) {
 
 void RadioState::setMicRearBias(int bias) {
     AudioEffectsHandlers::setMicRearBias(m_audioEffectsState, *this, bias);
-}
-
-// Text Decode optimistic setters — delegate into the TextDecodeHandlers
-// namespace (see models/radiostate/textdecodestate.cpp). Public API shape
-// preserved; the struct holds the state and the handler fns mutate it.
-void RadioState::setTextDecodeMode(int mode) {
-    TextDecodeHandlers::setMode(m_textDecodeState, *this, mode);
-}
-void RadioState::setTextDecodeThreshold(int threshold) {
-    TextDecodeHandlers::setThreshold(m_textDecodeState, *this, threshold);
-}
-void RadioState::setTextDecodeLines(int lines) {
-    TextDecodeHandlers::setLines(m_textDecodeState, *this, lines);
-}
-void RadioState::setTextDecodeModeB(int mode) {
-    TextDecodeHandlers::setModeB(m_textDecodeState, *this, mode);
-}
-void RadioState::setTextDecodeThresholdB(int threshold) {
-    TextDecodeHandlers::setThresholdB(m_textDecodeState, *this, threshold);
-}
-void RadioState::setTextDecodeLinesB(int lines) {
-    TextDecodeHandlers::setLinesB(m_textDecodeState, *this, lines);
 }
 
 // VOX Gain / Anti-VOX / ESSB optimistic setters — delegate into AudioEffectsHandlers.
@@ -470,16 +416,6 @@ void RadioState::handleBoolPair(const QString &cmd, int charPos, ReportedFlag &m
         return;
     if (member.set(cmd.at(charPos) == '1'))
         emit(this->*signal)();
-}
-
-void RadioState::handleBoolPairVal(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)(bool)) {
-    if (cmd.length() <= charPos)
-        return;
-    bool enabled = (cmd.at(charPos) == '1');
-    if (member != enabled) {
-        member = enabled;
-        emit(this->*signal)(enabled);
-    }
 }
 
 // =============================================================================
@@ -601,13 +537,10 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"AP$", [this](const QString &c) { handleAPSub(c); }});
     m_commandHandlers.append(
         {"LK$", [this](const QString &c) { FrequencyVfoHandlers::handleLKSub(m_frequencyVfoState, *this, c); }});
-    // VT$ — deduplicated inline (takes .left(1), qBound)
     m_commandHandlers.append(
         {"VT$", [this](const QString &c) { DataControlHandlers::handleVTSub(m_dataControlState, *this, c); }});
-    // AR$ — deduplicated inline (3-arg signal)
     m_commandHandlers.append(
         {"AR$", [this](const QString &c) { AntennaHandlers::handleARSub(m_antennaState, *this, c); }});
-    // RO$ — inline (custom multi-arg signal).
     // WHY a separate RO$ handler (RIT/XIT offset routing on the K4):
     //   - No split, RIT or XIT active  → offset lives in `RO`  (VFO A, handled below)
     //   - Split + XIT                  → offset lives in `RO$` (VFO B, the TX VFO when split)
@@ -677,12 +610,10 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"GT", [this](const QString &c) { handleGT(c); }});
     m_commandHandlers.append({"AP", [this](const QString &c) { handleAP(c); }});
     m_commandHandlers.append({"LN", [this](const QString &c) { handleLN(c); }});
-    // LK — deduplicated via handleBoolPairVal
     m_commandHandlers.append(
         {"LK", [this](const QString &c) { FrequencyVfoHandlers::handleLK(m_frequencyVfoState, *this, c); }});
     m_commandHandlers.append({"LO", [this](const QString &c) { handleLO(c); }});
     m_commandHandlers.append({"LI", [this](const QString &c) { handleLI(c); }});
-    // VT — deduplicated inline (takes .left(1), qBound)
     m_commandHandlers.append(
         {"VT", [this](const QString &c) { DataControlHandlers::handleVT(m_dataControlState, *this, c); }});
     m_commandHandlers.append({"VX", [this](const QString &c) { handleVX(c); }});
@@ -705,7 +636,6 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"TE", [this](const QString &c) { handleTE(c); }});
     m_commandHandlers.append({"BS", [this](const QString &c) { handleBS(c); }});
     m_commandHandlers.append({"AN", [this](const QString &c) { handleAN(c); }});
-    // AR — deduplicated inline (3-arg signal)
     m_commandHandlers.append({"AR", [this](const QString &c) { AntennaHandlers::handleAR(m_antennaState, *this, c); }});
     m_commandHandlers.append({"AT", [this](const QString &c) { handleAT(c); }});
     m_commandHandlers.append({"RT", [this](const QString &c) { handleRT(c); }});
@@ -1112,18 +1042,6 @@ void RadioState::handleER(const QString &cmd) {
 // The K4 partitions several settings (monitor level, VOX, QSK/VOX delay) by mode
 // class (RadioUtils::ModeClass: CW and direct data / AF data / voice); these
 // select the current class's bucket so callers don't reimplement the switch.
-int RadioState::monitorLevelForCurrentMode() const {
-    switch (modeClass()) {
-    case RadioUtils::ModeClass::CwDirect:
-        return m_audioEffectsState.monitorLevelCW;
-    case RadioUtils::ModeClass::AfData:
-        return m_audioEffectsState.monitorLevelData;
-    case RadioUtils::ModeClass::Voice:
-        break;
-    }
-    return m_audioEffectsState.monitorLevelVoice;
-}
-
 int RadioState::monitorModeCode() const {
     return RadioUtils::monitorModeCode(modeClass());
 }

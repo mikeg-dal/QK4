@@ -133,9 +133,6 @@ void setRxEqBand(AudioEffectsState &state, RadioState &owner, int index, int dB)
 void setRxEqBands(AudioEffectsState &state, RadioState &owner, const QVector<int> &bands);
 void setTxEqBand(AudioEffectsState &state, RadioState &owner, int index, int dB);
 void setTxEqBands(AudioEffectsState &state, RadioState &owner, const QVector<int> &bands);
-void setLineOutLeft(AudioEffectsState &state, RadioState &owner, int level);
-void setLineOutRight(AudioEffectsState &state, RadioState &owner, int level);
-void setLineOutRightEqualsLeft(AudioEffectsState &state, RadioState &owner, bool enabled);
 void setLineInSoundCard(AudioEffectsState &state, RadioState &owner, int level);
 void setLineInJack(AudioEffectsState &state, RadioState &owner, int level);
 void setLineInSource(AudioEffectsState &state, RadioState &owner, int source);

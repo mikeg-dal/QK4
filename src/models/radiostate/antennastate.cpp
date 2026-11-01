@@ -126,40 +126,4 @@ void handleACT(AntennaState &state, RadioState &owner, const QString &cmd) {
         emit owner.txAntCfgChanged();
 }
 
-void setMainRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
-    bool changed = state.mainRxDisplayAll.set(displayAll);
-    for (int i = 0; i < qMin(mask.size(), 7); i++) {
-        if (mask[i] != state.mainRxAntMask[i]) {
-            state.mainRxAntMask[i] = mask[i];
-            changed = true;
-        }
-    }
-    if (changed)
-        emit owner.mainRxAntCfgChanged();
-}
-
-void setSubRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
-    bool changed = state.subRxDisplayAll.set(displayAll);
-    for (int i = 0; i < qMin(mask.size(), 7); i++) {
-        if (mask[i] != state.subRxAntMask[i]) {
-            state.subRxAntMask[i] = mask[i];
-            changed = true;
-        }
-    }
-    if (changed)
-        emit owner.subRxAntCfgChanged();
-}
-
-void setTxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
-    bool changed = state.txDisplayAll.set(displayAll);
-    for (int i = 0; i < qMin(mask.size(), 3); i++) {
-        if (mask[i] != state.txAntMask[i]) {
-            state.txAntMask[i] = mask[i];
-            changed = true;
-        }
-    }
-    if (changed)
-        emit owner.txAntCfgChanged();
-}
-
 } // namespace AntennaHandlers

@@ -201,7 +201,7 @@ private slots:
         QCOMPARE(rs.autoNotchEnabledB(), true);
     }
 
-    // VFO Lock (LK/LK$ — uses handleBoolPairVal helper)
+    // VFO Lock (LK/LK$)
     void testLockA() {
         RadioState rs;
         rs.parseCATCommand("LK1;");
@@ -1309,12 +1309,6 @@ private slots:
         RadioState rs;
         rs.parseCATCommand("TD109;");
         QCOMPARE(rs.textDecodeLines(), 9);
-        rs.setTextDecodeLines(10);
-        QCOMPARE(rs.textDecodeLines(), TextDecodeState::LinesMax);
-        rs.setTextDecodeLinesB(10);
-        QCOMPARE(rs.textDecodeLinesB(), TextDecodeState::LinesMax);
-        rs.setTextDecodeLines(0);
-        QCOMPARE(rs.textDecodeLines(), TextDecodeState::LinesMin);
     }
 
     void testTextDecodeNoChangeNoSignal() {
@@ -2369,14 +2363,6 @@ private slots:
         QCOMPARE(rs.lineOutRight(), 15);
         QCOMPARE(rs.lineOutRightEqualsLeft(), true);
         QCOMPARE(spy.count(), 1);
-    }
-
-    void testLineOutSetterClampsToMax() {
-        RadioState rs;
-        rs.setLineOutLeft(60);
-        rs.setLineOutRight(50);
-        QCOMPARE(rs.lineOutLeft(), 50);
-        QCOMPARE(rs.lineOutRight(), 50);
     }
 
     void testLineOutRightEqualsLeftFlag() {
