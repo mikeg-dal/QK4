@@ -1,14 +1,19 @@
 // HaliKey port enumeration off the GUI thread (src/hardware/halikeyportscan.h): which port is
 // selected, results arrive queued on the requesting thread from a different one, a repeat request
-// is absorbed, and a request for another device type replaces the scan in flight.
+// is absorbed, a request for another device type replaces the scan in flight, and destruction
+// mid-scan joins the scan thread or, if it is stuck, disowns it.
 
 #include "hardware/halikeyportscan.h"
 #include <QAtomicInt>
+#include <QRegularExpression>
 #include <QSemaphore>
 #include <QSignalSpy>
 #include <QTest>
 #include <QThread>
+#include <atomic>
+#include <chrono>
 #include <memory>
+#include <thread>
 
 class TestHaliKeyPortScan : public QObject {
     Q_OBJECT
@@ -95,8 +100,31 @@ private slots:
         QCOMPARE(spy.at(0).at(1).toStringList(), QStringList{"HaliKey MIDI"});
     }
 
-    void destroyedWhileScanningIsSafe() {
+    // Quitting mid-scan waits for the scan rather than leaving its thread running unowned.
+    void destroyedWhileScanningJoinsTheScan() {
         auto gate = std::make_shared<QSemaphore>();
+        auto done = std::make_shared<std::atomic_bool>(false);
+        std::thread releaser([gate]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            gate->release();
+        });
+        {
+            HaliKeyPortScan scan;
+            scan.request(0, [gate, done]() {
+                gate->acquire();
+                done->store(true);
+                return QStringList{"tty.a"};
+            });
+        }
+        QVERIFY(done->load()); // the destructor returned only after the scan had ended
+        releaser.join();
+    }
+
+    // A scan that never ends is left running (and reported) rather than destroyed underneath
+    // itself, and nothing is delivered once it does end.
+    void destroyedWhileScanStuckDisownsIt() {
+        auto gate = std::make_shared<QSemaphore>();
+        QTest::ignoreMessage(QtWarningMsg, QRegularExpression("HaliKeyPortScan thread did not stop in time"));
         {
             HaliKeyPortScan scan;
             scan.request(0, [gate]() {
@@ -105,7 +133,6 @@ private slots:
             });
         }
         gate->release();
-        // The worker finishes after its scanner is gone; nothing may be delivered or crash.
         QTest::qWait(100);
     }
 };

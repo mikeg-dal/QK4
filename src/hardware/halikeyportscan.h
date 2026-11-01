@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <functional>
 
+class QThread;
+
 /**
  * @brief Lists the ports a HaliKey can be on without blocking the GUI thread.
  *
@@ -15,6 +17,9 @@
  * One scan at a time. A request for the device type already being scanned is absorbed by the scan
  * in flight; a request for a different type replaces it, and the outdated result is dropped rather
  * than delivered.
+ *
+ * The scan thread belongs to this object: it is reaped when it finishes and joined, with a
+ * deadline, when this object is destroyed, so quitting mid-scan never leaves it running unowned.
  */
 class HaliKeyPortScan : public QObject {
     Q_OBJECT
@@ -23,6 +28,7 @@ public:
     using Enumerator = std::function<QStringList()>;
 
     explicit HaliKeyPortScan(QObject *parent = nullptr);
+    ~HaliKeyPortScan() override;
 
     void request(int deviceType, Enumerator enumerate);
     bool isScanning() const { return m_scanning; }
@@ -46,6 +52,7 @@ private:
     bool m_hasPending = false;
     int m_pendingType = -1;
     Enumerator m_pending;
+    QThread *m_thread = nullptr; // the scan in flight; nullptr between scans
 };
 
 #endif // HALIKEYPORTSCAN_H

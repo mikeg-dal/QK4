@@ -939,6 +939,7 @@ set_tests_properties(OptionsPageLayoutTests PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 add_executable(test_halikeyportscan
     test_halikeyportscan.cpp
     ${CMAKE_SOURCE_DIR}/src/hardware/halikeyportscan.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/threadshutdown.cpp
 )
 target_include_directories(test_halikeyportscan PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_halikeyportscan Qt6::Core Qt6::Test)
