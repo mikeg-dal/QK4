@@ -2,6 +2,7 @@
 
 #include "k4discovery.h"
 #include "logging/logcategories.h"
+#include "utils/radioutils.h"
 #include <QNetworkDatagram>
 #include <QLoggingCategory>
 #ifdef Q_OS_WIN
@@ -99,6 +100,9 @@ void K4Discovery::sendDiscoveryMessage(const QNetworkInterface &netInterface) {
             continue;
         }
 
+        // WHY set by hand: sending to 255.255.255.255 needs SO_BROADCAST, and QAbstractSocket has
+        // no option for it. Qt's documentation for QUdpSocket does not promise to set it, so a
+        // platform where it is left unset would refuse the probe.
         ::setsockopt(sendSocket.socketDescriptor(), SOL_SOCKET, SO_BROADCAST,
                      reinterpret_cast<const char *>(&broadcastEnable), sizeof(broadcastEnable));
 
@@ -148,8 +152,8 @@ void K4Discovery::onReadyRead() {
         qCDebug(lcLinkDiscovery) << "Received" << data.size() << "bytes from" << datagram.senderAddress().toString()
                                  << ":" << datagram.senderPort() << "- data:" << QString::fromUtf8(data);
 
-        K4RadioInfo radioInfo;
-        if (parseK4Response(data, radioInfo)) {
+        if (const std::optional<K4RadioInfo> parsed = parseResponse(data)) {
+            const K4RadioInfo &radioInfo = *parsed;
             bool isDuplicate = false;
             for (const K4RadioInfo &existing : m_discoveredRadios) {
                 if (existing.ipAddress == radioInfo.ipAddress) {
@@ -181,22 +185,34 @@ void K4Discovery::onDiscoveryTimeout() {
     emit discoveryFinished(m_discoveredRadios.count());
 }
 
-bool K4Discovery::parseK4Response(const QByteArray &data, K4RadioInfo &radioInfo) {
-    if (!data.startsWith(K4_RESPONSE_PREFIX))
-        return false;
+std::optional<K4RadioInfo> K4Discovery::parseResponse(const QByteArray &data) {
+    // WHY trim NULs as well as whitespace: a reply may carry a terminator, and a trailing byte left
+    // on the address would fail validation (or, before validation, become part of the host name).
+    QByteArray trimmed = data.trimmed();
+    while (trimmed.endsWith('\0'))
+        trimmed.chop(1);
+    trimmed = trimmed.trimmed();
+    if (!trimmed.startsWith(K4_RESPONSE_PREFIX))
+        return std::nullopt;
 
-    QString response = QString::fromUtf8(data);
-    QStringList parts = response.split(':');
-
+    const QStringList parts = QString::fromUtf8(trimmed).split(':');
     if (parts.count() != 4) {
-        qCWarning(lcLinkDiscovery) << "Invalid K4 response format:" << response;
-        return false;
+        qCWarning(lcLinkDiscovery) << "Invalid K4 response format:" << trimmed;
+        return std::nullopt;
     }
 
-    radioInfo.rigType = parts[0];
-    radioInfo.rigIndex = parts[1].toInt();
-    radioInfo.ipAddress = parts[2];
-    radioInfo.serialNumber = parts[3];
+    K4RadioInfo info;
+    info.rigType = parts[0].trimmed();
+    bool indexOk = false;
+    info.rigIndex = parts[1].trimmed().toInt(&indexOk);
+    info.ipAddress = parts[2].trimmed();
+    info.serialNumber = parts[3].trimmed();
 
-    return true;
+    bool serialOk = false;
+    info.serialNumber.toUInt(&serialOk);
+    if (!indexOk || !serialOk || !RadioUtils::isValidIpv4(info.ipAddress)) {
+        qCWarning(lcLinkDiscovery) << "K4 response refused, malformed field:" << trimmed;
+        return std::nullopt;
+    }
+    return info;
 }

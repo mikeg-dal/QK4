@@ -410,6 +410,15 @@ target_include_directories(test_rtcontainers PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_rtcontainers Qt6::Core Qt6::Test)
 add_test(NAME RtContainersTests COMMAND test_rtcontainers)
 
+# K4 discovery reply parsing: field validation before a reply's address becomes a host. No socket.
+add_executable(test_k4discovery test_k4discovery.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/k4discovery.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp
+)
+target_include_directories(test_k4discovery PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_k4discovery Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME K4DiscoveryTests COMMAND test_k4discovery)
+
 # NetworkMetrics sparkline history + jitter tests
 add_executable(test_networkmetrics test_networkmetrics.cpp
     ${CMAKE_SOURCE_DIR}/src/network/networkmetrics.cpp
