@@ -16,13 +16,6 @@ struct MacroEntry {
     QString functionId; // "PF1", "Fn.F1", "K-pod.1T", etc.
     QString label;      // Custom label or empty
     QString command;    // CAT command or empty
-
-    bool isEmpty() const { return command.isEmpty(); }
-    QString displayLabel() const {
-        if (command.isEmpty())
-            return "Unused";
-        return label.isEmpty() ? "Mapped" : label;
-    }
 };
 
 // RX EQ preset entry (8-band graphic equalizer)
@@ -31,7 +24,6 @@ struct EqPreset {
     QVector<int> bands; // 8 values, -16 to +16 dB
 
     bool isEmpty() const { return bands.isEmpty() || name.isEmpty(); }
-    QString displayName() const { return isEmpty() ? "---" : name; }
 };
 
 inline constexpr quint16 kDefaultDxClusterPort = 7000;
@@ -174,8 +166,6 @@ public:
     // HaliKey CW Keyer settings
     QString halikeyPortName() const;
     void setHalikeyPortName(const QString &portName);
-    bool halikeyEnabled() const;
-    void setHalikeyEnabled(bool enabled);
     int halikeyDeviceType() const;
     void setHalikeyDeviceType(int type); // 0=V14, 1=MiDi
     int sidetoneVolume() const;
@@ -277,31 +267,22 @@ signals:
     void kpa1500SettingsChanged();
     void kpa1500PollIntervalChanged(int intervalMs);
     void micGainChanged(int value);
-    void micDeviceChanged(const QString &deviceId);
     void speakerDeviceChanged(const QString &deviceId);
     void catServerEnabledChanged(bool enabled);
     void catServerPortChanged(quint16 port);
     void tciServerEnabledChanged(bool enabled);
     void tciServerPortChanged(quint16 port);
     void tciAudioEnabledChanged(bool enabled);
-    void tciTxGainChanged(int value);
-    void rxAudioBoostDbChanged(int db);
     void macrosChanged();
-    void halikeyEnabledChanged(bool enabled);
-    void halikeyPortNameChanged(const QString &portName);
     void halikeyDeviceTypeChanged(int type);
     void sidetoneVolumeChanged(int value);
     void halikeyKeyerModeChanged(int mode);
     void halikeyStraightKeyChanged(bool straight);
     void halikeyDitMemoryDelayChanged(int percent);
     void halikeyMuteRadioMonitorChanged(bool mute);
-    void rxEqPresetsChanged();
-    void txEqPresetsChanged();
     void dxClusterSettingsChanged();
-    void kpodPlusSettingsChanged();
     void iaruRegionChanged(int region);
     void bandPlanOverlayEnabledChanged(bool enabled);
-    void temperatureInFahrenheitChanged(bool fahrenheit);
     void interfaceScaleChanged(int percent);
     void loggingChanged();
 
@@ -335,7 +316,6 @@ private:
 
     // HaliKey settings
     QString m_halikeyPortName;
-    bool m_halikeyEnabled = false;
     int m_halikeyDeviceType = 0; // 0=V14, 1=MiDi
     int m_sidetoneVolume = 30;   // Default 30%
     int m_halikeyKeyerMode = 0;

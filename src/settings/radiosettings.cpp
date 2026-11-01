@@ -389,7 +389,6 @@ void RadioSettings::setTemperatureInFahrenheit(bool fahrenheit) {
     if (temperatureInFahrenheit() != fahrenheit) {
         m_settings.setValue("ui/temperatureFahrenheit", fahrenheit);
         m_settings.sync();
-        emit temperatureInFahrenheitChanged(fahrenheit);
     }
 }
 
@@ -525,7 +524,6 @@ void RadioSettings::setMicDevice(const QString &deviceId) {
     if (oldDevice != deviceId) {
         m_settings.setValue("audio/micDevice", deviceId);
         m_settings.sync();
-        emit micDeviceChanged(deviceId);
     }
 }
 
@@ -614,7 +612,6 @@ void RadioSettings::setTciTxGain(int value) {
     if (oldValue != value) {
         m_settings.setValue("tci/txGain", value);
         m_settings.sync();
-        emit tciTxGainChanged(value);
     }
 }
 
@@ -627,7 +624,6 @@ void RadioSettings::setRxAudioBoostDb(int db) {
     if (rxAudioBoostDb() != db) {
         m_settings.setValue("audio/rxBoostDb", db);
         m_settings.sync();
-        emit rxAudioBoostDbChanged(db);
     }
 }
 
@@ -672,19 +668,6 @@ void RadioSettings::setHalikeyPortName(const QString &portName) {
     if (m_halikeyPortName != portName) {
         m_halikeyPortName = portName;
         save();
-        emit halikeyPortNameChanged(portName);
-    }
-}
-
-bool RadioSettings::halikeyEnabled() const {
-    return m_halikeyEnabled;
-}
-
-void RadioSettings::setHalikeyEnabled(bool enabled) {
-    if (m_halikeyEnabled != enabled) {
-        m_halikeyEnabled = enabled;
-        save();
-        emit halikeyEnabledChanged(enabled);
     }
 }
 
@@ -777,7 +760,6 @@ void RadioSettings::setKpodPlusEncodeMode(int mode) {
     if (m_kpodPlusEncodeMode != mode) {
         m_kpodPlusEncodeMode = mode;
         save();
-        emit kpodPlusSettingsChanged();
     }
 }
 
@@ -792,7 +774,6 @@ void RadioSettings::setRxEqPreset(int index, const EqPreset &preset) {
     if (index >= 0 && index < 4) {
         m_rxEqPresets[index] = preset;
         save();
-        emit rxEqPresetsChanged();
     }
 }
 
@@ -800,7 +781,6 @@ void RadioSettings::clearRxEqPreset(int index) {
     if (index >= 0 && index < 4) {
         m_rxEqPresets[index] = EqPreset();
         save();
-        emit rxEqPresetsChanged();
     }
 }
 
@@ -815,7 +795,6 @@ void RadioSettings::setTxEqPreset(int index, const EqPreset &preset) {
     if (index >= 0 && index < 4) {
         m_txEqPresets[index] = preset;
         save();
-        emit txEqPresetsChanged();
     }
 }
 
@@ -823,7 +802,6 @@ void RadioSettings::clearTxEqPreset(int index) {
     if (index >= 0 && index < 4) {
         m_txEqPresets[index] = EqPreset();
         save();
-        emit txEqPresetsChanged();
     }
 }
 
@@ -998,7 +976,6 @@ void RadioSettings::load() {
 
     // HaliKey settings
     m_halikeyPortName = m_settings.value("halikey/portName", "").toString();
-    m_halikeyEnabled = m_settings.value("halikey/enabled", false).toBool();
     m_halikeyDeviceType = halikeyDeviceTypeIndex(storedInt(m_settings.value("halikey/deviceType"), 0));
     m_sidetoneVolume = percent(storedInt(m_settings.value("halikey/sidetoneVolume"), 30));
     m_halikeyKeyerMode = halikeyKeyerModeIndex(storedInt(m_settings.value("halikey/keyerMode"), 0));
@@ -1120,7 +1097,6 @@ void RadioSettings::save() {
 
     // HaliKey settings
     m_settings.setValue("halikey/portName", m_halikeyPortName);
-    m_settings.setValue("halikey/enabled", m_halikeyEnabled);
     m_settings.setValue("halikey/deviceType", m_halikeyDeviceType);
     m_settings.setValue("halikey/sidetoneVolume", m_sidetoneVolume);
     m_settings.setValue("halikey/keyerMode", m_halikeyKeyerMode);
