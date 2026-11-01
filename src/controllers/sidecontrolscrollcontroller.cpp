@@ -12,6 +12,15 @@
 namespace {
 // The K4 front panel's BW knob step.
 constexpr int kBandwidthStepHz = 50;
+
+// IS+nnnn / IS$+nnnn, nnnn the filter centre in 10 Hz units.
+// WHY the '+': the Programmer's Reference D12 gives the SET as IS$nnnn with no sign, and the
+// radio's replies have none (RadioState parses them unsigned). QK4 has always sent the signed
+// form, recorded from bench work as the one the radio accepts. Bench both before dropping it.
+// Not a CatFrames builder yet because nothing else sends IS.
+QString ifShiftSet(bool subRx, int centreDah) {
+    return QString("%1+%2;").arg(subRx ? "IS$" : "IS").arg(centreDah, 4, 10, QChar('0'));
+}
 } // namespace
 
 SideControlScrollController::SideControlScrollController(RadioState *radioState, ConnectionController *connection,
@@ -84,8 +93,8 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
                                    delta * kBandwidthStepHz, limits.bwMinDah * 10, limits.bwMaxDah * 10);
         if (!bwHz)
             return;
-        QString cmd = bSet ? "BW$" : "BW";
-        m_connection->sendCAT(QString("%1%2;").arg(cmd).arg(*bwHz / 10, 4, 10, QChar('0')));
+        const QByteArray bw = CatFrames::setFilterBandwidth(*bwHz);
+        m_connection->sendCAT(QString::fromLatin1(bSet ? CatFrames::subRx(bw) : bw));
         if (bSet) {
             m_radioState->setFilterBandwidthB(*bwHz);
         } else {
@@ -105,8 +114,7 @@ SideControlScrollController::SideControlScrollController(RadioState *radioState,
                                                   limits.isMinDah, limits.isMaxDah);
         if (!shift)
             return;
-        QString prefix = bSet ? "IS$" : "IS";
-        m_connection->sendCAT(QString("%1+%2;").arg(prefix).arg(*shift, 4, 10, QChar('0')));
+        m_connection->sendCAT(ifShiftSet(bSet, *shift));
         if (bSet) {
             m_radioState->setIfShiftB(*shift);
         } else {
@@ -170,8 +178,8 @@ void SideControlScrollController::applyFilterEdgeChange(bool adjustHi, int delta
         return;
     const int newBwDah = next->bwDah;
 
-    QString bwCmd = bSet ? "BW$" : "BW";
-    m_connection->sendCAT(QString("%1%2;").arg(bwCmd).arg(newBwDah, 4, 10, QChar('0')));
+    const QByteArray bw = CatFrames::setFilterBandwidth(newBwDah * 10);
+    m_connection->sendCAT(QString::fromLatin1(bSet ? CatFrames::subRx(bw) : bw));
 
     if (isLocked) {
         // IS stays fixed — only BW changes
@@ -181,8 +189,7 @@ void SideControlScrollController::applyFilterEdgeChange(bool adjustHi, int delta
             m_radioState->setFilterBandwidth(newBwDah * 10);
     } else {
         const int newIsDah = next->isDah;
-        QString isPrefix = bSet ? "IS$" : "IS";
-        m_connection->sendCAT(QString("%1+%2;").arg(isPrefix).arg(newIsDah, 4, 10, QChar('0')));
+        m_connection->sendCAT(ifShiftSet(bSet, newIsDah));
 
         if (bSet) {
             m_radioState->setFilterBandwidthB(newBwDah * 10);

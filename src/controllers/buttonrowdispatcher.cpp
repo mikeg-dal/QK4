@@ -50,7 +50,7 @@ void ButtonRowDispatcher::onMainRxClicked(int index) {
     case 4: { // AGC — toggle Fast ↔ Slow (skip Off)
         const RadioState::AGCSpeed current = m_radioState->agcSpeed();
         const int next = (current == RadioState::AGC_Fast) ? 1 : 2;
-        m_connection->sendCAT(QString("GT%1;").arg(next));
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::agcSpeed(next)));
         break;
     }
     case 5: // APF — toggle (Main RX); "N/A" outside CW, as on the K4
@@ -112,7 +112,7 @@ void ButtonRowDispatcher::onSubRxClicked(int index) {
     case 4: { // AGC Sub — toggle Fast ↔ Slow
         const RadioState::AGCSpeed current = m_radioState->agcSpeedB();
         const int next = (current == RadioState::AGC_Fast) ? 1 : 2;
-        m_connection->sendCAT(QString("GT$%1;").arg(next));
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::subRx(CatFrames::agcSpeed(next))));
         break;
     }
     case 5: // APF — toggle (Sub RX); "N/A" outside CW

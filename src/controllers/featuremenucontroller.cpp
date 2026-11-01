@@ -2,6 +2,7 @@
 
 #include "connectioncontroller.h"
 #include "models/radiostate.h"
+#include "network/catframes.h"
 
 #include <QString>
 #include <QWidget>
@@ -243,8 +244,13 @@ void FeatureMenuController::stepCurrentFeature(int direction) {
                 m_radioState->setNoiseReductionLevel(newLevel);
         }
         m_bar->setValue(newLevel);
-        const QString prefix = ssnr ? (bSet ? "NRS$" : "NRS") : (bSet ? "NR$" : "NR");
-        m_connection->sendCAT(QString("%1%2%3;").arg(prefix).arg(newLevel, 2, 10, QChar('0')).arg(enabled));
+        if (ssnr) {
+            const QString prefix = bSet ? "NRS$" : "NRS";
+            m_connection->sendCAT(QString("%1%2%3;").arg(prefix).arg(newLevel, 2, 10, QChar('0')).arg(enabled));
+        } else {
+            const QByteArray nr = CatFrames::noiseReduction(newLevel, enabled != 0);
+            m_connection->sendCAT(QString::fromLatin1(bSet ? CatFrames::subRx(nr) : nr));
+        }
         break;
     }
     case FeatureMenuBar::ManualNotch: {

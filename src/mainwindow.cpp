@@ -44,6 +44,7 @@
 #include "controllers/transmitcontroller.h"
 #include "controllers/hardwarecontroller.h"
 #include "controllers/kpa1500uicontroller.h"
+#include "network/catframes.h"
 #include "network/catserver.h"
 #include "controllers/statusbarcontroller.h"
 #include "settings/radiosettings.h"
@@ -882,7 +883,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         const qint64 newFreq = RadioUtils::vfoWheelTuneTarget(
             m_radioState->vfoA(), steps, RadioUtils::tuningStepToHz(m_radioState->tuningStep()), m_radioState->lockA());
         if (newFreq > 0) {
-            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
+            const QString cmd = QString::fromLatin1(CatFrames::frequencyA(static_cast<quint64>(newFreq)));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
@@ -1101,7 +1102,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
                                                               RadioUtils::tuningStepToHz(m_radioState->tuningStepB()),
                                                               m_radioState->lockB());
         if (newFreq > 0) {
-            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
+            const QString cmd = QString::fromLatin1(CatFrames::frequencyB(static_cast<quint64>(newFreq)));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }

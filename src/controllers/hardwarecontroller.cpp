@@ -10,6 +10,7 @@
 #include "hardware/kpoddevice.h"
 #include "hardware/kpodplusdevice.h"
 #include "models/radiostate.h"
+#include "network/catframes.h"
 #include "settings/radiosettings.h"
 #include "utils/radioutils.h"
 #include "utils/rtscheduling.h"
@@ -407,7 +408,7 @@ void HardwareController::onKpodEncoderRotatedWithRocker(int ticks, int rockerPos
         qint64 newFreq =
             RadioUtils::snapFreqToStep(static_cast<qint64>(currentFreq), stepHz) + static_cast<qint64>(ticks) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
+            const QString cmd = QString::fromLatin1(CatFrames::frequencyA(static_cast<quint64>(newFreq)));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
@@ -422,7 +423,7 @@ void HardwareController::onKpodEncoderRotatedWithRocker(int ticks, int rockerPos
         qint64 newFreq =
             RadioUtils::snapFreqToStep(static_cast<qint64>(currentFreq), stepHz) + static_cast<qint64>(ticks) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
+            const QString cmd = QString::fromLatin1(CatFrames::frequencyB(static_cast<quint64>(newFreq)));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
