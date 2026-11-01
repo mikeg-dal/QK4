@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Production implementations of the seams in keyertiming.h: a steady clock with precise sleeps,
-// a link onto the K4 connection's KZ egress, and a one-shot timer on the main thread. The tests use virtual
-// ones instead (tests/paddlekeyersim.h).
+// Production implementations of the seams in keyertiming.h: a steady clock with precise sleeps and
+// a link onto the K4 connection's KZ egress. The tests use virtual ones instead
+// (tests/paddlekeyersim.h).
 
 #ifndef KEYERRUNTIME_H
 #define KEYERRUNTIME_H
 
 #include "hardware/keyertiming.h"
 
-#include <QObject>
 #include <atomic>
-#include <functional>
 
 // std::chrono::steady_clock in seconds. Sleeps are as precise as the platform allows:
 //   - macOS: mach_wait_until on an absolute mach_absolute_time deadline;
@@ -37,21 +35,6 @@ public:
 
 private:
     std::atomic<CwKeying::Link *> m_target{nullptr};
-};
-
-// One-shot timer whose callback runs on the thread this object lives on (the main thread).
-// start() and cancel() may be called from any thread. A cancel, or a later start, makes a timer
-// already in flight fire into nothing.
-class QtOneShotTimer : public QObject, public CwKeying::OneShotTimer {
-    Q_OBJECT
-
-public:
-    explicit QtOneShotTimer(QObject *parent = nullptr);
-    void start(double delaySeconds, std::function<void()> fire) override;
-    void cancel() override;
-
-private:
-    std::atomic<quint64> m_generation{0};
 };
 
 #endif // KEYERRUNTIME_H

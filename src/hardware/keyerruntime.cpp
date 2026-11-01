@@ -2,8 +2,7 @@
 
 #include "hardware/keyerruntime.h"
 
-#include <QMetaObject>
-#include <QTimer>
+#include <QtGlobal>
 #include <chrono>
 #include <cmath>
 #include <thread>
@@ -93,24 +92,4 @@ void ForwardingLink::setTarget(CwKeying::Link *target) {
 void ForwardingLink::send(std::string_view command) {
     if (CwKeying::Link *target = m_target.load(std::memory_order_acquire))
         target->send(command);
-}
-
-QtOneShotTimer::QtOneShotTimer(QObject *parent) : QObject(parent) {}
-
-void QtOneShotTimer::start(double delaySeconds, std::function<void()> fire) {
-    const quint64 generation = ++m_generation;
-    const int ms = static_cast<int>(std::ceil(std::max(0.0, delaySeconds) * 1000));
-    QMetaObject::invokeMethod(
-        this,
-        [this, generation, ms, fire = std::move(fire)]() {
-            QTimer::singleShot(ms, Qt::PreciseTimer, this, [this, generation, fire]() {
-                if (m_generation.load() == generation)
-                    fire();
-            });
-        },
-        Qt::QueuedConnection);
-}
-
-void QtOneShotTimer::cancel() {
-    ++m_generation;
 }

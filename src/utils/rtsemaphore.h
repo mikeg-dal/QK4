@@ -26,6 +26,8 @@ public:
 
     void post() noexcept QK4_NONBLOCKING; // any thread
     void wait();                          // blocks until a post is available, and takes it
+    // As wait(), but gives up after `seconds` (at once if not positive). True if a post was taken.
+    bool waitFor(double seconds);
 
 private:
 #if defined(Q_OS_LINUX)

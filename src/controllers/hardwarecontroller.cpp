@@ -143,7 +143,6 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     m_keyerClock = std::make_unique<SteadyKeyerClock>();
     m_keyerLink = std::make_unique<ForwardingLink>();
     m_sidetoneScheduler = std::make_unique<SidetoneScheduler>(*m_keyerClock, nullptr);
-    m_unmuteTimer = new QtOneShotTimer(this);
 
     m_sidetoneGenerator = new SidetoneGenerator(*m_sidetoneScheduler, *m_keyerClock, nullptr);
     m_sidetoneScheduler->setStreamTimeSource([sg = m_sidetoneGenerator]() { return sg->streamTime(); });
@@ -189,7 +188,7 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     // Paddle keyer (real-time thread for CW element timing).
     // Constructed + thread-managed here; all CW wiring is on CwController.
     // =========================================================================
-    m_paddleKeyer = std::make_unique<PaddleKeyer>(*m_keyerClock, *m_keyerLink, *m_sidetoneScheduler, *m_unmuteTimer);
+    m_paddleKeyer = std::make_unique<PaddleKeyer>(*m_keyerClock, *m_keyerLink, *m_sidetoneScheduler);
     // Nothing is keyed until CwController lifts this: the radio must be ready, in CW, and the
     // KPOD+ not owning CW.
     m_paddleKeyer->setInhibited(true);
@@ -382,7 +381,6 @@ HardwareController::~HardwareController() {
         (void)m_sidetoneScheduler.release();
         (void)m_keyerLink.release();
         (void)m_keyerClock.release();
-        m_unmuteTimer->setParent(nullptr);
     }
 }
 

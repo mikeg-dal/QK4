@@ -16,8 +16,9 @@
 // its queue and never send.
 //
 // The main thread takes no lock the keyer or a device thread can wait on: configuration is held in
-// atomics; a release, close or monitor restore is a request in a ring only requesters lock, and
-// the keyer does the work of a release itself, at its next decision. It wakes on a semaphore.
+// atomics; a release or close is a request in a ring only requesters lock, and the keyer does the
+// work of a release itself, at its next decision. It wakes on a semaphore, or when the monitor
+// restore it keeps the deadline for falls due.
 //
 // KPOD+ keying does not pass through here. See docs/cw-keyer-port-plan.md.
 
@@ -44,14 +45,12 @@ class SidetoneScheduler;
 class PaddleKeyer {
 public:
     enum class Mode { PlainIambic, IambicA, IambicB, Ultimatic };
-    // Release and RestoreMonitor are the keyer's own requests, posted by releasePaddles() and the
-    // monitor-restore timer; paddleEvent() ignores them, and Close.
+    // Release, Close and RestoreMonitor are the keyer's own: a pass that applied a release, ended
+    // the keyer, or restored the monitor. paddleEvent() ignores them.
     enum class Event { DitDown, DitUp, DahDown, DahUp, Close, Release, RestoreMonitor };
     enum class Signal { CTS, DCD, DSR, RI };
 
-    PaddleKeyer(CwKeying::Clock &clock, CwKeying::Link &link, SidetoneScheduler &sidetone,
-                CwKeying::OneShotTimer &unmuteTimer);
-    ~PaddleKeyer();
+    PaddleKeyer(CwKeying::Clock &clock, CwKeying::Link &link, SidetoneScheduler &sidetone);
 
     PaddleKeyer(const PaddleKeyer &) = delete;
     PaddleKeyer &operator=(const PaddleKeyer &) = delete;
@@ -93,8 +92,11 @@ public:
 
     // ---- keyer thread ----
     bool hasPendingEvents() const;
-    // One pass of the keyer loop; blocks until an event arrives. Real-time throughout, except its two
-    // waits: for the next event, and for an element's deadline (sleepUntil).
+    // When the monitor restore is due (clock time), if one is armed.
+    std::optional<double> monitorRestoreDue() const;
+    // One pass of the keyer loop; blocks until an event arrives or the monitor restore falls due.
+    // Real-time throughout, except its two waits: for the next event, and for an element's deadline
+    // (sleepUntil).
     Event processNextEvent() noexcept QK4_NONBLOCKING;
     void run(); // the keyer loop, until Close
     // Releases, posts Close and refuses everything after. A straight key held down gets its KZU
@@ -111,8 +113,7 @@ private:
     struct PaddleEventItem {
         Event event;
         double timestamp;
-        double keyDownAt = 0.0;              // Release: when the straight key went down
-        unsigned long long monitorToken = 0; // RestoreMonitor: the restore it belongs to
+        double keyDownAt = 0.0; // Release: when the straight key went down
     };
     // Up to four MIDI notes per lever, packed so both levers are read in one atomic load.
     static constexpr int kMaxNotes = 4;
@@ -128,7 +129,7 @@ private:
     };
 
     void pushEvent(PaddleEventItem item);   // caller holds m_firstElementMutex
-    void pushRequest(PaddleEventItem item); // Close or RestoreMonitor, any thread
+    void pushRequest(PaddleEventItem item); // Close, any thread
     bool applyPendingReleases();            // keyer thread; true if one was applied
     void applyRelease(double at);           // keyer thread
 
@@ -164,7 +165,6 @@ private:
     CwKeying::Clock &m_clock;
     CwKeying::Link &m_link;
     SidetoneScheduler &m_sidetone;
-    CwKeying::OneShotTimer &m_unmuteTimer;
 
     // ---- configuration (written by any thread, read lock-free by the keyer and device threads) ----
     std::atomic<Mode> m_mode{Mode::IambicB};
@@ -192,9 +192,9 @@ private:
     // push). Paddles lose nothing by it, since they are read from m_stamps, but a straight key is
     // keyed from the queued edges alone; see reconcileLostEdges.
     std::atomic<bool> m_eventsLost{false};
-    // Releases (the time each was asked for) and Close / RestoreMonitor, from any thread: pushed
-    // under m_requestMutex, which the keyer never takes. Separate, so a pending restore never
-    // holds up a release the keyer applies mid-burst.
+    // Releases (the time each was asked for) and Close, from any thread: pushed under
+    // m_requestMutex, which the keyer never takes. Separate, so a pending Close never holds up a
+    // release the keyer applies mid-burst.
     SpscRing<double, 64> m_releases;
     SpscRing<PaddleEventItem, 64> m_requests;
     std::mutex m_requestMutex;
@@ -254,7 +254,8 @@ private:
 
     // ---- monitor mute (keyer thread only) ----
     bool m_monitorMuted = false;
-    unsigned long long m_monitorToken = 0;
+    // A burst or a straight key-down clears it, so a restore never lands inside keying.
+    std::optional<double> m_monitorRestoreDue;
 
     static constexpr double kUnmuteExtraDelay = 0.5;
     static constexpr double kTolerableSidetoneLagMargin = .001;

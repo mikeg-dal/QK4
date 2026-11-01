@@ -38,20 +38,13 @@ public:
     }
 };
 
-class NullTimer : public CwKeying::OneShotTimer {
-public:
-    void start(double, std::function<void()>) override {}
-    void cancel() override {}
-};
-
 // A straight-key keyer with no audio stream: sidetone requests are refused, as they are while no
 // output device is open, so only the K4 commands are observed.
 struct StraightRig {
     ManualClock clock;
     CaptureLink link;
-    NullTimer timer;
     SidetoneScheduler sidetone{clock, []() -> std::optional<double> { return std::nullopt; }};
-    PaddleKeyer keyer{clock, link, sidetone, timer};
+    PaddleKeyer keyer{clock, link, sidetone};
 
     StraightRig() {
         keyer.setStraightKeying(true);
@@ -385,19 +378,48 @@ private slots:
         QCOMPARE(res.sent[0].substr(0, 3), std::string("KZD"));
         QCOMPARE(res.sent[1], std::string("ML0000;"));
         QCOMPARE(countOf(res.sent, "ML0000;"), 1);
-        QVERIFY(r.unmuteDelay().has_value());
-        QVERIFY(*r.unmuteDelay() > 0.100 + 0.5);
+        // The burst cannot end before the release at .200, and KZL alone is .100 of the delay.
+        QVERIFY(r.monitorRestoreDue().has_value());
+        QVERIFY(*r.monitorRestoreDue() > Run::kT0 + 0.200 + 0.100 + 0.5);
         QCOMPARE(r.fireUnmute(), (std::vector<std::string>{"ML0010;"}));
+        QVERIFY(!r.monitorRestoreDue().has_value());
+        QVERIFY(r.fireUnmute().empty());
     }
 
-    // With the mute off, the restore timer is never started.
-    void monitorMuteOffStartsNoTimer() {
+    // Keying again before the restore is due voids it; the next key-up arms a new one, and the
+    // keyer sends it once the clock reaches it, without being woken by anything else.
+    void monitorRestoreVoidedByKeyingAgain() {
+        StraightRig rig;
+        rig.keyer.setMuteRadioMonitor(true);
+        rig.keyer.setMonitorLevel(7);
+        rig.keyer.paddleEvent(PaddleKeyer::Event::DitDown, 0.100);
+        rig.drain();
+        rig.keyer.paddleEvent(PaddleKeyer::Event::DitUp, 0.050);
+        rig.drain();
+        QVERIFY(rig.keyer.monitorRestoreDue().has_value());
+        rig.keyer.paddleEvent(PaddleKeyer::Event::DitDown, 0.100);
+        rig.drain();
+        QVERIFY(!rig.keyer.monitorRestoreDue().has_value());
+        rig.keyer.paddleEvent(PaddleKeyer::Event::DitUp, 0.050);
+        rig.drain();
+        const auto due = rig.keyer.monitorRestoreDue();
+        QVERIFY(due.has_value());
+        QCOMPARE(countOf(rig.link.sent, "ML0000;"), 1);
+        QCOMPARE(countOf(rig.link.sent, "ML0007;"), 0);
+        rig.clock.t = *due;
+        QCOMPARE(rig.keyer.processNextEvent(), PaddleKeyer::Event::RestoreMonitor);
+        QCOMPARE(rig.link.sent.back(), std::string("ML0007;"));
+        QVERIFY(!rig.keyer.monitorRestoreDue().has_value());
+    }
+
+    // With the mute off, no restore is ever armed.
+    void monitorMuteOffArmsNoRestore() {
         Config c;
         c.scenario = Scenario::Squeeze;
         c.muteRadioMonitor = false;
         Run r(c, .200);
         r.go();
-        QVERIFY(!r.unmuteDelay().has_value());
+        QVERIFY(!r.monitorRestoreDue().has_value());
     }
 };
 

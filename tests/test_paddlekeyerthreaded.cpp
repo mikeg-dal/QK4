@@ -12,6 +12,7 @@
 #include "utils/rtsan.h"
 
 #include <QtTest/QtTest>
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -39,20 +40,13 @@ private:
     std::vector<std::string> m_sent;
 };
 
-class NullTimer : public CwKeying::OneShotTimer {
-public:
-    void start(double, std::function<void()>) override {}
-    void cancel() override {}
-};
-
 struct Rig {
     SteadyKeyerClock clock;
     CaptureLink link;
-    NullTimer timer;
     // No audio stream: sidetone requests are refused and the keyer works from its own estimates,
     // as it does while no output device is open.
     SidetoneScheduler sidetone{clock, []() -> std::optional<double> { return std::nullopt; }};
-    PaddleKeyer keyer{clock, link, sidetone, timer};
+    PaddleKeyer keyer{clock, link, sidetone};
     std::thread thread;
 
     explicit Rig(int wpm = 40) {
@@ -109,9 +103,8 @@ public:
 struct StraightRaceRig {
     SteadyKeyerClock clock;
     SlowMuteLink link;
-    NullTimer timer;
     SidetoneScheduler sidetone{clock, []() -> std::optional<double> { return std::nullopt; }};
-    PaddleKeyer keyer{clock, link, sidetone, timer};
+    PaddleKeyer keyer{clock, link, sidetone};
     std::thread thread;
 
     StraightRaceRig() {
@@ -297,9 +290,8 @@ private slots:
     void straightKeyUpLostToAFullQueueStillUnkeys() {
         SteadyKeyerClock clock;
         GateLink link;
-        NullTimer timer;
         SidetoneScheduler sidetone{clock, []() -> std::optional<double> { return std::nullopt; }};
-        PaddleKeyer keyer{clock, link, sidetone, timer};
+        PaddleKeyer keyer{clock, link, sidetone};
         keyer.setSpeed(30);
         keyer.setStraightKeying(true);
         std::thread thread([&] { keyer.run(); });
@@ -351,9 +343,8 @@ private slots:
     void releaseNeverWaitsOnTheCaller() {
         SteadyKeyerClock clock;
         CaptureLink link;
-        NullTimer timer;
         SidetoneScheduler sidetone{clock, [&clock]() -> std::optional<double> { return clock.now(); }};
-        PaddleKeyer keyer{clock, link, sidetone, timer};
+        PaddleKeyer keyer{clock, link, sidetone};
         keyer.setSpeed(30);
         keyer.paddleEvent(PaddleKeyer::Event::DitDown, 0); // schedules the first element's tone
         QElapsedTimer t;
@@ -375,6 +366,37 @@ private slots:
         rig.thread.join();
         QVERIFY(t.elapsed() < 500);
         QVERIFY(rig.link.sent().empty());
+    }
+
+    // The monitor restore is sent by the keyer thread when its deadline passes, with nothing else
+    // waking it: the keyer's wait ends at the deadline. Close afterwards still joins promptly.
+    void monitorRestoreSentWhenDueWhileIdle() {
+        Rig rig(30);
+        rig.keyer.setMonitorLevel(5);
+        rig.keyer.setMuteRadioMonitor(true);
+        rig.keyer.setStraightKeying(true);
+        rig.sleepMs(20);
+        rig.keyer.paddleEvent(PaddleKeyer::Event::DitDown, 0.010);
+        rig.sleepMs(50);
+        rig.keyer.paddleEvent(PaddleKeyer::Event::DitUp, 0.050);
+        QElapsedTimer t;
+        t.start();
+        auto restored = [&rig] {
+            const auto sent = rig.link.sent();
+            return std::find(sent.begin(), sent.end(), "ML0005;") != sent.end();
+        };
+        while (!restored() && t.elapsed() < 3000)
+            rig.sleepMs(10);
+        QVERIFY(restored());
+        // KZU0050 plus half a second; no sidetone delay without an audio stream.
+        QVERIFY2(t.elapsed() >= 500, qPrintable(QString::number(t.elapsed()) + " ms"));
+        const auto sent = rig.link.sent();
+        QCOMPARE(sent.back(), std::string("ML0005;"));
+        QCOMPARE(std::count(sent.begin(), sent.end(), std::string("ML0000;")), 1);
+        t.restart();
+        rig.keyer.close();
+        rig.thread.join();
+        QVERIFY(t.elapsed() < 500);
     }
 };
 

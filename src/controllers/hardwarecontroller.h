@@ -17,7 +17,6 @@ class SidetoneGenerator;
 class SidetoneScheduler;
 class SteadyKeyerClock;
 class ForwardingLink;
-class QtOneShotTimer;
 class RadioState;
 class ConnectionController;
 
@@ -151,12 +150,11 @@ private:
     MidiDeviceWatcher *m_midiWatcher = nullptr;
 
     // The HaliKey keyer (port of K4-Companion's) and the seams it runs on. Declaration order is
-    // construction order: the keyer refers to the clock, link, scheduler and timer, so they come
+    // construction order: the keyer refers to the clock, link and scheduler, so they come
     // first and outlive it. The keyer's thread runs PaddleKeyer::run() until close().
     std::unique_ptr<SteadyKeyerClock> m_keyerClock;
     std::unique_ptr<ForwardingLink> m_keyerLink;
     std::unique_ptr<SidetoneScheduler> m_sidetoneScheduler;
-    QtOneShotTimer *m_unmuteTimer = nullptr; // child; lives on the main thread
     std::unique_ptr<PaddleKeyer> m_paddleKeyer;
     QThread *m_keyerThread = nullptr;
     // The keyer thread missed its shutdown deadline: it and everything above are leaked, not

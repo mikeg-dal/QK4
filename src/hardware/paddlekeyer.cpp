@@ -62,15 +62,9 @@ Frame fourDigits(const char *prefix, long long ms) {
 
 } // namespace
 
-PaddleKeyer::PaddleKeyer(CwKeying::Clock &clock, CwKeying::Link &link, SidetoneScheduler &sidetone,
-                         CwKeying::OneShotTimer &unmuteTimer)
-    : m_clock(clock), m_link(link), m_sidetone(sidetone), m_unmuteTimer(unmuteTimer),
-      m_notes(packNotes(packNotes(~0ULL, 0, {20}), 1, {21})) {
+PaddleKeyer::PaddleKeyer(CwKeying::Clock &clock, CwKeying::Link &link, SidetoneScheduler &sidetone)
+    : m_clock(clock), m_link(link), m_sidetone(sidetone), m_notes(packNotes(packNotes(~0ULL, 0, {20}), 1, {21})) {
     setSpeed(20);
-}
-
-PaddleKeyer::~PaddleKeyer() {
-    m_unmuteTimer.cancel();
 }
 
 // ---- configuration ----
@@ -194,6 +188,10 @@ bool PaddleKeyer::hasPendingEvents() const {
     return !m_releases.empty() || !m_events.empty() || !m_requests.empty();
 }
 
+std::optional<double> PaddleKeyer::monitorRestoreDue() const {
+    return m_monitorRestoreDue;
+}
+
 // ---- release / close ----
 
 // WHY a request the keyer carries out, rather than the work done here: this is called from the
@@ -280,7 +278,6 @@ void PaddleKeyer::endStraightKeyOnAir(double keyDownAt, double releasedAt) {
 void PaddleKeyer::close() {
     releasePaddles(true);
     pushRequest({Event::Close, m_clock.now()});
-    m_unmuteTimer.cancel();
 }
 
 // ---- input ----
@@ -438,6 +435,7 @@ void PaddleKeyer::run() {
 // keyer whenever straight keying is switched (set_device_type).
 PaddleKeyer::Event PaddleKeyer::processNextEvent() noexcept {
     PaddleEventItem item;
+    bool restoreWaitTimedOut = false;
     while (true) {
         const bool released = applyPendingReleases();
         if (m_events.pop(item))
@@ -464,6 +462,13 @@ PaddleKeyer::Event PaddleKeyer::processNextEvent() noexcept {
             }
             break;
         }
+        // WHY after the queues: an edge already queued may start a burst, which voids the restore.
+        // A timed-out wait counts as due even if the clocks disagree by a hair, so it never spins.
+        if (m_monitorRestoreDue && (restoreWaitTimedOut || m_clock.now() >= *m_monitorRestoreDue)) {
+            m_monitorRestoreDue.reset();
+            unmuteSidetoneMonitor();
+            return Event::RestoreMonitor;
+        }
         if (released)
             return Event::Release;
         reconcileLostEdges();
@@ -471,9 +476,13 @@ PaddleKeyer::Event PaddleKeyer::processNextEvent() noexcept {
             continue;
         {
             // WHY allowed: this is where the keyer blocks between wake-ups, as a real-time thread
-            // must (CONVENTIONS Rule 16).
+            // must (CONVENTIONS Rule 16). Both waits are a semaphore wait; the timed one ends at
+            // the monitor restore.
             RtSan::Allow allow;
-            m_wake.wait();
+            if (m_monitorRestoreDue)
+                restoreWaitTimedOut = !m_wake.waitFor(*m_monitorRestoreDue - m_clock.now());
+            else
+                m_wake.wait();
         }
     }
     switch (item.event) {
@@ -481,10 +490,6 @@ PaddleKeyer::Event PaddleKeyer::processNextEvent() noexcept {
         return item.event;
     case Event::Release:
         endStraightKeyOnAir(item.keyDownAt, item.timestamp);
-        return item.event;
-    case Event::RestoreMonitor:
-        if (item.monitorToken == m_monitorToken)
-            unmuteSidetoneMonitor();
         return item.event;
     default:
         break;
@@ -951,8 +956,7 @@ void PaddleKeyer::send(std::string_view command) {
 void PaddleKeyer::muteSidetoneMonitor() {
     if (!m_muteRadioMonitor)
         return;
-    m_unmuteTimer.cancel();
-    ++m_monitorToken;
+    m_monitorRestoreDue.reset();
     if (!std::exchange(m_monitorMuted, true))
         send("ML0000;");
 }
@@ -965,9 +969,7 @@ void PaddleKeyer::unmuteSidetoneMonitor() {
 void PaddleKeyer::delayedUnmuteSidetoneMonitor(double delay) {
     if (!m_muteRadioMonitor)
         return;
-    m_unmuteTimer.cancel();
-    const unsigned long long token = ++m_monitorToken;
-    // WHY posted: the timer fires on the main thread, and ML is sent only from the keyer thread. A
-    // burst that starts before the keyer reaches this request moves the token on and voids it.
-    m_unmuteTimer.start(delay, [this, token] { pushRequest({Event::RestoreMonitor, m_clock.now(), 0.0, token}); });
+    // WHY a deadline the keyer waits for, not a timer: ML is sent only from the keyer thread, and
+    // handing a callback to a timer on another thread allocates on this one.
+    m_monitorRestoreDue = m_clock.now() + delay;
 }

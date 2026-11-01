@@ -6,6 +6,10 @@
 // later. Every sleep the keyer takes advances the virtual clock, running the audio blocks and
 // device deliveries that fall inside it. Sidetone edges are the frames nextKeyEdge actually placed.
 //
+// The monitor restore is left alone, as the Python harness's wall-clock timer never fires inside
+// a virtual run: the keyer is woken only for paddle events and releases, never for the restore's
+// deadline. fireUnmute() runs the clock to it afterwards.
+//
 // Every expression keeps the Python's order of operations, so the doubles come out bit-identical
 // and the golden commands replay exactly.
 
@@ -19,7 +23,6 @@
 #include <algorithm>
 #include <cmath>
 #include <deque>
-#include <functional>
 #include <optional>
 #include <string>
 #include <utility>
@@ -167,7 +170,7 @@ public:
     Run(const Config &config, double tapAt, double tapLength = .005)
         : m_config(config), m_geo(config), m_tapAt(tapAt), m_tapLength(tapLength), m_clock(*this), m_link(*this),
           m_sidetone(m_clock, [this]() -> std::optional<double> { return m_now + 1000.0; }),
-          m_keyer(m_clock, m_link, m_sidetone, m_timer) {
+          m_keyer(m_clock, m_link, m_sidetone) {
         m_sidetone.setMinimumSidetoneMs(0);
         m_keyer.setStraightKeying(false);
         m_keyer.setDitNotes({20});
@@ -209,14 +212,15 @@ public:
 
     double now() const { return m_now; }
     PaddleKeyer &keyer() { return m_keyer; }
-    std::optional<double> unmuteDelay() const { return m_timer.delay; }
-    // Fires the monitor-restore timer by hand; returns what it sent.
+    std::optional<double> monitorRestoreDue() const { return m_keyer.monitorRestoreDue(); }
+    // Runs the clock to the monitor restore's deadline and lets the keyer act on it; returns what
+    // it sent. Nothing, if no restore is armed.
     std::vector<std::string> fireUnmute() {
         const size_t before = m_sent.size();
-        if (m_timer.fire)
-            m_timer.fire();
-        while (m_keyer.hasPendingEvents())
+        if (const auto due = m_keyer.monitorRestoreDue()) {
+            advance(std::max(m_now, *due));
             m_keyer.processNextEvent();
+        }
         return {m_sent.begin() + static_cast<long>(before), m_sent.end()};
     }
     SidetoneScheduler &sidetone() { return m_sidetone; }
@@ -259,22 +263,6 @@ private:
 
     private:
         Run &m_run;
-    };
-
-    // The timer that restores the K4's monitor fires on the wall clock, which a virtual run never
-    // reaches; like the Python harness it stands still. It records what it was asked to do.
-    class RecordingTimer : public CwKeying::OneShotTimer {
-    public:
-        void start(double delaySeconds, std::function<void()> f) override {
-            delay = delaySeconds;
-            fire = std::move(f);
-        }
-        void cancel() override {
-            delay.reset();
-            fire = nullptr;
-        }
-        std::optional<double> delay;
-        std::function<void()> fire;
     };
 
     void buildScript() {
@@ -430,7 +418,6 @@ private:
 
     SimClock m_clock;
     SimLink m_link;
-    RecordingTimer m_timer;
     SidetoneScheduler m_sidetone;
     PaddleKeyer m_keyer;
 };

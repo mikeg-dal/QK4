@@ -79,7 +79,7 @@ Items 1 and 2 fix what goes on air. Items 3 to 6 fix the feel and the monitoring
 ## What changes, file by file
 
 **New**
-- `src/hardware/keyertiming.h`: the Clock / Link / OneShotTimer seams and `pyRound`.
+- `src/hardware/keyertiming.h`: the Clock / Link seams and `pyRound`.
 - `src/hardware/paddlekeyer.{h,cpp}`: the port of `Keyer` (`k4companion:19313-21356`).
 - `src/audio/sidetonescheduler.{h,cpp}`: the port of the sidetone half of `Audio`
   (`9122-9440`, `10473-10727`, `11001-11068`).
@@ -87,7 +87,8 @@ Items 1 and 2 fix what goes on air. Items 3 to 6 fix the feel and the monitoring
   (`18890-18970`).
 - Production seams: steady_clock plus a precise sleep (Windows high-resolution waitable timer, as
   the V1.4 worker already uses); a `Link` onto `TcpClient::sendCAT`, which marshals the call to the
-  I/O thread with a queued `invokeMethod`; a QTimer for the monitor restore.
+  I/O thread with a queued `invokeMethod`. (Since replaced by `KzEgress`; the monitor restore, first
+  a QTimer, is now a deadline the keyer's own wait ends at.)
 
 **Replaced** (HaliKey only)
 - `IambicKeyer` → `PaddleKeyer`, on the existing "Keyer" thread, which

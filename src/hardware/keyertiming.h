@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Seams the paddle keyer is written against: a clock, the link to the K4, and a one-shot timer.
-// Production wires them to steady_clock, TcpClient and a QTimer; the tests wire them to a virtual
-// clock so a whole keying run is deterministic.
+// Seams the paddle keyer is written against: a clock and the link to the K4. Production wires them
+// to steady_clock and TcpClient's KZ egress; the tests wire them to a virtual clock so a whole
+// keying run is deterministic.
 //
 // The keyer and its sidetone scheduler are a port of the keyer in Dale Farnsworth's K4-Companion
 // (GPL-3.0, https://github.com/DaleFarnsworth/K4-Companion). See docs/cw-keyer-port-plan.md.
@@ -11,7 +11,6 @@
 #define KEYERTIMING_H
 
 #include <cmath>
-#include <functional>
 #include <string_view>
 
 namespace CwKeying {
@@ -35,13 +34,6 @@ class Link {
 public:
     virtual ~Link() = default;
     virtual void send(std::string_view command) = 0;
-};
-
-class OneShotTimer {
-public:
-    virtual ~OneShotTimer() = default;
-    virtual void start(double delaySeconds, std::function<void()> fire) = 0;
-    virtual void cancel() = 0;
 };
 
 // WHY: Python's round() rounds half to even. std::nearbyint does the same under the default
