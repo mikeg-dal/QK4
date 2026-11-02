@@ -1,5 +1,6 @@
 #include "ui/widgets/controlgroupwidget.h"
 #include "ui/styling/k4styles.h"
+#include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QWheelEvent>
@@ -25,14 +26,33 @@ void ControlGroupWidget::setValue(const QString &value) {
 void ControlGroupWidget::setShowAutoButton(bool show) {
     if (m_showAutoButton != show) {
         m_showAutoButton = show;
-        // Resize widget to accommodate AUTO button
-        if (show) {
-            setFixedSize(220, ControlGroupHeight);
-        } else {
-            setFixedSize(180, ControlGroupHeight);
-        }
+        updateWidth(); // room for the AUTO key
         update();
     }
+}
+
+void ControlGroupWidget::setCompact(bool compact) {
+    if (compact) {
+        QFont labelFont = font();
+        labelFont.setPixelSize(K4Styles::Dimensions::FontSizeBody);
+        labelFont.setBold(true);
+        m_labelWidth = QFontMetrics(labelFont).horizontalAdvance(m_label) + 6;
+        m_valueWidth = 36; // "100%" is 31 px in Inter
+        m_buttonWidth = K4Styles::Dimensions::MinClickTarget;
+    } else {
+        m_labelWidth = 60;
+        m_valueWidth = 52;
+        m_buttonWidth = 32;
+    }
+    updateWidth();
+    update();
+}
+
+void ControlGroupWidget::updateWidth() {
+    constexpr int kInset = 4;
+    constexpr int kAutoWidth = 40;
+    setFixedSize(kInset + m_labelWidth + (m_showAutoButton ? kAutoWidth : 0) + m_valueWidth + 2 * m_buttonWidth,
+                 ControlGroupHeight);
 }
 
 void ControlGroupWidget::setAutoEnabled(bool enabled) {
@@ -55,10 +75,10 @@ void ControlGroupWidget::paintEvent(QPaintEvent *event) {
     painter.setRenderHint(QPainter::Antialiasing);
 
     // Layout depends on whether AUTO button is shown
-    const int labelWidth = 60; // Fits "AVERAGE" label
+    const int labelWidth = m_labelWidth;
     const int autoWidth = m_showAutoButton ? 40 : 0;
-    const int valueWidth = 52;
-    const int buttonWidth = 32;
+    const int valueWidth = m_valueWidth;
+    const int buttonWidth = m_buttonWidth;
 
     // Draw container background with gradient
     QLinearGradient grad = K4Styles::buttonGradient(0, height());

@@ -1,4 +1,5 @@
 #include "ui/popups/displaypopupwidget.h"
+#include "dsp/waterfallgeometry.h"
 #include "ui/styling/k4constants.h"
 #include "utils/radioutils.h"
 #include <QHBoxLayout>
@@ -118,6 +119,20 @@ void DisplayPopupWidget::setupTopRow() {
     m_controlStack->addWidget(m_waterfallControlPage);
     m_controlStack->addWidget(m_wtrClrsControlPage);
     m_controlStack->addWidget(m_defaultControlPage);
+
+    // WHY pinned: the WTRFALL page, with two groups, is now the widest, and the stack takes its width.
+    // Every other page keeps the place it had in the 220 px stack it had before (centred; REF, with
+    // its AUTO key, flush), so nothing but the WTRFALL page moves.
+    constexpr int kClassicStackWidth = 220;
+    for (QWidget *page : {m_spanControlPage, m_refLevelControlPage, m_scaleControlPage, m_averageControlPage,
+                          m_nbControlPage, m_wtrClrsControlPage}) {
+        auto *pageLayout = qobject_cast<QHBoxLayout *>(page->layout());
+        const auto *group = page->findChild<ControlGroupWidget *>();
+        if (!pageLayout || !group)
+            continue;
+        pageLayout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        pageLayout->setContentsMargins((kClassicStackWidth - group->width()) / 2, 0, 0, 0);
+    }
 
     // Default to SPAN page
     m_controlStack->setCurrentWidget(m_spanControlPage);
@@ -269,7 +284,12 @@ QWidget *DisplayPopupWidget::createWaterfallControlPage() {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    // WTRFALL (the radio's #WFH) and SPEED (QK4's history length) side by side: both shape the
+    // waterfall. Compact, so the pair fits the room the top row has beside the toggle groups.
+    layout->setSpacing(4);
+    layout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_waterfallControlGroup = new ControlGroupWidget("WTRFALL", page);
+    m_waterfallControlGroup->setCompact(true);
     updateWaterfallControlGroup();
     // PopupManager sends #WFH/#HWFH and updates RadioState
     connect(m_waterfallControlGroup, &ControlGroupWidget::decrementClicked, this,
@@ -277,6 +297,16 @@ QWidget *DisplayPopupWidget::createWaterfallControlPage() {
     connect(m_waterfallControlGroup, &ControlGroupWidget::incrementClicked, this,
             &DisplayPopupWidget::waterfallHeightIncrementRequested);
     layout->addWidget(m_waterfallControlGroup);
+
+    m_waterfallSpeedGroup = new ControlGroupWidget("SPEED", page);
+    m_waterfallSpeedGroup->setCompact(true);
+    m_waterfallSpeedGroup->setValue(WaterfallGeometry::speedLabel(WaterfallGeometry::SpeedFill));
+    // PopupManager steps RadioSettings, which both panadapters and this popup follow.
+    connect(m_waterfallSpeedGroup, &ControlGroupWidget::decrementClicked, this,
+            &DisplayPopupWidget::waterfallSpeedDecrementRequested);
+    connect(m_waterfallSpeedGroup, &ControlGroupWidget::incrementClicked, this,
+            &DisplayPopupWidget::waterfallSpeedIncrementRequested);
+    layout->addWidget(m_waterfallSpeedGroup);
 
     return page;
 }
@@ -759,6 +789,11 @@ void DisplayPopupWidget::setWaterfallHeight(int percent) {
         m_waterfallHeight = percent;
         updateWaterfallControlGroup();
     }
+}
+
+void DisplayPopupWidget::setWaterfallSpeed(int seconds) {
+    if (m_waterfallSpeedGroup)
+        m_waterfallSpeedGroup->setValue(WaterfallGeometry::speedLabel(seconds));
 }
 
 void DisplayPopupWidget::setWaterfallHeightExt(int percent) {

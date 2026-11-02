@@ -60,6 +60,10 @@ public:
     void setScale(int scale); // 10-150, affects display gain/range
     // #WBS, 5-30 dB: the waterfall's brightness (WaterfallGeometry::colorWindowFor). -1 = unknown.
     void setWaterfallColorRange(int db);
+    // SPEED: seconds of history on screen, 0 = Fill (WaterfallGeometry::speedPlanFor). Never changes
+    // the frame rate. Rows folded at a slower speed keep the time they hold; at a faster speed the
+    // whole visible history is redrawn at the new row height.
+    void setWaterfallSpeedSeconds(int seconds);
     void setSpan(int spanHz);
     void setWaterfallHeight(int percent); // 0-100: percentage of display for waterfall
     int span() const { return m_spanHz; }
@@ -276,6 +280,20 @@ private:
     qreal m_panelScaleDpr = 0.0;
     QVector<quint8> m_waterfallData;
     bool m_waterfallNeedsUpdate = false;
+    // SPEED (WaterfallGeometry::speedPlanFor). The row being built takes m_framesPerRow frames,
+    // each bin's peak; m_framesInRow have been folded in so far.
+    int m_waterfallSpeedSeconds = 0;
+    int m_framesPerRow = 1;
+    int m_framesInRow = 0;
+    int m_rowSpecSize = 0; // bins of the frames folded into the row being built
+    // How often frames become rows, measured: the K4 may send fewer frames than #FPS asked for.
+    // m_lineRateHz is smoothed; m_planLineRateHz only follows it past a 10 % dead band, so the plan
+    // (and the row height) does not hop with every late frame.
+    QElapsedTimer m_lineClock;
+    double m_lineRateHz = 0.0;
+    double m_planLineRateHz = 0.0;
+    int m_lineSamples = 0;
+    void noteLineCommitted();
     bool m_waterfallNeedsFullClear = false;
     // Tier span each stored row was captured at. Diagnostic only: the waterfall is cleared on a
     // tier change, so every stored row shares the current tier and the renderer needs no per-row

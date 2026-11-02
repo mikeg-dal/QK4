@@ -1,7 +1,10 @@
 #ifndef DSP_WATERFALLGEOMETRY_H
 #define DSP_WATERFALLGEOMETRY_H
 
+#include <QString>
 #include <QtGlobal>
+
+#include <array>
 
 // Which stored waterfall row each screen pixel shows. Pure arithmetic with no Qt widget or RHI
 // dependency so it can be tested directly — the shaders cannot be unit tested at all, and the bug
@@ -48,6 +51,46 @@ float rowShiftFor(qint64 viewportBottomFramebufferRow, int devicePxPerRow);
 // is stored less the row reserved for the write head. pxPerRow above devicePxPerRow means a clamp
 // bit and the blur is back.
 int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int devicePxPerRow = 1);
+
+// ---- Speed: how many seconds of history the waterfall shows -----------------------------------
+//
+// SPEED is a QK4 display setting (the K4 has no such command; Flex calls it the waterfall "rate").
+// It never changes how often the radio sends spectrum frames (#FPS): it changes how much screen each
+// frame takes. 0 is Fill, today's behaviour: one stored row per pixel row, so the history on screen
+// follows the window's height. A number is that many seconds on screen at any window size:
+//   - slower than Fill: several frames fold into one row (each bin's peak, so a short burst stays
+//     visible), and the window keeps one row per pixel row;
+//   - faster than Fill: each frame is its own row, fewer rows are shown, and each is drawn a whole
+//     number of pixel rows tall. WHY whole: 450 rows over 607 px drew rows of 1 and 2 px in a pattern
+//     fixed on screen, so a trace changed thickness and the scroll step changed size as it moved down -
+//     the uneven step one row per pixel row exists to avoid. Where the closest whole number is 1, the
+//     plan is Fill: a few seconds more history beats uneven rows.
+inline constexpr std::array<int, 6> SpeedStepsSeconds{0, 15, 30, 60, 120, 240};
+inline constexpr int SpeedFill = 0;
+inline constexpr int MaxFramesPerRow = 64;
+
+// The step `delta` places from `seconds` (clamped to the ends); an unknown value counts as Fill.
+int stepSpeed(int seconds, int delta);
+
+// True for a value SpeedStepsSeconds holds.
+bool isSpeedStep(int seconds);
+
+// "Fill", "15s" ...
+QString speedLabel(int seconds);
+
+struct SpeedPlan {
+    int visibleRows = 0;     // rows drawn over the waterfall's height
+    int framesPerRow = 1;    // spectrum frames folded into each stored row
+    int pixelRowsPerRow = 1; // pixel rows each drawn row covers (faster than Fill: a whole number > 1)
+};
+
+// pixelRows is visibleRowsFor's answer for this height (one row per pixel row); lineRateHz the
+// measured rate frames become rows (0 before it is known, which plans Fill).
+SpeedPlan speedPlanFor(int pixelRows, double lineRateHz, int seconds);
+
+// Folds one frame's row into the row being built: each byte the larger of the two, so the brightest
+// moment of every bin over the frames survives (bytes are palette positions, rising with dBm).
+void foldPeak(quint8 *row, const quint8 *frame, int count);
 
 // Oldest row on display, wrapped into [0, storedRows). Excluding the in-flight row is this
 // function's job alone: taking writeRow - visibleRows puts the newest drawn row at writeRow - 1.

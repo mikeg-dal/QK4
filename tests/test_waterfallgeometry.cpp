@@ -2,6 +2,7 @@
 #include "dsp/waterfallgeometry.h"
 #include "dsp/spectrumscale.h"
 #include <QSet>
+#include <QHash>
 #include <QtTest>
 #include <algorithm>
 #include <utility>
@@ -35,6 +36,13 @@ private slots:
     void twoDevicePxRowsScrollByWholePhysicalPixels();
     void rowShiftFollowsTheFramebufferParity();
     void shiftedRowsLandOnPhysicalPixelsAtDpr3();
+
+    // SPEED: seconds of history on screen.
+    void speedFillIsTodaysOneRowPerPixel();
+    void speedShowsTheSecondsAskedForAtAnyHeight();
+    void speedStepsAndLabels();
+    void foldKeepsEachBinsPeak();
+    void fasterRowsAreWholePixelsTall();
 
     // Colour window (WaterfallGeometry::colorWindowFor and the shader mirror).
     void noiseAtRefIsMidBlueNotBlack();
@@ -408,6 +416,114 @@ void TestWaterfallGeometry::smallerScaleIsBrighterLikeTheK4() {
     const Rgb peak80 = lutAt(drawnFraction(noise + 6.0f, ref, 14, 80));
     QVERIFY(peak80.g < 128);
     QCOMPARE(WaterfallGeometry::colorWindowFor(ref, 25, 14).spanDb, 25.0f);
+}
+
+// Fill (the default) is exactly the waterfall before SPEED existed: one row per pixel row, one frame per
+// row, whatever the line rate; and before the rate is measured every setting plans Fill.
+void TestWaterfallGeometry::speedFillIsTodaysOneRowPerPixel() {
+    using namespace WaterfallGeometry;
+    for (int rows : {64, 300, 607, 2047}) {
+        for (double hz : {0.0, 5.0, 15.0, 30.0}) {
+            const SpeedPlan fill = speedPlanFor(rows, hz, SpeedFill);
+            QCOMPARE(fill.visibleRows, rows);
+            QCOMPARE(fill.framesPerRow, 1);
+        }
+        const SpeedPlan unmeasured = speedPlanFor(rows, 0.0, 60);
+        QCOMPARE(unmeasured.visibleRows, rows);
+        QCOMPARE(unmeasured.framesPerRow, 1);
+    }
+}
+
+// The history on screen is the seconds asked for, at any window height: faster than Fill shows fewer,
+// taller rows of one frame each; slower folds frames so the same pixel rows hold more time. Mike's
+// FT8 case: 607 px at 15 fps holds 40 s at Fill; 30 s (two cycles) and 120 s must both be reachable.
+void TestWaterfallGeometry::speedShowsTheSecondsAskedForAtAnyHeight() {
+    using namespace WaterfallGeometry;
+    const SpeedPlan faster = speedPlanFor(607, 15.0, 15);
+    QCOMPARE(faster.framesPerRow, 1);
+    QCOMPARE(faster.pixelRowsPerRow, 3); // 225 frames over 607 px: rows a whole 3 px tall
+    QCOMPARE(faster.visibleRows, 202);
+    // 30 s is 450 frames over 607 px, 1.35 px each: the closest whole height is 1, so Fill (40 s).
+    const SpeedPlan nearFill = speedPlanFor(607, 15.0, 30);
+    QCOMPARE(nearFill.visibleRows, 607);
+    QCOMPARE(nearFill.pixelRowsPerRow, 1);
+    const SpeedPlan slower = speedPlanFor(607, 15.0, 120);
+    QCOMPARE(slower.visibleRows, 607);
+    QCOMPARE(slower.framesPerRow, 3); // 1800 frames over 607 rows
+    for (int seconds : SpeedStepsSeconds) {
+        if (seconds == SpeedFill)
+            continue;
+        for (int rows : {200, 607, 1100}) {
+            for (double hz : {5.0, 10.0, 15.0, 30.0}) {
+                const SpeedPlan plan = speedPlanFor(rows, hz, seconds);
+                QVERIFY(plan.visibleRows >= 2 && plan.visibleRows <= rows);
+                QVERIFY(plan.framesPerRow >= 1 && plan.framesPerRow <= MaxFramesPerRow);
+                const double shown = plan.visibleRows * plan.framesPerRow / hz;
+                // Whole frames per row cannot land every value exactly: within a third either way.
+                QVERIFY2(shown > seconds * 0.66 && shown <= seconds * 1.5,
+                         qPrintable(QStringLiteral("%1 s asked, %2 s shown (%3 rows, %4 Hz)")
+                                        .arg(seconds)
+                                        .arg(shown)
+                                        .arg(rows)
+                                        .arg(hz)));
+            }
+        }
+    }
+}
+
+void TestWaterfallGeometry::speedStepsAndLabels() {
+    using namespace WaterfallGeometry;
+    QCOMPARE(stepSpeed(SpeedFill, +1), 15);
+    QCOMPARE(stepSpeed(15, +1), 30);
+    QCOMPARE(stepSpeed(240, +1), 240); // held at the ends
+    QCOMPARE(stepSpeed(SpeedFill, -1), SpeedFill);
+    QCOMPARE(stepSpeed(30, -1), 15);
+    QCOMPARE(stepSpeed(45, +1), 15); // not a step: counts as Fill
+    QVERIFY(isSpeedStep(60));
+    QVERIFY(!isSpeedStep(45));
+    QCOMPARE(speedLabel(SpeedFill), QStringLiteral("Fill"));
+    QCOMPARE(speedLabel(240), QStringLiteral("240s"));
+}
+
+// Folding frames into one row keeps each bin's brightest moment: a one-frame FT8 or CW burst is not
+// averaged away when SPEED folds several frames together.
+void TestWaterfallGeometry::foldKeepsEachBinsPeak() {
+    quint8 row[4] = {10, 200, 30, 0};
+    const quint8 burst[4] = {250, 20, 30, 7};
+    WaterfallGeometry::foldPeak(row, burst, 4);
+    QCOMPARE(row[0], quint8(250));
+    QCOMPARE(row[1], quint8(200));
+    QCOMPARE(row[2], quint8(30));
+    QCOMPARE(row[3], quint8(7));
+}
+
+// The spectrum expert's review, 2026-11-02: rows of 1 and 2 px in a pattern fixed on screen made a
+// trace change thickness as it scrolled. Faster than Fill, every row covers k pixel rows, or k + 1
+// for at most k - 1 of them where the height does not divide (never 1 and 2 alternating).
+void TestWaterfallGeometry::fasterRowsAreWholePixelsTall() {
+    using namespace WaterfallGeometry;
+    constexpr int kStored = 2048;
+    for (int height : {200, 450, 607, 1100}) {
+        for (int seconds : {15, 30, 60}) {
+            for (double hz : {10.0, 15.0, 30.0}) {
+                const SpeedPlan plan = speedPlanFor(height, hz, seconds);
+                if (plan.pixelRowsPerRow == 1)
+                    continue; // Fill or folding: one row per pixel row, covered elsewhere
+                const int k = plan.pixelRowsPerRow;
+                QHash<int, int> pixelsPerRow;
+                for (int pixel = 0; pixel < height; ++pixel)
+                    ++pixelsPerRow[rowForPixel(pixel, float(height), 900, plan.visibleRows, kStored)];
+                QCOMPARE(pixelsPerRow.size(), plan.visibleRows);
+                int taller = 0;
+                for (const int count : pixelsPerRow) {
+                    QVERIFY2(count == k || count == k + 1,
+                             qPrintable(QStringLiteral("a row of %1 px with k = %2").arg(count).arg(k)));
+                    taller += count == k + 1;
+                }
+                QVERIFY(taller <= k - 1);
+            }
+        }
+    }
 }
 
 QTEST_MAIN(TestWaterfallGeometry)

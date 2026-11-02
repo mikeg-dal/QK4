@@ -411,6 +411,62 @@ private slots:
         QCOMPARE(down.count(), 1);
     }
 
+    // SPEED sits beside WTRFALL on the waterfall page (PAN = A's right-click): both fit inside the top
+    // row, its - / + ask for a step, and it shows the setting it is given. Every other page keeps the
+    // place it had before SPEED widened the stack.
+    void displayWaterfallPageCarriesSpeed() {
+        DisplayPopupWidget popup;
+        popup.show();
+        ControlGroupWidget *wtrfall = nullptr;
+        ControlGroupWidget *speed = nullptr;
+        for (ControlGroupWidget *g : popup.findChildren<ControlGroupWidget *>()) {
+            if (g->label() == QStringLiteral("WTRFALL"))
+                wtrfall = g;
+            if (g->label() == QStringLiteral("SPEED"))
+                speed = g;
+        }
+        QVERIFY(wtrfall && speed);
+        QCOMPARE(speed->value(), QStringLiteral("Fill"));
+        popup.setWaterfallSpeed(120);
+        QCOMPARE(speed->value(), QStringLiteral("120s"));
+
+        DisplayMenuButton *panKey = nullptr;
+        int rowRight = 0;
+        for (DisplayMenuButton *b : popup.findChildren<DisplayMenuButton *>()) {
+            if (b->alternateText() == QStringLiteral("WTRFALL"))
+                panKey = b;
+            rowRight = (std::max)(rowRight, b->geometry().right());
+        }
+        QVERIFY(panKey);
+        QTest::mouseClick(panKey, Qt::RightButton);
+        auto *stack = popup.findChild<QStackedWidget *>();
+        QVERIFY(stack && stack->currentWidget()->isAncestorOf(speed));
+        const QRect speedInPopup(speed->mapTo(&popup, QPoint(0, 0)), speed->size());
+        const QRect wtrfallInPopup(wtrfall->mapTo(&popup, QPoint(0, 0)), wtrfall->size());
+        QVERIFY(wtrfallInPopup.right() < speedInPopup.left());
+        QVERIFY2(speedInPopup.right() <= rowRight, "SPEED reaches past the row of keys");
+        QVERIFY(speed->width() >= 2 * K4Styles::Dimensions::MinClickTarget);
+
+        QSignalSpy up(&popup, &DisplayPopupWidget::waterfallSpeedIncrementRequested);
+        QSignalSpy down(&popup, &DisplayPopupWidget::waterfallSpeedDecrementRequested);
+        emit speed->incrementClicked();
+        emit speed->decrementClicked();
+        QCOMPARE(up.size(), 1);
+        QCOMPARE(down.size(), 1);
+
+        // The other pages: centred 180 px groups 20 px in, REF's 220 px group flush, as before. Each is
+        // shown first: a hidden page is not laid out.
+        for (int i = 0; i < stack->count(); ++i) {
+            stack->setCurrentIndex(i);
+            stack->currentWidget()->layout()->activate();
+            for (ControlGroupWidget *g : stack->currentWidget()->findChildren<ControlGroupWidget *>()) {
+                if (g == wtrfall || g == speed)
+                    continue;
+                QCOMPARE(g->mapTo(stack, QPoint(0, 0)).x(), (220 - g->width()) / 2);
+            }
+        }
+    }
+
     // --- ConfirmPopup ---
 
     void confirmPopupReportsCancelAfterEarlierConfirm() {

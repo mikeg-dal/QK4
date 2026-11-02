@@ -95,6 +95,7 @@ add_library(qk4_test_common STATIC
     ${CMAKE_SOURCE_DIR}/src/network/dxclusterclient.cpp
     ${CMAKE_SOURCE_DIR}/src/network/protocol.cpp
     ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
 )
 target_include_directories(qk4_test_common PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(qk4_test_common PUBLIC Qt6::Core Qt6::Network qk4_logging)
@@ -279,8 +280,7 @@ target_link_libraries(test_audioupsampler Qt6::Core Qt6::Test)
 add_test(NAME AudioUpsamplerTests COMMAND test_audioupsampler)
 
 # Waterfall row/pixel mapping: which stored row each screen pixel samples, mirroring the shaders.
-add_executable(test_waterfallgeometry test_waterfallgeometry.cpp
-    ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp)
+add_executable(test_waterfallgeometry test_waterfallgeometry.cpp)
 target_link_libraries(test_waterfallgeometry qk4_test_common)
 target_include_directories(test_waterfallgeometry PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_waterfallgeometry Qt6::Core Qt6::Test)
@@ -727,6 +727,7 @@ set(QK4_POPUP_TEST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
+    ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
 )
 add_executable(test_popupplacement ${QK4_POPUP_TEST_SOURCES})
 target_include_directories(test_popupplacement PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -755,7 +756,6 @@ if(NOT QK4_TESTS_ONLY AND QT_GUI_PRIVATE_FOUND)
     ${CMAKE_SOURCE_DIR}/src/dsp/bandplanstrip.cpp
     ${CMAKE_SOURCE_DIR}/src/dsp/spectrumgeometry.cpp
     ${CMAKE_SOURCE_DIR}/src/dsp/poweraverager.cpp
-    ${CMAKE_SOURCE_DIR}/src/dsp/waterfallgeometry.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/panelscale.cpp)
 target_link_libraries(test_rhiwidgetlifecycle qk4_test_widgets qk4_test_common)
     target_include_directories(test_rhiwidgetlifecycle PRIVATE ${CMAKE_SOURCE_DIR}/src)

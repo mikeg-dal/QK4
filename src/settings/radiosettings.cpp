@@ -1,4 +1,5 @@
 #include "radiosettings.h"
+#include "dsp/waterfallgeometry.h"
 #include "logging/logrules.h"
 #include "logging/logsink.h"
 #include "audio/rxoutputstage.h"
@@ -317,6 +318,21 @@ void RadioSettings::setTextDecodeFontSize(bool subRx, int sizePx) {
     sizePx = qBound(K4Styles::Dimensions::FontSizeTextDecodeMin, sizePx, K4Styles::Dimensions::FontSizeTextDecodeMax);
     m_settings.setValue(subRx ? "textDecode/subFontSize" : "textDecode/mainFontSize", sizePx);
     m_settings.sync();
+}
+
+int RadioSettings::waterfallSpeedSeconds() const {
+    const int seconds = m_settings.value("display/waterfallSpeedSeconds", WaterfallGeometry::SpeedFill).toInt();
+    return WaterfallGeometry::isSpeedStep(seconds) ? seconds : WaterfallGeometry::SpeedFill;
+}
+
+void RadioSettings::setWaterfallSpeedSeconds(int seconds) {
+    if (!WaterfallGeometry::isSpeedStep(seconds))
+        seconds = WaterfallGeometry::SpeedFill;
+    if (waterfallSpeedSeconds() == seconds)
+        return;
+    m_settings.setValue("display/waterfallSpeedSeconds", seconds);
+    m_settings.sync();
+    emit waterfallSpeedChanged(seconds);
 }
 
 int RadioSettings::iaruRegion() const {

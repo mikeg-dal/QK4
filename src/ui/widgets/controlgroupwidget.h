@@ -21,6 +21,9 @@ public:
     void setShowAutoButton(bool show);
     void setAutoEnabled(bool enabled);
     void setValueFaded(bool faded);
+    // Narrow form for two groups side by side: the label column fits its own text, the value 36 px,
+    // and - / + the minimum click target. Same height, font and look; the AUTO key is not offered.
+    void setCompact(bool compact);
 
     QString label() const { return m_label; }
 
@@ -40,6 +43,11 @@ private:
     bool m_showAutoButton = false;
     bool m_autoEnabled = false;
     bool m_valueFaded = false;
+    // Section widths; the defaults are the standard 180 px group.
+    int m_labelWidth = 60; // fits "AVERAGE"
+    int m_valueWidth = 52;
+    int m_buttonWidth = 32;
+    void updateWidth();
     QRect m_autoRect;
     QRect m_minusRect;
     QRect m_plusRect;

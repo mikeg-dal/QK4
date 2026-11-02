@@ -56,8 +56,10 @@ public slots:
     // Waterfall height percentage (0-100, default 50 = 50/50 split)
     void setWaterfallHeight(int percent);    // LCD: #WFHxx;
     void setWaterfallHeightExt(int percent); // EXT: #HWFHxx;
-    void setWaterfallColorRange(int db);     // LCD: #WBSn; (WTR CLRS, 5-30)
-    void setWaterfallColorRangeExt(int db);  // EXT: #HWBSn;
+    // Waterfall SPEED, seconds of history on screen (0 = Fill); a QK4 setting shown beside WTRFALL.
+    void setWaterfallSpeed(int seconds);
+    void setWaterfallColorRange(int db);    // LCD: #WBSn; (WTR CLRS, 5-30)
+    void setWaterfallColorRangeExt(int db); // EXT: #HWBSn;
 
 signals:
     // Span control signals: + and wheel-up zoom in (narrower span), - and wheel-down zoom out
@@ -83,6 +85,8 @@ signals:
     // Waterfall height control signals
     void waterfallHeightIncrementRequested();
     void waterfallHeightDecrementRequested();
+    void waterfallSpeedIncrementRequested();
+    void waterfallSpeedDecrementRequested();
     void waterfallColorRangeIncrementRequested(); // WTR CLRS +
     void waterfallColorRangeDecrementRequested(); // WTR CLRS -
 
@@ -161,6 +165,7 @@ private:
     QWidget *createWtrClrsControlPage();
     void updateWtrClrsControlGroup();
     ControlGroupWidget *m_waterfallControlGroup;
+    ControlGroupWidget *m_waterfallSpeedGroup = nullptr;
 
     // Menu buttons
     QList<DisplayMenuButton *> m_menuButtons;

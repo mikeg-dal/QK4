@@ -6,6 +6,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
+#include "dsp/waterfallgeometry.h"
 #include "settings/radiosettings.h"
 
 // RadioSettings: the "connect at startup" rule.
@@ -199,6 +200,27 @@ private slots:
         while (!s->radios().isEmpty()) {
             s->removeRadio(0);
         }
+    }
+
+    // Waterfall SPEED is one QK4-wide setting: Fill by default, only the defined steps, a change
+    // announced once, and anything else on disk read back as Fill.
+    void waterfallSpeedRoundTripsOnlyItsSteps() {
+        RadioSettings *s = RadioSettings::instance();
+        s->setWaterfallSpeedSeconds(WaterfallGeometry::SpeedFill);
+        QSignalSpy changed(s, &RadioSettings::waterfallSpeedChanged);
+        QCOMPARE(s->waterfallSpeedSeconds(), WaterfallGeometry::SpeedFill);
+        s->setWaterfallSpeedSeconds(60);
+        QCOMPARE(s->waterfallSpeedSeconds(), 60);
+        QCOMPARE(changed.size(), 1);
+        s->setWaterfallSpeedSeconds(60);
+        QCOMPARE(changed.size(), 1); // unchanged: not announced
+        s->setWaterfallSpeedSeconds(45);
+        QCOMPARE(s->waterfallSpeedSeconds(), WaterfallGeometry::SpeedFill);
+        QSettings raw(QSettings::defaultFormat(), QSettings::UserScope, "QK4", "QK4");
+        raw.setValue("display/waterfallSpeedSeconds", 37);
+        raw.sync();
+        QCOMPARE(s->waterfallSpeedSeconds(), WaterfallGeometry::SpeedFill);
+        s->setWaterfallSpeedSeconds(WaterfallGeometry::SpeedFill);
     }
 
     // The Radio Manager reselects lastSelectedIndex after every save, and the list re-sorts on save.

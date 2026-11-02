@@ -4,6 +4,7 @@
 
 #include <QtGlobal>
 #include <algorithm>
+#include <cstddef>
 #include <cmath>
 
 namespace WaterfallGeometry {
@@ -33,6 +34,42 @@ int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int dev
     const int wanted =
         static_cast<int>(std::lround(waterfallHeightPx / static_cast<float>((std::max)(1, devicePxPerRow))));
     return qBound(qMin(minRows, maxRows), wanted, maxRows);
+}
+
+bool isSpeedStep(int seconds) {
+    return std::find(SpeedStepsSeconds.begin(), SpeedStepsSeconds.end(), seconds) != SpeedStepsSeconds.end();
+}
+
+int stepSpeed(int seconds, int delta) {
+    const auto it = std::find(SpeedStepsSeconds.begin(), SpeedStepsSeconds.end(), seconds);
+    const int index = it == SpeedStepsSeconds.end() ? 0 : static_cast<int>(it - SpeedStepsSeconds.begin());
+    const int last = static_cast<int>(SpeedStepsSeconds.size()) - 1;
+    return SpeedStepsSeconds[static_cast<std::size_t>(std::clamp(index + delta, 0, last))];
+}
+
+QString speedLabel(int seconds) {
+    return seconds <= SpeedFill ? QStringLiteral("Fill") : QStringLiteral("%1s").arg(seconds);
+}
+
+SpeedPlan speedPlanFor(int pixelRows, double lineRateHz, int seconds) {
+    if (seconds <= SpeedFill || lineRateHz <= 0.0 || pixelRows <= 0)
+        return SpeedPlan{pixelRows, 1};
+    const double frames = seconds * lineRateHz; // frames that make up the history asked for
+    if (frames >= pixelRows) {
+        const long perRow = std::lround(frames / pixelRows);
+        return SpeedPlan{pixelRows, static_cast<int>(std::clamp(perRow, 1L, static_cast<long>(MaxFramesPerRow)))};
+    }
+    const long perRow = (std::max)(1L, std::lround(pixelRows / frames)); // whole pixel rows per row
+    if (perRow == 1)
+        return SpeedPlan{pixelRows, 1, 1};
+    // WHY at least 2: one row would be the whole waterfall in one colour band.
+    const int rows = (std::max)(2, static_cast<int>(pixelRows / perRow));
+    return SpeedPlan{rows, 1, static_cast<int>(perRow)};
+}
+
+void foldPeak(quint8 *row, const quint8 *frame, int count) {
+    for (int i = 0; i < count; ++i)
+        row[i] = (std::max)(row[i], frame[i]);
 }
 
 int oldestVisibleRow(int writeRow, int visibleRows, int storedRows) {

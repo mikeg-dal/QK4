@@ -562,6 +562,7 @@ void PanadapterRhiWidget::initializeResources(QRhi *current, QRhiCommandBuffer *
     m_rowTierSpanHz.fill(0.0f);
     // A new texture starts empty (uploaded below), so the ring starts over with it.
     m_waterfallWriteRow = 0;
+    m_framesInRow = 0;
     m_waterfallNeedsFullClear = false;
 
     // Load shaders from compiled .qsb resources
@@ -936,14 +937,20 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // Update waterfall texture if needed
     const bool rowCommitted = m_waterfallNeedsUpdate && !m_currentSpectrum.isEmpty();
     if (rowCommitted) {
+        noteLineCommitted();
         updateWaterfallData();
-        QRhiTextureSubresourceUploadDescription rowUpload(
-            m_waterfallData.constData() + m_waterfallWriteRow * m_textureWidth, m_textureWidth);
-        rowUpload.setDestinationTopLeft(QPoint(0, m_waterfallWriteRow));
-        rowUpload.setSourceSize(QSize(m_textureWidth, 1));
-        rub->uploadTexture(m_gpu.waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, rowUpload));
-        m_waterfallWriteRow = (m_waterfallWriteRow + 1) % m_waterfallHistory;
         m_waterfallNeedsUpdate = false;
+        // SPEED slower than Fill folds several frames into one row; the row is uploaded and the ring
+        // advanced once it holds them all. Until then it is the write head, which is never drawn.
+        if (++m_framesInRow >= m_framesPerRow) {
+            m_framesInRow = 0;
+            QRhiTextureSubresourceUploadDescription rowUpload(
+                m_waterfallData.constData() + m_waterfallWriteRow * m_textureWidth, m_textureWidth);
+            rowUpload.setDestinationTopLeft(QPoint(0, m_waterfallWriteRow));
+            rowUpload.setSourceSize(QSize(m_textureWidth, 1));
+            rub->uploadTexture(m_gpu.waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, rowUpload));
+            m_waterfallWriteRow = (m_waterfallWriteRow + 1) % m_waterfallHistory;
+        }
     }
 
     // One stored row per physical pixel of waterfall height, so a row is never stretched across
@@ -953,15 +960,24 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // stretching returns, which the qk4.spectrum.diag geometry line reports as pxPerRow climbing
     // above devicePxPerRow.
     updateDevicePxPerRow();
-    m_visibleRows =
+    const int pixelRows =
         WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS, m_devicePxPerRow);
+    // SPEED: Fill keeps one row per pixel row; a number of seconds shows fewer, taller rows or folds
+    // frames together. Applied to the rows committed from the next frame on.
+    const WaterfallGeometry::SpeedPlan plan =
+        WaterfallGeometry::speedPlanFor(pixelRows, m_planLineRateHz, m_waterfallSpeedSeconds);
+    m_visibleRows = plan.visibleRows;
+    m_framesPerRow = plan.framesPerRow;
     // Row edges onto the panel's pixel grid. The waterfall's bottom edge is this widget's bottom
     // edge (QRhi viewports are bottom-left), placed in the window's framebuffer: the window's own
     // origin is a whole number of points, so it never shifts the grid; the widget's position inside
     // it does whenever DPR is not a multiple of the row height (DPR 3 with QK4 at 150%).
     const qint64 waterfallBottomRow = std::llround(static_cast<double>(mapTo(window(), QPoint(0, height())).y()) *
                                                    static_cast<double>(devicePixelRatioF()));
-    const float rowShift = WaterfallGeometry::rowShiftFor(waterfallBottomRow, m_devicePxPerRow);
+    // The shift is in rows; a row SPEED draws k pixel rows tall needs a k-th of it to put its edges on
+    // the same physical-pixel grid.
+    const float rowShift =
+        WaterfallGeometry::rowShiftFor(waterfallBottomRow, m_devicePxPerRow) / static_cast<float>(plan.pixelRowsPerRow);
     m_waterfallRowShift = rowShift;
     // WHY: a shifted window shows a partial row older than the oldest; keep that row off the write head.
     if (rowShift != 0.0f)
@@ -1299,6 +1315,7 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &payload, int binsOffs
         // leaves the older rows covering less than the display width — rejected as a look-and-feel
         // call, not a correctness one.
         if (m_lastTierSampleRate > 0) {
+            m_framesInRow = 0;
             m_waterfallData.fill(0);
             m_rowTierSpanHz.fill(0.0f);
             m_waterfallNeedsFullClear = true;
@@ -1393,8 +1410,16 @@ void PanadapterRhiWidget::updateWaterfallData() {
     int specSize = source.size();
     int offset = (m_textureWidth - specSize) / 2;
 
-    // Clear row (zeros outside bin region = no signal)
-    std::memset(&m_waterfallData[row * m_textureWidth], 0, m_textureWidth);
+    // The first frame of a row replaces what the slot held; later ones (SPEED slower than Fill)
+    // fold in by peak below.
+    // A frame of a different width cannot fold into the row (its bins would meet bytes another frame
+    // never wrote): the row starts again from it.
+    const bool folding = m_framesInRow > 0 && specSize == m_rowSpecSize;
+    if (!folding)
+        m_framesInRow = 0;
+    m_rowSpecSize = specSize;
+    if (!folding) // clear row (zeros outside bin region = no signal)
+        std::memset(&m_waterfallData[row * m_textureWidth], 0, m_textureWidth);
 
     // Record which tier this row holds. The renderer applies one tierSpanHz to every row, so this
     // is what makes it measurable how many on-screen rows are being windowed at the wrong scale.
@@ -1406,8 +1431,39 @@ void PanadapterRhiWidget::updateWaterfallData() {
     // on every ~1 dB AutoRef step, which read as a flicker over the history.
     const WaterfallGeometry::ColorWindow window =
         WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_scale, m_waterfallColorRange);
-    for (int i = 0; i < specSize; ++i)
-        m_waterfallData[row * m_textureWidth + offset + i] = WaterfallGeometry::capturedByteFor(source[i], window);
+    quint8 *dst = m_waterfallData.data() + row * m_textureWidth + offset;
+    for (int i = 0; i < specSize; ++i) {
+        const quint8 byte = WaterfallGeometry::capturedByteFor(source[i], window);
+        if (folding)
+            WaterfallGeometry::foldPeak(dst + i, &byte, 1);
+        else
+            dst[i] = byte;
+    }
+}
+
+void PanadapterRhiWidget::noteLineCommitted() {
+    // WHY measured and smoothed: the K4 grants up to the #FPS asked for, and arrival jitters. A gap
+    // over a second is a pause (transmitting, a stall), not the rate.
+    if (m_lineClock.isValid()) {
+        const qint64 ns = m_lineClock.nsecsElapsed();
+        if (ns > 5'000'000 && ns < 1'000'000'000) {
+            const double hz = 1e9 / static_cast<double>(ns);
+            m_lineRateHz = m_lineSamples == 0 ? hz : m_lineRateHz + 0.1 * (hz - m_lineRateHz);
+            ++m_lineSamples;
+            const bool settled = m_lineSamples >= 10;
+            if (settled &&
+                (m_planLineRateHz <= 0.0 || std::abs(m_lineRateHz - m_planLineRateHz) > 0.1 * m_planLineRateHz))
+                m_planLineRateHz = m_lineRateHz;
+        }
+    }
+    m_lineClock.restart();
+}
+
+void PanadapterRhiWidget::setWaterfallSpeedSeconds(int seconds) {
+    if (m_waterfallSpeedSeconds != seconds) {
+        m_waterfallSpeedSeconds = seconds;
+        update();
+    }
 }
 
 void PanadapterRhiWidget::logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz) {
@@ -1651,6 +1707,11 @@ void PanadapterRhiWidget::clear() {
     m_waterfallTierBinCount = 0;
     m_waterfallTierSpanHz = 0;
     m_waterfallWriteRow = 0;
+    m_framesInRow = 0;
+    m_lineClock.invalidate(); // the first commit after a reconnect is not an interval
+    m_lineSamples = 0;
+    m_lineRateHz = 0.0;
+    m_planLineRateHz = 0.0;
     m_waterfallData.fill(0);
     m_rowTierSpanHz.fill(0.0f);
     m_waterfallNeedsFullClear = true;

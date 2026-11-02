@@ -1,6 +1,7 @@
 #include "popupmanager.h"
 
 #include "connectioncontroller.h"
+#include "dsp/waterfallgeometry.h"
 #include "models/radiostate.h"
 #include "models/radiostate/spectrumdisplaystate.h"
 #include "spectrumcontroller.h"
@@ -466,6 +467,20 @@ void PopupManager::wireDisplayPopup() {
             [adjustWaterfallHeight]() { adjustWaterfallHeight(+1); });
     connect(m_displayPopup, &DisplayPopupWidget::waterfallHeightDecrementRequested, this,
             [adjustWaterfallHeight]() { adjustWaterfallHeight(-1); });
+
+    // Waterfall SPEED - / +: a QK4 setting, nothing sent to the radio. Both panadapters and this popup
+    // follow RadioSettings::waterfallSpeedChanged.
+    const auto stepWaterfallSpeed = [](int delta) {
+        RadioSettings *settings = RadioSettings::instance();
+        settings->setWaterfallSpeedSeconds(WaterfallGeometry::stepSpeed(settings->waterfallSpeedSeconds(), delta));
+    };
+    connect(m_displayPopup, &DisplayPopupWidget::waterfallSpeedIncrementRequested, this,
+            [stepWaterfallSpeed]() { stepWaterfallSpeed(+1); });
+    connect(m_displayPopup, &DisplayPopupWidget::waterfallSpeedDecrementRequested, this,
+            [stepWaterfallSpeed]() { stepWaterfallSpeed(-1); });
+    m_displayPopup->setWaterfallSpeed(RadioSettings::instance()->waterfallSpeedSeconds());
+    connect(RadioSettings::instance(), &RadioSettings::waterfallSpeedChanged, m_displayPopup,
+            &DisplayPopupWidget::setWaterfallSpeed);
 
     // Span +/- (per-VFO selection). + zooms in, - zooms out.
     auto adjustSpan = [this](bool zoomIn) {
