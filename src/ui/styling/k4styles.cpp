@@ -172,15 +172,42 @@ QString popupButton() {
     return popupButtonNormal() + popupSelectedCss(SelectorScope::Selectable);
 }
 
-void setSelected(QWidget *widget, bool selected) {
-    if (widget->property(SelectedProperty).toBool() == selected)
-        return;
-    widget->setProperty(SelectedProperty, selected);
-    // WHY: a property selector is not re-matched when the property changes. Qt's documented remedy
-    // (The Style Sheet Syntax, Selector Types) is to unset the style sheet and set it again.
+namespace {
+// WHY: a property selector is not re-matched when the property changes. Qt's documented remedy
+// (The Style Sheet Syntax, Selector Types) is to unset the style sheet and set it again.
+void reapplySheet(QWidget *widget) {
     const QString sheet = widget->styleSheet();
     widget->setStyleSheet(QString());
     widget->setStyleSheet(sheet);
+}
+} // namespace
+
+void setStyleFlag(QWidget *widget, const char *property, bool on) {
+    if (widget->property(property).toBool() == on)
+        return;
+    widget->setProperty(property, on);
+    reapplySheet(widget);
+}
+
+void setStyleState(QWidget *widget, const char *property, const QString &value) {
+    if (widget->property(property).toString() == value)
+        return;
+    widget->setProperty(property, value);
+    reapplySheet(widget);
+}
+
+void setSelected(QWidget *widget, bool selected) {
+    setStyleFlag(widget, SelectedProperty, selected);
+}
+
+QString whenFlag(const char *type, const char *property, const char *pseudo) {
+    return QStringLiteral(R"(%1[%2="true"]%3)")
+        .arg(QLatin1StringView(type), QLatin1StringView(property), QLatin1StringView(pseudo));
+}
+
+QString whenState(const char *type, const char *property, const char *value, const char *pseudo) {
+    return QStringLiteral(R"(%1[%2="%3"]%4)")
+        .arg(QLatin1StringView(type), QLatin1StringView(property), QLatin1StringView(value), QLatin1StringView(pseudo));
 }
 
 QString popupValueLabel(const QString &color) {
@@ -782,6 +809,18 @@ const QString &actionButtonSmall() {
 }
 
 } // namespace Dialog
+
+// =============================================================================
+// State sheets: indicators (VFO, status bar, RIT/XIT, TX, SUB/DIV, VFO row)
+// =============================================================================
+
+// =============================================================================
+// State sheets: dialogs and Options pages
+// =============================================================================
+
+// =============================================================================
+// State sheets: popups, menu bars and the menu overlay
+// =============================================================================
 
 const QString &applicationStyleSheet() {
     // WHY: a control whose constructor forgets setStyleSheet is drawn by the OS theme, and Windows 11 dark

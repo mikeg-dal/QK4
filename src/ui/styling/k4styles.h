@@ -45,14 +45,32 @@ QString popupButtonSelected();
  */
 QString popupButton();
 
-/// The dynamic property the selectable sheets match (`[selected="true"]`).
-inline constexpr char SelectedProperty[] = "selected";
+// State-aware sheets: a widget keeps one sheet and its state picks the look through a dynamic
+// property. Change these properties only through setStyleFlag(), setStyleState() or setSelected(),
+// which re-apply the sheet as Qt requires after a property change.
+inline constexpr char SelectedProperty[] = "selected"; ///< lit: the state this key or label shows is on
+inline constexpr char DimmedProperty[] = "dimmed";     ///< greyed: nothing to show, or it cannot act now
+inline constexpr char ErrorProperty[] = "error";       ///< the value is invalid or the thing is missing
+inline constexpr char StateProperty[] = "state";       ///< one of several named looks: `[state="tx"]`
+
+/// Sets boolean `property` on `widget` and restyles it; does nothing when unchanged (unset reads false).
+void setStyleFlag(QWidget *widget, const char *property, bool on);
+
+/// Sets string `property` on `widget` and restyles it; does nothing when unchanged (unset reads "").
+void setStyleState(QWidget *widget, const char *property, const QString &value);
 
 /**
- * @brief Marks a non-checkable button selected or not for popupButton() / menuBarButtonSelectable().
- * A checkable button needs nothing: the sheets also match `:checked`. Does nothing when unchanged.
+ * @brief Marks a non-checkable button selected or not for the selectable sheets (popupButton(),
+ * menuBarButtonSelectable(), ...). A checkable button needs nothing: they also match `:checked`.
  */
 void setSelected(QWidget *widget, bool selected);
+
+/// Selector for `type` while flag `property` is set, with an optional pseudo-state:
+/// whenFlag("QLabel", DimmedProperty, ":hover") is `QLabel[dimmed="true"]:hover`.
+QString whenFlag(const char *type, const char *property, const char *pseudo = "");
+
+/// Selector for `type` while `property` equals `value`: `QLabel[state="connected"]`.
+QString whenState(const char *type, const char *property, const char *value, const char *pseudo = "");
 
 /// Read-only value readout in a compact popup row: a QPushButton with no background or visible border
 /// (so its text lines up with the neighbouring buttons), FontSizeReadout semibold text in `color`.
@@ -357,6 +375,18 @@ const QString &checkBox();
 const QString &actionButtonSmall();
 
 } // namespace Dialog
+
+// =============================================================================
+// State sheets: indicators (VFO, status bar, RIT/XIT, TX, SUB/DIV, VFO row)
+// =============================================================================
+
+// =============================================================================
+// State sheets: dialogs and Options pages
+// =============================================================================
+
+// =============================================================================
+// State sheets: popups, menu bars and the menu overlay
+// =============================================================================
 
 /// App-wide fallback for every form control, installed once in main(). A control that sets its own
 /// stylesheet still wins; one that forgets gets the K4 look instead of the operating system's theme.

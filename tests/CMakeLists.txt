@@ -615,6 +615,14 @@ target_link_libraries(test_buttonsheets qk4_test_widgets Qt6::Core Qt6::Gui Qt6:
 add_test(NAME ButtonSheetsTests COMMAND test_buttonsheets)
 set_tests_properties(ButtonSheetsTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# State-aware sheets: one sheet per widget with its state picked by a dynamic property renders the same
+# pixels as the sheet the old code swapped in for that state.
+add_executable(test_statesheets test_statesheets.cpp)
+target_include_directories(test_statesheets PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_statesheets qk4_test_widgets Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+add_test(NAME StateSheetsTests COMMAND test_statesheets)
+set_tests_properties(StateSheetsTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # Typography and colour standard: token contrast, no repeated hex values, and a source scan that keeps
 # literal sizes and colours out of src/.
 add_executable(test_tokenstandard test_tokenstandard.cpp)
