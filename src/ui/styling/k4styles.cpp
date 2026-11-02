@@ -1,5 +1,7 @@
 #include "ui/styling/k4styles.h"
 
+#include <QWidget>
+
 namespace {
 // Internal helper to generate CSS linear-gradient strings
 QString gradientCss(const char *top, const char *mid1, const char *mid2, const char *bottom) {
@@ -64,6 +66,67 @@ QString gradientButtonCss(int fontSizePx, const QString &padding, bool pressedBo
         .arg(normalGradientCss(), Colors::TextPrimary, Colors::BorderNormal, paddingDecl, QString::number(fontSizePx),
              hoverGradientCss(), Colors::BorderHover, pressedGradientCss(), pressedBorderDecl);
 }
+
+// Which buttons a selected-look rule applies to: every button (the standalone selected sheets), or only
+// a checked one or one marked by K4Styles::setSelected() (appended to an unselected sheet).
+enum class SelectorScope : quint8 { Always, Selectable };
+
+// The selector for `state` (empty, ":hover" or ":pressed") within `scope`.
+QString buttonSelector(SelectorScope scope, const char *state = "") {
+    if (scope == SelectorScope::Always)
+        return QStringLiteral("QPushButton") + QLatin1StringView(state);
+    return QStringLiteral(R"(QPushButton:checked%1, QPushButton[%2="true"]%1)")
+        .arg(QLatin1StringView(state), QLatin1StringView(K4Styles::SelectedProperty));
+}
+
+// WHY: a selectable sheet is the unselected sheet followed by these rules narrowed to the selected
+// state. They come last and are at least as specific as the unselected :hover/:pressed rules, so they
+// win every declaration they make (The Style Sheet Syntax: Conflict Resolution) and the selected look
+// is exactly the one the standalone sheet gives. Each therefore declares background and border, the
+// two properties the unselected :hover/:pressed rules set.
+QString popupSelectedCss(SelectorScope scope) {
+    using namespace K4Styles;
+    return QString(R"(
+        %7 {
+            background: %1;
+            color: %2;
+            border: 2px solid %3;
+            border-radius: 6px;
+            font-size: %4px;
+            font-weight: 600;
+        }
+        %8 {
+            background: %5;
+        }
+        %9 {
+            background: %6;
+        }
+    )")
+        .arg(selectedGradientCss(), Colors::TextOnLight, Colors::BorderSelected,
+             QString::number(Dimensions::FontSizeBody),
+             gradientCss(Colors::SelectedHoverTop, Colors::SelectedHoverMid1, Colors::SelectedHoverMid2,
+                         Colors::SelectedHoverBottom),
+             gradientCssReversed(Colors::SelectedTop, Colors::SelectedMid1, Colors::SelectedMid2,
+                                 Colors::SelectedBottom),
+             buttonSelector(scope), buttonSelector(scope, ":hover"), buttonSelector(scope, ":pressed"));
+}
+
+QString menuBarActiveCss(SelectorScope scope) {
+    using namespace K4Styles;
+    return QString(R"(
+        %5 {
+            background: %1;
+            color: %2;
+            border: 2px solid %3;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: %4px;
+            font-weight: 600;
+        }
+    )")
+        .arg(Colors::White, Colors::TextOnLight, Colors::BorderSelected, QString::number(Dimensions::FontSizeBody),
+             buttonSelector(scope));
+}
 } // anonymous namespace
 
 namespace K4Styles {
@@ -73,28 +136,22 @@ QString popupButtonNormal() {
 }
 
 QString popupButtonSelected() {
-    return QString(R"(
-        QPushButton {
-            background: %1;
-            color: %2;
-            border: 2px solid %3;
-            border-radius: 6px;
-            font-size: %4px;
-            font-weight: 600;
-        }
-        QPushButton:hover {
-            background: %5;
-        }
-        QPushButton:pressed {
-            background: %6;
-        }
-    )")
-        .arg(selectedGradientCss(), Colors::TextOnLight, Colors::BorderSelected,
-             QString::number(Dimensions::FontSizeBody),
-             gradientCss(Colors::SelectedHoverTop, Colors::SelectedHoverMid1, Colors::SelectedHoverMid2,
-                         Colors::SelectedHoverBottom),
-             gradientCssReversed(Colors::SelectedTop, Colors::SelectedMid1, Colors::SelectedMid2,
-                                 Colors::SelectedBottom));
+    return popupSelectedCss(SelectorScope::Always);
+}
+
+QString popupButton() {
+    return popupButtonNormal() + popupSelectedCss(SelectorScope::Selectable);
+}
+
+void setSelected(QWidget *widget, bool selected) {
+    if (widget->property(SelectedProperty).toBool() == selected)
+        return;
+    widget->setProperty(SelectedProperty, selected);
+    // WHY: a property selector is not re-matched when the property changes. Qt's documented remedy
+    // (The Style Sheet Syntax, Selector Types) is to unset the style sheet and set it again.
+    const QString sheet = widget->styleSheet();
+    widget->setStyleSheet(QString());
+    widget->setStyleSheet(sheet);
 }
 
 QString popupValueLabel(const QString &color) {
@@ -116,19 +173,12 @@ QString menuBarButton() {
     return gradientButtonCss(Dimensions::FontSizeBody, QStringLiteral("6px 12px"), true);
 }
 
+QString menuBarButtonSelectable() {
+    return menuBarButton() + menuBarActiveCss(SelectorScope::Selectable);
+}
+
 QString menuBarButtonActive() {
-    return QString(R"(
-        QPushButton {
-            background: %1;
-            color: %2;
-            border: 2px solid %3;
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: %4px;
-            font-weight: 600;
-        }
-    )")
-        .arg(Colors::White, Colors::TextOnLight, Colors::BorderSelected, QString::number(Dimensions::FontSizeBody));
+    return menuBarActiveCss(SelectorScope::Always);
 }
 
 QString menuBarButtonSmall() {

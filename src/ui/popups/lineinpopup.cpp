@@ -30,12 +30,14 @@ void LineInPopupWidget::setupUi() {
     m_soundCardBtn->setCheckable(true);
     m_soundCardBtn->setChecked(true); // Default source = 0
     m_soundCardBtn->setCursor(Qt::PointingHandCursor);
+    m_soundCardBtn->setStyleSheet(K4Styles::popupButton());
 
     m_lineInJackBtn = new QPushButton("LINE IN\nJACK", this);
     m_lineInJackBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_lineInJackBtn->setCheckable(true);
     m_lineInJackBtn->setChecked(false);
     m_lineInJackBtn->setCursor(Qt::PointingHandCursor);
+    m_lineInJackBtn->setStyleSheet(K4Styles::popupButton());
 
     m_valueLabel = new QPushButton(QString::number(m_soundCardLevel), this);
     m_valueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
@@ -108,10 +110,10 @@ QSize LineInPopupWidget::contentSize() const {
 }
 
 void LineInPopupWidget::updateButtonStyles() {
-    m_soundCardBtn->setStyleSheet(m_soundCardBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                              : K4Styles::popupButtonNormal());
-    m_lineInJackBtn->setStyleSheet(m_lineInJackBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                                : K4Styles::popupButtonNormal());
+    // WHY: the selected look follows m_source, not isChecked(): clicking the current source flips it
+    // unchecked without changing the source, and that key must keep its selected look.
+    K4Styles::setSelected(m_soundCardBtn, m_source == 0);
+    K4Styles::setSelected(m_lineInJackBtn, m_source == 1);
 }
 
 void LineInPopupWidget::updateValueDisplay() {

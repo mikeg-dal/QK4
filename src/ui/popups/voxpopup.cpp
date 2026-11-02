@@ -30,7 +30,7 @@ void VoxPopupWidget::setupUi() {
     m_voxBtn = new QPushButton("VOX\nOFF", this);
     m_voxBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_voxBtn->setCursor(Qt::PointingHandCursor);
-    m_voxBtn->setStyleSheet(K4Styles::popupButtonNormal());
+    m_voxBtn->setStyleSheet(K4Styles::popupButton());
 
     m_valueLabel = new QPushButton(QString::number(m_value), this);
     m_valueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
@@ -122,7 +122,7 @@ void VoxPopupWidget::updateTitle() {
 
 void VoxPopupWidget::updateVoxButton() {
     m_voxBtn->setText(m_voxEnabled ? "VOX\nON" : "VOX\nOFF");
-    m_voxBtn->setStyleSheet(m_voxEnabled ? K4Styles::popupButtonSelected() : K4Styles::popupButtonNormal());
+    K4Styles::setSelected(m_voxBtn, m_voxEnabled);
 }
 
 void VoxPopupWidget::updateValueDisplay() {

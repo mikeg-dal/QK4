@@ -167,6 +167,7 @@ QPushButton *BandPopupWidget::createBandButton(const QString &text) {
     QPushButton *btn = new QPushButton(text, this);
     btn->setFixedSize(ButtonWidth, ButtonHeight);
     btn->setFocusPolicy(Qt::NoFocus);
+    btn->setStyleSheet(K4Styles::popupButton());
     btn->setProperty("bandName", text);
 
     connect(btn, &QPushButton::clicked, this, &BandPopupWidget::onBandButtonClicked);
@@ -191,6 +192,7 @@ QPushButton *BandPopupWidget::createXvtrCell(int bandIndex) {
     btn->setFixedSize(ButtonWidth, ButtonHeight);
     btn->setFocusPolicy(Qt::NoFocus);
     btn->setEnabled(enabled);
+    btn->setStyleSheet(K4Styles::popupButton());
     btn->setProperty("bandName", QString("XVTR%1").arg(bandIndex));
     connect(btn, &QPushButton::clicked, this, &BandPopupWidget::onBandButtonClicked);
     return btn;
@@ -221,13 +223,8 @@ void BandPopupWidget::refreshXvtrCellLabels() {
 }
 
 void BandPopupWidget::updateButtonStyles() {
-    for (auto it = m_buttonMap.begin(); it != m_buttonMap.end(); ++it) {
-        if (it.key() == m_selectedBand) {
-            it.value()->setStyleSheet(K4Styles::popupButtonSelected());
-        } else {
-            it.value()->setStyleSheet(K4Styles::popupButtonNormal());
-        }
-    }
+    for (auto it = m_buttonMap.begin(); it != m_buttonMap.end(); ++it)
+        K4Styles::setSelected(it.value(), it.key() == m_selectedBand);
 }
 
 void BandPopupWidget::setSelectedBand(const QString &bandName) {

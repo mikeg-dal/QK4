@@ -609,6 +609,12 @@ target_link_libraries(test_formcontroltheme Qt6::Core Qt6::Gui Qt6::Widgets Qt6:
 add_test(NAME FormControlThemeTests COMMAND test_formcontroltheme)
 set_tests_properties(FormControlThemeTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+add_executable(test_buttonsheets test_buttonsheets.cpp)
+target_include_directories(test_buttonsheets PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_buttonsheets qk4_test_widgets Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+add_test(NAME ButtonSheetsTests COMMAND test_buttonsheets)
+set_tests_properties(ButtonSheetsTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # Typography and colour standard: token contrast, no repeated hex values, and a source scan that keeps
 # literal sizes and colours out of src/.
 add_executable(test_tokenstandard test_tokenstandard.cpp)

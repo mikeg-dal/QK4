@@ -6,6 +6,8 @@
 #include <QPainter>
 #include <QString>
 
+class QWidget;
+
 #include "ui/styling/k4constants.h" // K4Styles::Colors and K4Styles::Dimensions
 
 /**
@@ -37,6 +39,21 @@ QString popupButtonNormal();
  */
 QString popupButtonSelected();
 
+/**
+ * @brief One sheet for a popup choice key: popupButtonNormal() while unselected, popupButtonSelected()
+ * while the button is checked or marked with setSelected(). Set it once; never swap sheets.
+ */
+QString popupButton();
+
+/// The dynamic property the selectable sheets match (`[selected="true"]`).
+inline constexpr char SelectedProperty[] = "selected";
+
+/**
+ * @brief Marks a non-checkable button selected or not for popupButton() / menuBarButtonSelectable().
+ * A checkable button needs nothing: the sheets also match `:checked`. Does nothing when unchanged.
+ */
+void setSelected(QWidget *widget, bool selected);
+
 /// Read-only value readout in a compact popup row: a QPushButton with no background or visible border
 /// (so its text lines up with the neighbouring buttons), FontSizeReadout semibold text in `color`.
 QString popupValueLabel(const QString &color);
@@ -50,6 +67,12 @@ QString popupValueLabel(const QString &color);
  * Includes padding suitable for text labels.
  */
 QString menuBarButton();
+
+/**
+ * @brief One sheet for a menu bar key: menuBarButton() while inactive, menuBarButtonActive() while the
+ * button is checked or marked with setSelected(). Set it once; never swap sheets.
+ */
+QString menuBarButtonSelectable();
 
 /**
  * @brief Active/pressed state for menu bar buttons.

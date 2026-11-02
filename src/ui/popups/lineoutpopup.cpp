@@ -25,6 +25,7 @@ void LineOutPopupWidget::setupUi() {
     m_leftBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_leftBtn->setCheckable(true);
     m_leftBtn->setCursor(Qt::PointingHandCursor);
+    m_leftBtn->setStyleSheet(K4Styles::popupButton());
 
     m_leftValueLabel = new QPushButton(QString::number(m_leftLevel), this);
     m_leftValueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
@@ -35,6 +36,7 @@ void LineOutPopupWidget::setupUi() {
     m_rightBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_rightBtn->setCheckable(true);
     m_rightBtn->setCursor(Qt::PointingHandCursor);
+    m_rightBtn->setStyleSheet(K4Styles::popupButton());
 
     m_rightValueLabel = new QPushButton(QString::number(m_rightLevel), this);
     m_rightValueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
@@ -46,6 +48,7 @@ void LineOutPopupWidget::setupUi() {
                                        K4Styles::Dimensions::ButtonHeightMedium);
     m_rightEqualsLeftBtn->setCheckable(true);
     m_rightEqualsLeftBtn->setCursor(Qt::PointingHandCursor);
+    m_rightEqualsLeftBtn->setStyleSheet(K4Styles::popupButton());
 
     m_closeBtn = new QPushButton("↩", this); // U+21A9
     m_closeBtn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
@@ -100,18 +103,13 @@ void LineOutPopupWidget::updateButtonStyles() {
     m_rightBtn->setChecked(!m_leftSelected);
     m_rightEqualsLeftBtn->setChecked(m_rightEqualsLeft);
 
-    m_leftBtn->setStyleSheet(m_leftBtn->isChecked() ? K4Styles::popupButtonSelected() : K4Styles::popupButtonNormal());
-
-    if (m_rightEqualsLeft) {
-        m_rightBtn->setStyleSheet(K4Styles::popupButtonNormal() +
-                                  QString("QPushButton { color: %1; }").arg(K4Styles::Colors::TextDisabled));
-    } else {
-        m_rightBtn->setStyleSheet(m_rightBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                          : K4Styles::popupButtonNormal());
-    }
-
-    m_rightEqualsLeftBtn->setStyleSheet(m_rightEqualsLeft ? K4Styles::popupButtonSelected()
-                                                          : K4Styles::popupButtonNormal());
+    // RIGHT is never checked while R=L is on (LEFT is forced), so the greyed sheet only ever shows unselected.
+    const QString rightSheet =
+        m_rightEqualsLeft
+            ? K4Styles::popupButton() + QString("QPushButton { color: %1; }").arg(K4Styles::Colors::TextDisabled)
+            : K4Styles::popupButton();
+    if (m_rightBtn->styleSheet() != rightSheet)
+        m_rightBtn->setStyleSheet(rightSheet);
 
     m_rightValueLabel->setStyleSheet(
         K4Styles::popupValueLabel(m_rightEqualsLeft ? K4Styles::Colors::TextSecondary : K4Styles::Colors::TextPrimary));

@@ -72,6 +72,7 @@ QPushButton *ModePopupWidget::createModeButton(ModeButton mode, const QString &t
     btn->setFixedSize(ButtonWidth, ButtonHeight);
     btn->setFocusPolicy(Qt::NoFocus);
     btn->setCursor(Qt::PointingHandCursor);
+    btn->setStyleSheet(K4Styles::popupButton());
 
     connect(btn, &QPushButton::clicked, this, [this, mode]() { onModeButtonClicked(mode); });
 
@@ -93,45 +94,44 @@ void ModePopupWidget::updateButtonStyles() {
     // Update CW button text based on current mode
     button(ModeButton::Cw)->setText(m_currentMode == MODE_CW_R ? "CW-R" : "CW");
 
-    // Reset all buttons to normal style
-    for (QPushButton *btn : m_buttons)
-        btn->setStyleSheet(K4Styles::popupButtonNormal());
-
     // Highlight the current mode button
+    QPushButton *selected = nullptr;
     switch (m_currentMode) {
     case MODE_CW:
     case MODE_CW_R:
-        button(ModeButton::Cw)->setStyleSheet(K4Styles::popupButtonSelected());
+        selected = button(ModeButton::Cw);
         break;
     case MODE_LSB:
     case MODE_USB:
-        button(ModeButton::Ssb)->setStyleSheet(K4Styles::popupButtonSelected());
+        selected = button(ModeButton::Ssb);
         break;
     case MODE_AM:
-        button(ModeButton::Am)->setStyleSheet(K4Styles::popupButtonSelected());
+        selected = button(ModeButton::Am);
         break;
     case MODE_FM:
-        button(ModeButton::Fm)->setStyleSheet(K4Styles::popupButtonSelected());
+        selected = button(ModeButton::Fm);
         break;
     case MODE_DATA:
     case MODE_DATA_R:
         // Highlight based on data sub-mode
         switch (m_currentDataSubMode) {
         case DT_DATA_A:
-            button(ModeButton::Data)->setStyleSheet(K4Styles::popupButtonSelected());
+            selected = button(ModeButton::Data);
             break;
         case DT_AFSK_A:
-            button(ModeButton::Afsk)->setStyleSheet(K4Styles::popupButtonSelected());
+            selected = button(ModeButton::Afsk);
             break;
         case DT_FSK_D:
-            button(ModeButton::Fsk)->setStyleSheet(K4Styles::popupButtonSelected());
+            selected = button(ModeButton::Fsk);
             break;
         case DT_PSK_D:
-            button(ModeButton::Psk)->setStyleSheet(K4Styles::popupButtonSelected());
+            selected = button(ModeButton::Psk);
             break;
         }
         break;
     }
+    for (QPushButton *btn : m_buttons)
+        K4Styles::setSelected(btn, btn == selected);
 }
 
 void ModePopupWidget::setCurrentMode(int modeCode) {

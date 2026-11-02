@@ -179,10 +179,15 @@ keys, the fixed 90×44 knob keys, and removed names. Values live only in
 - **A widget's own style sheet beats the app sheet** whatever the specificity (*The Style Sheet
   Syntax*, Cascading). The app sheet is only a fallback; to change a widget that has its own sheet,
   change that sheet.
-- **[aspirational] State styling uses selectors, not sheet swaps.** New code uses one sheet with a
-  pseudo-state (`:checked` on a checkable button) or a property selector, and re-applies the sheet
-  after a property change. Existing swaps (`popupButtonNormal()`/`popupButtonSelected()`,
-  `menuBarButton()`/`menuBarButtonActive()`) stay until their area is reworked. Count:
+- **State styling uses selectors, not sheet swaps.** Set one sheet when the button is made and let
+  the state select the look; never call `setStyleSheet()` again to change it. Prefer a pseudo-state:
+  a checkable button's selected look is `:checked` and needs no code. A button that must not toggle
+  on click (a key that shows what the radio reports) uses the `selected` property through
+  `K4Styles::setSelected()`, which re-applies the sheet as Qt requires after a property change (*The
+  Style Sheet Syntax*, Selector Types). The shared sheets are `popupButton()` and
+  `menuBarButtonSelectable()`; `ButtonSheetsTests` holds them pixel-identical to the standalone
+  normal/selected sheets in every state [CI]. A swap to a look that is not one of those pairs (the
+  PTT key, extra rules appended to a helper) stays until it gets its own selectable sheet. Count:
   `rg -c "setStyleSheet\(" src | awk -F: '{s+=$2} END {print s}'`.
 - **Image buffers carry a device pixel ratio.** Never draw into a `QPixmap` at 1× and let Qt stretch
   it. Recipe: `PATTERNS.md` → High-DPI drawing.

@@ -132,10 +132,16 @@ state, for example `popupButtonNormal()` → `popupButtonSelected()`. It works, 
 instead use one sheet with pseudo-states (`:checked` on a checkable `QPushButton`, `:hover`,
 `:disabled`) or a property selector (`QPushButton[role="…"]`) driven by `setProperty()`.
 
-**A property change needs a re-polish.** Qt warns that if a property used in a selector changes
-after the sheet is set, the sheet may need recomputing. Qt's own advice is to unset the sheet and
-set it again. `w->style()->unpolish(w); w->style()->polish(w);` is the usual lighter way. Pseudo-states
-such as `:checked` and `:hover` need nothing.
+**A property change needs the sheet re-applied.** Qt warns that if a property used in a selector
+changes after the sheet is set, the sheet may need recomputing, and documents one remedy: unset the
+sheet and set it again. `K4Styles::setSelected()` does exactly that for the `selected` property; use
+it rather than calling `style()->unpolish()`/`polish()`, which Qt documents only for style changes.
+Pseudo-states such as `:checked` and `:hover` need nothing.
+
+**Selected looks:** `popupButton()` and `menuBarButtonSelectable()` are one sheet each, matching
+`:checked` and `[selected="true"]`. Set the sheet once; a checkable button needs nothing more, any
+other button calls `setSelected()`. Each is its normal sheet followed by the selected rules narrowed
+to the selected state, so the selected look is exactly the standalone selected sheet's.
 
 **`qproperty-` is read once**, when the widget is polished. It does not work in pseudo-states.
 
@@ -166,8 +172,9 @@ and background, then calls the virtual `paintContent(QPainter &, const QRect &)`
 | `SideControlPanelLayoutTests` (test classes `SideControlPanelLayoutTests`, `SidePanelButtonStandardTests`, `KeyTextClearanceTests`) | `tests/test_sidecontrolpanel.cpp` | Nothing overlaps at minimum size; one key size and one rhythm for all side-panel keys; knob keys keep their size; gaps are drawn at their tokens; every key clears its text |
 | `OptionsPageLayoutTests` | `tests/test_optionspagelayout.cpp` | Every Options page fits the narrowest dialog; help text wraps; long device names do not widen a page |
 | `MeterScaleTests` | `tests/test_meterscale.cpp` | Meter scale marks sit where their values fall |
+| `ButtonSheetsTests` | `tests/test_buttonsheets.cpp` | The selectable popup and menu-bar sheets render the same pixels as the normal/selected sheets they replace, idle, hovered and pressed, whether selected by `:checked` or by `setSelected()` |
 
-Run them with `ctest --test-dir build -R 'Token|FormControl|SideControl|OptionsPage|MeterScale'`.
+Run them with `ctest --test-dir build -R 'Token|FormControl|SideControl|OptionsPage|MeterScale|ButtonSheets'`.
 
 ## Removed names
 
