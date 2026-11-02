@@ -203,6 +203,17 @@ private:
     RxPlayout::JitterBuffer m_jitter;
     // Ring packets, counted from the front, that m_jitter has already observed.
     std::size_t m_rxSeen = 0;
+    // Every frame written to the sink goes through m_declick (audio/rxplayout.h), so the splices the
+    // jitter buffer makes are continuous. m_rxOut is its working copy: the ring's audio is not
+    // changed, so a short write can be replayed exactly. Reset by flushQueue().
+    RxPlayout::Declicker m_declick;
+    std::array<float, RxPacket::MAX_FLOATS> m_rxOut{};
+    bool m_rxLastWriteSilence = false;
+    // When the sink was first seen empty this run of empties, or -1. Once it has stayed empty for a
+    // device period the device has pulled and found nothing: it is playing silence of its own.
+    std::int64_t m_rxSinkEmptySinceUs = -1;
+    bool m_rxDryTold = false;
+    int writeRxOutput(const float *source, int bytes);
     // The RX-paused state m_jitter was last told. Cleared with it by flushQueue(), so a reset while
     // transmitting is told again on the next tick.
     bool m_rxPauseTold = false;

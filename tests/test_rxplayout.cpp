@@ -4,6 +4,7 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <deque>
 #include <random>
@@ -72,6 +73,10 @@ struct SimConfig {
     int spikeToMs = -1;
     int spikeJitterMs = 0;
     int devicePpm = 0; // device clock fast (+) or slow (-) against the radio's
+    // A real LAN: mostly jitterMs, but one packet in rareEvery arrives up to rareJitterMs late
+    // instead (Mike's wired-LAN log, 2026-11-02: 10-15 ms with peaks to 30 ms at SL3).
+    int rareEvery = 0;
+    int rareJitterMs = 0;
     int durationMs = 20000;
     int steadyFromMs = 10000; // start of the window the mean latency is taken over
 };
@@ -125,7 +130,8 @@ SimResult simulate(const SimConfig &c) {
         if (c.pauseAtMs >= 0 && due >= c.pauseAtMs && due < c.pauseAtMs + c.pauseMs)
             continue;
         const bool spike = due >= c.spikeFromMs && due < c.spikeToMs;
-        int at = due + c.phaseMs + jitter.next(spike ? c.spikeJitterMs : c.jitterMs);
+        const bool rare = c.rareEvery > 0 && (due / c.packetMs) % c.rareEvery == 0;
+        int at = due + c.phaseMs + jitter.next(spike ? c.spikeJitterMs : (rare ? c.rareJitterMs : c.jitterMs));
         if (c.stallAtMs >= 0 && due >= c.stallAtMs && due < c.stallAtMs + c.stallMs)
             at = c.stallAtMs + c.stallMs + (due - c.stallAtMs) / c.packetMs; // the backlog, at link speed
         if (c.pauseAtMs >= 0 && due < c.pauseAtMs && due + c.packetMs >= c.pauseAtMs)
@@ -307,6 +313,13 @@ SimResult simulate(const SimConfig &c) {
     return r;
 }
 
+// What a settled buffer may hold beyond packet + jitter + device period: the target slack, the grow
+// headroom, the shrink hysteresis and the feed's 5 ms look.
+constexpr int kSteadyExtraMs = RxPlayout::JitterBuffer::TARGET_SLACK_MS + RxPlayout::JitterBuffer::GROW_HEADROOM_MS +
+                               RxPlayout::JitterBuffer::SHRINK_MIN_MS + RxPlayout::FEED_INTERVAL_MS;
+// How long a jitter peak is remembered.
+constexpr int kWindowMs = RxPlayout::JitterBuffer::WINDOW_BUCKETS * 1000;
+
 // Feeds the estimator packets at given lateness, without a sink, to test the measurement alone.
 struct EstimatorDriver {
     RxPlayout::JitterBuffer jb;
@@ -350,6 +363,13 @@ private slots:
     void transmitPauseNeverEntersTheEstimate();
     void deviceClockDriftIsAbsorbed_data();
     void deviceClockDriftIsAbsorbed();
+    void steadyLanSettlesWithoutCorrections_data();
+    void steadyLanSettlesWithoutCorrections();
+    void declickerJoinsASkipWithoutAStep();
+    void declickerGlidesIntoAndOutOfSilence();
+    void declickerLeavesContiguousAudioUntouched();
+    void declickerResumesFromSilenceAfterTheDeviceRanDry();
+    void declickerNeverPassesFullScale();
 };
 
 void TestRxPlayout::sinkSizePerSlTier_data() {
@@ -402,7 +422,7 @@ void TestRxPlayout::bytesToWritePartialOnlyWhenStarving() {
     QCOMPARE(RxPlayout::bytesToWrite(11520, 5003, 0) % RxPlayout::FRAME_BYTES, 0);
 }
 
-// The estimate is the spread of arrival times over the last ten seconds: up at once on the packet
+// The estimate is the spread of arrival times over the window (kWindowMs): up at once on the packet
 // that shows it, held while it stays in the window, gone once it has left.
 void TestRxPlayout::targetFollowsMeasuredJitter() {
     using RxPlayout::BYTES_PER_MS;
@@ -413,21 +433,21 @@ void TestRxPlayout::targetFollowsMeasuredJitter() {
     QCOMPARE(e.jb.targetBytes(), JitterBuffer::TARGET_SLACK_MS * BYTES_PER_MS); // the floor
     // A constant network delay is not jitter.
     e.packets(100, 40);
-    QCOMPARE(e.jb.jitterMs(), 40); // the step itself is a 40 ms spread while both are in the window
-    e.packets(600, 40);            // 12 s later the 0 ms packets have left it
+    QCOMPARE(e.jb.jitterMs(), 40);          // the step itself is a 40 ms spread while both are in the window
+    e.packets((kWindowMs + 2000) / 20, 40); // two seconds past the window, the 0 ms packets have left it
     QCOMPARE(e.jb.jitterMs(), 0);
     // One packet 30 ms late raises the target on that packet.
     e.packet(70);
     QCOMPARE(e.jb.jitterMs(), 30);
     QCOMPARE(e.jb.targetBytes(), (30 + JitterBuffer::TARGET_SLACK_MS) * BYTES_PER_MS);
-    e.packets(400, 40); // 8 s: still held
+    e.packets((kWindowMs - 2000) / 20, 40); // two seconds short of the window: still held
     QCOMPARE(e.jb.jitterMs(), 30);
-    e.packets(150, 40); // 11 s after it: dropped
+    e.packets(150, 40); // a second past it: dropped
     QCOMPARE(e.jb.jitterMs(), 0);
 }
 
 // A packet more than JITTER_MAX_MS late is a stall: it and the backlog behind it are kept out of
-// the estimate, so a one-off hiccup does not hold its length in latency for ten seconds.
+// the estimate, so a one-off hiccup does not hold its length in latency for the whole window.
 void TestRxPlayout::stallIsNotPlannedFor() {
     EstimatorDriver e;
     for (int i = 0; i < 200; ++i)
@@ -454,7 +474,7 @@ void TestRxPlayout::radioPauseKeepsLearnedJitter() {
         e.packet(i % 2 ? 12 : 0);
     QVERIFY(!e.jb.inStall());
     QCOMPARE(e.jb.jitterMs(), 12);
-    e.packets(600, 0); // and it still decays normally afterwards
+    e.packets((kWindowMs + 2000) / 20, 0); // and it still decays normally afterwards
     QCOMPARE(e.jb.jitterMs(), 0);
 }
 
@@ -588,7 +608,7 @@ void TestRxPlayout::jitterSweepHasNoUnderrunsOnceMeasured_data() {
 // them after warm-up at 15-30 ms of jitter on an 11 or 21 ms device.
 //
 // And the latency is the smallest that does it: at most one packet + the jitter + the device period
-// + 15 ms (slack 2, grow headroom 3, shrink hysteresis 5, the feed's 5 ms look), in every sequence.
+// + kSteadyExtraMs, in every sequence.
 void TestRxPlayout::jitterSweepHasNoUnderrunsOnceMeasured() {
     QFETCH(int, packetMs);
     QFETCH(int, devicePeriodMs);
@@ -637,7 +657,7 @@ void TestRxPlayout::jitterSweepHasNoUnderrunsOnceMeasured() {
                             .arg(underrunsAfterSettled)
                             .arg(failingSeeds)
                             .arg(kSeeds)));
-    const int bound = packetMs + jitterMs + devicePeriodMs + 15;
+    const int bound = packetMs + jitterMs + devicePeriodMs + kSteadyExtraMs;
     QVERIFY2(worstEndMs <= bound, qPrintable(QStringLiteral("%1 ms buffered, bound %2").arg(worstEndMs).arg(bound)));
 }
 
@@ -652,7 +672,7 @@ void TestRxPlayout::bufferShrinksBackAfterJitterSpike_data() {
 }
 
 // Ten seconds of 60 ms Wi-Fi jitter on a 3 ms LAN. The buffer must grow to cover it, and after it
-// ends, once it has left the 10 s window, ease back to the latency of a run that never had it.
+// ends, once it has left the window, ease back to the latency of a run that never had it.
 void TestRxPlayout::bufferShrinksBackAfterJitterSpike() {
     QFETCH(int, packetMs);
     QFETCH(int, devicePeriodMs);
@@ -660,8 +680,8 @@ void TestRxPlayout::bufferShrinksBackAfterJitterSpike() {
     base.packetMs = packetMs;
     base.devicePeriodMs = devicePeriodMs;
     base.jitterMs = 3;
-    base.durationMs = 45000;
-    base.steadyFromMs = 40000;
+    base.durationMs = 20000 + kWindowMs + 15000; // the spike ends at 20 s
+    base.steadyFromMs = base.durationMs - 5000;
     const SimResult calm = simulate(base);
 
     SimConfig spike = base;
@@ -674,7 +694,7 @@ void TestRxPlayout::bufferShrinksBackAfterJitterSpike() {
     during.steadyFromMs = 15000;
     const SimResult inSpike = simulate(during);
 
-    qInfo("%3d ms packets, %2d ms device: target %d ms calm, %d ms in the spike, %d ms 20 s after it; mean "
+    qInfo("%3d ms packets, %2d ms device: target %d ms calm, %d ms in the spike, %d ms at the end; mean "
           "buffered %.0f / %.0f / %.0f ms; underruns after it %d; %d shrink skips",
           packetMs, devicePeriodMs, calm.finalTargetMs, inSpike.finalTargetMs, after.finalTargetMs, calm.meanBufferedMs,
           inSpike.meanBufferedMs, after.meanBufferedMs, after.underrunsAfterMs, after.shrinkSkips);
@@ -743,7 +763,7 @@ void TestRxPlayout::transmitPauseNeverEntersTheEstimate_data() {
 // delay, after which every packet looked like a new stall. A pause of any length, announced or not,
 // however packets straddle it, must never reach the estimate: the target is back to its value before
 // the pause one packet after the first packet back, the buffer is back within the packet, the
-// learned jitter, the device period and the usual 15 ms once the shrink has run, and one pause is
+// learned jitter, the device period and kSteadyExtraMs once the shrink has run, and one pause is
 // one stall.
 void TestRxPlayout::transmitPauseNeverEntersTheEstimate() {
     QFETCH(int, pauseMs);
@@ -774,7 +794,7 @@ void TestRxPlayout::transmitPauseNeverEntersTheEstimate() {
     // Once the shrink has run - a second after the first packet back, three when a burst under the
     // high-water mark has to be eased out at SHRINK_STEP_MAX_MS a second - the buffer is held to the
     // steady-state bound.
-    const int bound = c.packetMs + r.jitterBeforePauseMs + c.devicePeriodMs + 15;
+    const int bound = c.packetMs + r.jitterBeforePauseMs + c.devicePeriodMs + kSteadyExtraMs;
     QVERIFY2(r.maxBufferedSettledAfterPauseMs <= bound,
              qPrintable(QStringLiteral("%1 ms buffered, bound %2").arg(r.maxBufferedSettledAfterPauseMs).arg(bound)));
     if (burstMs > 0) {
@@ -826,6 +846,180 @@ void TestRxPlayout::deviceClockDriftIsAbsorbed() {
         QVERIFY(r.silenceInserts + r.shrinkSkips <= 12);
         QVERIFY(r.meanBufferedMs <= p + 5 + 10 + 15);
     }
+}
+
+void TestRxPlayout::steadyLanSettlesWithoutCorrections_data() {
+    QTest::addColumn<int>("packetMs");
+    QTest::addColumn<int>("rareEvery");
+    for (int p : {20, 40, 60, 120})
+        for (int every : {10, 30, 100})
+            QTest::addRow("%d ms packets, a late one every %d", p, every) << p << every;
+}
+
+// Mike's wired-LAN log, 2026-11-02 (SL3, 60 ms packets): jitter 10-15 ms with a packet now and then up
+// to 30 ms late, and a correction - each one a splice he heard as a click - about every 7 s, because a
+// late packet that recurs every few seconds kept leaving a 10 s window: the buffer shrank, and the
+// next one found it short (here, underruns in 4-29 of 20 runs per row). With the peak remembered for
+// a minute the buffer settles: at most about one correction a minute, and underruns only from a
+// packet later than any seen before, which no estimate can cover.
+void TestRxPlayout::steadyLanSettlesWithoutCorrections() {
+    QFETCH(int, packetMs);
+    QFETCH(int, rareEvery);
+    int total = 0;
+    int underruns = 0;
+    for (std::uint32_t seed = 1; seed <= 20; ++seed) {
+        SimConfig c;
+        c.packetMs = packetMs;
+        c.devicePeriodMs = 11;
+        c.jitterMs = 12;
+        c.rareEvery = rareEvery;
+        c.rareJitterMs = 30;
+        c.seed = seed;
+        c.durationMs = 120000;
+        c.steadyFromMs = 60000;
+        SimResult warm;
+        {
+            SimConfig w = c;
+            w.durationMs = 30000;
+            warm = simulate(w);
+        }
+        const SimResult r = simulate(c);
+        const int afterWarmup = (r.silenceInserts + r.shrinkSkips + r.backlogTrims) -
+                                (warm.silenceInserts + warm.shrinkSkips + warm.backlogTrims);
+        underruns += r.underrunsAfterWarmup;
+        total += afterWarmup;
+    }
+    const double perMinute = total / 20.0 / 1.5;
+    qInfo("%d ms packets, late one every %d: %.1f corrections per minute after warm-up, %d underruns (20 runs)",
+          packetMs, rareEvery, perMinute, underruns);
+    QVERIFY2(perMinute <= 1.5, qPrintable(QStringLiteral("%1 corrections a minute").arg(perMinute)));
+    QVERIFY2(underruns <= 2, qPrintable(QStringLiteral("%1 underruns in 20 runs").arg(underruns)));
+}
+
+namespace {
+// Interleaved stereo tone: left and right at different phases, as two receivers would be.
+std::vector<float> tone(int frames, double hz, float amplitude, double phase = 0) {
+    std::vector<float> v(std::size_t(frames) * 2);
+    for (int i = 0; i < frames; ++i) {
+        constexpr double kPi = 3.14159265358979323846;
+        const double t = 2 * kPi * hz * i / 12000.0 + phase;
+        v[2 * i] = amplitude * float(std::sin(t));
+        v[2 * i + 1] = amplitude * float(std::cos(t * 0.7));
+    }
+    return v;
+}
+
+// The largest sample-to-sample change on either channel, across all frames.
+float largestStep(const std::vector<float> &v) {
+    float worst = 0;
+    for (std::size_t i = 2; i < v.size(); ++i)
+        worst = (std::max)(worst, std::abs(v[i] - v[i - 2]));
+    return worst;
+}
+} // namespace
+
+// A shrink skip cuts from one point of the stream to a later one. Whatever is cut, at whatever phase,
+// the output across the cut must be no steeper than the audio itself - no step, so no click.
+void TestRxPlayout::declickerJoinsASkipWithoutAStep() {
+    constexpr int kFrames = 4000;
+    const std::vector<float> in = tone(kFrames, 1000, 0.5f);
+    const float natural = largestStep(in);
+    float worstRaw = 0;
+    for (int at = 300; at < 420; at += 7) {
+        for (int skip = 1; skip < 600; skip += 13) {
+            RxPlayout::Declicker d;
+            std::vector<float> first(in.begin(), in.begin() + 2 * at);
+            d.process(first.data(), at); // the stream's start fades in from silence; that is not the join
+            std::vector<float> rest(in.begin() + 2 * (at + skip), in.end());
+            d.splice();
+            d.process(rest.data(), kFrames - at - skip);
+            std::vector<float> out(first.end() - 2 * (RxPlayout::Declicker::RAMP_FRAMES + 1), first.end());
+            out.insert(out.end(), rest.begin(), rest.end());
+            QVERIFY2(largestStep(out) <= natural * 1.6f,
+                     qPrintable(QStringLiteral("cut at %1, skip %2: step %3, the tone's own %4")
+                                    .arg(at)
+                                    .arg(skip)
+                                    .arg(largestStep(out))
+                                    .arg(natural)));
+            worstRaw = (std::max)(worstRaw, std::abs(in[2 * (at + skip)] - in[2 * (at - 1)]));
+        }
+    }
+    QVERIFY(worstRaw > natural * 3); // guard: the raw splices really were steps
+}
+
+// Inserted silence starts and ends mid-waveform: the output glides down to zero and back up, and
+// after RAMP_FRAMES it is exactly silence, then exactly the audio.
+void TestRxPlayout::declickerGlidesIntoAndOutOfSilence() {
+    constexpr int kRamp = RxPlayout::Declicker::RAMP_FRAMES;
+    const std::vector<float> in = tone(2000, 700, 0.6f, 0.4);
+    const float natural = largestStep(in);
+    RxPlayout::Declicker d;
+    std::vector<float> a(in.begin(), in.begin() + 1000);
+    d.process(a.data(), 500);
+    d.splice();
+    std::vector<float> silence(2 * 300, 0.0f);
+    d.process(silence.data(), 300);
+    QVERIFY(std::abs(silence[0] - a[a.size() - 2]) <= natural); // continues from the last frame
+    for (int i = kRamp; i < 300; ++i)
+        QCOMPARE(silence[2 * i], 0.0f);
+    d.splice();
+    std::vector<float> b(in.begin() + 1000, in.end());
+    d.process(b.data(), 1000);
+    QVERIFY(std::abs(b[0]) <= natural); // continues from silence
+    for (int i = kRamp; i < 1000; ++i)
+        QCOMPARE(b[2 * i], in[1000 + 2 * i]); // then exactly the audio
+    std::vector<float> all = silence;
+    all.insert(all.end(), b.begin(), b.end());
+    QVERIFY(largestStep(all) <= natural * 1.6f);
+    QVERIFY(largestStep(silence) <= natural * 1.6f);
+}
+
+// No splice, no change: contiguous audio passes bit for bit once the stream's opening fade is over,
+// however it is cut into writes.
+void TestRxPlayout::declickerLeavesContiguousAudioUntouched() {
+    const std::vector<float> in = tone(3000, 1300, 0.8f);
+    RxPlayout::Declicker d;
+    std::vector<float> out = in;
+    int done = 0;
+    for (int n : {17, 1, 240, 720, 3, 1000, 1019})
+        d.process(out.data() + 2 * done, n), done += n;
+    QCOMPARE(done, 3000);
+    QVERIFY(std::abs(out[0]) < 1e-6f); // a new stream fades in from silence
+    for (int i = RxPlayout::Declicker::RAMP_FRAMES; i < 3000; ++i) {
+        QCOMPARE(out[2 * i], in[2 * i]);
+        QCOMPARE(out[2 * i + 1], in[2 * i + 1]);
+    }
+    QVERIFY(!d.ramping());
+}
+
+// After an underrun the device has played its own silence: the next audio rises from zero rather than
+// jumping from the last frame we wrote, which the listener never heard continue.
+void TestRxPlayout::declickerResumesFromSilenceAfterTheDeviceRanDry() {
+    const std::vector<float> in = tone(1000, 900, 0.7f, 1.0);
+    RxPlayout::Declicker d;
+    std::vector<float> a(in.begin(), in.begin() + 800);
+    d.process(a.data(), 400);
+    d.deviceRanDry();
+    std::vector<float> b(in.begin() + 800, in.end());
+    d.process(b.data(), 600);
+    QVERIFY(std::abs(b[0]) < 1e-6f);
+    QVERIFY(std::abs(b[1]) < 1e-6f);
+    QVERIFY(largestStep(b) <= largestStep(in) * 1.6f);
+}
+
+// The audio reaching the declicker is already limited to full scale; a glide between opposite peaks
+// must not push it past, or the sink's hard clip is the click the glide was meant to remove.
+void TestRxPlayout::declickerNeverPassesFullScale() {
+    RxPlayout::Declicker d;
+    std::vector<float> before(2 * 200, 0.9f); // ends at +0.9 on both channels
+    d.process(before.data(), 200);
+    d.splice();
+    std::vector<float> after(2 * 200);
+    for (int i = 0; i < 200; ++i)
+        after[2 * i] = after[2 * i + 1] = i == 0 ? -0.9f : 0.95f; // the cut lands on -0.9, then a +0.95 peak
+    d.process(after.data(), 200);
+    for (float v : after)
+        QVERIFY2(std::abs(v) <= 1.0f, qPrintable(QStringLiteral("%1 past full scale").arg(v)));
 }
 
 QTEST_GUILESS_MAIN(TestRxPlayout)

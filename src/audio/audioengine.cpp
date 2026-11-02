@@ -6,6 +6,7 @@
 #include <QMediaDevices>
 #include <QAudioDevice>
 #include <QDebug>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
@@ -13,7 +14,6 @@ namespace {
 // Written to the sink when the jitter buffer grows (all-bits-zero is 0.0f). Static, so the audio
 // thread never allocates for it.
 constexpr int kSilenceChunkBytes = 4096;
-alignas(float) constexpr char kSilence[kSilenceChunkBytes] = {};
 
 std::int64_t steadyNowUs() {
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch())
@@ -277,6 +277,39 @@ void AudioEngine::flushQueue() {
     m_rxSeen = 0;
     m_rxPauseTold = false;
     m_jitter.reset();
+    m_declick.reset();
+    m_rxLastWriteSilence = false;
+    m_rxSinkEmptySinceUs = -1;
+    m_rxDryTold = false;
+}
+
+int AudioEngine::writeRxOutput(const float *source, int bytes) {
+    // source == nullptr writes silence. Audio thread.
+    const int frames = (std::min)(bytes / RxPlayout::FRAME_BYTES, int(m_rxOut.size() / 2));
+    if (frames <= 0)
+        return 0;
+    float *out = m_rxOut.data();
+    const auto fill = [&](int n) {
+        if (source)
+            std::copy(source, source + 2 * n, out);
+        else
+            std::fill(out, out + 2 * n, 0.0f);
+    };
+    fill(frames);
+    const RxPlayout::Declicker before = m_declick;
+    m_declick.process(out, frames);
+    const int bytesOut = frames * RxPlayout::FRAME_BYTES;
+    const int written =
+        static_cast<int>(std::max<qint64>(0, m_audioSinkDevice->write(reinterpret_cast<const char *>(out), bytesOut)));
+    if (written < bytesOut) {
+        // WHY: the declicker must have seen exactly what the sink took, or the next splice would be
+        // joined to a frame that never played. Replay it over the part written.
+        m_declick = before;
+        const int writtenFrames = written / RxPlayout::FRAME_BYTES;
+        fill(writtenFrames);
+        m_declick.process(out, writtenFrames);
+    }
+    return written;
 }
 
 void AudioEngine::feedAudioDevice() {
@@ -300,6 +333,21 @@ void AudioEngine::feedAudioDevice() {
     }
     m_jitter.observeSink(sinkFill, nowUs);
 
+    // WHY here and not on the sink's underrun signal: that can arrive after this tick has written
+    // fresh audio, or not at all, and the declicker would then pull good audio toward zero. An empty
+    // sink alone is not proof either - the device may still be playing the period it last pulled - so
+    // it counts as dry once it has stayed empty for a whole device period.
+    if (sinkFill > 0) {
+        m_rxSinkEmptySinceUs = -1;
+        m_rxDryTold = false;
+    } else if (m_rxSinkEmptySinceUs < 0) {
+        m_rxSinkEmptySinceUs = nowUs;
+    } else if (!m_rxDryTold && nowUs - m_rxSinkEmptySinceUs >=
+                                   std::int64_t(m_jitter.devicePeriodBytes()) * 1000 / RxPlayout::BYTES_PER_MS) {
+        m_declick.deviceRanDry();
+        m_rxDryTold = true;
+    }
+
     int queued = 0;
     if (!m_rxRing.empty()) {
         // Every packet the feed has not seen before, in order, with everything ahead of it.
@@ -319,6 +367,8 @@ void AudioEngine::feedAudioDevice() {
         // Shrink or backlog trim: skip from the head of the queue, never from the sink (it plays).
         // Whole packets go as drops; a part of one moves the head's offset, like a partial write.
         int skip = m_jitter.takeSkip(queued);
+        if (skip > 0)
+            m_declick.splice();
         while (skip > 0) {
             const RxPacket *head = m_rxRing.front();
             const int remaining = (head->floats - m_rxHeadOffset) * static_cast<int>(sizeof(float));
@@ -339,7 +389,11 @@ void AudioEngine::feedAudioDevice() {
     while (m_jitter.pendingSilenceBytes() > 0 && bytesFree >= RxPlayout::FRAME_BYTES) {
         int n = qMin(qMin(m_jitter.pendingSilenceBytes(), bytesFree), kSilenceChunkBytes);
         n -= n % RxPlayout::FRAME_BYTES;
-        const int written = static_cast<int>(qMax<qint64>(0, m_audioSinkDevice->write(kSilence, n)));
+        if (!m_rxLastWriteSilence) {
+            m_declick.splice(); // audio to silence: glide down from the last frame played
+            m_rxLastWriteSilence = true;
+        }
+        const int written = writeRxOutput(nullptr, n);
         if (written <= 0)
             break;
         m_jitter.silenceWritten(written);
@@ -363,8 +417,11 @@ void AudioEngine::feedAudioDevice() {
         const int toWrite = RxPlayout::bytesToWrite(remainingBytes, bytesFree, sinkFill);
         if (toWrite <= 0)
             break;
-        const char *from = reinterpret_cast<const char *>(head->samples.data() + m_rxHeadOffset);
-        const int written = static_cast<int>(qMax<qint64>(0, m_audioSinkDevice->write(from, toWrite)));
+        if (m_rxLastWriteSilence) {
+            m_declick.splice(); // silence to audio: glide up into it
+            m_rxLastWriteSilence = false;
+        }
+        const int written = writeRxOutput(head->samples.data() + m_rxHeadOffset, toWrite);
         bytesFree -= written;
         sinkFill += written;
         if (written < remainingBytes) {

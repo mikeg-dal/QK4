@@ -16,6 +16,7 @@
 // rest, where the jitter buffer can reach it.
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -104,15 +105,15 @@ constexpr int bytesToWrite(int headBytes, int bytesFree, int sinkFillBytes) {
 // packet and moved playout later only when the sink ran dry, so it ended each session exactly as
 // deep as the worst lateness seen so far and no deeper - the next, slightly later packet underran,
 // at any time, however long the session (about one session in nine at SL1-2 with 30 ms of Wi-Fi
-// jitter on a 21 ms device). This one holds the spread of arrival times seen over the last ten
-// seconds, as VoIP jitter buffers do, so a packet as late as any recent one is already covered.
+// jitter on a 21 ms device). This one holds the spread of arrival times seen over the last minute,
+// as VoIP jitter buffers do, so a packet as late as any recent one is already covered.
 //
 // Terms (all audio in bytes of decoded 12 kHz stereo Float32, all times in microseconds):
 //
 //   relative delay  d = (when the feed first saw a packet) - (the stream's start + the audio sent
 //                   before it). A constant network delay cancels out; what is left varies only
 //                   with jitter (and slowly with clock drift, which the window follows).
-//   jitter J        max d - min d over a 10 s window of 1 s buckets: a peak held for ten seconds,
+//   jitter J        max d - min d over a 60 s window of 1 s buckets: a peak held for a minute,
 //                   then dropped bucket by bucket. Grows on the packet that shows it. The window
 //                   is aged by audio received, not wall time, so a long transmit does not expire it.
 //   lateness        d - min d for one packet: how much later than the earliest recent packet.
@@ -136,7 +137,8 @@ constexpr int bytesToWrite(int headBytes, int bytesFree, int sinkFillBytes) {
 // jitter the playout must absorb includes the feed's own 5 ms granularity and any lateness of its
 // timer, so measuring there counts both, and nothing crosses threads to do it.
 //
-// Corrections, each at a point where the audio is already discontinuous or about to be:
+// Corrections. Each one splices the audio, so the engine passes everything it writes through a
+// Declicker (below), which makes every splice continuous:
 //   - grow: a packet whose L is below target gets (target - L) + GROW_HEADROOM_MS of silence
 //     written ahead of it. At the start and after an underrun this IS the prebuffer; during play it
 //     replaces the underrun the shortfall would otherwise cause later. The headroom keeps a device
@@ -148,7 +150,7 @@ constexpr int bytesToWrite(int headBytes, int bytesFree, int sinkFillBytes) {
 //     over target depth, skip at once to target depth. This is the burst after a stall.
 //
 // A packet more than JITTER_MAX_MS later than the window's earliest is a stall, not jitter, and is
-// not planned for: a 400 ms Wi-Fi hiccup would otherwise hold 400 ms of latency for ten seconds.
+// not planned for: a 400 ms Wi-Fi hiccup would otherwise hold 400 ms of latency for a minute.
 // Its packets, and the backlog arriving behind it, stay out of the window until the stream is back
 // on its old timeline. If it is not back within STALL_SETTLE_MS (the radio stopped sending - we
 // transmitted - rather than the network holding packets back) the timeline is re-anchored at the
@@ -164,7 +166,9 @@ constexpr int bytesToWrite(int headBytes, int bytesFree, int sinkFillBytes) {
 // enters the window, however it got there.
 class JitterBuffer {
 public:
-    static constexpr int TARGET_SLACK_MS = 2;
+    // WHY 5 ms: a packet a few ms later than the window's worst - the next new peak - still plays.
+    // At 2 ms, Mike's wired LAN (SL3, 2026-11-02) underran on such packets.
+    static constexpr int TARGET_SLACK_MS = 5;
     static constexpr int GROW_HEADROOM_MS = 3;
     static constexpr int SHRINK_MIN_MS = 5;
     static constexpr int SHRINK_STEP_MAX_MS = 40;
@@ -175,7 +179,12 @@ public:
     // until then; any excess goes by the shrink a second later.
     static constexpr int DEVICE_PERIOD_PRIOR_MS = 25;
     static constexpr int DEVICE_PERIOD_MAX_MS = 60; // a larger drain is a rebuild or a glitch
-    static constexpr int WINDOW_BUCKETS = 10;
+    // WHY a minute: on a real LAN the worst packet recurs every few seconds to tens of seconds. A 10 s
+    // window let each one age out between occurrences, so the buffer shrank and the next late packet
+    // found it short - a splice (a click) about every 7 s and frequent underruns (Mike's log, SL3,
+    // 2026-11-02; test_rxplayout steadyLanSettlesWithoutCorrections). The cost: after a one-off jitter
+    // spike the extra latency is held for up to a minute rather than ten seconds.
+    static constexpr int WINDOW_BUCKETS = 60;
     static constexpr std::int64_t BUCKET_US = 1000000;
     static constexpr std::int64_t SHRINK_PERIOD_US = 1000000;
 
@@ -444,6 +453,72 @@ private:
     int m_shrinkSkips = 0;
     int m_backlogTrims = 0;
     int m_stalls = 0;
+};
+
+// Removes the click from a splice. Every correction above joins audio that was never contiguous: a
+// skip cuts from one point to a later one, inserted silence starts and ends mid-waveform, and after
+// the sink runs dry the device has played silence of its own. Each would be a step in the waveform -
+// a click, which is what Mike heard (log, 2026-11-02: one at each silence insert and shrink skip).
+//
+// Audio already in the sink cannot be changed, so the join is made on the audio after it: the first
+// frames after a splice are offset so they continue from the last frame written, and the offset
+// fades to nothing over RAMP_MS on a raised cosine. The waveform stays continuous; what is left is a
+// short, low-frequency bend instead of a step. Silence after audio therefore glides down to zero,
+// and audio after silence glides up from it.
+//
+// Fixed state, no allocation, no lock, no I/O: it runs on the audio thread (CONVENTIONS.md Rule 16).
+// It works on the output, after the mix, on interleaved stereo Float32 at 12 kHz, and must see every
+// frame written to the sink, in order, exactly once.
+class Declicker {
+public:
+    static constexpr int RAMP_MS = 5;
+    static constexpr int RAMP_FRAMES = RAMP_MS * 12;
+
+    void reset() { *this = Declicker(); } // a new stream starts from silence, so it fades in
+
+    // The next frame written does not follow the last one.
+    void splice() { m_splicePending = true; }
+
+    // The sink ran dry: the device has played silence since the last frame written.
+    void deviceRanDry() {
+        m_last = {0.0f, 0.0f};
+        m_rampLeft = 0;
+        m_splicePending = true;
+    }
+
+    // In place, on the frames about to be written, in order.
+    void process(float *samples, int frames) {
+        if (frames <= 0)
+            return;
+        if (m_splicePending) {
+            m_offset = {m_last[0] - samples[0], m_last[1] - samples[1]};
+            m_rampLeft = RAMP_FRAMES;
+            m_splicePending = false;
+        }
+        // WHY the clamp: the audio has already been limited to full scale, but an offset can be
+        // nearly 2 (a skip from +0.9 to -0.9) and would push the glide past it into a hard clip.
+        for (int i = 0; i < frames && m_rampLeft > 0; ++i, --m_rampLeft) {
+            const float w = weight(m_rampLeft);
+            samples[2 * i] = std::clamp(samples[2 * i] + m_offset[0] * w, -1.0f, 1.0f);
+            samples[2 * i + 1] = std::clamp(samples[2 * i + 1] + m_offset[1] * w, -1.0f, 1.0f);
+        }
+        m_last = {samples[2 * (frames - 1)], samples[2 * (frames - 1) + 1]};
+    }
+
+    bool ramping() const { return m_rampLeft > 0 || m_splicePending; }
+
+private:
+    // 1 on the first frame after the splice, falling to 0 on a raised cosine.
+    static float weight(int rampLeft) {
+        constexpr float kPi = 3.14159265358979f;
+        const float x = float(rampLeft) / float(RAMP_FRAMES);
+        return 0.5f - 0.5f * std::cos(kPi * x);
+    }
+
+    std::array<float, 2> m_last{0.0f, 0.0f};
+    std::array<float, 2> m_offset{0.0f, 0.0f};
+    int m_rampLeft = 0;
+    bool m_splicePending = true;
 };
 
 } // namespace RxPlayout
