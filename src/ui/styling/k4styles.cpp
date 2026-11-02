@@ -830,6 +830,86 @@ const QString &actionButtonSmall() {
 // State sheets: indicators (VFO, status bar, RIT/XIT, TX, SUB/DIV, VFO row)
 // =============================================================================
 
+// WHY these match the sheets they replace: each was a selector-less sheet on a QLabel with no children,
+// which applies to the label alone, as `QLabel { ... }` does. A state rule adds a property selector,
+// (0,1,1) against (0,0,1), so it wins over the resting rule; it re-declares every value that differed.
+
+QString vfoFeatureLabel() {
+    return QString("QLabel { color: %1; font-size: %2px; } %3 { color: %4; }")
+        .arg(Colors::TextSecondary)
+        .arg(Dimensions::FontSizeBody)
+        .arg(whenFlag("QLabel", SelectedProperty), Colors::TextPrimary);
+}
+
+QString vfoRowIndicatorLabel(const char *onColor) {
+    return QString("QLabel { color: %1; font-size: %2px; font-weight: bold; } %3 { color: %4; }")
+        .arg(Colors::TextSecondary)
+        .arg(Dimensions::FontSizeBody)
+        .arg(whenFlag("QLabel", SelectedProperty), onColor);
+}
+
+QString vfoBModeLabel() {
+    return QString("QLabel { color: %1; font-size: %2px; font-weight: bold; } %3 { color: %4; }")
+        .arg(Colors::TextPrimary)
+        .arg(Dimensions::FontSizeBody)
+        .arg(whenFlag("QLabel", DimmedProperty), Colors::TextSecondary);
+}
+
+QString subDivBadge() {
+    return QString("QLabel { background-color: %1; color: %2; font-size: %3px; font-weight: bold; "
+                   "border-radius: 2px; } %4 { background-color: %5; color: %6; }")
+        .arg(Colors::BadgeOffBackground, Colors::TextSecondary)
+        .arg(Dimensions::FontSizeCaption)
+        .arg(whenFlag("QLabel", SelectedProperty), Colors::StatusGreen, Colors::TextOnAccent);
+}
+
+QString txIndicatorLabel() {
+    return QString("QLabel { color: %1; font-size: %2px; font-weight: bold; } %3 { color: %4; }")
+        .arg(Colors::AccentAmber)
+        .arg(Dimensions::FontSizeIndicator)
+        .arg(whenFlag("QLabel", SelectedProperty), Colors::TextRed);
+}
+
+QString txTriangleLabel() {
+    return QString("QLabel { color: %1; font-size: %2px; } %3 { color: %4; }")
+        .arg(Colors::AccentAmber)
+        .arg(Dimensions::FontSizeIndicator)
+        .arg(whenFlag("QLabel", SelectedProperty), Colors::TextRed);
+}
+
+QString ritXitLabel() {
+    return QString("QLabel { color: %1; font-size: %2px; border: none; } %3 { color: %4; font-weight: bold; }")
+        .arg(Colors::TextSecondary)
+        .arg(Dimensions::FontSizeCaption)
+        .arg(whenFlag("QLabel", SelectedProperty), Colors::TextPrimary);
+}
+
+QString ritXitValueLabel() {
+    return QString("QLabel { color: %1; font-size: %2px; font-weight: bold; border: none; padding: 0 11px; } "
+                   "%3 { color: %4; }")
+        .arg(Colors::TextSecondary)
+        .arg(Dimensions::FontSizeHeading)
+        .arg(whenFlag("QLabel", SelectedProperty), Colors::TextPrimary);
+}
+
+QString connectionStatusLabel() {
+    return QString("QLabel { color: %1; font-size: %2px; } "
+                   "%3 { color: %4; font-weight: bold; } %5 { color: %6; font-weight: bold; } "
+                   "%7 { color: %8; font-weight: bold; }")
+        .arg(Colors::TextSecondary)
+        .arg(Dimensions::FontSizeReadout)
+        .arg(whenState("QLabel", StateProperty, "connecting"), Colors::AccentAmber,
+             whenState("QLabel", StateProperty, "connected"), Colors::StatusGreen,
+             whenState("QLabel", StateProperty, "error"), Colors::TextRed);
+}
+
+QString kpa1500StatusLabel() {
+    return QString("QLabel { color: %1; font-size: %2px; } %3 { color: %4; font-weight: bold; }")
+        .arg(Colors::TextSecondary)
+        .arg(Dimensions::FontSizeReadout)
+        .arg(whenFlag("QLabel", SelectedProperty), Colors::StatusGreen);
+}
+
 // =============================================================================
 // State sheets: dialogs and Options pages
 // =============================================================================

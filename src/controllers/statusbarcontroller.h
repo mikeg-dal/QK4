@@ -44,7 +44,8 @@ public:
     // Close the power-off confirmation and the network-metrics popup (disconnect reset).
     void closePopups();
     void setKpa1500Visible(bool visible);
-    void setKpa1500Status(const QString &text, const QString &styleSheet);
+    // Green and bold while the amplifier is connected, grey while it is not.
+    void setKpa1500Status(const QString &text, bool connected);
 
     // Connection-state indicator transitions. Each sets the K4 status label
     // text and style appropriate for that state. Disconnected also resets

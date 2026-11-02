@@ -1,5 +1,5 @@
 #include "ui/widgets/vfowidget.h"
-#include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include "ui/widgets/txmeterwidget.h"
 #include "ui/widgets/frequencydisplaywidget.h"
 #include "dsp/minipan_rhi.h"
@@ -86,9 +86,7 @@ void VFOWidget::setupUi() {
     featuresRow->setSpacing(4); // Comfortable spacing for all indicators
 
     // Feature indicator label style
-    const QString featureLabelStyle = QString("color: %1; font-size: %2px;")
-                                          .arg(K4Styles::Colors::TextSecondary)
-                                          .arg(K4Styles::Dimensions::FontSizeBody);
+    const QString featureLabelStyle = K4Styles::vfoFeatureLabel();
 
     m_agcLabel = new QLabel("AGC-S", featuresContainer);
     m_agcLabel->setStyleSheet(featureLabelStyle);
@@ -193,9 +191,7 @@ void VFOWidget::setSMeterValue(double value) {
 
 void VFOWidget::setAGC(const QString &label, bool active) {
     m_agcLabel->setText(label);
-    m_agcLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                  .arg(active ? K4Styles::Colors::TextPrimary : K4Styles::Colors::TextSecondary)
-                                  .arg(K4Styles::Dimensions::FontSizeBody));
+    K4Styles::setSelected(m_agcLabel, active);
 }
 
 void VFOWidget::setPreamp(bool on, int level) {
@@ -205,9 +201,7 @@ void VFOWidget::setPreamp(bool on, int level) {
     } else {
         m_preampLabel->setText("PRE");
     }
-    m_preampLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                     .arg(on ? K4Styles::Colors::TextPrimary : K4Styles::Colors::TextSecondary)
-                                     .arg(K4Styles::Dimensions::FontSizeBody));
+    K4Styles::setSelected(m_preampLabel, on);
 }
 
 void VFOWidget::setAtt(bool on, int level) {
@@ -217,23 +211,17 @@ void VFOWidget::setAtt(bool on, int level) {
     } else {
         m_attLabel->setText("ATT");
     }
-    m_attLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                  .arg(on ? K4Styles::Colors::TextPrimary : K4Styles::Colors::TextSecondary)
-                                  .arg(K4Styles::Dimensions::FontSizeBody));
+    K4Styles::setSelected(m_attLabel, on);
 }
 
 void VFOWidget::setNB(bool on) {
-    m_nbLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                 .arg(on ? K4Styles::Colors::TextPrimary : K4Styles::Colors::TextSecondary)
-                                 .arg(K4Styles::Dimensions::FontSizeBody));
+    K4Styles::setSelected(m_nbLabel, on);
 }
 
 void VFOWidget::setNR(bool lmsOn, bool ssnrOn) {
     const bool active = lmsOn || ssnrOn;
     m_nrLabel->setText(ssnrOn ? "NR+" : "NR");
-    m_nrLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                 .arg(active ? K4Styles::Colors::TextPrimary : K4Styles::Colors::TextSecondary)
-                                 .arg(K4Styles::Dimensions::FontSizeBody));
+    K4Styles::setSelected(m_nrLabel, active);
 }
 
 void VFOWidget::setNotch(bool autoEnabled, bool manualEnabled) {
@@ -249,9 +237,7 @@ void VFOWidget::setNotch(bool autoEnabled, bool manualEnabled) {
     }
 
     m_ntchLabel->setText(text);
-    m_ntchLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                   .arg(active ? K4Styles::Colors::TextPrimary : K4Styles::Colors::TextSecondary)
-                                   .arg(K4Styles::Dimensions::FontSizeBody));
+    K4Styles::setSelected(m_ntchLabel, active);
 }
 
 void VFOWidget::setApf(bool enabled, int bandwidth) {
@@ -261,9 +247,7 @@ void VFOWidget::setApf(bool enabled, int bandwidth) {
         text = QString("APF-%1").arg(bwNames[qBound(0, bandwidth, 2)]);
     }
     m_apfLabel->setText(text);
-    m_apfLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                  .arg(enabled ? K4Styles::Colors::TextPrimary : K4Styles::Colors::TextSecondary)
-                                  .arg(K4Styles::Dimensions::FontSizeBody));
+    K4Styles::setSelected(m_apfLabel, enabled);
 }
 
 void VFOWidget::updateMiniPan(const QByteArray &bins, qint64 centerHz, int spanHz) {

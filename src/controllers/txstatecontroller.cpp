@@ -3,7 +3,7 @@
 #include "controllers/statusbarcontroller.h"
 #include "controllers/vfofrequencycontroller.h"
 #include "models/radiostate.h"
-#include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include "ui/widgets/sidecontrolpanel.h"
 #include "ui/widgets/vfowidget.h"
 
@@ -16,6 +16,9 @@ TxStateController::TxStateController(RadioState *radioState, SideControlPanel *s
     : QObject(parent), m_radioState(radioState), m_sideControlPanel(sideControlPanel),
       m_vfoFrequencyController(vfoFrequencyController), m_vfoA(vfoA), m_vfoB(vfoB), m_txIndicator(txIndicator),
       m_txTriangle(txTriangle), m_txTriangleB(txTriangleB) {
+    m_txIndicator->setStyleSheet(K4Styles::txIndicatorLabel());
+    m_txTriangle->setStyleSheet(K4Styles::txTriangleLabel());
+    m_txTriangleB->setStyleSheet(K4Styles::txTriangleLabel());
     connect(m_radioState, &RadioState::transmitStateChanged, this, &TxStateController::onTransmitStateChanged);
     connect(m_radioState, &RadioState::txMeterChanged, this, &TxStateController::onTxMeterChanged);
     // paDrainCurrentChanged fires from BOTH paths in RxTxMeterState:
@@ -45,15 +48,9 @@ void TxStateController::onTransmitStateChanged(bool transmitting) {
         m_vfoB->setTransmitting(false);
     }
 
-    const QString color = transmitting ? K4Styles::Colors::TextRed : K4Styles::Colors::AccentAmber;
-    const QString indicatorStyle = QString("color: %1; font-size: %2px; font-weight: bold;")
-                                       .arg(color)
-                                       .arg(K4Styles::Dimensions::FontSizeIndicator);
-    const QString triangleStyle =
-        QString("color: %1; font-size: %2px;").arg(color).arg(K4Styles::Dimensions::FontSizeIndicator);
-    m_txIndicator->setStyleSheet(indicatorStyle);
-    m_txTriangle->setStyleSheet(triangleStyle);
-    m_txTriangleB->setStyleSheet(triangleStyle);
+    K4Styles::setSelected(m_txIndicator, transmitting);
+    K4Styles::setSelected(m_txTriangle, transmitting);
+    K4Styles::setSelected(m_txTriangleB, transmitting);
 
     // When XIT is on, rendered VFO frequency = dial + XIT offset; force a
     // refresh on the TX VFO so the display matches the actual TX freq

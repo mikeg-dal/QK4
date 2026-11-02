@@ -2,23 +2,18 @@
 
 #include "controllers/spectrumcontroller.h"
 #include "models/radiostate.h"
-#include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include "ui/widgets/vforowwidget.h"
 
 #include <QLabel>
 #include <QString>
 
-namespace {
-
-QString largeBoldColor(const char *color) {
-    return QString("color: %1; font-size: %2px; font-weight: bold;").arg(color).arg(K4Styles::Dimensions::FontSizeBody);
-}
-
-} // namespace
-
 VfoRowIndicatorController::VfoRowIndicatorController(RadioState *radioState, SpectrumController *spectrum,
                                                      VfoRowWidget *vfoRow, const Labels &labels, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_spectrum(spectrum), m_vfoRow(vfoRow), m_labels(labels) {
+    m_labels.voxLabel->setStyleSheet(K4Styles::vfoRowIndicatorLabel(K4Styles::Colors::AccentAmber));
+    m_labels.atuLabel->setStyleSheet(K4Styles::vfoRowIndicatorLabel(K4Styles::Colors::AccentAmber));
+    m_labels.qskLabel->setStyleSheet(K4Styles::vfoRowIndicatorLabel(K4Styles::Colors::TextPrimary));
     connect(m_radioState, &RadioState::splitChanged, this, &VfoRowIndicatorController::onSplitChanged);
     connect(m_radioState, &RadioState::bSetChanged, this, &VfoRowIndicatorController::onBSetChanged);
     connect(m_radioState, &RadioState::voxChanged, this, &VfoRowIndicatorController::onVoxChanged);
@@ -35,10 +30,6 @@ VfoRowIndicatorController::VfoRowIndicatorController(RadioState *radioState, Spe
 }
 
 void VfoRowIndicatorController::onSplitChanged(bool enabled) {
-    const QString splitStyle = QString("color: %1; font-size: %2px;")
-                                   .arg(K4Styles::Colors::AccentAmber)
-                                   .arg(K4Styles::Dimensions::FontSizeReadout);
-    m_labels.splitLabel->setStyleSheet(splitStyle);
     m_labels.splitLabel->setText(enabled ? "SPLIT ON" : "SPLIT OFF");
 
     // TX triangle follows which VFO transmits.
@@ -68,13 +59,11 @@ void VfoRowIndicatorController::onVoxChanged() {
     // the generic voxChanged signal fires on any of them. Ask RadioState
     // for "is VOX on for the currently-tuned mode" and color accordingly.
     const bool voxOn = m_radioState->voxForCurrentMode();
-    m_labels.voxLabel->setStyleSheet(
-        largeBoldColor(voxOn ? K4Styles::Colors::AccentAmber : K4Styles::Colors::TextSecondary));
+    K4Styles::setSelected(m_labels.voxLabel, voxOn);
 }
 
 void VfoRowIndicatorController::onQskEnabledChanged(bool enabled) {
-    m_labels.qskLabel->setStyleSheet(
-        largeBoldColor(enabled ? K4Styles::Colors::TextPrimary : K4Styles::Colors::TextSecondary));
+    K4Styles::setSelected(m_labels.qskLabel, enabled);
 }
 
 void VfoRowIndicatorController::onTestModeChanged(bool enabled) {
@@ -83,8 +72,7 @@ void VfoRowIndicatorController::onTestModeChanged(bool enabled) {
 
 void VfoRowIndicatorController::onAtuModeChanged(int mode) {
     // ATU mode 2 = AUTO; anything else renders greyed.
-    m_labels.atuLabel->setStyleSheet(
-        largeBoldColor(mode == 2 ? K4Styles::Colors::AccentAmber : K4Styles::Colors::TextSecondary));
+    K4Styles::setSelected(m_labels.atuLabel, mode == 2);
 }
 
 void VfoRowIndicatorController::onMessageBankChanged(int bank) {
@@ -92,19 +80,14 @@ void VfoRowIndicatorController::onMessageBankChanged(int bank) {
 }
 
 void VfoRowIndicatorController::reset() {
-    const QString amberButton = QString("color: %1; font-size: %2px;")
-                                    .arg(K4Styles::Colors::AccentAmber)
-                                    .arg(K4Styles::Dimensions::FontSizeReadout);
     m_labels.splitLabel->setText("SPLIT OFF");
-    m_labels.splitLabel->setStyleSheet(amberButton);
     // B SET hid SPLIT; with it reset, SPLIT shows again (as onBSetChanged(false) would).
     if (m_labels.bSetLabel)
         m_labels.bSetLabel->setVisible(false);
     m_labels.splitLabel->setVisible(true);
     m_labels.msgBankLabel->setText("MSG: I");
-    m_labels.msgBankLabel->setStyleSheet(amberButton);
-    m_labels.atuLabel->setStyleSheet(largeBoldColor(K4Styles::Colors::TextSecondary));
-    m_labels.voxLabel->setStyleSheet(largeBoldColor(K4Styles::Colors::TextSecondary));
-    m_labels.qskLabel->setStyleSheet(largeBoldColor(K4Styles::Colors::TextSecondary));
+    K4Styles::setSelected(m_labels.atuLabel, false);
+    K4Styles::setSelected(m_labels.voxLabel, false);
+    K4Styles::setSelected(m_labels.qskLabel, false);
     m_vfoRow->setTestVisible(false);
 }

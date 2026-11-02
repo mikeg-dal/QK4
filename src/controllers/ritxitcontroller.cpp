@@ -3,7 +3,7 @@
 #include "connectioncontroller.h"
 #include "controllers/spectrumcontroller.h"
 #include "models/radiostate.h"
-#include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 
 #include <QLabel>
 #include <QString>
@@ -14,6 +14,9 @@ RitXitController::RitXitController(RadioState *radioState, ConnectionController 
                                    QLabel *ritXitValueLabel, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_connection(connection), m_spectrum(spectrum), m_ritLabel(ritLabel),
       m_xitLabel(xitLabel), m_ritXitValueLabel(ritXitValueLabel) {
+    m_ritLabel->setStyleSheet(K4Styles::ritXitLabel());
+    m_xitLabel->setStyleSheet(K4Styles::ritXitLabel());
+    m_ritXitValueLabel->setStyleSheet(K4Styles::ritXitValueLabel());
     reset();
 
     // WHY: when BSET is off, RIT state reflects VFO A; when on, VFO B. In
@@ -90,26 +93,15 @@ bool RitXitController::handleWheel(QWheelEvent *event) {
 }
 
 void RitXitController::applyLabels(bool ritEnabled, bool xitEnabled, int offset) {
-    const QString activeStyle = QString("color: %1; font-size: %2px; font-weight: bold; border: none;")
-                                    .arg(K4Styles::Colors::TextPrimary)
-                                    .arg(K4Styles::Dimensions::FontSizeCaption);
-    const QString inactiveStyle = QString("color: %1; font-size: %2px; border: none;")
-                                      .arg(K4Styles::Colors::TextSecondary)
-                                      .arg(K4Styles::Dimensions::FontSizeCaption);
-    m_ritLabel->setStyleSheet(ritEnabled ? activeStyle : inactiveStyle);
-    m_xitLabel->setStyleSheet(xitEnabled ? activeStyle : inactiveStyle);
+    K4Styles::setSelected(m_ritLabel, ritEnabled);
+    K4Styles::setSelected(m_xitLabel, xitEnabled);
 
     // Offset rendered in kHz with explicit + sign on non-negative values.
     const double offsetKHz = offset / 1000.0;
     const QString sign = (offset >= 0) ? "+" : "";
     m_ritXitValueLabel->setText(QString("%1%2").arg(sign).arg(offsetKHz, 0, 'f', 2));
 
-    const char *valueColor =
-        (ritEnabled || xitEnabled) ? K4Styles::Colors::TextPrimary : K4Styles::Colors::TextSecondary;
-    m_ritXitValueLabel->setStyleSheet(
-        QString("color: %1; font-size: %2px; font-weight: bold; border: none; padding: 0 11px;")
-            .arg(valueColor)
-            .arg(K4Styles::Dimensions::FontSizeHeading));
+    K4Styles::setSelected(m_ritXitValueLabel, ritEnabled || xitEnabled);
 }
 
 void RitXitController::applyDisplay(bool ritEnabled, bool xitEnabled, int offset) {

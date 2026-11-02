@@ -4,7 +4,6 @@
 #include "controllers/statusbarcontroller.h"
 #include "network/kpa1500client.h"
 #include "settings/radiosettings.h"
-#include "ui/styling/k4constants.h"
 #include "ui/widgets/kpa1500minipanel.h"
 #include "ui/widgets/rightsidepanel.h"
 
@@ -162,13 +161,5 @@ void KPA1500UiController::updateStatus() {
         return;
     }
     m_statusBar->setKpa1500Visible(true);
-    if (connected) {
-        m_statusBar->setKpa1500Status("KPA1500", QString("color: %1; font-size: %2px; font-weight: bold;")
-                                                     .arg(K4Styles::Colors::StatusGreen)
-                                                     .arg(K4Styles::Dimensions::FontSizeReadout));
-    } else {
-        m_statusBar->setKpa1500Status("KPA1500", QString("color: %1; font-size: %2px;")
-                                                     .arg(K4Styles::Colors::TextSecondary)
-                                                     .arg(K4Styles::Dimensions::FontSizeReadout));
-    }
+    m_statusBar->setKpa1500Status("KPA1500", connected);
 }

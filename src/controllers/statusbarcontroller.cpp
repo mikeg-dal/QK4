@@ -140,17 +140,13 @@ StatusBarController::StatusBarController(RadioState *radioState, ConnectionContr
 
     // KPA1500 status (to left of K4 status)
     m_kpa1500StatusLabel = new QLabel("", m_container);
-    m_kpa1500StatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                            .arg(K4Styles::Colors::TextSecondary)
-                                            .arg(K4Styles::Dimensions::FontSizeReadout));
+    m_kpa1500StatusLabel->setStyleSheet(K4Styles::kpa1500StatusLabel());
     m_kpa1500StatusLabel->hide(); // Hidden when not enabled
     layout->addWidget(m_kpa1500StatusLabel);
 
     // K4 connection status
     m_connectionStatusLabel = new QLabel("K4", m_container);
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                               .arg(K4Styles::Colors::TextSecondary)
-                                               .arg(K4Styles::Dimensions::FontSizeReadout));
+    m_connectionStatusLabel->setStyleSheet(K4Styles::connectionStatusLabel());
     layout->addWidget(m_connectionStatusLabel);
 
     // Network health signal bars
@@ -234,9 +230,7 @@ void StatusBarController::showDisconnected() {
     }
 
     m_connectionStatusLabel->setText("K4");
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                               .arg(K4Styles::Colors::TextSecondary)
-                                               .arg(K4Styles::Dimensions::FontSizeReadout));
+    K4Styles::setStyleState(m_connectionStatusLabel, K4Styles::StateProperty, QString());
     m_titleLabel->setText("Elecraft K4");
 }
 
@@ -244,17 +238,13 @@ void StatusBarController::showConnecting() {
     // A new attempt is the one thing that supersedes a previous failure.
     m_errorShown = false;
     m_connectionStatusLabel->setText("K4");
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                               .arg(K4Styles::Colors::AccentAmber)
-                                               .arg(K4Styles::Dimensions::FontSizeReadout));
+    K4Styles::setStyleState(m_connectionStatusLabel, K4Styles::StateProperty, QStringLiteral("connecting"));
 }
 
 void StatusBarController::showConnected() {
     m_errorShown = false;
     m_connectionStatusLabel->setText("K4");
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                               .arg(K4Styles::Colors::StatusGreen)
-                                               .arg(K4Styles::Dimensions::FontSizeReadout));
+    K4Styles::setStyleState(m_connectionStatusLabel, K4Styles::StateProperty, QStringLiteral("connected"));
 }
 
 void StatusBarController::showError(const QString &errorMessage) {
@@ -265,9 +255,7 @@ void StatusBarController::showError(const QString &errorMessage) {
     Q_UNUSED(errorMessage)
     m_errorShown = true;
     m_connectionStatusLabel->setText("K4");
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                               .arg(K4Styles::Colors::TextRed)
-                                               .arg(K4Styles::Dimensions::FontSizeReadout));
+    K4Styles::setStyleState(m_connectionStatusLabel, K4Styles::StateProperty, QStringLiteral("error"));
 }
 
 void StatusBarController::closePopups() {
@@ -318,10 +306,9 @@ void StatusBarController::setKpa1500Visible(bool visible) {
     m_kpa1500StatusLabel->setVisible(visible);
 }
 
-void StatusBarController::setKpa1500Status(const QString &text, const QString &styleSheet) {
+void StatusBarController::setKpa1500Status(const QString &text, bool connected) {
     m_kpa1500StatusLabel->setText(text);
-    if (!styleSheet.isEmpty())
-        m_kpa1500StatusLabel->setStyleSheet(styleSheet);
+    K4Styles::setSelected(m_kpa1500StatusLabel, connected);
 }
 
 void StatusBarController::onPowerButtonClicked() {

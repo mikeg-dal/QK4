@@ -380,6 +380,43 @@ const QString &actionButtonSmall();
 // State sheets: indicators (VFO, status bar, RIT/XIT, TX, SUB/DIV, VFO row)
 // =============================================================================
 
+/// VFO feature-row label (AGC, PRE, ATT, NB, NR, NTCH, APF): FontSizeBody, TextSecondary while off,
+/// TextPrimary while setSelected().
+QString vfoFeatureLabel();
+
+/// VOX / ATU / QSK label in the VFO row: bold FontSizeBody, TextSecondary while off, `onColor` while
+/// setSelected().
+QString vfoRowIndicatorLabel(const char *onColor);
+
+/// VFO B mode label: bold FontSizeBody, TextPrimary; TextSecondary while the DimmedProperty flag is set
+/// (Sub RX off).
+QString vfoBModeLabel();
+
+/// SUB / DIV badge: bold FontSizeCaption on BadgeOffBackground while off, TextOnAccent on StatusGreen
+/// while setSelected().
+QString subDivBadge();
+
+/// "TX" label: bold FontSizeIndicator, AccentAmber while receiving, TextRed while setSelected().
+QString txIndicatorLabel();
+
+/// TX VFO triangle: FontSizeIndicator, AccentAmber while receiving, TextRed while setSelected().
+QString txTriangleLabel();
+
+/// RIT / XIT label: FontSizeCaption TextSecondary while off, bold TextPrimary while setSelected().
+QString ritXitLabel();
+
+/// RIT/XIT offset readout: bold FontSizeHeading, TextSecondary while both are off, TextPrimary while
+/// setSelected().
+QString ritXitValueLabel();
+
+/// Status-bar "K4" connection label: FontSizeReadout TextSecondary while disconnected; bold and coloured
+/// for StateProperty "connecting" (AccentAmber), "connected" (StatusGreen) and "error" (TextRed).
+QString connectionStatusLabel();
+
+/// Status-bar "KPA1500" label: FontSizeReadout TextSecondary while disconnected, bold StatusGreen while
+/// setSelected().
+QString kpa1500StatusLabel();
+
 // =============================================================================
 // State sheets: dialogs and Options pages
 // =============================================================================

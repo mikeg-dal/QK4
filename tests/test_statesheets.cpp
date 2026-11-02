@@ -105,7 +105,126 @@ QImage renderWith(const StateCase &c, const QString &sheet, bool applyProps, Int
 // =============================================================================
 
 void addIndicatorCases(QList<StateCase> &cases) {
-    Q_UNUSED(cases);
+    namespace C = K4Styles::Colors;
+    namespace D = K4Styles::Dimensions;
+    const StyleProp selected{K4Styles::SelectedProperty, true};
+    const auto label = [&cases](const QString &name, const QString &oldSheet, const QString &newSheet,
+                                QList<StyleProp> props, const QString &text, QSize size) {
+        StateCase c;
+        c.name = name;
+        c.kind = Kind::Label;
+        c.oldSheet = oldSheet;
+        c.newSheet = newSheet;
+        c.props = std::move(props);
+        c.text = text;
+        c.size = size;
+        cases.append(c);
+    };
+
+    // VFOWidget feature row (setAGC, setPreamp, setAtt, setNB, setNR, setNotch, setApf).
+    const auto feature = [](const char *color) {
+        return QString("color: %1; font-size: %2px;").arg(color).arg(D::FontSizeBody);
+    };
+    label("indicators/vfoFeature/off", feature(C::TextSecondary), K4Styles::vfoFeatureLabel(), {}, "NTCH-A",
+          QSize(64, 20));
+    label("indicators/vfoFeature/on", feature(C::TextPrimary), K4Styles::vfoFeatureLabel(), {selected}, "NTCH-A",
+          QSize(64, 20));
+
+    // VfoRowIndicatorController: VOX and ATU amber when on, QSK white.
+    const auto largeBold = [](const char *color) {
+        return QString("color: %1; font-size: %2px; font-weight: bold;").arg(color).arg(D::FontSizeBody);
+    };
+    const QSize rowSize(48, 24);
+    label("indicators/vox/off", largeBold(C::TextSecondary), K4Styles::vfoRowIndicatorLabel(C::AccentAmber), {}, "VOX",
+          rowSize);
+    label("indicators/vox/on", largeBold(C::AccentAmber), K4Styles::vfoRowIndicatorLabel(C::AccentAmber), {selected},
+          "VOX", rowSize);
+    label("indicators/atu/off", largeBold(C::TextSecondary), K4Styles::vfoRowIndicatorLabel(C::AccentAmber), {}, "ATU",
+          rowSize);
+    label("indicators/atu/on", largeBold(C::AccentAmber), K4Styles::vfoRowIndicatorLabel(C::AccentAmber), {selected},
+          "ATU", rowSize);
+    label("indicators/qsk/off", largeBold(C::TextSecondary), K4Styles::vfoRowIndicatorLabel(C::TextPrimary), {}, "QSK",
+          rowSize);
+    label("indicators/qsk/on", largeBold(C::TextPrimary), K4Styles::vfoRowIndicatorLabel(C::TextPrimary), {selected},
+          "QSK", rowSize);
+
+    // SubDivIndicatorController: VFO B mode label, SUB and DIV badges.
+    const QSize modeSize(D::VfoSquareSize, D::MinClickTarget);
+    label("indicators/vfoBMode/subOn", largeBold(C::TextPrimary), K4Styles::vfoBModeLabel(), {}, "USB", modeSize);
+    label("indicators/vfoBMode/dimmed", largeBold(C::TextSecondary), K4Styles::vfoBModeLabel(),
+          {{K4Styles::DimmedProperty, true}}, "USB", modeSize);
+    const auto badge = [](const char *background, const char *color) {
+        return QString("background-color: %1; color: %2; font-size: %3px; font-weight: bold; border-radius: 2px;")
+            .arg(background, color)
+            .arg(D::FontSizeCaption);
+    };
+    const QSize badgeSize(36, 14);
+    for (const char *text : {"SUB", "DIV"}) {
+        const QString base = QString("indicators/%1/").arg(QString::fromLatin1(text).toLower());
+        label(base + "off", badge(C::BadgeOffBackground, C::TextSecondary), K4Styles::subDivBadge(), {}, text,
+              badgeSize);
+        label(base + "on", badge(C::StatusGreen, C::TextOnAccent), K4Styles::subDivBadge(), {selected}, text,
+              badgeSize);
+    }
+
+    // TxStateController: TX label and the two TX triangles.
+    const auto txIndicator = [](const char *color) {
+        return QString("color: %1; font-size: %2px; font-weight: bold;").arg(color).arg(D::FontSizeIndicator);
+    };
+    const auto txTriangle = [](const char *color) {
+        return QString("color: %1; font-size: %2px;").arg(color).arg(D::FontSizeIndicator);
+    };
+    label("indicators/txIndicator/rx", txIndicator(C::AccentAmber), K4Styles::txIndicatorLabel(), {}, "TX",
+          QSize(32, D::ButtonHeightMini));
+    label("indicators/txIndicator/tx", txIndicator(C::TextRed), K4Styles::txIndicatorLabel(), {selected}, "TX",
+          QSize(32, D::ButtonHeightMini));
+    const QSize triangleSize(D::ButtonHeightMini, D::ButtonHeightMini);
+    label("indicators/txTriangle/rx", txTriangle(C::AccentAmber), K4Styles::txTriangleLabel(), {},
+          QString::fromUtf8("◀"), triangleSize);
+    label("indicators/txTriangle/tx", txTriangle(C::TextRed), K4Styles::txTriangleLabel(), {selected},
+          QString::fromUtf8("◀"), triangleSize);
+
+    // RitXitController::applyLabels.
+    const QString ritActive = QString("color: %1; font-size: %2px; font-weight: bold; border: none;")
+                                  .arg(C::TextPrimary)
+                                  .arg(D::FontSizeCaption);
+    const QString ritInactive =
+        QString("color: %1; font-size: %2px; border: none;").arg(C::TextSecondary).arg(D::FontSizeCaption);
+    const QSize ritSize(28, 16);
+    label("indicators/rit/off", ritInactive, K4Styles::ritXitLabel(), {}, "RIT", ritSize);
+    label("indicators/rit/on", ritActive, K4Styles::ritXitLabel(), {selected}, "RIT", ritSize);
+    label("indicators/xit/off", ritInactive, K4Styles::ritXitLabel(), {}, "XIT", ritSize);
+    label("indicators/xit/on", ritActive, K4Styles::ritXitLabel(), {selected}, "XIT", ritSize);
+    const auto ritValue = [](const char *color) {
+        return QString("color: %1; font-size: %2px; font-weight: bold; border: none; padding: 0 11px;")
+            .arg(color)
+            .arg(D::FontSizeHeading);
+    };
+    label("indicators/ritXitValue/off", ritValue(C::TextSecondary), K4Styles::ritXitValueLabel(), {}, "+0.00",
+          QSize(78, 20));
+    label("indicators/ritXitValue/on", ritValue(C::TextPrimary), K4Styles::ritXitValueLabel(), {selected}, "-1.25",
+          QSize(78, 20));
+
+    // StatusBarController: K4 connection label and KPA1500 label.
+    const auto readout = [](const char *color) {
+        return QString("color: %1; font-size: %2px;").arg(color).arg(D::FontSizeReadout);
+    };
+    const auto readoutBold = [](const char *color) {
+        return QString("color: %1; font-size: %2px; font-weight: bold;").arg(color).arg(D::FontSizeReadout);
+    };
+    const QSize k4Size(28, 20);
+    label("indicators/connection/disconnected", readout(C::TextSecondary), K4Styles::connectionStatusLabel(), {}, "K4",
+          k4Size);
+    label("indicators/connection/connecting", readoutBold(C::AccentAmber), K4Styles::connectionStatusLabel(),
+          {{K4Styles::StateProperty, QStringLiteral("connecting")}}, "K4", k4Size);
+    label("indicators/connection/connected", readoutBold(C::StatusGreen), K4Styles::connectionStatusLabel(),
+          {{K4Styles::StateProperty, QStringLiteral("connected")}}, "K4", k4Size);
+    label("indicators/connection/error", readoutBold(C::TextRed), K4Styles::connectionStatusLabel(),
+          {{K4Styles::StateProperty, QStringLiteral("error")}}, "K4", k4Size);
+    label("indicators/kpa1500/disconnected", readout(C::TextSecondary), K4Styles::kpa1500StatusLabel(), {}, "KPA1500",
+          QSize(72, 20));
+    label("indicators/kpa1500/connected", readoutBold(C::StatusGreen), K4Styles::kpa1500StatusLabel(), {selected},
+          "KPA1500", QSize(72, 20));
 }
 
 // =============================================================================
