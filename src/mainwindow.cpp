@@ -1014,7 +1014,7 @@ void MainWindow::wireVfoWidget(VFOWidget *vfo, bool vfoB) {
 
     // Typed frequency: send FA/FB then query it to refresh the display.
     connect(vfo, &VFOWidget::frequencyEntered, this, [this, vfoB](const QString &freqString) {
-        // FA/FB accept 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz
+        // FA/FB accept 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz. The entry always gives all 11, in Hz.
         // A locked VFO keeps its frequency: ask for it instead, so the display shows it again.
         const QString query = vfoB ? QStringLiteral("FB;") : QStringLiteral("FA;");
         const QString set = query.left(2) + freqString + u';';

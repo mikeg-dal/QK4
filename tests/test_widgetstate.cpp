@@ -14,6 +14,7 @@
 #include "ui/popups/confirmpopup.h"
 #include "ui/popups/displaypopupwidget.h"
 #include "ui/styling/k4glyphs.h"
+#include "ui/styling/k4styles.h"
 #include "ui/popups/lineoutpopup.h"
 #include "ui/widgets/controlgroupwidget.h"
 #include "ui/widgets/displaymenubutton.h"
@@ -23,6 +24,7 @@
 #include "ui/widgets/sidecontrolpanel.h"
 
 #include <QApplication>
+#include <QFontMetrics>
 #include <QIcon>
 #include <QImage>
 #include <QLabel>
@@ -88,9 +90,10 @@ private slots:
         w.beginEntry();
         QVERIFY(w.isEditing());
 
-        QTest::keyClicks(&w, "00014");
+        QTest::keyClicks(&w, "14");
         w.setFrequency("7025000"); // radio report arrives mid-entry
-        QCOMPARE(w.frequency().left(5), QString("00014"));
+        QCOMPARE(w.frequency(), QString("14"));
+        QCOMPARE(w.displayText(), QString("14"));
     }
 
     void frequencyEntrySendsTypedDigitsNotRadioUpdate() {
@@ -99,12 +102,13 @@ private slots:
         w.show();
         QSignalSpy entered(&w, &FrequencyDisplayWidget::frequencyEntered);
         w.beginEntry();
-        QTest::keyClicks(&w, "0014074000");
+        QTest::keyClicks(&w, "14074000");
         w.setFrequency("7025000");
         QTest::keyClick(&w, Qt::Key_Return);
 
         QCOMPARE(entered.count(), 1);
-        QCOMPARE(entered.at(0).at(0).toString(), QString("14074000"));
+        // Always all 11 digits, in Hz: the K4 reads 1-5 digits as MHz or kHz (D12, FA).
+        QCOMPARE(entered.at(0).at(0).toString(), QString("00014074000"));
     }
 
     void frequencyCancelShowsLatestRadioValue() {
@@ -130,7 +134,7 @@ private slots:
         QSignalSpy entered(&w, &FrequencyDisplayWidget::frequencyEntered);
         w.beginEntry();
         QVERIFY(!w.isEditing());
-        QTest::keyClicks(&w, "0014074000");
+        QTest::keyClicks(&w, "14074000");
         QTest::keyClick(&w, Qt::Key_Return);
         QCOMPARE(entered.count(), 0);
         QCOMPARE(w.displayText(), QString("7.024.980"));
@@ -159,6 +163,68 @@ private slots:
         FrequencyDisplayWidget w;
         w.setFrequency("14.074.000");
         QCOMPARE(w.displayText(), QString("14.074.000"));
+    }
+
+    // 10 GHz needs 11 digits, the most the K4 takes. With 10 positions the radio's 10.368 GHz showed as
+    // 368.000.000, and typing it sent 1.0368 GHz (the 11th key overwrote the last digit).
+    void tenGigahertzDisplaysAndEnters() {
+        FrequencyDisplayWidget w;
+        w.setFrequency("10368000000");
+        QCOMPARE(w.displayText(), QString("10.368.000.000"));
+        w.show();
+        QSignalSpy entered(&w, &FrequencyDisplayWidget::frequencyEntered);
+        w.beginEntry();
+        QCOMPARE(w.displayText(), QString());  // opens empty
+        QTest::keyClicks(&w, "0103680000009"); // a leading zero is ignored, a 12th digit too
+        QCOMPARE(w.displayText(), QString("10.368.000.000"));
+        QTest::keyClick(&w, Qt::Key_Return);
+        QCOMPARE(entered.size(), 1);
+        QCOMPARE(entered.at(0).at(0).toString(), QString("10368000000"));
+        QCOMPARE(w.displayText(), QString("10.368.000.000"));
+    }
+
+    // Typing builds from the right, Backspace takes the last digit back, Enter on nothing just closes.
+    void frequencyEntryTypesInFromTheRight() {
+        FrequencyDisplayWidget w;
+        w.setFrequency("7024980");
+        w.show();
+        QSignalSpy entered(&w, &FrequencyDisplayWidget::frequencyEntered);
+        w.beginEntry();
+        QTest::keyClicks(&w, "1407");
+        QCOMPARE(w.displayText(), QString("1.407"));
+        QTest::keyClicks(&w, "4000");
+        QCOMPARE(w.displayText(), QString("14.074.000"));
+        QTest::keyClick(&w, Qt::Key_Backspace);
+        QCOMPARE(w.displayText(), QString("1.407.400"));
+        for (int i = 0; i < 7; ++i)
+            QTest::keyClick(&w, Qt::Key_Backspace);
+        QCOMPARE(w.displayText(), QString());
+        QTest::keyClick(&w, Qt::Key_Return);
+        QVERIFY(!w.isEditing());
+        QCOMPARE(entered.size(), 0);
+        QCOMPARE(w.displayText(), QString("7.024.980"));
+    }
+
+    // An 11-digit frequency fits the widget's usual width by setting the characters closer: the last
+    // digit (1 Hz) is still inside the widget and still clickable as a tuning rate, and the widget did
+    // not grow. A frequency that fits keeps its natural spacing.
+    void elevenDigitsFitByTighterSpacing() {
+        FrequencyDisplayWidget w;
+        const int width = w.minimumWidth();
+        w.resize(width, w.height());
+        w.setFrequency("14074000");
+        w.show();
+        QSignalSpy rate(&w, &FrequencyDisplayWidget::tuningDigitClicked);
+        const QFontMetrics fm(K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeDisplay));
+        const int natural = fm.horizontalAdvance(QStringLiteral("14.074.000"));
+        QTest::mouseClick(&w, Qt::LeftButton, {}, QPoint(natural - fm.horizontalAdvance('0') / 2, w.height() / 2));
+        QCOMPARE(rate.size(), 1);
+        QCOMPARE(rate.at(0).at(0).toInt(), 0); // the 1 Hz digit, at its natural place
+        w.setFrequency("10368000000");
+        QCOMPARE(w.minimumWidth(), width);
+        QTest::mouseClick(&w, Qt::LeftButton, {}, QPoint(width - 4, w.height() / 2));
+        QCOMPARE(rate.size(), 2);
+        QCOMPARE(rate.at(1).at(0).toInt(), 0); // the 1 Hz digit, pulled inside the widget
     }
 
     // --- SideControlPanel PWR/DLY ---
