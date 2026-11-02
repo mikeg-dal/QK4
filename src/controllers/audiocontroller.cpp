@@ -5,6 +5,7 @@
 #include "logging/logcategories.h"
 #include "logging/logsink.h"
 #include "audio/opusdecoder.h"
+#include "audio/rxplayout.h"
 #include "models/radiostate.h"
 #include "network/networkmetrics.h"
 #include "network/protocol.h"
@@ -219,6 +220,7 @@ void AudioController::startAudio(float mainVolume, float subVolume, float micGai
     const int sl = m_connectionController->currentRadio().streamingLatency;
     const int frameSamples = RadioUtils::slTierToFrameSamples(sl);
     QMetaObject::invokeMethod(m_audioEngine, &AudioEngine::setRxPacketFrameSamples, Qt::QueuedConnection, frameSamples);
+    m_connectionController->networkMetrics()->setPacketMs(RxPlayout::packetMsForFrameSamples(frameSamples));
     QMetaObject::invokeMethod(m_audioEngine, &AudioEngine::start, Qt::QueuedConnection);
     m_metricsTimer->start();
 
@@ -470,6 +472,7 @@ void AudioController::onStreamingLatencyChanged(int tier) {
     m_txPipeline->setFrameSamples(frameSamples);
     // The RX sink is resized too: the tier sets how much audio each received packet carries.
     QMetaObject::invokeMethod(m_audioEngine, &AudioEngine::setRxPacketFrameSamples, Qt::QueuedConnection, frameSamples);
+    m_connectionController->networkMetrics()->setPacketMs(RxPlayout::packetMsForFrameSamples(frameSamples));
 }
 
 void AudioController::sampleAudioMetrics() {

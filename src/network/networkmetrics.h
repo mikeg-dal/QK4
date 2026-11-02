@@ -38,6 +38,11 @@ public:
     double rttJitter() const { return m_rttJitter; }
     double bufferMs() const { return m_bufferBytes / kDecodedBytesPerMs; }
 
+    // The health a buffer depth alone implies, for audio arriving in packets of packetMs. Yellow and
+    // orange start a fixed distance above a normal steady state, which is one packet deep plus the
+    // jitter target: 200 / 500 ms up to SL5's 60 ms packets, packet + 140 / 440 ms above that.
+    static HealthTier bufferTier(double bufferedMs, int packetMs);
+
     // RX playout trouble since this connection began: sink underruns (audible gaps) and packets the
     // jitter policy dropped to claw latency back.
     quint32 rxUnderruns() const { return m_rxUnderruns - m_rxUnderrunsBase; }
@@ -58,6 +63,9 @@ public slots:
     // (re)connect becomes the baseline, so the getters count from the connection's start.
     void onRxPlayoutCounters(quint32 underruns, quint32 droppedPackets);
     void onConnectionStateChanged(bool connected);
+    // Audio per received packet (the SL tier, RadioUtils::slTierToFrameSamples): the buffer thresholds
+    // follow it.
+    void setPacketMs(int packetMs) { m_packetMs = packetMs; }
 
 signals:
     void healthTierChanged(HealthTier tier);
@@ -94,6 +102,7 @@ private:
 
     // Audio buffer depth (latest snapshot).
     int m_bufferBytes = 0;
+    int m_packetMs = 20;
 
     // RX playout counters, cumulative as AudioEngine reports them, and the connection's baseline.
     quint32 m_rxUnderruns = 0;

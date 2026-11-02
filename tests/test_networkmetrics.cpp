@@ -13,6 +13,7 @@ private slots:
     void historyClearedOnReconnect();
     void jitterStdDevUnchanged();
     void rxPlayoutCountersCountFromConnect();
+    void bufferThresholdsFollowThePacket();
 };
 
 void TestNetworkMetrics::historyAppendsOnLatency() {
@@ -71,6 +72,23 @@ void TestNetworkMetrics::rxPlayoutCountersCountFromConnect() {
     m.onRxPlayoutCounters(9, 4);
     QCOMPARE(m.rxUnderruns(), 2u);
     QCOMPARE(m.rxDroppedPackets(), 1u);
+}
+
+// A healthy SL6-7 buffer (one 120 ms packet + jitter target + device period, ~180 ms) sat at the flat
+// 200 ms yellow line. The thresholds keep the same headroom over a normal steady state at every tier,
+// and SL0-5 keep the flat 200 / 500 ms.
+void TestNetworkMetrics::bufferThresholdsFollowThePacket() {
+    using T = NetworkMetrics;
+    for (int packetMs : {20, 40, 60}) {
+        QCOMPARE(T::bufferTier(200, packetMs), T::Green);
+        QCOMPARE(T::bufferTier(201, packetMs), T::Yellow);
+        QCOMPARE(T::bufferTier(500, packetMs), T::Yellow);
+        QCOMPARE(T::bufferTier(501, packetMs), T::Orange);
+    }
+    QCOMPARE(T::bufferTier(200, 120), T::Green); // SL6-7 steady state: green, not yellow
+    QCOMPARE(T::bufferTier(260, 120), T::Green);
+    QCOMPARE(T::bufferTier(261, 120), T::Yellow);
+    QCOMPARE(T::bufferTier(561, 120), T::Orange);
 }
 
 QTEST_MAIN(TestNetworkMetrics)

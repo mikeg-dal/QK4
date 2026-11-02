@@ -1,4 +1,5 @@
 #include "networkmetrics.h"
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -7,13 +8,28 @@ namespace {
 // one RTT sample can land per interval (otherwise `m_stalePingCount` falsely trips Red).
 constexpr int kSummaryIntervalMs = 2000;
 
-// Buffer-fill thresholds for HealthTier, expressed in milliseconds of decoded audio.
-// A packet is 20-120 ms of audio depending on the SL tier (RadioUtils::slTierToFrameSamples), and
-// steady state holds a few of them. Over 500 ms means packets queued during a network event and
-// never flushed.
+// Buffer-fill thresholds for HealthTier, in milliseconds of decoded audio. Over 500 ms means packets
+// queued during a network event and never flushed.
+//
+// WHY they move with the packet above SL5: a healthy buffer holds one packet plus the jitter target,
+// device period and margins - about 120 ms at SL3's 60 ms packets, about 180 ms at SL6-7's 120 ms. A
+// flat 200 ms left SL6-7 at the yellow line on a good link. Packet + 140 ms keeps SL3's ~80 ms of
+// headroom at every tier, and never goes below the flat values, so SL0-5 are unchanged.
 constexpr double kBufferMsWarnYellow = 200.0;
 constexpr double kBufferMsWarnOrange = 500.0;
+constexpr double kBufferMsYellowOverPacket = 140.0;
+constexpr double kBufferMsOrangeOverPacket = 440.0;
 } // namespace
+
+NetworkMetrics::HealthTier NetworkMetrics::bufferTier(double bufferedMs, int packetMs) {
+    const double yellow = (std::max)(kBufferMsWarnYellow, packetMs + kBufferMsYellowOverPacket);
+    const double orange = (std::max)(kBufferMsWarnOrange, packetMs + kBufferMsOrangeOverPacket);
+    if (bufferedMs > orange)
+        return Orange;
+    if (bufferedMs > yellow)
+        return Yellow;
+    return Green;
+}
 
 NetworkMetrics::NetworkMetrics(QObject *parent) : QObject(parent) {
     m_summaryTimer = new QTimer(this);
@@ -136,11 +152,7 @@ void NetworkMetrics::computeHealthTier() {
 
     // Buffer depth: high buffer = playing stale audio (latency accumulation).
     // Thresholds live in the anonymous namespace at file top.
-    const double buffered = bufferMs();
-    if (buffered > kBufferMsWarnOrange)
-        tier = std::max(tier, Orange);
-    else if (buffered > kBufferMsWarnYellow)
-        tier = std::max(tier, Yellow);
+    tier = (std::max)(tier, bufferTier(bufferMs(), m_packetMs));
 
     // Audio dropout: was receiving packets but stopped
     if (m_audioWasActive && !m_audioActive)
