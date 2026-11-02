@@ -14,9 +14,6 @@ RitXitController::RitXitController(RadioState *radioState, ConnectionController 
                                    QLabel *ritXitValueLabel, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_connection(connection), m_spectrum(spectrum), m_ritLabel(ritLabel),
       m_xitLabel(xitLabel), m_ritXitValueLabel(ritXitValueLabel) {
-    m_ritLabel->setStyleSheet(K4Styles::ritXitLabel());
-    m_xitLabel->setStyleSheet(K4Styles::ritXitLabel());
-    m_ritXitValueLabel->setStyleSheet(K4Styles::ritXitValueLabel());
     reset();
 
     // WHY: when BSET is off, RIT state reflects VFO A; when on, VFO B. In

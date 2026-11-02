@@ -11,9 +11,6 @@
 VfoRowIndicatorController::VfoRowIndicatorController(RadioState *radioState, SpectrumController *spectrum,
                                                      VfoRowWidget *vfoRow, const Labels &labels, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_spectrum(spectrum), m_vfoRow(vfoRow), m_labels(labels) {
-    m_labels.voxLabel->setStyleSheet(K4Styles::vfoRowIndicatorLabel(K4Styles::Colors::AccentAmber));
-    m_labels.atuLabel->setStyleSheet(K4Styles::vfoRowIndicatorLabel(K4Styles::Colors::AccentAmber));
-    m_labels.qskLabel->setStyleSheet(K4Styles::vfoRowIndicatorLabel(K4Styles::Colors::TextPrimary));
     connect(m_radioState, &RadioState::splitChanged, this, &VfoRowIndicatorController::onSplitChanged);
     connect(m_radioState, &RadioState::bSetChanged, this, &VfoRowIndicatorController::onBSetChanged);
     connect(m_radioState, &RadioState::voxChanged, this, &VfoRowIndicatorController::onVoxChanged);

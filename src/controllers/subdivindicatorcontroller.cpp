@@ -15,9 +15,6 @@ SubDivIndicatorController::SubDivIndicatorController(RadioState *radioState, Spe
                                                      QLabel *modeBLabel, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_spectrum(spectrum), m_vfoB(vfoB), m_subLabel(subLabel),
       m_divLabel(divLabel), m_modeBLabel(modeBLabel) {
-    m_subLabel->setStyleSheet(K4Styles::subDivBadge());
-    m_divLabel->setStyleSheet(K4Styles::subDivBadge());
-    m_modeBLabel->setStyleSheet(K4Styles::vfoBModeLabel());
     connect(m_radioState, &RadioState::subRxEnabledChanged, this, &SubDivIndicatorController::onSubRxEnabledChanged);
     connect(m_radioState, &RadioState::diversityChanged, this, &SubDivIndicatorController::onDiversityChanged);
 }

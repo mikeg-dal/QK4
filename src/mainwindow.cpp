@@ -830,11 +830,13 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     ritXitLabelsRow->setSpacing(8);
 
     m_ritLabel = new QLabel("RIT", m_ritXitBox);
+    m_ritLabel->setStyleSheet(K4Styles::ritXitLabel());
     m_ritLabel->setCursor(Qt::PointingHandCursor);
     m_ritLabel->installEventFilter(this);
     ritXitLabelsRow->addWidget(m_ritLabel);
 
     m_xitLabel = new QLabel("XIT", m_ritXitBox);
+    m_xitLabel->setStyleSheet(K4Styles::ritXitLabel());
     m_xitLabel->setCursor(Qt::PointingHandCursor);
     m_xitLabel->installEventFilter(this);
     ritXitLabelsRow->addWidget(m_xitLabel);
@@ -851,6 +853,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     ritXitLayout->addWidget(ritXitSeparator);
 
     m_ritXitValueLabel = new QLabel("+0.00", m_ritXitBox);
+    m_ritXitValueLabel->setStyleSheet(K4Styles::ritXitValueLabel());
     m_ritXitValueLabel->setAlignment(Qt::AlignCenter);
     m_ritXitValueLabel->installEventFilter(this);
     ritXitLayout->addWidget(m_ritXitValueLabel);
@@ -891,25 +894,19 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // VOX indicator - orange when on, grey when off
     m_voxLabel = new QLabel("VOX", indicatorContainer);
     m_voxLabel->setAlignment(Qt::AlignCenter);
-    m_voxLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                  .arg(K4Styles::Colors::TextSecondary)
-                                  .arg(K4Styles::Dimensions::FontSizeBody));
+    m_voxLabel->setStyleSheet(K4Styles::vfoRowIndicatorLabel(K4Styles::Colors::AccentAmber));
     indicatorLayout->addWidget(m_voxLabel);
 
     // ATU indicator (orange when AUTO, grey when off)
     m_atuLabel = new QLabel("ATU", indicatorContainer);
     m_atuLabel->setAlignment(Qt::AlignCenter);
-    m_atuLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                  .arg(K4Styles::Colors::TextSecondary)
-                                  .arg(K4Styles::Dimensions::FontSizeBody));
+    m_atuLabel->setStyleSheet(K4Styles::vfoRowIndicatorLabel(K4Styles::Colors::AccentAmber));
     indicatorLayout->addWidget(m_atuLabel);
 
     // QSK indicator - white when on, grey when off
     m_qskLabel = new QLabel("QSK", indicatorContainer);
     m_qskLabel->setAlignment(Qt::AlignCenter);
-    m_qskLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                  .arg(K4Styles::Colors::TextSecondary)
-                                  .arg(K4Styles::Dimensions::FontSizeBody));
+    m_qskLabel->setStyleSheet(K4Styles::vfoRowIndicatorLabel(K4Styles::Colors::TextPrimary));
     indicatorLayout->addWidget(m_qskLabel);
 
     indicatorLayout->addStretch();

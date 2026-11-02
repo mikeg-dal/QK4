@@ -16,9 +16,6 @@ TxStateController::TxStateController(RadioState *radioState, SideControlPanel *s
     : QObject(parent), m_radioState(radioState), m_sideControlPanel(sideControlPanel),
       m_vfoFrequencyController(vfoFrequencyController), m_vfoA(vfoA), m_vfoB(vfoB), m_txIndicator(txIndicator),
       m_txTriangle(txTriangle), m_txTriangleB(txTriangleB) {
-    m_txIndicator->setStyleSheet(K4Styles::txIndicatorLabel());
-    m_txTriangle->setStyleSheet(K4Styles::txTriangleLabel());
-    m_txTriangleB->setStyleSheet(K4Styles::txTriangleLabel());
     connect(m_radioState, &RadioState::transmitStateChanged, this, &TxStateController::onTransmitStateChanged);
     connect(m_radioState, &RadioState::txMeterChanged, this, &TxStateController::onTxMeterChanged);
     // paDrainCurrentChanged fires from BOTH paths in RxTxMeterState:

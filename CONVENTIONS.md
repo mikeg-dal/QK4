@@ -179,15 +179,17 @@ keys, the fixed 90×44 knob keys, and removed names. Values live only in
 - **A widget's own style sheet beats the app sheet** whatever the specificity (*The Style Sheet
   Syntax*, Cascading). The app sheet is only a fallback; to change a widget that has its own sheet,
   change that sheet.
-- **State styling uses selectors, not sheet swaps.** Set one sheet when the button is made and let
+- **State styling uses selectors, not sheet swaps.** Set one sheet when the widget is made and let
   the state select the look; never call `setStyleSheet()` again to change it. Prefer a pseudo-state:
-  a checkable button's selected look is `:checked` and needs no code. A button that must not toggle
-  on click (a key that shows what the radio reports) uses the `selected` property through
-  `K4Styles::setSelected()`, which re-applies the sheet as Qt requires after a property change (*The
-  Style Sheet Syntax*, Selector Types). The shared sheets are `popupButton()`,
-  `menuBarButtonSelectable()` and `sidePanelButtonSelectable()`; `ButtonSheetsTests` holds them pixel-identical to the standalone
-  normal/selected sheets in every state [CI]. A swap to a look that is not one of those pairs (the
-  PTT key, extra rules appended to a helper) stays until it gets its own selectable sheet. Count:
+  a checkable button's selected look is `:checked` and needs no code. Any other state is a dynamic
+  property set through `K4Styles::setStyleFlag()`, `setStyleState()` or `setSelected()`, which
+  re-apply the sheet as Qt requires after a property change (*The Style Sheet Syntax*, Selector
+  Types) and only when the value changed. The properties are `selected` (lit), `dimmed` (greyed),
+  `error` and `state` (one of several named looks); `whenFlag()`/`whenState()` build their
+  selectors. A state sheet is the resting sheet followed by the state rules, each at least as
+  specific as the resting rule it overrides. `ButtonSheetsTests` and `StateSheetsTests` hold every
+  migrated widget pixel-identical, state by state, to the sheet it used to swap in [CI]. Rebuilding a
+  sheet for a *value* (a user-chosen font size) is not a state swap. Count:
   `rg -c "setStyleSheet\(" src | awk -F: '{s+=$2} END {print s}'`.
 - **Image buffers carry a device pixel ratio.** Never draw into a `QPixmap` at 1× and let Qt stretch
   it. Recipe: `PATTERNS.md` → High-DPI drawing.

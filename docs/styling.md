@@ -127,16 +127,17 @@ one property or sub-control is customized, all the other properties or sub-contr
 customized as well." `Dialog::comboBox()` and `Dialog::spinBox()` style every sub-control for this
 reason. A new scroll-bar or progress-bar rule must do the same.
 
-**Prefer selectors and pseudo-states for new code.** Much existing code swaps a whole sheet per
-state, for example `popupButtonNormal()` → `popupButtonSelected()`. It works, but new code should
-instead use one sheet with pseudo-states (`:checked` on a checkable `QPushButton`, `:hover`,
-`:disabled`) or a property selector (`QPushButton[role="…"]`) driven by `setProperty()`.
+**One sheet per widget; the state picks the look.** Use pseudo-states (`:checked` on a checkable
+`QPushButton`, `:hover`, `:disabled`) or a property selector driven by one of the K4Styles setters.
+Never swap a whole sheet per state.
 
 **A property change needs the sheet re-applied.** Qt warns that if a property used in a selector
 changes after the sheet is set, the sheet may need recomputing, and documents one remedy: unset the
-sheet and set it again. `K4Styles::setSelected()` does exactly that for the `selected` property; use
-it rather than calling `style()->unpolish()`/`polish()`, which Qt documents only for style changes.
-Pseudo-states such as `:checked` and `:hover` need nothing.
+sheet and set it again. `K4Styles::setStyleFlag()`, `setStyleState()` and `setSelected()` do exactly
+that, and only when the value changed; use them rather than `setProperty()` plus
+`style()->unpolish()`/`polish()`, which Qt documents only for style changes. Pseudo-states such as
+`:checked` and `:hover` need nothing. The properties are `selected`, `dimmed`, `error` and `state`
+(constants in `k4styles.h`); `whenFlag()`/`whenState()` build the selectors.
 
 **Selected looks:** `popupButton()`, `menuBarButtonSelectable()` and `sidePanelButtonSelectable()`
 are one sheet each, matching `:checked` and `[selected="true"]`. Set the sheet once; a checkable
@@ -174,8 +175,9 @@ and background, then calls the virtual `paintContent(QPainter &, const QRect &)`
 | `OptionsPageLayoutTests` | `tests/test_optionspagelayout.cpp` | Every Options page fits the narrowest dialog; help text wraps; long device names do not widen a page |
 | `MeterScaleTests` | `tests/test_meterscale.cpp` | Meter scale marks sit where their values fall |
 | `ButtonSheetsTests` | `tests/test_buttonsheets.cpp` | The selectable popup, menu-bar and side-panel sheets render the same pixels as the normal/selected sheets they replace, idle, hovered and pressed, whether selected by `:checked` or by `setSelected()` |
+| `StateSheetsTests` | `tests/test_statesheets.cpp` | Every other widget that picks its look by a state property renders, in each state (and hovered/pressed for buttons), the same pixels as a frozen copy of the sheet the old code swapped in; each state's properties change the picture |
 
-Run them with `ctest --test-dir build -R 'Token|FormControl|SideControl|OptionsPage|MeterScale|ButtonSheets'`.
+Run them with `ctest --test-dir build -R 'Token|FormControl|SideControl|OptionsPage|MeterScale|ButtonSheets|StateSheets'`.
 
 ## Removed names
 
