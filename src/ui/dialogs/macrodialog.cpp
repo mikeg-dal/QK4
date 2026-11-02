@@ -104,6 +104,8 @@ void MacroItemWidget::updateDisplay() {
     } else {
         m_labelDisplay->setText(m_label);
     }
+    if (m_selected)
+        look = K4Styles::Dialog::MacroSelected;
     K4Styles::setStyleState(m_labelDisplay, K4Styles::StateProperty, QString::fromLatin1(look));
 
     m_commandDisplay->setText(m_command.isEmpty() ? "" : m_command);
@@ -112,16 +114,10 @@ void MacroItemWidget::updateDisplay() {
 void MacroItemWidget::setSelected(bool selected) {
     m_selected = selected;
 
-    // Update all label colors based on selection (inverted when selected)
+    // Every column shows the selection (inverted when selected); updateDisplay() picks the label's look.
     K4Styles::setSelected(m_functionLabel, selected);
-    if (selected) {
-        K4Styles::setStyleState(m_labelDisplay, K4Styles::StateProperty,
-                                QString::fromLatin1(K4Styles::Dialog::MacroSelected));
-        K4Styles::setSelected(m_commandDisplay, true);
-    } else {
-        // Resets the label column only; the command column keeps its selected look, as it always has.
-        updateDisplay();
-    }
+    K4Styles::setSelected(m_commandDisplay, selected);
+    updateDisplay();
 
     update();
 }
