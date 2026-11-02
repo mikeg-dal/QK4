@@ -188,9 +188,7 @@ EqPresetRowWidget::EqPresetRowWidget(int presetIndex, QWidget *parent) : QWidget
     // Preset name/load button
     m_loadBtn = new QPushButton("---", this);
     m_loadBtn->setFixedSize(48, 26);
-    m_loadBtn->setStyleSheet(
-        K4Styles::menuBarButtonSmall() +
-        QString("QPushButton { font-size: %1px; padding: 2px; }").arg(K4Styles::Dimensions::FontSizeCaption));
+    m_loadBtn->setStyleSheet(K4Styles::eqPresetLoadButton());
     connect(m_loadBtn, &QPushButton::clicked, this, &EqPresetRowWidget::onLoadClicked);
     layout->addWidget(m_loadBtn);
 
@@ -207,18 +205,8 @@ EqPresetRowWidget::EqPresetRowWidget(int presetIndex, QWidget *parent) : QWidget
 
 void EqPresetRowWidget::setPresetName(const QString &name) {
     m_name = name;
-    if (name.isEmpty()) {
-        m_loadBtn->setText("---");
-        m_loadBtn->setStyleSheet(K4Styles::menuBarButtonSmall() +
-                                 QString("QPushButton { font-size: %1px; padding: 2px; color: %2; }")
-                                     .arg(K4Styles::Dimensions::FontSizeCaption)
-                                     .arg(K4Styles::Colors::TextSecondaryOnRaised));
-    } else {
-        m_loadBtn->setText(name);
-        m_loadBtn->setStyleSheet(
-            K4Styles::menuBarButtonSmall() +
-            QString("QPushButton { font-size: %1px; padding: 2px; }").arg(K4Styles::Dimensions::FontSizeCaption));
-    }
+    m_loadBtn->setText(name.isEmpty() ? QStringLiteral("---") : name);
+    K4Styles::setStyleFlag(m_loadBtn, K4Styles::DimmedProperty, name.isEmpty());
 }
 
 void EqPresetRowWidget::onLoadClicked() {

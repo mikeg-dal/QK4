@@ -388,6 +388,34 @@ const QString &actionButtonSmall();
 // State sheets: popups, menu bars and the menu overlay
 // =============================================================================
 
+/// One sheet for the PTT key: menuBarButton() at rest, menuBarButtonPttPressed() while marked with
+/// setSelected() (transmitting).
+QString menuBarButtonPtt();
+
+/// popupButton() whose text greys to TextDisabled while DimmedProperty is set (RIGHT while R=L is on).
+QString popupButtonDimmable();
+
+/// popupValueLabel(TextPrimary) that reads TextSecondary while DimmedProperty is set.
+QString popupValueLabelDimmable();
+
+/// RX EQ preset load key: menuBarButtonSmall() at caption size; its "---" reads TextSecondaryOnRaised
+/// while DimmedProperty is set (no preset saved there).
+QString eqPresetLoadButton();
+
+/// Menu overlay NORM key: plain at rest, lit while SelectedProperty is set (the item is at its default),
+/// greyed with no press look while DimmedProperty is set (no item, or a read-only one).
+QString menuNormButton();
+
+/// StateProperty values of a menu overlay row's labels; "" is an unselected row.
+inline constexpr char MenuRowBrowse[] = "browse"; ///< selected row, browsing
+inline constexpr char MenuRowEdit[] = "edit";     ///< selected row, editing its value
+
+/// Menu overlay row name label; its colour follows StateProperty (MenuRowBrowse, MenuRowEdit).
+QString menuItemNameLabel();
+
+/// Menu overlay row value label; its colour follows StateProperty (MenuRowBrowse, MenuRowEdit).
+QString menuItemValueLabel();
+
 /// App-wide fallback for every form control, installed once in main(). A control that sets its own
 /// stylesheet still wins; one that forgets gets the K4 look instead of the operating system's theme.
 const QString &applicationStyleSheet();

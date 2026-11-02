@@ -121,7 +121,131 @@ void addDialogCases(QList<StateCase> &cases) {
 // =============================================================================
 
 void addPopupCases(QList<StateCase> &cases) {
-    Q_UNUSED(cases);
+    using namespace K4Styles;
+    using K4Styles::Colors::TextPrimary;
+    const auto button = [](const QString &name, const QString &oldSheet, const QString &newSheet,
+                           const QList<StyleProp> &props, const QString &text, QSize size, bool checkable = false) {
+        StateCase c;
+        c.name = name;
+        c.kind = Kind::Button;
+        c.oldSheet = oldSheet;
+        c.newSheet = newSheet;
+        c.props = props;
+        c.text = text;
+        c.size = size;
+        c.checkable = checkable;
+        return c;
+    };
+    const QList<StyleProp> dimmed{{DimmedProperty, true}};
+    const QList<StyleProp> selected{{SelectedProperty, true}};
+
+    // Bottom menu bar PTT (BottomMenuBar::setPttActive): menuBarButton() ↔ menuBarButtonPttPressed().
+    const QSize pttSize(Dimensions::MenuBarButtonWidth, Dimensions::ButtonHeightMedium);
+    const QString oldPttPressed =
+        QString(R"(
+        QPushButton {
+            background: %1;
+            color: %2;
+            border: 2px solid %1;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: %3px;
+            font-weight: 600;
+        }
+    )")
+            .arg(Colors::TxActiveFill, TextPrimary, QString::number(Dimensions::FontSizeBody));
+    cases << button("popups/ptt/resting", menuBarButton(), menuBarButtonPtt(), {}, "PTT", pttSize)
+          << button("popups/ptt/transmitting", oldPttPressed, menuBarButtonPtt(), selected, "PTT", pttSize);
+    // The standalone reference must still be the old sheet's look.
+    cases << button("popups/ptt/standalone", oldPttPressed, menuBarButtonPttPressed(), {}, "PTT", pttSize);
+
+    // LINE OUT RIGHT key and value (LineOutPopupWidget::updateButtonStyles): greyed while R=L is on.
+    const QSize lineOutKey(Dimensions::PopupButtonWidth, Dimensions::ButtonHeightMedium);
+    const QSize lineOutValue(Dimensions::NavButtonWidth, Dimensions::ButtonHeightMedium);
+    cases << button("popups/lineout-right/resting", popupButton(), popupButtonDimmable(), {}, "RIGHT", lineOutKey)
+          << button("popups/lineout-right/checked", popupButton(), popupButtonDimmable(), {}, "RIGHT", lineOutKey, true)
+          << button("popups/lineout-right/r-equals-l",
+                    popupButton() + QString("QPushButton { color: %1; }").arg(Colors::TextDisabled),
+                    popupButtonDimmable(), dimmed, "RIGHT", lineOutKey)
+          << button("popups/lineout-right-value/resting", popupValueLabel(TextPrimary), popupValueLabelDimmable(), {},
+                    "40", lineOutValue)
+          << button("popups/lineout-right-value/r-equals-l", popupValueLabel(Colors::TextSecondary),
+                    popupValueLabelDimmable(), dimmed, "40", lineOutValue);
+
+    // RX EQ preset load key (EqPresetRowWidget): constructor sheet, named preset, empty preset.
+    const QSize presetKey(48, 26);
+    const QString oldPresetNamed =
+        menuBarButtonSmall() +
+        QString("QPushButton { font-size: %1px; padding: 2px; }").arg(K4Styles::Dimensions::FontSizeCaption);
+    const QString oldPresetEmpty =
+        menuBarButtonSmall() + QString("QPushButton { font-size: %1px; padding: 2px; color: %2; }")
+                                   .arg(K4Styles::Dimensions::FontSizeCaption)
+                                   .arg(K4Styles::Colors::TextSecondaryOnRaised);
+    cases << button("popups/eq-preset-load/constructed", oldPresetNamed, eqPresetLoadButton(), {}, "---", presetKey)
+          << button("popups/eq-preset-load/named", oldPresetNamed, eqPresetLoadButton(), {}, "VOICE", presetKey)
+          << button("popups/eq-preset-load/empty", oldPresetEmpty, eqPresetLoadButton(), dimmed, "---", presetKey);
+
+    // Menu overlay NORM key (MenuOverlayWidget::updateNormButton).
+    const QSize normKey(34, Dimensions::PopupButtonHeight);
+    const QString oldNormDisabled = QString("QPushButton { background-color: %1; color: %2; border: none; "
+                                            "border-radius: %3px; font-size: %4px; font-weight: bold; }")
+                                        .arg(K4Styles::Colors::OverlayNavButton)
+                                        .arg(K4Styles::Colors::TextDisabled)
+                                        .arg(K4Styles::Dimensions::BorderRadius)
+                                        .arg(K4Styles::Dimensions::FontSizeCaption);
+    const QString oldNormDefault = QString("QPushButton { background-color: %1; color: %2; border: none; "
+                                           "border-radius: %3px; font-size: %4px; font-weight: bold; }"
+                                           "QPushButton:pressed { background-color: %5; color: %6; }")
+                                       .arg(K4Styles::Colors::OverlayNavButton)
+                                       .arg(K4Styles::Colors::TextSecondaryOnRaised)
+                                       .arg(K4Styles::Dimensions::BorderRadius)
+                                       .arg(K4Styles::Dimensions::FontSizeCaption)
+                                       .arg(K4Styles::Colors::OverlayNavButtonPressed)
+                                       .arg(K4Styles::Colors::TextPrimary);
+    const QString oldNormActive = QString("QPushButton { background-color: %1; color: %2; border: none; "
+                                          "border-radius: %3px; font-size: %4px; font-weight: bold; }"
+                                          "QPushButton:pressed { background-color: %5; }")
+                                      .arg(K4Styles::Colors::SelectionLight)
+                                      .arg(K4Styles::Colors::TextOnLight)
+                                      .arg(K4Styles::Dimensions::BorderRadius)
+                                      .arg(K4Styles::Dimensions::FontSizeCaption)
+                                      .arg(K4Styles::Colors::White);
+    cases << button("popups/menu-norm/not-default", oldNormDefault, menuNormButton(), {}, "NORM", normKey)
+          << button("popups/menu-norm/at-default", oldNormActive, menuNormButton(), selected, "NORM", normKey)
+          << button("popups/menu-norm/greyed", oldNormDisabled, menuNormButton(), dimmed, "NORM", normKey);
+
+    // Menu overlay row labels (MenuItemWidget::updateLabelColors): unselected, browsing, editing.
+    const auto label = [](const QString &name, const QString &oldSheet, const QString &newSheet, const char *state,
+                          const QString &text) {
+        StateCase c;
+        c.name = name;
+        c.oldSheet = oldSheet;
+        c.newSheet = newSheet;
+        if (state[0] != '\0')
+            c.props = {{StateProperty, QString::fromLatin1(state)}};
+        c.text = text;
+        c.size = QSize(160, Dimensions::MenuItemHeight - 10);
+        return c;
+    };
+    const auto oldName = [](const char *color) {
+        return QString("color: %1; font-size: %2px;").arg(color).arg(K4Styles::Dimensions::FontSizeHeading);
+    };
+    const auto oldValue = [](const char *color) {
+        return QString("color: %1; font-size: %2px; font-weight: bold;")
+            .arg(color)
+            .arg(K4Styles::Dimensions::FontSizeHeading);
+    };
+    cases << label("popups/menu-row-name/unselected", oldName(Colors::TextSecondary), menuItemNameLabel(), "",
+                   "VOX Gain")
+          << label("popups/menu-row-name/browse", oldName(Colors::TextOnLight), menuItemNameLabel(), MenuRowBrowse,
+                   "VOX Gain")
+          << label("popups/menu-row-name/edit", oldName(Colors::SelectionLight), menuItemNameLabel(), MenuRowEdit,
+                   "VOX Gain")
+          << label("popups/menu-row-value/unselected", oldValue(Colors::TextSecondary), menuItemValueLabel(), "", "12")
+          << label("popups/menu-row-value/browse", oldValue(Colors::TextPrimary), menuItemValueLabel(), MenuRowBrowse,
+                   "12")
+          << label("popups/menu-row-value/edit", oldValue(Colors::TextOnLight), menuItemValueLabel(), MenuRowEdit,
+                   "12");
 }
 
 // =============================================================================

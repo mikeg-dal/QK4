@@ -1,5 +1,6 @@
 #include "ui/overlays/menuoverlay.h"
 #include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include <QPainter>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -18,9 +19,7 @@ MenuItemWidget::MenuItemWidget(int menuId, const MenuModel *model, QWidget *pare
     layout->setSpacing(10);
 
     m_nameLabel = new QLabel(this);
-    m_nameLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                   .arg(K4Styles::Colors::TextSecondary)
-                                   .arg(K4Styles::Dimensions::FontSizeHeading)); // Initial unselected state
+    m_nameLabel->setStyleSheet(K4Styles::menuItemNameLabel());
     layout->addWidget(m_nameLabel, 1);
 
     m_lockLabel = new QLabel(this);
@@ -28,9 +27,7 @@ MenuItemWidget::MenuItemWidget(int menuId, const MenuModel *model, QWidget *pare
     layout->addWidget(m_lockLabel);
 
     m_valueLabel = new QLabel(this);
-    m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                    .arg(K4Styles::Colors::TextSecondary)
-                                    .arg(K4Styles::Dimensions::FontSizeHeading)); // Initial unselected state
+    m_valueLabel->setStyleSheet(K4Styles::menuItemValueLabel());
     m_valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_valueLabel->setMinimumWidth(K4Styles::Dimensions::FormLabelWidth);
     layout->addWidget(m_valueLabel);
@@ -46,35 +43,11 @@ void MenuItemWidget::setSelected(bool selected) {
 }
 
 void MenuItemWidget::updateLabelColors() {
-    // Update label colors based on selection and edit state
-    // Two-zone highlighting: left zone (name) and right zone (value) have different colors
-    if (m_selected) {
-        if (m_editing) {
-            // EDITING MODE: name on grey, value on off-white
-            m_nameLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                           .arg(K4Styles::Colors::SelectionLight)
-                                           .arg(K4Styles::Dimensions::FontSizeHeading)); // Light text on grey
-            m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                            .arg(K4Styles::Colors::TextOnLight)
-                                            .arg(K4Styles::Dimensions::FontSizeHeading)); // Dark text on off-white
-        } else {
-            // BROWSE MODE: name on off-white, value on grey
-            m_nameLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                           .arg(K4Styles::Colors::TextOnLight)
-                                           .arg(K4Styles::Dimensions::FontSizeHeading)); // Dark text on off-white
-            m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                            .arg(K4Styles::Colors::TextPrimary)
-                                            .arg(K4Styles::Dimensions::FontSizeHeading)); // White text on grey
-        }
-    } else {
-        // Unselected: grey text on dark background
-        m_nameLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                       .arg(K4Styles::Colors::TextSecondary)
-                                       .arg(K4Styles::Dimensions::FontSizeHeading));
-        m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                        .arg(K4Styles::Colors::TextSecondary)
-                                        .arg(K4Styles::Dimensions::FontSizeHeading));
-    }
+    // Two-zone highlighting: browsing lights the name zone, editing lights the value zone.
+    const QString state =
+        m_selected ? QString::fromLatin1(m_editing ? K4Styles::MenuRowEdit : K4Styles::MenuRowBrowse) : QString();
+    K4Styles::setStyleState(m_nameLabel, K4Styles::StateProperty, state);
+    K4Styles::setStyleState(m_valueLabel, K4Styles::StateProperty, state);
 }
 
 void MenuItemWidget::setEditMode(bool editing) {
@@ -257,15 +230,7 @@ void MenuOverlayWidget::setupUi() {
 
     m_normBtn = new QPushButton("NORM", navPanel);
     m_normBtn->setFixedSize(smallNavBtnWidth, K4Styles::Dimensions::PopupButtonHeight);
-    m_normBtn->setStyleSheet(QString("QPushButton { background-color: %1; color: %2; border: none; "
-                                     "border-radius: %3px; font-size: %4px; font-weight: bold; }"
-                                     "QPushButton:pressed { background-color: %5; color: %6; }")
-                                 .arg(K4Styles::Colors::OverlayNavButton)
-                                 .arg(K4Styles::Colors::TextSecondaryOnRaised)
-                                 .arg(K4Styles::Dimensions::BorderRadius)
-                                 .arg(K4Styles::Dimensions::FontSizeCaption) // Fits in narrow button
-                                 .arg(K4Styles::Colors::OverlayNavButtonPressed)
-                                 .arg(K4Styles::Colors::TextPrimary));
+    m_normBtn->setStyleSheet(K4Styles::menuNormButton());
     connect(m_normBtn, &QPushButton::clicked, this, &MenuOverlayWidget::resetToDefault);
     row3->addWidget(m_normBtn);
 
@@ -650,48 +615,13 @@ void MenuOverlayWidget::updateButtonLabels() {
 }
 
 void MenuOverlayWidget::updateNormButton() {
-    QString normBtnDisabled = QString("QPushButton { background-color: %1; color: %2; border: none; "
-                                      "border-radius: %3px; font-size: %4px; font-weight: bold; }")
-                                  .arg(K4Styles::Colors::OverlayNavButton)
-                                  .arg(K4Styles::Colors::TextDisabled)
-                                  .arg(K4Styles::Dimensions::BorderRadius)
-                                  .arg(K4Styles::Dimensions::FontSizeCaption);
-
-    QString normBtnDefault = QString("QPushButton { background-color: %1; color: %2; border: none; "
-                                     "border-radius: %3px; font-size: %4px; font-weight: bold; }"
-                                     "QPushButton:pressed { background-color: %5; color: %6; }")
-                                 .arg(K4Styles::Colors::OverlayNavButton)
-                                 .arg(K4Styles::Colors::TextSecondaryOnRaised)
-                                 .arg(K4Styles::Dimensions::BorderRadius)
-                                 .arg(K4Styles::Dimensions::FontSizeCaption)
-                                 .arg(K4Styles::Colors::OverlayNavButtonPressed)
-                                 .arg(K4Styles::Colors::TextPrimary);
-
-    QString normBtnActive = QString("QPushButton { background-color: %1; color: %2; border: none; "
-                                    "border-radius: %3px; font-size: %4px; font-weight: bold; }"
-                                    "QPushButton:pressed { background-color: %5; }")
-                                .arg(K4Styles::Colors::SelectionLight)
-                                .arg(K4Styles::Colors::TextOnLight)
-                                .arg(K4Styles::Dimensions::BorderRadius)
-                                .arg(K4Styles::Dimensions::FontSizeCaption)
-                                .arg(K4Styles::Colors::White);
-
+    // NORM cannot change a read-only item, so it must not light up for one either. Lit when the item
+    // IS at its default - NORM reads "this is the normal setting". Pressing it on an item that is not
+    // sets the default, and the value change re-runs this and lights it.
     const MenuItem *item = selectedMenuItem();
-    if (!item) {
-        m_normBtn->setStyleSheet(normBtnDisabled);
-        return;
-    }
-
-    if (item->isReadOnly()) {
-        // NORM cannot change a read-only item, so it must not light up for one either
-        m_normBtn->setStyleSheet(normBtnDisabled);
-        return;
-    }
-
-    // Lit when the item IS at its default - NORM reads "this is the normal setting". Pressing it on
-    // an item that is not sets the default, and the value change re-runs this and lights it.
-    const bool isDefault = (item->currentValue == item->defaultValue);
-    m_normBtn->setStyleSheet(isDefault ? normBtnActive : normBtnDefault);
+    const bool greyed = !item || item->isReadOnly();
+    K4Styles::setStyleFlag(m_normBtn, K4Styles::DimmedProperty, greyed);
+    K4Styles::setSelected(m_normBtn, !greyed && item->currentValue == item->defaultValue);
 }
 
 void MenuOverlayWidget::onMenuValueChanged(int menuId, int newValue) {

@@ -36,12 +36,12 @@ void LineOutPopupWidget::setupUi() {
     m_rightBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_rightBtn->setCheckable(true);
     m_rightBtn->setCursor(Qt::PointingHandCursor);
-    m_rightBtn->setStyleSheet(K4Styles::popupButton());
+    m_rightBtn->setStyleSheet(K4Styles::popupButtonDimmable());
 
     m_rightValueLabel = new QPushButton(QString::number(m_rightLevel), this);
     m_rightValueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_rightValueLabel->setFocusPolicy(Qt::NoFocus);
-    m_rightValueLabel->setStyleSheet(K4Styles::popupValueLabel(K4Styles::Colors::TextPrimary));
+    m_rightValueLabel->setStyleSheet(K4Styles::popupValueLabelDimmable());
 
     m_rightEqualsLeftBtn = new QPushButton("RIGHT\n=LEFT", this);
     m_rightEqualsLeftBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth,
@@ -103,16 +103,9 @@ void LineOutPopupWidget::updateButtonStyles() {
     m_rightBtn->setChecked(!m_leftSelected);
     m_rightEqualsLeftBtn->setChecked(m_rightEqualsLeft);
 
-    // RIGHT is never checked while R=L is on (LEFT is forced), so the greyed sheet only ever shows unselected.
-    const QString rightSheet =
-        m_rightEqualsLeft
-            ? K4Styles::popupButton() + QString("QPushButton { color: %1; }").arg(K4Styles::Colors::TextDisabled)
-            : K4Styles::popupButton();
-    if (m_rightBtn->styleSheet() != rightSheet)
-        m_rightBtn->setStyleSheet(rightSheet);
-
-    m_rightValueLabel->setStyleSheet(
-        K4Styles::popupValueLabel(m_rightEqualsLeft ? K4Styles::Colors::TextSecondary : K4Styles::Colors::TextPrimary));
+    // RIGHT is never checked while R=L is on (LEFT is forced), so it only ever greys unselected.
+    K4Styles::setStyleFlag(m_rightBtn, K4Styles::DimmedProperty, m_rightEqualsLeft);
+    K4Styles::setStyleFlag(m_rightValueLabel, K4Styles::DimmedProperty, m_rightEqualsLeft);
 }
 
 void LineOutPopupWidget::updateValueLabels() {

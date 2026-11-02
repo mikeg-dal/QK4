@@ -156,6 +156,33 @@ QString sidePanelActiveCss(SelectorScope scope) {
              gradientCssReversed(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom),
              buttonSelector(scope), buttonSelector(scope, ":hover"), buttonSelector(scope, ":pressed"));
 }
+
+// Transmitting: solid red PTT key. The standalone sheet has no :hover/:pressed rules, so the narrowed
+// :hover and :pressed rules repeat the resting background and border over menuBarButton()'s.
+QString pttPressedCss(SelectorScope scope) {
+    using namespace K4Styles;
+    return QString(R"(
+        %4 {
+            background: %1;
+            color: %2;
+            border: 2px solid %1;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: %3px;
+            font-weight: 600;
+        }
+        %5 {
+            background: %1;
+            border: 2px solid %1;
+        }
+        %6 {
+            background: %1;
+            border: 2px solid %1;
+        }
+    )")
+        .arg(Colors::TxActiveFill, Colors::TextPrimary, QString::number(Dimensions::FontSizeBody),
+             buttonSelector(scope), buttonSelector(scope, ":hover"), buttonSelector(scope, ":pressed"));
+}
 } // anonymous namespace
 
 namespace K4Styles {
@@ -242,18 +269,7 @@ QString menuBarButtonSmall() {
 }
 
 QString menuBarButtonPttPressed() {
-    return QString(R"(
-        QPushButton {
-            background: %1;
-            color: %2;
-            border: 2px solid %1;
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: %3px;
-            font-weight: 600;
-        }
-    )")
-        .arg(Colors::TxActiveFill, Colors::TextPrimary, QString::number(Dimensions::FontSizeBody));
+    return pttPressedCss(SelectorScope::Always);
 }
 
 QColor withAlpha(const char *color, int alpha) {
@@ -821,6 +837,63 @@ const QString &actionButtonSmall() {
 // =============================================================================
 // State sheets: popups, menu bars and the menu overlay
 // =============================================================================
+
+QString menuBarButtonPtt() {
+    return menuBarButton() + pttPressedCss(SelectorScope::Selectable);
+}
+
+QString popupButtonDimmable() {
+    // WHY: the dimmed rule is later than and as specific as popupButton()'s :checked rules, so it would
+    // also grey a checked key. Callers never dim a checked key (LINE OUT forces LEFT while R=L is on).
+    return popupButton() +
+           QString("%1 { color: %2; }").arg(whenFlag("QPushButton", DimmedProperty), Colors::TextDisabled);
+}
+
+QString popupValueLabelDimmable() {
+    return popupValueLabel(Colors::TextPrimary) +
+           QString("%1 { color: %2; }").arg(whenFlag("QPushButton", DimmedProperty), Colors::TextSecondary);
+}
+
+QString eqPresetLoadButton() {
+    return menuBarButtonSmall() + QString("QPushButton { font-size: %1px; padding: 2px; } %2 { color: %3; }")
+                                      .arg(QString::number(Dimensions::FontSizeCaption),
+                                           whenFlag("QPushButton", DimmedProperty), Colors::TextSecondaryOnRaised);
+}
+
+QString menuNormButton() {
+    // WHY: the lit look keeps its dark text while pressed and the greyed look has no press look, so each
+    // state's :pressed rule restates the colour and background over the resting :pressed rule.
+    return QString("QPushButton { background-color: %1; color: %2; border: none; "
+                   "border-radius: %3px; font-size: %4px; font-weight: bold; }"
+                   "QPushButton:pressed { background-color: %5; color: %6; }"
+                   "%7 { background-color: %8; color: %9; }"
+                   "%10 { background-color: %11; color: %9; }"
+                   "%12 { color: %13; }"
+                   "%14 { background-color: %1; color: %13; }")
+        .arg(Colors::OverlayNavButton, Colors::TextSecondaryOnRaised, QString::number(Dimensions::BorderRadius),
+             QString::number(Dimensions::FontSizeCaption), Colors::OverlayNavButtonPressed, Colors::TextPrimary,
+             whenFlag("QPushButton", SelectedProperty), Colors::SelectionLight, Colors::TextOnLight)
+        .arg(whenFlag("QPushButton", SelectedProperty, ":pressed"), Colors::White,
+             whenFlag("QPushButton", DimmedProperty), Colors::TextDisabled,
+             whenFlag("QPushButton", DimmedProperty, ":pressed"));
+}
+
+namespace {
+QString menuItemLabelCss(const char *weight, const char *browseColor, const char *editColor) {
+    return QString("QLabel { color: %1; font-size: %2px;%3 } %4 { color: %5; } %6 { color: %7; }")
+        .arg(Colors::TextSecondary, QString::number(Dimensions::FontSizeHeading), QLatin1StringView(weight),
+             whenState("QLabel", StateProperty, MenuRowBrowse), QLatin1StringView(browseColor),
+             whenState("QLabel", StateProperty, MenuRowEdit), QLatin1StringView(editColor));
+}
+} // namespace
+
+QString menuItemNameLabel() {
+    return menuItemLabelCss("", Colors::TextOnLight, Colors::SelectionLight);
+}
+
+QString menuItemValueLabel() {
+    return menuItemLabelCss(" font-weight: bold;", Colors::TextPrimary, Colors::TextOnLight);
+}
 
 const QString &applicationStyleSheet() {
     // WHY: a control whose constructor forgets setStyleSheet is drawn by the OS theme, and Windows 11 dark

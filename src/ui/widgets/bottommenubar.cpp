@@ -39,8 +39,8 @@ void BottomMenuBar::setupUi() {
 
     // PTT button at far right (separated from main buttons)
     m_pttBtn = createMenuButton("PTT");
-    // PTT swaps to its own pressed look in setPttActive(), so it keeps the plain sheet it returns to.
-    m_pttBtn->setStyleSheet(K4Styles::menuBarButton());
+    // PTT has its own sheet: setPttActive() marks it selected for the red transmit look.
+    m_pttBtn->setStyleSheet(K4Styles::menuBarButtonPtt());
     layout->addWidget(m_pttBtn);
 
     // ===== Connect Signals =====
@@ -106,14 +106,12 @@ void BottomMenuBar::setTxActive(bool active) {
 }
 
 void BottomMenuBar::setPttActive(bool active) {
-    if (active) {
-        m_pttBtn->setStyleSheet(K4Styles::menuBarButtonPttPressed());
-    } else {
+    K4Styles::setSelected(m_pttBtn, active);
+    if (!active) {
         // Transmission ended for whatever reason - our release, someone else's, the radio's, a
         // disconnect. A latch cannot outlive it.
         m_pttLocked = false;
         m_pttLockTimer->stop();
-        m_pttBtn->setStyleSheet(K4Styles::menuBarButton());
     }
 }
 
