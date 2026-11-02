@@ -122,6 +122,13 @@ void DisplayPopupWidget::setupTopRow() {
     // Default to SPAN page
     m_controlStack->setCurrentWidget(m_spanControlPage);
 
+    // WHY: pages differ in width (REF's AUTO key makes it the only one filling the stack). On a page
+    // change Qt repaints the stack's own area, and at a fractional scale its edge rounds to device
+    // pixels - the last column was left holding REF's right border as a stray vertical line. The
+    // popup paints the background under the stack, so it repaints the area, a pixel beyond each edge.
+    connect(m_controlStack, &QStackedWidget::currentChanged, this,
+            [this]() { update(m_controlStack->geometry().adjusted(-1, -1, 1, 1)); });
+
     topRow->addWidget(m_controlStack);
     topRow->addStretch();
 
