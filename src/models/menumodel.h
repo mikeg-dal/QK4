@@ -7,6 +7,8 @@
 #include <QList>
 #include <QMap>
 
+#include <optional>
+
 // Single menu item from MEDF response
 struct MenuItem {
     int id = 0;       // Menu ID (e.g., 7)
@@ -65,6 +67,13 @@ public:
     // K4 menu ID whose current value substitutes for the "<n>" placeholder in
     // XVTR Band labels (IDs 76, 77, 78, 79, 98). Range 1..12.
     static constexpr int XVTR_BAND_SELECT_ID = 86;
+    // The per-band XVTR items (Programmer's Reference D12 menu list): each applies to the band
+    // XVTR_BAND_SELECT_ID selects, and matches one transverter setup command (XVM/XVR/XVI/XVO/XVP).
+    static constexpr int XVTR_MODE_ID = 76;
+    static constexpr int XVTR_RF_ID = 77;
+    static constexpr int XVTR_IF_ID = 78;
+    static constexpr int XVTR_OFFSET_ID = 79;
+    static constexpr int XVTR_POWER_ID = 98;
 
     explicit MenuModel(QObject *parent = nullptr);
 
@@ -112,5 +121,32 @@ private:
     // URL decode helper (%2C -> ,)
     static QString urlDecode(const QString &str);
 };
+
+// Typing a menu value: the operator types in the units the row shows (MenuItem::displayValue) and
+// gets the value the K4 stores. Used by the menu overlay's type-in.
+namespace MenuValueEntry {
+
+// A writable number with no named choices (not BIN, no options list) and a real range.
+bool acceptsTyping(const MenuItem &item);
+
+// The range goes below zero (e.g. XVTR Offset), so a sign can be typed.
+bool allowsNegative(const MenuItem &item);
+
+// Shown with a decimal (D10mW: 1.5 mW), so a decimal point can be typed.
+bool allowsDecimal(const MenuItem &item);
+
+// The unit after the typed digits, as displayValue() shows it (" MHz", " Hz", " ms", " mW" or "").
+QString unitSuffix(const MenuItem &item);
+
+// The stored value for typed text in display units, snapped to the item's step; nothing when the
+// text is not a number or the value is outside the item's range. Never clamped: a value the operator
+// did not type is never sent.
+std::optional<int> rawFromTyped(const MenuItem &item, const QString &typed);
+
+// Whether typed text may stand while still being typed: not past the maximum, nor past the minimum on
+// the negative side. A value short of a positive minimum is allowed - "1" on the way to "144".
+bool withinTypingBounds(const MenuItem &item, const QString &typed);
+
+} // namespace MenuValueEntry
 
 #endif // MENUMODEL_H

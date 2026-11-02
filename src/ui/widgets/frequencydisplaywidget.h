@@ -7,18 +7,17 @@
 #include "utils/wheelaccumulator.h"
 
 /**
- * FrequencyDisplayWidget - Inline frequency display with segment-based editing.
+ * FrequencyDisplayWidget - Inline frequency display with type-in entry.
  *
  * Features:
- * - Custom-painted frequency with dot separators (7.024.980 … 1.296.000.000)
+ * - Custom-painted frequency with dot separators (7.024.980 … 10.368.000.000)
+ * - Up to kDigits (11) digits, the K4's own limit (FA/FB: 1 to 11 digits)
+ * - When a frequency is wider than the widget, the characters are set closer together - the font
+ *   size never changes
  * - Click a digit from 1 Hz to 10 kHz to make it the tuning rate (tuningDigitClicked)
- * - beginEntry() (the FREQ ENT button) enters edit mode; cursor starts at the leftmost digit
- * - In edit mode all kDigits digits are shown (incl. leading zeros) so any
- *   position is reachable — required to go from <10 MHz to >=10 MHz
- * - All digits change to edit color (VFO theme: cyan for A, green for B)
- * - Type digits to replace at cursor position (auto-advances)
- * - Arrow keys to navigate between digits
- * - Enter to send frequency, Escape/click-outside to cancel
+ * - beginEntry() (the FREQ ENT button) opens an empty entry in the edit color (VFO theme: cyan for
+ *   A, green for B). Digits fill in from the right as typed, grouped with dots; Backspace removes
+ *   the last; Enter sends; Escape or a click outside cancels.
  *
  * Usage:
  *   auto *freq = new FrequencyDisplayWidget(parent);
@@ -31,9 +30,9 @@ class FrequencyDisplayWidget : public QWidget {
     Q_OBJECT
 
 public:
-    // 10 digits supports DC to 9.999.999.999 Hz (= ~10 GHz) — covers HF, VHF, UHF,
-    // and L-band XVTRs (e.g., 1.296.000.000 for 1296 MHz).
-    static constexpr int kDigits = 10;
+    // 11 digits: DC to 99.999.999.999 Hz, the most the K4's FA/FB take (Programmer's Reference D12,
+    // FA). Covers HF through the microwave transverter bands (10.368.000.000 for 10 GHz).
+    static constexpr int kDigits = 11;
     static constexpr int kMaxDigitIndex = kDigits - 1;
 
     explicit FrequencyDisplayWidget(QWidget *parent = nullptr);
@@ -43,10 +42,11 @@ public:
     // While editing, the value is held and shown only if the entry is cancelled.
     void setFrequency(const QString &frequency);
 
-    // Get the current frequency as plain digits (no dots)
+    // The frequency as kDigits plain digits, left-padded with zeros. While editing, what has been
+    // typed so far (no padding; empty before the first digit).
     QString frequency() const;
 
-    // Get the displayed text with dots (e.g., "7.024.980")
+    // The text shown, with dots (e.g., "7.024.980"); while editing, the typed digits grouped the same way
     QString displayText() const;
 
     // Set the color used when in edit mode (typically VFO theme color)
@@ -63,8 +63,7 @@ public:
     // Check if currently in edit mode
     bool isEditing() const;
 
-    // Open direct frequency entry with the cursor on the leftmost digit, or back out of it without
-    // sending. Driven by the FREQ ENT button.
+    // Open an empty frequency entry, or back out of it without sending. Driven by the FREQ ENT button.
     void beginEntry();
     void cancelEntry();
 
@@ -73,8 +72,8 @@ public:
     void setEntryLocked(bool locked);
 
 signals:
-    // Emitted when user presses Enter to confirm frequency entry
-    // digits is the frequency as plain digits (e.g., "7024980")
+    // Emitted when the operator presses Enter on a non-empty entry. digits is the frequency in Hz as
+    // exactly kDigits digits (e.g., "00014074000"), so the K4 never reads it as a short MHz/kHz form.
     void frequencyEntered(const QString &digits);
 
     // Emitted when user scrolls mouse wheel over frequency (not in edit mode)
@@ -95,38 +94,32 @@ protected:
 private:
     bool m_entryLocked = false;
 
-    // Enter edit mode with cursor at the specified digit position (0-kMaxDigitIndex)
-    void enterEditMode(int digitPosition);
-
-    // Exit edit mode, optionally sending the frequency
+    // Exit edit mode, optionally sending the typed frequency
     void exitEditMode(bool send);
 
-    // Digit position (0-kMaxDigitIndex) under mouse X; a dot snaps to its neighbour, past the end
-    // gives the last digit
-    int digitPositionFromX(int x) const;
-
     // Tuning-rate digit under x, counted from the right, or -1 when x is not on a digit that can be a
-    // tuning rate. Strict: unlike digitPositionFromX, a click on a dot or past the end is no digit.
+    // tuning rate (a dot, past the end, or while editing).
     int tuningDigitAtX(int x) const;
 
-    // Convert character index in display string to digit index (0-kMaxDigitIndex)
-    // Returns -1 for dot characters
-    int digitIndexFromCharIndex(int charIndex) const;
-
     // Index of the first m_digits position shown: leading zeros beyond the 8-digit window are
-    // hidden, plus one more below 10 MHz; 0 while editing so every digit is reachable.
+    // hidden, plus one more below 10 MHz.
     int displayStartIndex() const;
 
-    // Format m_digits as display string with dots (e.g., "7.024.980")
-    QString formatWithDots() const;
+    // Digits grouped in threes from the right with dots ("14074000" -> "14.074.000")
+    static QString groupWithDots(const QString &digits);
 
     // Strip non-digits and normalize to kDigits digits
     static QString normalizeDigits(const QString &freq);
 
+    // Horizontal factor applied to every character's natural advance so `text` (plus the entry
+    // caret while editing) fits the widget: 1 when it fits, less when it would not.
+    qreal pitchFor(const QString &text) const;
+
     // Member variables
-    QString m_digits;          // kDigits digits, left-padded with zeros
-    QString m_radioDigits;     // Latest radio value while editing; restored on cancel
-    int m_cursorPosition = -1; // -1 = not editing, 0-kMaxDigitIndex = digit position
+    QString m_digits;      // kDigits digits, left-padded with zeros
+    QString m_radioDigits; // Latest radio value while editing; restored on cancel
+    QString m_typed;       // Digits typed so far while editing
+    bool m_editing = false;
 
     QColor m_normalColor; // White - normal display color
     QColor m_editColor;   // Cyan/Green - edit mode color
@@ -137,7 +130,7 @@ private:
 
     WheelAccumulator m_wheelAccumulator;
 
-    // Cached character metrics for click detection
+    // Natural character advances, from the font
     int m_charWidth = 0;
     int m_dotWidth = 0;
 };

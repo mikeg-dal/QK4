@@ -173,6 +173,19 @@ private slots:
         QCOMPARE(CatFrames::setMenuValue(69, 20), QByteArray("ME0069.0020;"));
         QCOMPARE(CatFrames::setMenuValue(69, 5), QByteArray("ME0069.0005;"));
         QCOMPARE(CatFrames::setMenuValue(7, 200), QByteArray("ME0007.0200;"));
+        QCOMPARE(CatFrames::setMenuValue(79, -5), QByteArray("ME0079.-0005;")); // sign before the zeros
+    }
+
+    // Transverter setup (D12, XVN/XVM/XVR/XVI/XVO/XVP): XVN selects the band, then the field, at the
+    // documented widths - R.F. five digits in MHz, so a 10 GHz band start fits.
+    void xvtrSetupFramesFollowTheReference() {
+        QCOMPARE(CatFrames::setXvtrRfMhz(5, 10368), QByteArray("XVN5;XVR10368;"));
+        QCOMPARE(CatFrames::setXvtrRfMhz(1, 144), QByteArray("XVN1;XVR00144;"));
+        QCOMPARE(CatFrames::setXvtrIfMhz(12, 28), QByteArray("XVN12;XVI28;"));
+        QCOMPARE(CatFrames::setXvtrOffsetHz(3, -1234), QByteArray("XVN3;XVO-01234;"));
+        QCOMPARE(CatFrames::setXvtrOffsetHz(3, 500), QByteArray("XVN3;XVO+00500;"));
+        QCOMPARE(CatFrames::setXvtrMode(2, 1), QByteArray("XVN2;XVM1;"));
+        QCOMPARE(CatFrames::setXvtrPowerTenthsMw(4, 10), QByteArray("XVN4;XVP010;"));
     }
 
     void setBuildersClampRatherThanEmitNonsense() {

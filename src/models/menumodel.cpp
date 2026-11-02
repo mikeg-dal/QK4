@@ -2,6 +2,7 @@
 
 #include "models/radiostate/spectrumdisplaystate.h"
 #include <QUrl>
+#include <QtMath>
 #include <algorithm>
 #include <utility>
 
@@ -181,3 +182,69 @@ bool MenuModel::parseME(const QString &meLine) {
 
     return true;
 }
+
+namespace MenuValueEntry {
+
+bool acceptsTyping(const MenuItem &item) {
+    return !item.isReadOnly() && item.options.isEmpty() && item.type != QLatin1String("BIN") &&
+           item.maxValue > item.minValue;
+}
+
+bool allowsNegative(const MenuItem &item) {
+    return item.minValue < 0;
+}
+
+bool allowsDecimal(const MenuItem &item) {
+    return item.type == QLatin1String("D10mW");
+}
+
+QString unitSuffix(const MenuItem &item) {
+    if (item.type == QLatin1String("MHz"))
+        return QStringLiteral(" MHz");
+    if (item.type == QLatin1String("Hz") || item.type == QLatin1String("M50Hz"))
+        return QStringLiteral(" Hz");
+    if (item.type == QLatin1String("ms"))
+        return QStringLiteral(" ms");
+    if (item.type == QLatin1String("D10mW"))
+        return QStringLiteral(" mW");
+    return QString();
+}
+
+namespace {
+// typed in display units -> stored units, nothing else.
+std::optional<qint64> toStored(const MenuItem &item, const QString &typed) {
+    bool ok = false;
+    qint64 raw = 0;
+    if (allowsDecimal(item)) {
+        const double mw = typed.toDouble(&ok); // D10mW: tenths of a milliwatt
+        raw = qRound64(mw * 10.0);
+    } else if (item.type == QLatin1String("M50Hz")) {
+        const qint64 hz = typed.toLongLong(&ok); // FM deviation, stored as 50 Hz steps
+        raw = qRound64(hz / 50.0);
+    } else {
+        raw = typed.toLongLong(&ok);
+    }
+    return ok ? std::optional<qint64>(raw) : std::nullopt;
+}
+} // namespace
+
+std::optional<int> rawFromTyped(const MenuItem &item, const QString &typed) {
+    const std::optional<qint64> stored = toStored(item, typed);
+    if (!stored)
+        return std::nullopt;
+    qint64 raw = *stored;
+    if (item.step > 1) // onto the item's own grid, counted from its minimum
+        raw = item.minValue + qRound64(double(raw - item.minValue) / item.step) * item.step;
+    if (raw < item.minValue || raw > item.maxValue)
+        return std::nullopt;
+    return int(raw);
+}
+
+bool withinTypingBounds(const MenuItem &item, const QString &typed) {
+    const std::optional<qint64> stored = toStored(item, typed);
+    if (!stored)
+        return true; // "-" or "0." on the way to a number
+    return *stored <= item.maxValue && *stored >= (std::min)(item.minValue, 0);
+}
+
+} // namespace MenuValueEntry

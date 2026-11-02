@@ -288,8 +288,39 @@ QByteArray setAntennaConfig(const char *prefix, bool displayAll, const QVector<b
     return cmd;
 }
 
+namespace {
+// Sign first, then the magnitude zero-padded. WHY not arg(value, width, 10, '0'): Qt does not document
+// where a zero fill puts the minus sign of a negative number.
+QString signedPadded(int value, int digits, bool alwaysSign) {
+    const QString magnitude = QString::number(qAbs(qint64(value))).rightJustified(digits, QLatin1Char('0'));
+    if (value < 0)
+        return QLatin1Char('-') + magnitude;
+    return alwaysSign ? QLatin1Char('+') + magnitude : magnitude;
+}
+} // namespace
+
 QByteArray setMenuValue(int menuId, int value) {
-    return QString("ME%1.%2;").arg(menuId, 4, 10, QChar('0')).arg(value, 4, 10, QChar('0')).toUtf8();
+    return QStringLiteral("ME%1.%2;").arg(menuId, 4, 10, QChar('0')).arg(signedPadded(value, 4, false)).toUtf8();
+}
+
+QByteArray setXvtrRfMhz(int band, int mhz) {
+    return QStringLiteral("XVN%1;XVR%2;").arg(band).arg(signedPadded(mhz, 5, false)).toUtf8();
+}
+
+QByteArray setXvtrIfMhz(int band, int mhz) {
+    return QStringLiteral("XVN%1;XVI%2;").arg(band).arg(signedPadded(mhz, 2, false)).toUtf8();
+}
+
+QByteArray setXvtrOffsetHz(int band, int hz) {
+    return QStringLiteral("XVN%1;XVO%2;").arg(band).arg(signedPadded(hz, 5, true)).toUtf8();
+}
+
+QByteArray setXvtrMode(int band, int mode) {
+    return QStringLiteral("XVN%1;XVM%2;").arg(band).arg(mode).toUtf8();
+}
+
+QByteArray setXvtrPowerTenthsMw(int band, int tenthsMw) {
+    return QStringLiteral("XVN%1;XVP%2;").arg(band).arg(signedPadded(tenthsMw, 3, false)).toUtf8();
 }
 
 QByteArray setRfPower(double value, LevelsState::PowerRange range) {

@@ -31,6 +31,9 @@ public:
     bool isEditing() const { return m_editing; }
     int menuId() const { return m_menuId; }
     void updateDisplay();
+    // While a value is being typed: the digits so far, shown with a caret and the unit in place of the
+    // value. Empty shows the value again.
+    void setTypedText(const QString &typed);
 
 signals:
     void clicked();
@@ -49,11 +52,13 @@ private:
     QLabel *m_lockLabel;
     bool m_selected = false;
     bool m_editing = false;
+    QString m_typed;
 };
 
 /**
  * @brief Full-screen MENU overlay backing the K4's MN menu system. Driven by MenuModel; emits
- *        `menuValueChangeRequested(menuId, "+"/"-"/"/")` to MenuController for CAT dispatch.
+ *        `menuValueChangeRequested(menuId, "+"/"-"/"/")` and, for a typed value,
+ *        `menuValueSetRequested(menuId, value)` to MenuController for CAT dispatch.
  *        Implements scroll, search, and the dual-panel K4 highlight style.
  */
 class MenuOverlayWidget : public QWidget {
@@ -69,6 +74,9 @@ public:
 signals:
     void closed();
     void menuValueChangeRequested(int menuId, const QString &action); // "+", "-", "/"
+    // A value typed in edit mode, converted to the item's stored units and held to its range
+    // (MenuValueEntry::rawFromTyped).
+    void menuValueSetRequested(int menuId, int value);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -102,6 +110,10 @@ private:
     void setEditMode(bool editing);
     void updateButtonLabels();
     void updateNormButton();
+    // Type-in on a numeric item in edit mode: digits replace the value, Backspace removes the last,
+    // Enter sends, Escape restores. Returns true when the key was part of typing.
+    bool handleTypedKey(const QKeyEvent *event);
+    void setTyped(const QString &typed);
 
     MenuModel *m_model;
     QWidget *m_contentWidget;
@@ -113,6 +125,7 @@ private:
     QList<MenuItemWidget *> m_itemWidgets;
     int m_selectedIndex = 0;
     bool m_editMode = false;
+    QString m_typed; // the value being typed, in display units; empty when not typing
 
     // Navigation buttons
     QPushButton *m_upBtn;

@@ -3,6 +3,8 @@
 
 #include "connectioncontroller.h"
 #include "models/menumodel.h"
+#include "models/radiostate.h"
+#include "network/catframes.h"
 #include "spectrumcontroller.h"
 #include "ui/overlays/menuoverlay.h"
 
@@ -12,16 +14,18 @@
 
 #include <algorithm>
 
-MenuController::MenuController(ConnectionController *connection, SpectrumController *spectrum, QWidget *parentWidget,
-                               QObject *parent)
-    : QObject(parent), m_connection(connection), m_spectrum(spectrum), m_parentWidget(parentWidget),
-      m_menuModel(new MenuModel(this)), m_menuOverlay(new MenuOverlayWidget(m_menuModel, parentWidget)) {
+MenuController::MenuController(ConnectionController *connection, RadioState *radioState, SpectrumController *spectrum,
+                               QWidget *parentWidget, QObject *parent)
+    : QObject(parent), m_connection(connection), m_radioState(radioState), m_spectrum(spectrum),
+      m_parentWidget(parentWidget), m_menuModel(new MenuModel(this)),
+      m_menuOverlay(new MenuOverlayWidget(m_menuModel, parentWidget)) {
     connect(m_menuModel, &MenuModel::menuValueChanged, this, &MenuController::menuValueChanged);
 
     m_menuOverlay->hide();
 
     connect(m_menuOverlay, &MenuOverlayWidget::menuValueChangeRequested, this,
             &MenuController::onMenuValueChangeRequested);
+    connect(m_menuOverlay, &MenuOverlayWidget::menuValueSetRequested, this, &MenuController::onMenuValueSetRequested);
     connect(m_menuOverlay, &MenuOverlayWidget::closed, this, &MenuController::overlayClosed);
 
     connect(m_menuModel, &MenuModel::menuValueChanged, this, &MenuController::onMenuModelValueChanged);
@@ -135,8 +139,56 @@ void MenuController::onMenuValueChangeRequested(int menuId, const QString &actio
         m_connection->sendCAT(cmd);
 }
 
+void MenuController::onMenuValueSetRequested(int menuId, int value) {
+    // XVTR R.F., I.F. and Offset go as the transverter setup commands, which D12 documents at their
+    // full width (R.F. 0-99999 MHz); ME's value is documented as four digits. The rest go as ME.
+    QByteArray frame;
+    const MenuItem *select = m_menuModel->getMenuItem(MenuModel::XVTR_BAND_SELECT_ID);
+    const int band = select ? select->currentValue : 0;
+    if (band >= 1 && band <= 12) {
+        if (menuId == MenuModel::XVTR_RF_ID)
+            frame = CatFrames::setXvtrRfMhz(band, value);
+        else if (menuId == MenuModel::XVTR_IF_ID)
+            frame = CatFrames::setXvtrIfMhz(band, value);
+        else if (menuId == MenuModel::XVTR_OFFSET_ID)
+            frame = CatFrames::setXvtrOffsetHz(band, value);
+    }
+    if (frame.isEmpty())
+        frame = CatFrames::setMenuValue(menuId, value);
+    qCDebug(lcUiMenu) << "Menu value set:" << frame;
+    // The radio does not report back a change QK4 made (AI4): show it now.
+    m_menuModel->updateValue(menuId, value);
+    if (m_connection->isConnected())
+        m_connection->sendCAT(QString::fromLatin1(frame));
+}
+
+void MenuController::mirrorXvtrItem(int menuId, int value) {
+    if (!m_radioState)
+        return;
+    const MenuItem *select = m_menuModel->getMenuItem(MenuModel::XVTR_BAND_SELECT_ID);
+    const int band = select ? select->currentValue : 0;
+    if (band < 1 || band > 12)
+        return;
+    QByteArray frames;
+    if (menuId == MenuModel::XVTR_MODE_ID)
+        frames = CatFrames::setXvtrMode(band, value);
+    else if (menuId == MenuModel::XVTR_RF_ID)
+        frames = CatFrames::setXvtrRfMhz(band, value);
+    else if (menuId == MenuModel::XVTR_IF_ID)
+        frames = CatFrames::setXvtrIfMhz(band, value);
+    else if (menuId == MenuModel::XVTR_OFFSET_ID)
+        frames = CatFrames::setXvtrOffsetHz(band, value);
+    else if (menuId == MenuModel::XVTR_POWER_ID) // D10mW: the same 0.1 mW units as XVP
+        frames = CatFrames::setXvtrPowerTenthsMw(band, value);
+    const QString commands = QString::fromLatin1(frames);
+    for (const QString &command : commands.split(QLatin1Char(';'), Qt::SkipEmptyParts))
+        m_radioState->parseCATCommand(command + QLatin1Char(';'));
+}
+
 void MenuController::onMenuModelValueChanged(int menuId, int newValue) {
     const MenuItem *item = m_menuModel->getMenuItem(menuId);
+
+    mirrorXvtrItem(menuId, newValue);
 
     // Spectrum Amplitude Units (dBm vs S-UNITS).
     if (item && item->name == "Spectrum Amplitude Units") {

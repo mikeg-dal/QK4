@@ -77,7 +77,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // then let setupUi() build widgets and wire them into the existing
     // controllers. VFO widgets are late-injected into PopupManager via
     // setVfos() after setupUi() creates them.
-    m_menuController = new MenuController(m_connectionController, m_spectrumController, this, this);
+    m_menuController = new MenuController(m_connectionController, m_radioState, m_spectrumController, this, this);
     connect(m_menuController, &MenuController::overlayClosed, this, [this]() {
         if (m_bottomMenuBar)
             m_bottomMenuBar->setMenuActive(false);
@@ -1014,7 +1014,7 @@ void MainWindow::wireVfoWidget(VFOWidget *vfo, bool vfoB) {
 
     // Typed frequency: send FA/FB then query it to refresh the display.
     connect(vfo, &VFOWidget::frequencyEntered, this, [this, vfoB](const QString &freqString) {
-        // FA/FB accept 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz
+        // FA/FB accept 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz. The entry always gives all 11, in Hz.
         // A locked VFO keeps its frequency: ask for it instead, so the display shows it again.
         const QString query = vfoB ? QStringLiteral("FB;") : QStringLiteral("FA;");
         const QString set = query.left(2) + freqString + u';';
