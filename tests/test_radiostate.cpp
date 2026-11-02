@@ -98,6 +98,40 @@ private slots:
     // The optimistic setter keeps the range it is given. It used to infer the range from the value
     // (<= 10 meant QRP), which relabelled a reported XVTR 5.0 mW as 5.0 W QRP, and a QRO 5 W as QRP
     // (CAT-003).
+    // Each XVTR band's full setup (D12: XVN selects the band, then XVM/XVR/XVI/XVO/XVP set it), as the
+    // RDY dump and later front-panel edits send it.
+    void testXvtrBandSetupPerBand() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::xvtrBandsChanged);
+        const auto feed = [&rs](const QString &commands) {
+            for (const QString &c : commands.split(';', Qt::SkipEmptyParts))
+                rs.parseCATCommand(c + ';');
+        };
+        rs.parseCATCommand("XVI28;"); // before any XVN: no band to write to
+        QCOMPARE(spy.count(), 0);
+        feed("XVN3;XVM1;XVR00144;XVI28;XVO-01234;XVP010;");
+        const XvtrBandConfig &b3 = rs.xvtrBands().at(2);
+        QCOMPARE(b3.mode, 1);
+        QCOMPARE(b3.rfMhz, 144);
+        QCOMPARE(b3.ifMhz, 28);
+        QCOMPARE(b3.offsetHz, -1234);
+        QCOMPARE(b3.powerOutTenthsMw, 10); // 1.0 mW
+        QCOMPARE(spy.count(), 5);
+        feed("XVN4;XVO+00500;");
+        QCOMPARE(rs.xvtrBands().at(3).offsetHz, 500);
+        QCOMPARE(rs.xvtrBands().at(2).offsetHz, -1234); // band 3 untouched
+        spy.clear();
+        feed("XVN3;XVI28;XVP010;"); // unchanged: no signal
+        QCOMPARE(spy.count(), 0);
+        feed("XVN3;XVO01234;XVIxx;XVP;"); // unsigned offset, garbage: refused
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(rs.xvtrBands().at(2).offsetHz, -1234);
+        rs.reset();
+        QCOMPARE(rs.xvtrBands().at(2).ifMhz, XvtrBandConfig::Unknown);
+        QCOMPARE(rs.xvtrBands().at(2).offsetHz, XvtrBandConfig::OffsetUnknown);
+        QCOMPARE(rs.xvtrBands().at(2).powerOutTenthsMw, XvtrBandConfig::Unknown);
+    }
+
     void testSetRfPowerKeepsXvtrRange() {
         RadioState rs;
         rs.parseCATCommand("PC050X;");
@@ -3806,6 +3840,9 @@ private slots:
         row("ACT1000", SIGNAL(txAntCfgChanged()));
         row("XVN1;XVM0", SIGNAL(xvtrBandsChanged()));
         row("XVN1;XVR00144", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVI28", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVO+00000", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVP010", SIGNAL(xvtrBandsChanged()));
     }
 
     void testFirstReportAfterResetEmits() {

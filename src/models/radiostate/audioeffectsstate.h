@@ -50,7 +50,8 @@ struct AudioEffectsState {
 
     // ES — ESSB enable + TX bandwidth in 100 Hz units: SSB 24-28 (2.4-2.8 kHz), ESSB 30-45 (3.0-4.5 kHz).
     // Programmer's Reference D12 (ES) gives only "30-45 (3.0-4.5 kHz)" for both; the SSB range is not
-    // in it.
+    // in it. 24-28 is the K4's own SSB range, owner-confirmed on the radio (2026-11-02); ESSB is the
+    // wider transmit bandwidth.
     static constexpr int SsbTxBwMin = 24;
     static constexpr int SsbTxBwMax = 28;
     static constexpr int EssbTxBwMin = 30;

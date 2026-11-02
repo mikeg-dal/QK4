@@ -677,6 +677,12 @@ void RadioState::registerCommandHandlers() {
         {"XVM", [this](const QString &c) { XvtrBandHandlers::handleXVM(m_xvtrBandState, *this, c); }});
     m_commandHandlers.append(
         {"XVR", [this](const QString &c) { XvtrBandHandlers::handleXVR(m_xvtrBandState, *this, c); }});
+    m_commandHandlers.append(
+        {"XVI", [this](const QString &c) { XvtrBandHandlers::handleXVI(m_xvtrBandState, *this, c); }});
+    m_commandHandlers.append(
+        {"XVO", [this](const QString &c) { XvtrBandHandlers::handleXVO(m_xvtrBandState, *this, c); }});
+    m_commandHandlers.append(
+        {"XVP", [this](const QString &c) { XvtrBandHandlers::handleXVP(m_xvtrBandState, *this, c); }});
 
     // Sort by prefix length (longest first) for correct matching
     std::sort(m_commandHandlers.begin(), m_commandHandlers.end(),

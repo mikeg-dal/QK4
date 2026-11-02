@@ -713,7 +713,7 @@ signals:
     // Error/notification messages from K4 (ERxx: format)
     void errorNotificationReceived(int errorCode, const QString &message);
 
-    // XVTR per-band config (XvtrBandState): fires when any band's mode or RF value changes.
+    // XVTR per-band config (XvtrBandState): fires when any field of any band changes.
     void xvtrBandsChanged();
 
     // Audio effects and processing
