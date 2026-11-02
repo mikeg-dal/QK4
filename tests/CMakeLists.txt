@@ -665,6 +665,7 @@ add_executable(test_widgetstate test_widgetstate.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/displaymenubutton.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/widgets/togglegroupwidget.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/dialogs/macrodialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/dialogs/textdecodewindow.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/overlays/dxspotoverlay.cpp)
 target_link_libraries(test_widgetstate qk4_test_widgets qk4_test_common)
 target_include_directories(test_widgetstate PRIVATE ${CMAKE_SOURCE_DIR}/src)

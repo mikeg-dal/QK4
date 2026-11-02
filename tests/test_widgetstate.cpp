@@ -5,6 +5,7 @@
 // behind the dialog's back. Rendered offscreen.
 
 #include "ui/dialogs/macrodialog.h"
+#include "ui/dialogs/textdecodewindow.h"
 #include "ui/overlays/baloverlay.h"
 #include "ui/overlays/monoverlay.h"
 #include "ui/overlays/dxspotoverlay.h"
@@ -23,6 +24,8 @@
 
 #include <QApplication>
 #include <QIcon>
+#include <QImage>
+#include <QLabel>
 #include <QtMath>
 #include <QLineEdit>
 #include <QPushButton>
@@ -31,6 +34,8 @@
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QTest>
+
+#include <algorithm>
 
 class WidgetStateTests : public QObject {
     Q_OBJECT
@@ -359,6 +364,74 @@ private slots:
     }
 
     // --- MacroDialog ---
+
+    // Deselecting a macro row returns every column to its unselected look (the command column used to
+    // stay white once a row had been selected).
+    void macroRowDeselectRestoresEveryColumn() {
+        MacroItemWidget row(QStringLiteral("PF1"), QStringLiteral("PF1"));
+        row.setLabel(QStringLiteral("CQ"));
+        row.setCommand(QStringLiteral("KY CQ TEST;"));
+        row.resize(600, 40);
+        row.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&row));
+        const QImage unselected = row.grab().toImage();
+        row.setSelected(true);
+        QVERIFY(row.grab().toImage() != unselected);
+        row.setSelected(false);
+        QCOMPARE(row.grab().toImage(), unselected);
+    }
+
+    // --- TextDecodeWindow ---
+
+    // In every mode the title row's keys sit side by side, each wide enough for its text, inside the
+    // window, even when the window is asked to be smaller than they need. The window minimum used to be
+    // a fixed 350 px, below the CW row's width, and the keys were drawn over each other.
+    void textDecodeTitleRowFitsInEveryMode_data() {
+        QTest::addColumn<int>("receiver");
+        QTest::addColumn<int>("mode");
+        QTest::addColumn<bool>("autoThreshold");
+        QTest::addColumn<int>("dataRate");
+        for (int rx : {int(TextDecodeWindow::MainRx), int(TextDecodeWindow::SubRx)}) {
+            const char *rxName = rx == TextDecodeWindow::MainRx ? "main" : "sub";
+            QTest::addRow("%s/cw-auto", rxName) << rx << int(TextDecodeWindow::ModeCW) << true << 0;
+            QTest::addRow("%s/cw-manual", rxName) << rx << int(TextDecodeWindow::ModeCW) << false << 0;
+            QTest::addRow("%s/rtty45", rxName) << rx << int(TextDecodeWindow::ModeFSK) << true << 0;
+            QTest::addRow("%s/rtty75", rxName) << rx << int(TextDecodeWindow::ModeAFSK) << true << 1;
+            QTest::addRow("%s/psk63", rxName) << rx << int(TextDecodeWindow::ModePSK) << true << 1;
+            QTest::addRow("%s/data", rxName) << rx << int(TextDecodeWindow::ModeData) << true << 0;
+        }
+    }
+
+    void textDecodeTitleRowFitsInEveryMode() {
+        QFETCH(int, receiver);
+        QFETCH(int, mode);
+        QFETCH(bool, autoThreshold);
+        QFETCH(int, dataRate);
+        TextDecodeWindow window(static_cast<TextDecodeWindow::Receiver>(receiver));
+        window.setOperatingMode(static_cast<TextDecodeWindow::OperatingMode>(mode));
+        window.setAutoThreshold(autoThreshold);
+        window.setDataRate(dataRate);
+        window.resize(200, 100); // smaller than any mode needs
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+        QList<QWidget *> row;
+        for (QWidget *child : window.findChildren<QWidget *>()) {
+            if (child->isVisible() && (qobject_cast<QPushButton *>(child) || qobject_cast<QLabel *>(child)))
+                row.append(child);
+        }
+        QVERIFY(row.size() >= 6);
+        std::sort(row.begin(), row.end(), [](QWidget *a, QWidget *b) { return a->x() < b->x(); });
+        for (int i = 0; i < row.size(); ++i) {
+            QWidget *w = row.at(i);
+            const QString text = qobject_cast<QPushButton *>(w) ? qobject_cast<QPushButton *>(w)->text()
+                                                                : qobject_cast<QLabel *>(w)->text();
+            QVERIFY2(w->width() >= w->sizeHint().width(), qPrintable(text + " is narrower than its text"));
+            QVERIFY2(w->geometry().right() < window.width(), qPrintable(text + " is outside the window"));
+            if (i > 0)
+                QVERIFY2(row.at(i - 1)->geometry().right() < w->x(), qPrintable(text + " overlaps its neighbour"));
+        }
+    }
 
     void macroTabSwitchesFieldAndStaysInEditMode() {
         MacroDialog dialog;

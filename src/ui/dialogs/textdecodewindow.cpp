@@ -12,6 +12,9 @@
 #include <QTextCursor>
 #include <QWheelEvent>
 
+#include <algorithm>
+#include <initializer_list>
+
 namespace {
 const int TitleBarHeight = K4Styles::Dimensions::ButtonHeightMedium;
 const int BorderWidth = 4;
@@ -22,12 +25,28 @@ const int DefaultHeight = 300;
 const int CloseButtonSize = K4Styles::Dimensions::ButtonHeightMini;
 const int ControlButtonHeight = K4Styles::Dimensions::ButtonHeightMini;
 const int ResizeGripSize = 16;
+const int SpeedButtonMinWidth = 40;
+const int AutoManualButtonMinWidth = 48;
+
+// Fixes a key's width to the widest text it can show, never below `floorWidth`, so a text change
+// never clips. WHY: an explicit minimum width overrides the button's own minimum size hint (Qt docs,
+// QWidget::minimumSize), so a floor narrower than the text squeezed "MANUAL" into a 48 px key.
+void fitWidthToTexts(QPushButton *button, std::initializer_list<const char *> texts, int floorWidth) {
+    button->ensurePolished(); // the style sheet's font decides the width
+    const QString shown = button->text();
+    int widest = floorWidth;
+    for (const char *text : texts) {
+        button->setText(QString::fromUtf8(text));
+        widest = (std::max)(widest, button->sizeHint().width());
+    }
+    button->setText(shown);
+    button->setMinimumWidth(widest);
+}
 } // namespace
 
 TextDecodeWindow::TextDecodeWindow(Receiver rx, QWidget *parent) : QWidget(parent), m_receiver(rx) {
     setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground);
-    setMinimumSize(MinWidth, MinHeight);
     resize(DefaultWidth, DefaultHeight);
     setupUi();
 }
@@ -37,6 +56,10 @@ void TextDecodeWindow::setupUi() {
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(BorderWidth, BorderWidth, BorderWidth, BorderWidth);
     mainLayout->setSpacing(0);
+    // WHY: the window's minimum follows its layout, so it can never be narrower than the title row
+    // the current mode shows. A fixed minimum would override the layout's (Qt docs,
+    // QLayout::SizeConstraint), which is how the keys came to be drawn over each other.
+    mainLayout->setSizeConstraint(QLayout::SetMinimumSize);
 
     // Title bar container
     auto *titleBar = new QWidget(this);
@@ -56,14 +79,12 @@ void TextDecodeWindow::setupUi() {
     // Speed button: WPM range in CW, data rate in AFSK/FSK/PSK
     m_wpmBtn = new QPushButton("8-45", titleBar);
     m_wpmBtn->setFixedHeight(ControlButtonHeight);
-    m_wpmBtn->setMinimumWidth(40);
     m_wpmBtn->setCursor(Qt::PointingHandCursor);
     m_wpmBtn->setStyleSheet(controlButtonStyle(false));
 
     // AUTO/MANUAL button
     m_autoManualBtn = new QPushButton("AUTO", titleBar);
     m_autoManualBtn->setFixedHeight(ControlButtonHeight);
-    m_autoManualBtn->setMinimumWidth(48);
     m_autoManualBtn->setCursor(Qt::PointingHandCursor);
     m_autoManualBtn->setStyleSheet(K4Styles::controlButtonSelectable());
     K4Styles::setSelected(m_autoManualBtn, true); // AUTO is default (highlighted)
@@ -153,6 +174,8 @@ void TextDecodeWindow::setupUi() {
     m_textDisplay = new QPlainTextEdit(this);
     m_textDisplay->setReadOnly(true);
     m_textDisplay->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    // The window's floor size, carried by the text area so the layout includes it.
+    m_textDisplay->setMinimumSize(MinWidth - 2 * BorderWidth, MinHeight - TitleBarHeight - 2 * BorderWidth);
 
     // Initial font size from persisted settings (per receiver), then apply stylesheet + line spacing.
     m_textFontSize = RadioSettings::instance()->textDecodeFontSize(m_receiver == SubRx);
@@ -227,6 +250,8 @@ void TextDecodeWindow::setupUi() {
             emit thresholdChanged(m_threshold);
         }
     });
+
+    fitWidthToTexts(m_autoManualBtn, {"AUTO", "MANUAL"}, AutoManualButtonMinWidth);
 
     // Initial state
     updateModeVisibility();
@@ -350,8 +375,8 @@ void TextDecodeWindow::mouseMoveEvent(QMouseEvent *event) {
         move(event->globalPosition().toPoint() - m_dragPosition);
     } else if (m_resizing) {
         QPoint delta = event->globalPosition().toPoint() - m_resizeStartPos;
-        int newWidth = qMax(MinWidth, m_resizeStartSize.width() + delta.x());
-        int newHeight = qMax(MinHeight, m_resizeStartSize.height() + delta.y());
+        int newWidth = (std::max)(minimumWidth(), m_resizeStartSize.width() + delta.x());
+        int newHeight = (std::max)(minimumHeight(), m_resizeStartSize.height() + delta.y());
         resize(newWidth, newHeight);
     } else {
         // Update cursor for resize grip
@@ -443,6 +468,22 @@ void TextDecodeWindow::updateButtonStates() {
 }
 
 void TextDecodeWindow::updateSpeedButton() {
+    // Sized for the widest label of the current mode, so cycling the range never changes the key's width.
+    switch (m_operatingMode) {
+    case ModeCW:
+        fitWidthToTexts(m_wpmBtn, {"8-45", "8-60", "8-90"}, SpeedButtonMinWidth);
+        break;
+    case ModeAFSK:
+    case ModeFSK:
+        fitWidthToTexts(m_wpmBtn, {"RTTY45", "RTTY75"}, SpeedButtonMinWidth);
+        break;
+    case ModePSK:
+        fitWidthToTexts(m_wpmBtn, {"PSK31", "PSK63"}, SpeedButtonMinWidth);
+        break;
+    default:
+        break;
+    }
+
     switch (m_operatingMode) {
     case ModeCW: {
         static const char *wpmLabels[] = {"8-45", "8-60", "8-90"};
