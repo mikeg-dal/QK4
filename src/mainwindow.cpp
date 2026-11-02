@@ -185,32 +185,47 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
+    shutdownSubsystems();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::shutdownSubsystems() {
+    // WHY one ordered teardown, run from closeEvent AND from the destructor: producers stop before
+    // consumers and before anything they read is destroyed. Left to Qt, children are destroyed in
+    // construction order - ConnectionController (the I/O thread and socket) first - while the
+    // HaliKey worker, keyer and sidetone threads still run and can still send KZ through it. Every
+    // current way out closes the window first (qFatal runs no destructors; the never-shown relaunch
+    // in main.cpp calls close()), so the destructor call is the backstop for any future path that
+    // does not.
+    if (m_subsystemsShutDown)
+        return;
+    m_subsystemsShutDown = true;
+
     // BEFORE the audio teardown below: a TCI client may be holding the transmitter, and handing it
     // back needs a live AudioController, and ~TciController runs after AudioController is destroyed.
     if (m_tciController) {
         m_tciController->shutdown();
     }
 
-    // WHY explicit and here: producers stop before consumers and before anything they read is
-    // destroyed. Qt destroys children in construction order, ConnectionController first, while the
-    // HaliKey worker and sidetone thread still read state through CwController. The destructors
-    // repeat this as a no-op for paths that never reach closeEvent.
     if (m_hardwareController) {
         m_hardwareController->shutdownDevices();
     }
-    // Deterministic audio teardown BEFORE the event loop exits. On Linux with
-    // the PipeWire Qt Multimedia backend, destroying an active QAudioSink from
-    // libc atexit races the PipeWire RT worker thread and segfaults in
-    // pw_stream_dequeue_buffer. Stopping the sinks here — while the audio and
-    // sidetone thread event loops are still servicing BlockingQueuedConnection
-    // — guarantees no live QAudioSink/QAudioSource remains at process exit.
+    // Deterministic audio teardown, never left to libc atexit: on Linux with the PipeWire Qt
+    // Multimedia backend, destroying an active QAudioSink there races the PipeWire RT worker thread
+    // and segfaults in pw_stream_dequeue_buffer. What matters is that the audio and sidetone
+    // threads' own event loops still run (they do on both paths; the main loop need not), so no live
+    // QAudioSink/QAudioSource remains at process exit.
     if (m_audioController) {
         m_audioController->shutdown();
     }
-    QMainWindow::closeEvent(event);
 }
 
 MainWindow::~MainWindow() {
+    // First, while every child still exists: the destructor body runs before ~QWidget destroys the
+    // children, so even a quit that never saw a closeEvent stops the threads in dependency order.
+    // A no-op after closeEvent, which is every path today.
+    shutdownSubsystems();
+
     // WHY every descendant is cut from this window before the body ends: ~QWidget destroys the
     // children (controllers first, in construction order) BEFORE ~QObject drops the connections
     // into this window, and by then MainWindow's own part is already destroyed. Anything a child's
@@ -223,8 +238,7 @@ MainWindow::~MainWindow() {
     }
     RadioSettings::instance()->disconnect(this);
 
-    // Thread and device teardown is not here: closeEvent runs it in dependency order, and each
-    // owning controller's destructor repeats it for the paths that never reach closeEvent.
+    // Each owning controller's destructor still repeats its own teardown as a no-op.
 }
 
 void MainWindow::setupControllers() {

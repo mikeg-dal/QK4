@@ -82,6 +82,11 @@ private slots:
     void closeAllPopups();
 
 private:
+    // TCI, then devices (HaliKey, keyer, sidetone, KPOD), then audio: producers before consumers.
+    // Run once, from closeEvent or else from the destructor before any child is destroyed.
+    void shutdownSubsystems();
+    bool m_subsystemsShutDown = false;
+
     QString m_startupRadioOverride;
 
     // WHY: the width the window has always opened at. Height is whatever the layout needs.

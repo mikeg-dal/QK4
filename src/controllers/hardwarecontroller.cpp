@@ -364,9 +364,9 @@ void HardwareController::shutdownDevices() {
 }
 
 HardwareController::~HardwareController() {
-    // Normally a no-op: MainWindow::closeEvent has already run this, which is the whole point —
-    // doing it here for the first time is what CONC-001 was. Still called, because a fatal error
-    // or a window that was never shown reaches the destructor without a closeEvent.
+    // Normally a no-op: MainWindow::shutdownSubsystems() (from closeEvent, or else from ~MainWindow
+    // before any child is destroyed) has already run this, which is the whole point - doing it here
+    // for the first time is what CONC-001 was. Still called as a last backstop.
     shutdownDevices();
 
     // A keyer thread that would not stop still runs PaddleKeyer::run() against these. Leaked, not

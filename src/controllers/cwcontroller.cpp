@@ -148,8 +148,9 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
 CwController::~CwController() {
     // WHY the handle and not m_halikey->disconnect(this): the HaliKey may already be destroyed
     // (HardwareController goes first), and disconnecting a handle is safe either way. What actually
-    // protects the device-thread handlers is MainWindow::closeEvent calling
-    // HardwareController::shutdownDevices() while ConnectionController is still alive; a disconnect
+    // protects the device-thread handlers is MainWindow::shutdownSubsystems() (closeEvent, or else
+    // ~MainWindow) calling HardwareController::shutdownDevices() while ConnectionController is still
+    // alive; a disconnect
     // cannot stop a call the worker has already started.
     disconnect(m_paddleConnection);
     // WHY the MIDI sink is NOT cleared here: HardwareController, and with it the HaliKey, is
