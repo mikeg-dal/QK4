@@ -127,7 +127,7 @@ QString radioButton();
  */
 QString compactButton();
 
-// WHY: a QPushButton given any of the three sidePanelButton*() sheets (or compactButton()) must also set
+// WHY: a QPushButton given any of the sidePanelButton*() sheets (or compactButton()) must also set
 // Qt::WA_LayoutUsesWidgetRect. These sheets draw the whole widget rect, but layouts still space the
 // button by the native style's smaller "layout item rect" (macOS insets push buttons for their
 // focus ring), so on macOS the sub-label below was laid over the button's bottom edge. Qt docs:
@@ -144,11 +144,17 @@ QString compactButton();
 QString sidePanelButton();
 
 /**
- * @brief Active/engaged state for a side-panel icon button (amber-accent highlight).
- * Swapped in via setStyleSheet while the button's target is open (e.g. the globe icon
- * while the Server Manager is showing), then swapped back to sidePanelButton().
+ * @brief Active/engaged state for a side-panel icon button (amber-accent highlight), on its own.
+ * Buttons use sidePanelButtonSelectable(); this standalone form is the reference its look is held to.
  */
 QString sidePanelButtonActive();
+
+/**
+ * @brief One sheet for a side-panel icon key whose target can be open (the globe while the Radio
+ * Manager shows): sidePanelButton() normally, sidePanelButtonActive() while the button is checked or
+ * marked with setSelected(). Set it once; never swap sheets.
+ */
+QString sidePanelButtonSelectable();
 
 /**
  * @brief Light gradient button for TX/PF function buttons.

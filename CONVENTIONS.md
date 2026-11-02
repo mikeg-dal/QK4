@@ -184,8 +184,8 @@ keys, the fixed 90×44 knob keys, and removed names. Values live only in
   a checkable button's selected look is `:checked` and needs no code. A button that must not toggle
   on click (a key that shows what the radio reports) uses the `selected` property through
   `K4Styles::setSelected()`, which re-applies the sheet as Qt requires after a property change (*The
-  Style Sheet Syntax*, Selector Types). The shared sheets are `popupButton()` and
-  `menuBarButtonSelectable()`; `ButtonSheetsTests` holds them pixel-identical to the standalone
+  Style Sheet Syntax*, Selector Types). The shared sheets are `popupButton()`,
+  `menuBarButtonSelectable()` and `sidePanelButtonSelectable()`; `ButtonSheetsTests` holds them pixel-identical to the standalone
   normal/selected sheets in every state [CI]. A swap to a look that is not one of those pairs (the
   PTT key, extra rules appended to a helper) stays until it gets its own selectable sheet. Count:
   `rg -c "setStyleSheet\(" src | awk -F: '{s+=$2} END {print s}'`.

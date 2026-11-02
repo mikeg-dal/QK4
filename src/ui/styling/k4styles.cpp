@@ -127,6 +127,35 @@ QString menuBarActiveCss(SelectorScope scope) {
         .arg(Colors::White, Colors::TextOnLight, Colors::BorderSelected, QString::number(Dimensions::FontSizeBody),
              buttonSelector(scope));
 }
+
+// Engaged state: amber-accent border + brighter background so the icon reads as "open".
+QString sidePanelActiveCss(SelectorScope scope) {
+    using namespace K4Styles;
+    return QString(R"(
+        %8 {
+            background: %1;
+            color: %2;
+            border: %3px solid %4;
+            border-radius: %5px;
+            font-size: %6px;
+            font-weight: bold;
+            padding: 0px;
+        }
+        %9 {
+            background: %1;
+            border: %3px solid %4;
+        }
+        %10 {
+            background: %7;
+            border: %3px solid %4;
+        }
+    )")
+        .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom),
+             Colors::TextPrimary, QString::number(Dimensions::BorderWidth), Colors::AccentAmber,
+             QString::number(Dimensions::BorderRadius), QString::number(Dimensions::FontSizeCaption),
+             gradientCssReversed(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom),
+             buttonSelector(scope), buttonSelector(scope, ":hover"), buttonSelector(scope, ":pressed"));
+}
 } // anonymous namespace
 
 namespace K4Styles {
@@ -440,33 +469,11 @@ QString sidePanelButton() {
 }
 
 QString sidePanelButtonActive() {
-    // Engaged state: amber-accent border + brighter background so the icon reads as "open".
-    return QString(R"(
-        QPushButton {
-            background: %1;
-            color: %2;
-            border: %3px solid %4;
-            border-radius: %5px;
-            font-size: %6px;
-            font-weight: bold;
-            padding: 0px;
-        }
-        QPushButton:hover {
-            background: %1;
-            border: %3px solid %4;
-        }
-        QPushButton:pressed {
-            background: %7;
-            border: %3px solid %4;
-        }
-    )")
-        .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom))
-        .arg(Colors::TextPrimary)
-        .arg(Dimensions::BorderWidth)
-        .arg(Colors::AccentAmber)
-        .arg(Dimensions::BorderRadius)
-        .arg(Dimensions::FontSizeCaption)
-        .arg(gradientCssReversed(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom));
+    return sidePanelActiveCss(SelectorScope::Always);
+}
+
+QString sidePanelButtonSelectable() {
+    return sidePanelButton() + sidePanelActiveCss(SelectorScope::Selectable);
 }
 
 QString sidePanelButtonLight() {

@@ -257,6 +257,7 @@ void SideControlPanel::setupUi() {
 
     m_helpBtn = createIconButton(QIcon(":/icons/help.svg"));
     m_connectBtn = createIconButton(QIcon(":/icons/globe.svg"));
+    m_connectBtn->setStyleSheet(K4Styles::sidePanelButtonSelectable());
     m_connectBtn->setToolTip("Connect to Radio");
 
     iconRow->addWidget(m_helpBtn);
@@ -674,7 +675,7 @@ void SideControlPanel::resetToDefaults() {
 }
 
 void SideControlPanel::setServerManagerActive(bool active) {
-    m_connectBtn->setStyleSheet(active ? K4Styles::sidePanelButtonActive() : K4Styles::sidePanelButton());
+    K4Styles::setSelected(m_connectBtn, active);
 }
 
 QLabel *SideControlPanel::createVolumeName(const QString &text, const char *color) {

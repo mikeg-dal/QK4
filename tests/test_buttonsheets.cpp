@@ -1,6 +1,7 @@
-// Selectable button sheets (K4Styles::popupButton(), menuBarButtonSelectable(), setSelected()): one
-// sheet per button replaces swapping popupButtonNormal()/popupButtonSelected() and
-// menuBarButton()/menuBarButtonActive(). These cases hold that the change is invisible: in every state
+// Selectable button sheets (K4Styles::popupButton(), menuBarButtonSelectable(),
+// sidePanelButtonSelectable(), setSelected()): one sheet per button replaces swapping
+// popupButtonNormal()/popupButtonSelected(), menuBarButton()/menuBarButtonActive() and
+// sidePanelButton()/sidePanelButtonActive(). These cases hold that the change is invisible: in every state
 // the single sheet renders exactly the pixels the swapped sheet rendered.
 
 #include <QApplication>
@@ -26,7 +27,9 @@ struct Sheets {
 QList<Sheets> allSheets() {
     return {
         {"popup", K4Styles::popupButtonNormal(), K4Styles::popupButtonSelected(), K4Styles::popupButton()},
-        {"menuBar", K4Styles::menuBarButton(), K4Styles::menuBarButtonActive(), K4Styles::menuBarButtonSelectable()}};
+        {"menuBar", K4Styles::menuBarButton(), K4Styles::menuBarButtonActive(), K4Styles::menuBarButtonSelectable()},
+        {"sidePanel", K4Styles::sidePanelButton(), K4Styles::sidePanelButtonActive(),
+         K4Styles::sidePanelButtonSelectable()}};
 }
 
 // WHY: a push button reports :hover only after a mouse move inside it while it is under the mouse
