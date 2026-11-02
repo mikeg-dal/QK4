@@ -7,6 +7,9 @@
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QLabel>
+#include <QMessageBox>
+#include <QScopedValueRollback>
+#include <QSignalBlocker>
 
 RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QDialog(parent), m_currentIndex(-1), m_discovery(nullptr) {
     // WHY: a tool window, not modal. It must float above the main window (it stays open across a
@@ -288,7 +291,9 @@ void RadioManagerDialog::setupUi() {
 }
 
 void RadioManagerDialog::refreshList() {
+    const QSignalBlocker blocker(m_radioList);
     m_radioList->clear();
+    m_currentIndex = -1;
 
     const auto radios = RadioSettings::instance()->radios();
     for (const auto &radio : radios) {
@@ -320,9 +325,58 @@ void RadioManagerDialog::refreshList() {
         m_radioList->setCurrentRow(lastIndex);
         m_currentIndex = lastIndex;
         populateFieldsFromSelection();
+    } else {
+        clearFields();
     }
 
+    m_selectedRow = m_radioList->currentRow();
     updateButtonStates();
+}
+
+QStringList RadioManagerDialog::fieldValues() const {
+    return {m_nameEdit->text(),
+            m_hostEdit->text(),
+            m_portEdit->text(),
+            m_passwordEdit->text(),
+            QString::number(m_tlsCheckbox->isChecked()),
+            QString::number(m_startupCheckbox->isChecked()),
+            m_identityEdit->text(),
+            QString::number(m_encodeModeCombo->currentData().toInt()),
+            QString::number(m_streamingLatencyCombo->currentData().toInt())};
+}
+
+bool RadioManagerDialog::confirmUnsavedChanges() {
+    if (m_confirmingChanges)
+        return false;
+    if (fieldValues() == m_loadedFields)
+        return true;
+
+    const QScopedValueRollback<bool> confirming(m_confirmingChanges, true);
+    QMessageBox prompt(QMessageBox::Question, "Unsaved Server Changes", "Save changes to this server?",
+                       QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, this);
+    prompt.setDefaultButton(QMessageBox::Save);
+    prompt.setEscapeButton(QMessageBox::Cancel);
+    prompt.setStyleSheet(
+        QString("QMessageBox { background-color: %1; } QLabel { %2 }")
+            .arg(K4Styles::Colors::Background,
+                 K4Styles::Dialog::labelText(K4Styles::Colors::TextPrimary, K4Styles::Dimensions::FontSizeBody)) +
+        K4Styles::dialogButton());
+    const bool canSave = RadioUtils::isValidHostOrIp(m_hostEdit->text().trimmed()) && portFromField().has_value();
+    prompt.button(QMessageBox::Save)->setEnabled(canSave);
+    if (!canSave)
+        prompt.setInformativeText(
+            "Enter a valid host or IP and port before saving. Choose Cancel to continue editing.");
+    const int choice = prompt.exec();
+    if (choice == QMessageBox::Save) {
+        onSaveClicked();
+        return true;
+    }
+    return choice == QMessageBox::Discard;
+}
+
+void RadioManagerDialog::reject() {
+    if (confirmUnsavedChanges())
+        QDialog::reject();
 }
 
 void RadioManagerDialog::onConnectClicked() {
@@ -340,6 +394,9 @@ void RadioManagerDialog::onConnectClicked() {
             activateWindow();
             return;
         }
+
+        if (!confirmUnsavedChanges())
+            return;
 
         RadioEntry entry;
         entry.name = m_nameEdit->text().trimmed();
@@ -365,12 +422,15 @@ void RadioManagerDialog::onConnectClicked() {
 }
 
 void RadioManagerDialog::onNewClicked() {
+    if (!confirmUnsavedChanges())
+        return;
     m_currentIndex = -1;
     clearFields();
     m_radioList->blockSignals(true);
     m_radioList->clearSelection();
     m_radioList->setCurrentRow(-1);
     m_radioList->blockSignals(false);
+    m_selectedRow = -1;
     m_nameEdit->setFocus();
     updateButtonStates();
 }
@@ -483,6 +543,31 @@ void RadioManagerDialog::onSelectionChanged() {
         return;
     }
 
+    // WHY: saving can sort and rebuild the list. Keep the destination by identity, and restore
+    // the old highlight before prompting so Cancel leaves the form and selection together.
+    const QSignalBlocker blocker(m_radioList);
+    const auto radios = RadioSettings::instance()->radios();
+    const std::optional<RadioEntry> target = row < radios.size() ? std::make_optional(radios.at(row)) : std::nullopt;
+    const QString targetIp = m_radioList->item(row)->data(Qt::UserRole + 1).toString();
+    m_radioList->setCurrentRow(m_selectedRow);
+    if (!confirmUnsavedChanges())
+        return;
+    if (target) {
+        row = RadioSettings::instance()->radios().indexOf(*target);
+    } else {
+        row = -1;
+        for (int i = 0; i < m_radioList->count(); ++i) {
+            if (m_radioList->item(i)->data(Qt::UserRole + 1).toString() == targetIp) {
+                row = i;
+                break;
+            }
+        }
+    }
+    if (row < 0)
+        return;
+    m_radioList->setCurrentRow(row);
+    m_selectedRow = row;
+
     QListWidgetItem *item = m_radioList->item(row);
     if (item && item->data(Qt::UserRole).toString() == QStringLiteral("discovered")) {
         // Discovered but unconfigured entry — look up by IP stored in the item
@@ -508,6 +593,7 @@ void RadioManagerDialog::onSelectionChanged() {
             m_identityEdit->setVisible(true);
             m_encodeModeCombo->setCurrentIndex(0);       // EM3 default
             m_streamingLatencyCombo->setCurrentIndex(3); // SL3 default
+            m_loadedFields = fieldValues();
         }
     } else {
         m_currentIndex = row;
@@ -519,6 +605,8 @@ void RadioManagerDialog::onSelectionChanged() {
 void RadioManagerDialog::onItemDoubleClicked(QListWidgetItem *item) {
     // Don't allow double-click connect on discovered (unconfigured) entries
     if (item && item->data(Qt::UserRole).toString() == QStringLiteral("discovered"))
+        return;
+    if (item != m_radioList->currentItem())
         return;
     onConnectClicked();
 }
@@ -566,6 +654,7 @@ void RadioManagerDialog::clearFields() {
     m_identityEdit->setVisible(false);
     m_encodeModeCombo->setCurrentIndex(0);       // Reset to EM3 (default)
     m_streamingLatencyCombo->setCurrentIndex(3); // Reset to SL3 (default)
+    m_loadedFields = fieldValues();
 }
 
 void RadioManagerDialog::populateFieldsFromSelection() {
@@ -588,6 +677,7 @@ void RadioManagerDialog::populateFieldsFromSelection() {
         if (latencyIndex >= 0) {
             m_streamingLatencyCombo->setCurrentIndex(latencyIndex);
         }
+        m_loadedFields = fieldValues();
     }
 }
 

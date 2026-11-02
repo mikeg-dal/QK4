@@ -8,6 +8,7 @@
 #include <QListWidget>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QStringList>
 
 #include <optional>
 
@@ -30,6 +31,9 @@ public:
     // Set the currently connected radio host (empty string if disconnected)
     void setConnectedHost(const QString &host);
 
+public slots:
+    void reject() override;
+
 signals:
     void connectRequested(const RadioEntry &radio);
     void disconnectRequested();
@@ -51,6 +55,8 @@ private slots:
 private:
     void setupUi();
     void updateButtonStates();
+    QStringList fieldValues() const;
+    bool confirmUnsavedChanges();
     // The port the form describes, or nullopt if the field holds something that is not one.
     std::optional<quint16> portFromField() const;
     void updateHostFieldStyle();
@@ -82,6 +88,9 @@ private:
     int m_scanSecondsLeft = 0;
 
     int m_currentIndex;
+    int m_selectedRow = -1;
+    QStringList m_loadedFields;
+    bool m_confirmingChanges = false;
     QString m_connectedHost; // Host of currently connected radio (empty if disconnected)
 
     K4Discovery *m_discovery;

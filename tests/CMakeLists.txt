@@ -651,6 +651,14 @@ target_link_libraries(test_sidecontrolpanel Qt6::Core Qt6::Gui Qt6::Widgets Qt6:
 add_test(NAME SideControlPanelLayoutTests COMMAND test_sidecontrolpanel)
 set_tests_properties(SideControlPanelLayoutTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# Server editor: unsaved changes, save/discard/cancel, and selection after sorting, offscreen.
+add_executable(test_radiomanagerdialog test_radiomanagerdialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/dialogs/radiomanagerdialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/k4discovery.cpp)
+target_link_libraries(test_radiomanagerdialog qk4_test_widgets Qt6::Widgets Qt6::Network Qt6::Test)
+add_test(NAME RadioManagerDialogTests COMMAND test_radiomanagerdialog)
+set_tests_properties(RadioManagerDialogTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # Widgets whose screen must match their own state (review findings D-019..D-043), offscreen.
 add_executable(test_widgetstate test_widgetstate.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/styling/k4glyphs.cpp
