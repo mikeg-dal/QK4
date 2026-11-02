@@ -16,9 +16,13 @@ KpodPage::KpodPage(KpodDevice *kpodDevice, KpodPlusDevice *kpodPlusDevice, QWidg
     m_form = OptionsPageLayout::addForm(layout);
 
     m_kpodStatusLabel = new QLabel("Not Detected", this);
+    m_kpodStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
     OptionsPageLayout::addRow(m_form, this, "Status", m_kpodStatusLabel);
 
     m_kpodEnableCheckbox = new QCheckBox("Enable K-Pod", this);
+    // The checkbox is a PREFERENCE and stays settable whether or not a device is plugged in.
+    // Switching off a misbehaving device must not require plugging it in.
+    m_kpodEnableCheckbox->setStyleSheet(K4Styles::Dialog::checkBox());
     m_kpodEnableCheckbox->setChecked(RadioSettings::instance()->kpodEnabled());
     connect(m_kpodEnableCheckbox, &QCheckBox::toggled, this,
             [](bool checked) { RadioSettings::instance()->setKpodEnabled(checked); });
@@ -42,6 +46,7 @@ KpodPage::KpodPage(KpodDevice *kpodDevice, KpodPlusDevice *kpodPlusDevice, QWidg
                                             &m_kpodDeviceIdLabel};
     for (int row = 0; row < properties.size(); ++row) {
         *valueLabels[row] = new QLabel("N/A", this);
+        (*valueLabels[row])->setStyleSheet(K4Styles::Dialog::valueLabelByState());
         OptionsPageLayout::addRow(m_form, this, properties[row], *valueLabels[row]);
     }
 
@@ -97,12 +102,6 @@ void KpodPage::updateKpodStatus() {
     bool kpodPlusDetected = m_kpodPlusDevice && m_kpodPlusDevice->isDetected();
     bool anyDetected = kpodDetected || kpodPlusDetected;
 
-    const QString valueStyle =
-        K4Styles::Dialog::labelText(K4Styles::Colors::TextPrimary, K4Styles::Dimensions::FontSizeHeading);
-    const QString notDetectedStyle =
-        K4Styles::Dialog::labelText(K4Styles::Colors::TextSecondary, K4Styles::Dimensions::FontSizeHeading) +
-        QStringLiteral(" font-style: italic;");
-
     // Update status label — show which device is detected
     QString statusText;
     if (kpodPlusDetected && kpodDetected) {
@@ -114,15 +113,15 @@ void KpodPage::updateKpodStatus() {
     } else {
         statusText = "Not Detected";
     }
-    QString statusColor = anyDetected ? K4Styles::Colors::StatusGreen : K4Styles::Colors::TextRed;
     m_kpodStatusLabel->setText(statusText);
-    m_kpodStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(statusColor));
+    K4Styles::setStyleState(m_kpodStatusLabel, K4Styles::StateProperty,
+                            anyDetected ? QString(K4Styles::Dialog::StatusOk) : QString());
 
     // Prefer KPOD+ info if both are detected, otherwise show KPOD
     auto setLabel = [&](QLabel *label, const QString &value) {
         QString displayValue = value.isEmpty() ? "N/A" : value;
         label->setText(displayValue);
-        label->setStyleSheet(displayValue == "N/A" ? notDetectedStyle : valueStyle);
+        K4Styles::setStyleFlag(label, K4Styles::DimmedProperty, displayValue == "N/A");
     };
 
     if (kpodPlusDetected) {
@@ -156,10 +155,6 @@ void KpodPage::updateKpodStatus() {
         setLabel(m_kpodFirmwareLabel, "");
         setLabel(m_kpodDeviceIdLabel, "");
     }
-
-    // The checkbox is a PREFERENCE and stays settable whether or not a device is plugged in.
-    // Switching off a misbehaving device must not require plugging it in.
-    m_kpodEnableCheckbox->setStyleSheet(K4Styles::Dialog::checkBox());
 
     if (m_form) {
         m_form->setRowVisible(m_keyerTitle, kpodPlusDetected);

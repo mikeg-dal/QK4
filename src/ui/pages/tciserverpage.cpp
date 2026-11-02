@@ -52,7 +52,7 @@ TciServerPage::TciServerPage(TciController *tciController, AudioController *audi
 
     auto *form = OptionsPageLayout::addForm(layout);
     m_statusLabel = new QLabel("Not running", this);
-    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
     OptionsPageLayout::addRow(form, this, "Status", m_statusLabel);
 
     m_clientsLabel = new QLabel("0 connected", this);
@@ -194,10 +194,10 @@ void TciServerPage::updateStatus() {
     const bool listening = m_tciController && m_tciController->isListening();
     if (listening) {
         m_statusLabel->setText(QString("Listening on port %1").arg(RadioSettings::instance()->tciServerPort()));
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
     } else {
         m_statusLabel->setText("Not running");
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
     }
 
     const int clients = m_tciController ? m_tciController->clientCount() : 0;

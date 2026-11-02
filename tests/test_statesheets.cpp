@@ -113,7 +113,114 @@ void addIndicatorCases(QList<StateCase> &cases) {
 // =============================================================================
 
 void addDialogCases(QList<StateCase> &cases) {
-    Q_UNUSED(cases);
+    using namespace K4Styles;
+    const auto label = [&cases](const QString &name, const QString &oldSheet, const QString &newSheet,
+                                QList<StyleProp> props, const QString &text) {
+        StateCase c;
+        c.name = name;
+        c.kind = Kind::Label;
+        c.oldSheet = oldSheet;
+        c.newSheet = newSheet;
+        c.props = std::move(props);
+        c.text = text;
+        c.size = QSize(260, 28);
+        cases.append(c);
+    };
+    const int heading = Dimensions::FontSizeHeading;
+
+    // Options page status labels (CW keyer, DX cluster, KPA1500, K-Pod, CAT server, TCI server):
+    // the old code swapped Dialog::statusLabel(colour). statusLabel() returns a shared scratch, so copy.
+    const QString status = Dialog::statusLabelByState();
+    const QString statusText = QStringLiteral("Listening on port 9299");
+    label("dialogs/statusLabel/resting", QString(Dialog::statusLabel(Colors::TextRed)), status, {}, statusText);
+    label("dialogs/statusLabel/ok", QString(Dialog::statusLabel(Colors::StatusGreen)), status,
+          {{StateProperty, QString(Dialog::StatusOk)}}, statusText);
+    label("dialogs/statusLabel/idle", QString(Dialog::statusLabel(Colors::TextSecondary)), status,
+          {{StateProperty, QString(Dialog::StatusIdle)}}, statusText);
+
+    // K-Pod device-summary values: a value, or a dimmed italic "N/A".
+    const QString value = Dialog::valueLabelByState();
+    label("dialogs/kpodValue/resting", Dialog::labelText(Colors::TextPrimary, heading), value, {},
+          QStringLiteral("Elecraft KPOD"));
+    label("dialogs/kpodValue/dimmed",
+          Dialog::labelText(Colors::TextSecondary, heading) + QStringLiteral(" font-style: italic;"), value,
+          {{DimmedProperty, true}}, QStringLiteral("N/A"));
+
+    // Server Manager host field: RadioManagerDialog::lineEditStyle(border) as it was.
+    const auto serverEdit = [](const char *border) {
+        return QString("QLineEdit { "
+                       "  background-color: %1; "
+                       "  color: %2; "
+                       "  border: 1px solid %3; "
+                       "  border-radius: 4px; "
+                       "  padding: %4px; "
+                       "  min-width: 150px; "
+                       "  font-size: %5px; "
+                       "}")
+            .arg(Colors::DarkBackground, Colors::TextPrimary, border)
+            .arg(Dimensions::PaddingSmall)
+            .arg(Dimensions::FontSizeBody);
+    };
+    for (const bool error : {false, true}) {
+        StateCase c;
+        c.name = error ? "dialogs/serverHostEdit/error" : "dialogs/serverHostEdit/resting";
+        c.kind = Kind::LineEdit;
+        c.oldSheet = serverEdit(error ? Colors::TextRed : Colors::DialogBorder);
+        c.newSheet = Dialog::serverLineEdit();
+        if (error)
+            c.props = {{ErrorProperty, true}};
+        c.text = QStringLiteral("192.168.1.");
+        c.size = QSize(200, 30);
+        cases.append(c);
+    }
+
+    // Macro dialog rows: function, label and command columns.
+    const QString plain = QStringLiteral("color: %1; font-size: %2px;");
+    const QString function = Dialog::macroFunctionLabel();
+    label("dialogs/macroFunction/resting", plain.arg(Colors::TextSecondary).arg(heading), function, {},
+          QStringLiteral("Keyboard-F1"));
+    label("dialogs/macroFunction/selected",
+          QString("color: %1; font-size: %2px; font-weight: bold;").arg(Colors::TextPrimary).arg(heading), function,
+          {{SelectedProperty, true}}, QStringLiteral("Keyboard-F1"));
+
+    const QString labelDisplay = Dialog::macroLabelDisplay();
+    label("dialogs/macroLabel/resting", plain.arg(Colors::TextSecondary).arg(heading), labelDisplay, {},
+          QStringLiteral("Unused"));
+    label("dialogs/macroLabel/unused",
+          QString("color: %1; font-size: %2px; font-style: italic;").arg(Colors::TextSecondary).arg(heading),
+          labelDisplay, {{StateProperty, QString(Dialog::MacroUnused)}}, QStringLiteral("Unused"));
+    label("dialogs/macroLabel/mapped", plain.arg(Colors::AccentAmber).arg(heading), labelDisplay,
+          {{StateProperty, QString(Dialog::MacroMapped)}}, QStringLiteral("Mapped"));
+    label("dialogs/macroLabel/named",
+          QString("color: %1; font-size: %2px; font-weight: bold;").arg(Colors::AccentAmber).arg(heading), labelDisplay,
+          {{StateProperty, QString(Dialog::MacroNamed)}}, QStringLiteral("CQ TEST"));
+    label("dialogs/macroLabel/selected", plain.arg(Colors::TextPrimary).arg(heading), labelDisplay,
+          {{StateProperty, QString(Dialog::MacroSelected)}}, QStringLiteral("CQ TEST"));
+
+    const QString command = Dialog::macroCommandDisplay();
+    const QString commandOld = QStringLiteral("color: %1; font-size: %2px; font-family: '%3';");
+    label("dialogs/macroCommand/resting", commandOld.arg(Colors::TextSecondary).arg(heading).arg(Fonts::Data), command,
+          {}, QStringLiteral("KY CQ TEST;"));
+    label("dialogs/macroCommand/selected", commandOld.arg(Colors::TextPrimary).arg(heading).arg(Fonts::Data), command,
+          {{SelectedProperty, true}}, QStringLiteral("KY CQ TEST;"));
+
+    // Text decode window ON/OFF and AUTO/MANUAL keys: controlButton(selected) swapped, enabled and not.
+    for (const bool selected : {false, true}) {
+        for (const bool enabled : {true, false}) {
+            StateCase c;
+            c.name = QStringLiteral("dialogs/decodeToggle/%1%2")
+                         .arg(selected ? "selected" : "resting", enabled ? "" : "-disabled");
+            c.kind = Kind::Button;
+            c.oldSheet = controlButton(selected);
+            c.newSheet = controlButtonSelectable();
+            if (selected)
+                c.props = {{SelectedProperty, true}};
+            c.text = QStringLiteral("AUTO");
+            c.size = QSize(48, Dimensions::ButtonHeightMini);
+            c.enabled = enabled;
+            cases.append(c);
+        }
+    }
 }
 
 // =============================================================================

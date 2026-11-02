@@ -27,21 +27,6 @@ RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QDialog(parent), m_cur
     startDiscovery();
 }
 
-QString RadioManagerDialog::lineEditStyle(const QString &borderColor) {
-    return QString("QLineEdit { "
-                   "  background-color: %1; "
-                   "  color: %2; "
-                   "  border: 1px solid %3; "
-                   "  border-radius: 4px; "
-                   "  padding: %4px; "
-                   "  min-width: 150px; "
-                   "  font-size: %5px; "
-                   "}")
-        .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextPrimary, borderColor)
-        .arg(K4Styles::Dimensions::PaddingSmall)
-        .arg(K4Styles::Dimensions::FontSizeBody);
-}
-
 void RadioManagerDialog::setupUi() {
     setWindowTitle("Server Manager");
     setFixedSize(580, 395);
@@ -113,9 +98,8 @@ void RadioManagerDialog::setupUi() {
     formLayout->setHorizontalSpacing(K4Styles::Dimensions::PaddingMedium);
     formLayout->setVerticalSpacing(K4Styles::Dimensions::PaddingMedium);
 
-    const QString normalLineEditStyle = lineEditStyle(K4Styles::Colors::DialogBorder);
-    m_hostNormalStyle = normalLineEditStyle;
-    m_hostErrorStyle = lineEditStyle(K4Styles::Colors::TextRed);
+    // One sheet for every field; only the host field ever sets ErrorProperty.
+    const QString &fieldStyle = K4Styles::Dialog::serverLineEdit();
 
     QString labelStyle = QString("QLabel { color: %1; font-size: %2px; }")
                              .arg(K4Styles::Colors::TextSecondary)
@@ -124,7 +108,7 @@ void RadioManagerDialog::setupUi() {
     auto *nameLabel = new QLabel("Name", this);
     nameLabel->setStyleSheet(labelStyle);
     m_nameEdit = new QLineEdit(this);
-    m_nameEdit->setStyleSheet(normalLineEditStyle);
+    m_nameEdit->setStyleSheet(fieldStyle);
     m_nameEdit->setPlaceholderText("Server Name");
     formLayout->addWidget(nameLabel, 0, 0);
     formLayout->addWidget(m_nameEdit, 0, 1);
@@ -132,7 +116,7 @@ void RadioManagerDialog::setupUi() {
     auto *hostLabel = new QLabel("Host or IP", this);
     hostLabel->setStyleSheet(labelStyle);
     m_hostEdit = new QLineEdit(this);
-    m_hostEdit->setStyleSheet(normalLineEditStyle);
+    m_hostEdit->setStyleSheet(fieldStyle);
     m_hostEdit->setPlaceholderText("192.168.1.100");
     formLayout->addWidget(hostLabel, 1, 0);
     formLayout->addWidget(m_hostEdit, 1, 1);
@@ -140,7 +124,7 @@ void RadioManagerDialog::setupUi() {
     auto *portLabel = new QLabel("Port", this);
     portLabel->setStyleSheet(labelStyle);
     m_portEdit = new QLineEdit(this);
-    m_portEdit->setStyleSheet(normalLineEditStyle);
+    m_portEdit->setStyleSheet(fieldStyle);
     m_portEdit->setPlaceholderText("64242");
     m_portEdit->setValidator(new QIntValidator(1, 65535, m_portEdit));
     m_portEdit->setMaximumWidth(80);
@@ -150,7 +134,7 @@ void RadioManagerDialog::setupUi() {
     auto *passwordLabel = new QLabel("Password", this);
     passwordLabel->setStyleSheet(labelStyle);
     m_passwordEdit = new QLineEdit(this);
-    m_passwordEdit->setStyleSheet(normalLineEditStyle);
+    m_passwordEdit->setStyleSheet(fieldStyle);
     m_passwordEdit->setEchoMode(QLineEdit::Password);
     m_passwordEdit->setPlaceholderText("Password");
     formLayout->addWidget(passwordLabel, 3, 0);
@@ -160,7 +144,7 @@ void RadioManagerDialog::setupUi() {
     m_identityLabel = new QLabel("ID", this);
     m_identityLabel->setStyleSheet(labelStyle);
     m_identityEdit = new QLineEdit(this);
-    m_identityEdit->setStyleSheet(normalLineEditStyle);
+    m_identityEdit->setStyleSheet(fieldStyle);
     m_identityEdit->setPlaceholderText("Identity (optional)");
     formLayout->addWidget(m_identityLabel, 4, 0);
     formLayout->addWidget(m_identityEdit, 4, 1);
@@ -564,7 +548,7 @@ void RadioManagerDialog::updateHostFieldStyle() {
     const QString host = m_hostEdit->text().trimmed();
     // Empty = neutral (don't flag a blank or just-cleared field as an error).
     bool showError = !host.isEmpty() && !RadioUtils::isValidHostOrIp(host);
-    m_hostEdit->setStyleSheet(showError ? m_hostErrorStyle : m_hostNormalStyle);
+    K4Styles::setStyleFlag(m_hostEdit, K4Styles::ErrorProperty, showError);
     m_hostEdit->setToolTip(showError ? QStringLiteral("Enter a valid IP address (e.g. 192.168.1.100) or "
                                                       "hostname (e.g. k4.local)")
                                      : QString());

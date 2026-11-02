@@ -51,7 +51,7 @@ void TextDecodeWindow::setupUi() {
     m_onOffBtn->setFixedHeight(ControlButtonHeight);
     m_onOffBtn->setMinimumWidth(36);
     m_onOffBtn->setCursor(Qt::PointingHandCursor);
-    m_onOffBtn->setStyleSheet(controlButtonStyle(false));
+    m_onOffBtn->setStyleSheet(K4Styles::controlButtonSelectable());
 
     // Speed button: WPM range in CW, data rate in AFSK/FSK/PSK
     m_wpmBtn = new QPushButton("8-45", titleBar);
@@ -65,7 +65,8 @@ void TextDecodeWindow::setupUi() {
     m_autoManualBtn->setFixedHeight(ControlButtonHeight);
     m_autoManualBtn->setMinimumWidth(48);
     m_autoManualBtn->setCursor(Qt::PointingHandCursor);
-    m_autoManualBtn->setStyleSheet(controlButtonStyle(true)); // AUTO is default (highlighted)
+    m_autoManualBtn->setStyleSheet(K4Styles::controlButtonSelectable());
+    K4Styles::setSelected(m_autoManualBtn, true); // AUTO is default (highlighted)
 
     // Threshold controls: [-] [5] [+]
     m_thresholdMinusBtn = new QPushButton("-", titleBar);
@@ -438,7 +439,7 @@ void TextDecodeWindow::applyTextFontSize() {
 
 void TextDecodeWindow::updateButtonStates() {
     m_onOffBtn->setText(m_decodeEnabled ? "ON" : "OFF");
-    m_onOffBtn->setStyleSheet(controlButtonStyle(m_decodeEnabled));
+    K4Styles::setSelected(m_onOffBtn, m_decodeEnabled);
 }
 
 void TextDecodeWindow::updateSpeedButton() {
@@ -462,7 +463,7 @@ void TextDecodeWindow::updateSpeedButton() {
 
 void TextDecodeWindow::updateThresholdControls() {
     m_autoManualBtn->setText(m_autoThreshold ? "AUTO" : "MANUAL");
-    m_autoManualBtn->setStyleSheet(controlButtonStyle(m_autoThreshold));
+    K4Styles::setSelected(m_autoManualBtn, m_autoThreshold);
 
     // Enable/disable threshold +/- buttons based on mode
     bool enableThreshold = !m_autoThreshold && m_operatingMode == ModeCW;

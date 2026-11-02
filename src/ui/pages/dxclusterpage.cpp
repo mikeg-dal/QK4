@@ -19,7 +19,8 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
 
     auto *statusForm = OptionsPageLayout::addForm(layout);
     m_statusLabel = new QLabel("Disconnected", this);
-    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextSecondary));
+    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
+    K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusIdle);
     OptionsPageLayout::addRow(statusForm, this, "Status", m_statusLabel);
 
     // === Servers: list (left) + the selected entry (right) ===
@@ -131,7 +132,7 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
         QString callsign = RadioSettings::instance()->dxClusterCallsign();
         if (callsign.isEmpty()) {
             m_statusLabel->setText("Set your callsign in Cluster Settings below");
-            m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+            K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
             return;
         }
         m_controller->connectCluster(row, clusters[row].host, clusters[row].port, callsign);
@@ -267,7 +268,7 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
         connect(m_controller, &DxClusterController::clusterError, this, [this](int index, const QString &error) {
             if (index == m_clusterList->currentRow()) {
                 m_statusLabel->setText("Error: " + error);
-                m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+                K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
             }
         });
         // Per-cluster console lines — only append if this cluster is selected
@@ -413,13 +414,13 @@ void DxClusterPage::updateStatus() {
 
     if (connectedCount == 0) {
         m_statusLabel->setText("Disconnected");
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextSecondary));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusIdle);
     } else if (connectedCount == 1) {
         m_statusLabel->setText("1 cluster connected");
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
     } else {
         m_statusLabel->setText(QString("%1 clusters connected").arg(connectedCount));
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
     }
 
     // Per-cluster button state based on selected entry

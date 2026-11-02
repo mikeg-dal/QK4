@@ -16,7 +16,7 @@ RigControlPage::RigControlPage(CatServer *catServer, QWidget *parent) : QWidget(
 
     auto *form = OptionsPageLayout::addForm(layout);
     m_catServerStatusLabel = new QLabel("Not running", this);
-    m_catServerStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+    m_catServerStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
     OptionsPageLayout::addRow(form, this, "Status", m_catServerStatusLabel);
 
     m_catServerClientsLabel = new QLabel("0 connected", this);
@@ -80,10 +80,10 @@ void RigControlPage::updateCatServerStatus() {
 
     if (isListening) {
         m_catServerStatusLabel->setText(QString("Listening on port %1").arg(m_catServer->port()));
-        m_catServerStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_catServerStatusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
     } else {
         m_catServerStatusLabel->setText("Not running");
-        m_catServerStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+        K4Styles::setStyleState(m_catServerStatusLabel, K4Styles::StateProperty, QString());
     }
 
     int clientCount = m_catServer ? m_catServer->clientCount() : 0;

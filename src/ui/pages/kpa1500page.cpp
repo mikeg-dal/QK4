@@ -14,7 +14,7 @@ Kpa1500Page::Kpa1500Page(KPA1500Client *kpa1500Client, QWidget *parent)
     auto *form = OptionsPageLayout::addForm(layout);
 
     m_kpa1500StatusLabel = new QLabel("Not Connected", this);
-    m_kpa1500StatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+    m_kpa1500StatusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
     OptionsPageLayout::addRow(form, this, "Status", m_kpa1500StatusLabel);
 
     OptionsPageLayout::addSection(form, this, "Connection Settings");
@@ -133,11 +133,11 @@ void Kpa1500Page::updateKpa1500Status() {
         if (!fw.isEmpty() || !sn.isEmpty())
             statusText += QString(" (FW %1, SN %2)").arg(fw.isEmpty() ? "--" : fw, sn.isEmpty() ? "--" : sn);
         m_kpa1500StatusLabel->setText(statusText);
-        m_kpa1500StatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_kpa1500StatusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
         m_kpa1500ConnectBtn->setText("Disconnect");
     } else {
         m_kpa1500StatusLabel->setText("Not Connected");
-        m_kpa1500StatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+        K4Styles::setStyleState(m_kpa1500StatusLabel, K4Styles::StateProperty, QString());
         if (m_kpa1500ConnectBtn)
             m_kpa1500ConnectBtn->setText("Connect");
     }

@@ -384,6 +384,45 @@ const QString &actionButtonSmall();
 // State sheets: dialogs and Options pages
 // =============================================================================
 
+namespace Dialog {
+
+/// StateProperty values for statusLabelByState(). Unset is the resting TextRed look.
+inline constexpr char StatusOk[] = "ok";     ///< StatusGreen: running, connected, detected
+inline constexpr char StatusIdle[] = "idle"; ///< TextSecondary: nothing connected, nothing wrong
+
+/// Options page status label: statusLabel(TextRed) at rest, statusLabel(StatusGreen) with state
+/// StatusOk, statusLabel(TextSecondary) with state StatusIdle. Set once; change the state.
+const QString &statusLabelByState();
+
+/// Device-summary value: labelText(TextPrimary, FontSizeHeading); with DimmedProperty the TextSecondary
+/// italic look of a missing value ("N/A").
+const QString &valueLabelByState();
+
+/// Server Manager line edit (dark field, DialogBorder border, min-width 150 px, FontSizeBody); with
+/// ErrorProperty the border is TextRed.
+const QString &serverLineEdit();
+
+/// StateProperty values for macroLabelDisplay(). Unset is the TextSecondary look the row starts with.
+inline constexpr char MacroUnused[] = "unused";     ///< TextSecondary italic
+inline constexpr char MacroMapped[] = "mapped";     ///< AccentAmber
+inline constexpr char MacroNamed[] = "named";       ///< AccentAmber bold
+inline constexpr char MacroSelected[] = "selected"; ///< TextPrimary: the row is selected
+
+/// Macro row function column: TextSecondary; with SelectedProperty TextPrimary bold.
+const QString &macroFunctionLabel();
+
+/// Macro row label column, look picked by StateProperty (MacroUnused, ...).
+const QString &macroLabelDisplay();
+
+/// Macro row command column (Fonts::Data): TextSecondary; with SelectedProperty TextPrimary.
+const QString &macroCommandDisplay();
+
+} // namespace Dialog
+
+/// One sheet for a decode-window toggle key: controlButton(false) at rest, controlButton(true) while
+/// marked with setSelected(). Set it once; never swap sheets.
+QString controlButtonSelectable();
+
 // =============================================================================
 // State sheets: popups, menu bars and the menu overlay
 // =============================================================================

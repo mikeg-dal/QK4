@@ -834,6 +834,104 @@ const QString &actionButtonSmall() {
 // State sheets: dialogs and Options pages
 // =============================================================================
 
+// WHY these are pixel-identical to the sheets they replace: each is the resting sheet followed by rules
+// narrowed with a property selector, one class more specific than the resting rule, re-declaring every
+// value the old swapped-in sheet set differently. A bare `color: ...;` sheet on a QLabel styles the label
+// as `QLabel { ... }` does (tests/test_statesheets.cpp holds both).
+
+namespace Dialog {
+
+const QString &statusLabelByState() {
+    static const QString s = QString("QLabel { color: %1; font-size: %2px; font-weight: bold; }"
+                                     "%3 { color: %4; }"
+                                     "%5 { color: %6; }")
+                                 .arg(Colors::TextRed)
+                                 .arg(Dimensions::FontSizeHeading)
+                                 .arg(whenState("QLabel", StateProperty, StatusOk), Colors::StatusGreen,
+                                      whenState("QLabel", StateProperty, StatusIdle), Colors::TextSecondary);
+    return s;
+}
+
+const QString &valueLabelByState() {
+    static const QString s = QString("QLabel { color: %1; font-size: %2px; }"
+                                     "%3 { color: %4; font-style: italic; }")
+                                 .arg(Colors::TextPrimary)
+                                 .arg(Dimensions::FontSizeHeading)
+                                 .arg(whenFlag("QLabel", DimmedProperty), Colors::TextSecondary);
+    return s;
+}
+
+const QString &serverLineEdit() {
+    static const QString s = QString("QLineEdit { "
+                                     "  background-color: %1; "
+                                     "  color: %2; "
+                                     "  border: 1px solid %3; "
+                                     "  border-radius: 4px; "
+                                     "  padding: %4px; "
+                                     "  min-width: 150px; "
+                                     "  font-size: %5px; "
+                                     "}"
+                                     "%6 { border: 1px solid %7; }")
+                                 .arg(Colors::DarkBackground, Colors::TextPrimary, Colors::DialogBorder)
+                                 .arg(Dimensions::PaddingSmall)
+                                 .arg(Dimensions::FontSizeBody)
+                                 .arg(whenFlag("QLineEdit", ErrorProperty), Colors::TextRed);
+    return s;
+}
+
+const QString &macroFunctionLabel() {
+    static const QString s = QString("QLabel { color: %1; font-size: %2px; }"
+                                     "%3 { color: %4; font-weight: bold; }")
+                                 .arg(Colors::TextSecondary)
+                                 .arg(Dimensions::FontSizeHeading)
+                                 .arg(whenFlag("QLabel", SelectedProperty), Colors::TextPrimary);
+    return s;
+}
+
+const QString &macroLabelDisplay() {
+    static const QString s =
+        QString("QLabel { color: %1; font-size: %2px; }"
+                "%3 { font-style: italic; }"
+                "%4 { color: %5; }"
+                "%6 { color: %5; font-weight: bold; }"
+                "%7 { color: %8; }")
+            .arg(Colors::TextSecondary)
+            .arg(Dimensions::FontSizeHeading)
+            .arg(whenState("QLabel", StateProperty, MacroUnused), whenState("QLabel", StateProperty, MacroMapped),
+                 Colors::AccentAmber, whenState("QLabel", StateProperty, MacroNamed),
+                 whenState("QLabel", StateProperty, MacroSelected), Colors::TextPrimary);
+    return s;
+}
+
+const QString &macroCommandDisplay() {
+    static const QString s = QString("QLabel { color: %1; font-size: %2px; font-family: '%3'; }"
+                                     "%4 { color: %5; }")
+                                 .arg(Colors::TextSecondary)
+                                 .arg(Dimensions::FontSizeHeading)
+                                 .arg(Fonts::Data, whenFlag("QLabel", SelectedProperty), Colors::TextPrimary);
+    return s;
+}
+
+} // namespace Dialog
+
+QString controlButtonSelectable() {
+    // WHY: controlButton(true) has no :disabled rule and its :hover keeps the selected background, so
+    // the selected rules restate both or the resting :hover and :disabled looks would show through.
+    // :pressed comes after :hover, as in controlButton(true), so a pressed key under the mouse reverses.
+    const QString selected =
+        gradientCss(Colors::SelectedTop, Colors::SelectedMid1, Colors::SelectedMid2, Colors::SelectedBottom);
+    return controlButton(false) + QString("%1 { background: %2; color: %3; border: 1px solid %4; }"
+                                          "%5 { background: %2; border: 1px solid %6; }"
+                                          "%7 { background: %8; }"
+                                          "%9 { background: %2; color: %3; border: 1px solid %4; }")
+                                      .arg(whenFlag("QPushButton", SelectedProperty), selected, Colors::TextOnLight,
+                                           Colors::BorderSelected, whenFlag("QPushButton", SelectedProperty, ":hover"),
+                                           Colors::BorderHover, whenFlag("QPushButton", SelectedProperty, ":pressed"),
+                                           gradientCssReversed(Colors::SelectedTop, Colors::SelectedMid1,
+                                                               Colors::SelectedMid2, Colors::SelectedBottom),
+                                           whenFlag("QPushButton", SelectedProperty, ":disabled"));
+}
+
 // =============================================================================
 // State sheets: popups, menu bars and the menu overlay
 // =============================================================================

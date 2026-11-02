@@ -54,7 +54,7 @@ CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, C
     OptionsPageLayout::addRow(form, this, "Device Type", m_cwKeyerDeviceTypeCombo);
 
     m_cwKeyerStatusLabel = new QLabel("Not Connected", this);
-    m_cwKeyerStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+    m_cwKeyerStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
     OptionsPageLayout::addRow(form, this, "Status", m_cwKeyerStatusLabel);
 
     OptionsPageLayout::addSection(form, this, "Connection");
@@ -355,11 +355,11 @@ void CwKeyerPage::updateCwKeyerStatus() {
 
     if (isConnected) {
         m_cwKeyerStatusLabel->setText(QString("Connected to %1").arg(m_halikeyDevice->portName()));
-        m_cwKeyerStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_cwKeyerStatusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
         m_cwKeyerConnectBtn->setText("Disconnect");
     } else {
         m_cwKeyerStatusLabel->setText("Not Connected");
-        m_cwKeyerStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextRed));
+        K4Styles::setStyleState(m_cwKeyerStatusLabel, K4Styles::StateProperty, QString());
         m_cwKeyerConnectBtn->setText("Connect");
     }
 }
