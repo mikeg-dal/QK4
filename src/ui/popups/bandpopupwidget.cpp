@@ -10,7 +10,9 @@ namespace {
 const int ButtonWidth = K4Styles::Dimensions::PopupButtonWidth;
 const int ButtonHeight = K4Styles::Dimensions::PopupButtonHeight;
 const int ButtonSpacing = K4Styles::Dimensions::PopupButtonSpacing;
-const int RowSpacing = 2;
+// WHY the column gap: one gutter on both axes reads as one grid of keys. At 2 px the rows nearly
+// touched and read as two separate strips (most noticeable at 150 % interface scale).
+const int RowSpacing = ButtonSpacing;
 
 // K4 Band Number mapping (BN command)
 // Band number -> button label
