@@ -4,6 +4,7 @@
 #include <QObject>
 
 class ConnectionController;
+class RadioState;
 class SpectrumController;
 class MenuModel;
 class MenuOverlayWidget;
@@ -24,8 +25,9 @@ class MenuController : public QObject {
     Q_OBJECT
 
 public:
-    explicit MenuController(ConnectionController *connection, SpectrumController *spectrum, QWidget *parentWidget,
-                            QObject *parent = nullptr);
+    // radioState receives the XVTR band setup the menu changes (see mirrorXvtrItem); it may be null.
+    explicit MenuController(ConnectionController *connection, RadioState *radioState, SpectrumController *spectrum,
+                            QWidget *parentWidget, QObject *parent = nullptr);
 
     // CAT routing entry points used by MainWindow::onCatResponse. Each
     // forwards into the encapsulated MenuModel. Returning void (the model's
@@ -71,6 +73,7 @@ signals:
 
 private:
     ConnectionController *m_connection; // injected, not owned
+    RadioState *m_radioState;           // injected, not owned; may be null
     SpectrumController *m_spectrum;     // injected, not owned
     QWidget *m_parentWidget;            // used for overlay geometry mapping
 
@@ -85,7 +88,13 @@ private:
     int m_fskMarkToneMenuId = -999;
 
     void onMenuValueChangeRequested(int menuId, const QString &action);
+    // A value typed into the menu, already in the item's stored units and range.
+    void onMenuValueSetRequested(int menuId, int value);
     void onMenuModelValueChanged(int menuId, int newValue);
+    // WHY: the band popup's XVTR keys read RadioState's band setup, which is filled from the radio's
+    // XVN/XVR/... reports. At AI4 the K4 does not report a change QK4 made, so a menu edit to "XVTR Band
+    // n R.F." left the key showing the old frequency. Every per-band XVTR menu value is copied there.
+    void mirrorXvtrItem(int menuId, int value);
     void onMenuItemAdded(int menuId);
 };
 

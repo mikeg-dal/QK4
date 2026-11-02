@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QObject>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QtTest>
 
 #include <algorithm>
@@ -21,6 +22,9 @@ private slots:
     void rowsFollowValueUpdatesAndTheXvtrSelector();
     void onlyReadOnlyRowsShowTheLock();
     void searchKeyPressedAgainClosesTheSearchBox();
+    void aValueIsTypedInInsteadOfStepped();
+    void typingASignedValueAndBackingOut();
+    void choicesAndUntouchedKeysKeepStepping();
 
 private:
     static void sendMenu(MenuModel &model);
@@ -204,6 +208,72 @@ void TestMenuOverlay::searchKeyPressedAgainClosesTheSearchBox() {
     box->removeEventFilter(&elsewhere);
     QVERIFY(elsewhere.closed);
     QVERIFY2(!elsewhere.noReplay, "a press away from the search key lost its replay");
+}
+
+// Mike, 2026-11-02: XVTR Band R.F. stepped one MHz at a time, so a 10 GHz band start (10368 MHz) was
+// thousands of presses away. In edit mode digits now replace the value and Enter sends it.
+void TestMenuOverlay::aValueIsTypedInInsteadOfStepped() {
+    MenuModel model;
+    MenuOverlayWidget overlay(&model);
+    QVERIFY(model.parseMEDF("MEDF0077,XVTR Band <n> R.F.,XV,MHz,0,0,99999,144,144,1;"));
+    overlay.show();
+    QSignalSpy set(&overlay, &MenuOverlayWidget::menuValueSetRequested);
+    QSignalSpy stepped(&overlay, &MenuOverlayWidget::menuValueChangeRequested);
+
+    QTest::keyClick(&overlay, Qt::Key_Return); // edit
+    QTest::keyClicks(&overlay, "10368");
+    QCOMPARE(rowTexts(overlay), (QStringList{"XVTR Band 1 R.F.=10368_ MHz"}));
+    QTest::keyClick(&overlay, Qt::Key_Backspace);
+    QTest::keyClick(&overlay, Qt::Key_8);
+    QTest::keyClick(&overlay, Qt::Key_Return);
+    QCOMPARE(set.size(), 1);
+    QCOMPARE(set.at(0).at(0).toInt(), 77);
+    QCOMPARE(set.at(0).at(1).toInt(), 10368);
+    QCOMPARE(stepped.size(), 0);
+    QVERIFY(hasButtonLabelled(overlay, QString::fromUtf8("\xE2\x96\xB2"))); // Enter left edit mode
+}
+
+// A signed item takes - once digits are typed (before that, - steps down as always); Escape
+// abandons the typing and shows the value again without sending.
+void TestMenuOverlay::typingASignedValueAndBackingOut() {
+    MenuModel model;
+    MenuOverlayWidget overlay(&model);
+    QVERIFY(model.parseMEDF("MEDF0079,XVTR Band <n> Offset,XV,Hz,0,-99999,99999,0,0,1;"));
+    overlay.show();
+    QSignalSpy set(&overlay, &MenuOverlayWidget::menuValueSetRequested);
+
+    QTest::keyClick(&overlay, Qt::Key_Return);
+    QTest::keyClicks(&overlay, "1234");
+    QTest::keyClick(&overlay, Qt::Key_Minus);
+    QCOMPARE(rowTexts(overlay), (QStringList{"XVTR Band 1 Offset=-1234_ Hz"}));
+    QTest::keyClick(&overlay, Qt::Key_Escape);
+    QCOMPARE(rowTexts(overlay), (QStringList{"XVTR Band 1 Offset=+0 Hz"}));
+    QCOMPARE(set.size(), 0);
+    QVERIFY(hasButtonLabelled(overlay, QStringLiteral("+"))); // still editing
+
+    QTest::keyClicks(&overlay, "250");
+    QTest::keyClick(&overlay, Qt::Key_Minus);
+    QTest::keyClick(&overlay, Qt::Key_Enter);
+    QCOMPARE(set.size(), 1);
+    QCOMPARE(set.at(0).at(1).toInt(), -250);
+}
+
+// Named choices are not typed, and without typing every key does what it always did.
+void TestMenuOverlay::choicesAndUntouchedKeysKeepStepping() {
+    MenuModel model;
+    MenuOverlayWidget overlay(&model);
+    QVERIFY(model.parseMEDF("MEDF0076,XVTR Band <n> Mode,XV,XVTR,0,0,1,0,0,1,OFF,External;"));
+    overlay.show();
+    QSignalSpy set(&overlay, &MenuOverlayWidget::menuValueSetRequested);
+    QSignalSpy stepped(&overlay, &MenuOverlayWidget::menuValueChangeRequested);
+
+    QTest::keyClick(&overlay, Qt::Key_Return);
+    QTest::keyClicks(&overlay, "1");
+    QCOMPARE(rowTexts(overlay), (QStringList{"XVTR Band 1 Mode=OFF"}));
+    QTest::keyClick(&overlay, Qt::Key_Up);
+    QCOMPARE(stepped.size(), 1);
+    QCOMPARE(stepped.at(0).at(1).toString(), QString("+"));
+    QCOMPARE(set.size(), 0);
 }
 
 QTEST_MAIN(TestMenuOverlay)

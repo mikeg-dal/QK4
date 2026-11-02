@@ -64,7 +64,17 @@ void MenuItemWidget::updateDisplay() {
     // Resolved so "<n>" in the XVTR Band rows shows the current XVTR Band # Select value.
     m_nameLabel->setText(m_model->resolvedName(*item));
     m_lockLabel->setText(item->isReadOnly() ? QString::fromUtf8("\xF0\x9F\x94\x92") : QString()); // Lock emoji
-    m_valueLabel->setText(item->displayValue());
+    if (m_typed.isEmpty())
+        m_valueLabel->setText(item->displayValue());
+    else
+        m_valueLabel->setText(m_typed + QStringLiteral("_") + MenuValueEntry::unitSuffix(*item));
+}
+
+void MenuItemWidget::setTypedText(const QString &typed) {
+    if (m_typed == typed)
+        return;
+    m_typed = typed;
+    updateDisplay();
 }
 
 void MenuItemWidget::paintEvent(QPaintEvent *event) {
@@ -318,6 +328,7 @@ void MenuOverlayWidget::clearItemWidgets() {
     m_itemWidgets.clear();
     m_selectedIndex = 0;
     m_editMode = false;
+    m_typed.clear();
 }
 
 void MenuOverlayWidget::populateItems() {
@@ -396,6 +407,7 @@ void MenuOverlayWidget::show() {
 }
 
 void MenuOverlayWidget::hide() {
+    setTyped(QString());
     // Clear search filter when closing
     m_currentFilter.clear();
     if (m_searchInput) {
@@ -421,7 +433,70 @@ void MenuOverlayWidget::paintEvent(QPaintEvent *event) {
     painter.fillRect(rect(), QColor(K4Styles::Colors::OverlayContentBg));
 }
 
+void MenuOverlayWidget::setTyped(const QString &typed) {
+    m_typed = typed;
+    if (m_selectedIndex >= 0 && m_selectedIndex < m_itemWidgets.size())
+        m_itemWidgets[m_selectedIndex]->setTypedText(m_typed);
+}
+
+bool MenuOverlayWidget::handleTypedKey(const QKeyEvent *event) {
+    const MenuItem *item = selectedMenuItem();
+    if (!m_editMode || !item || !MenuValueEntry::acceptsTyping(*item))
+        return false;
+    constexpr int kMaxTypedChars = 8; // "-99999" MHz / "-99999" Hz, with room for a decimal
+    const int key = event->key();
+    const bool typing = !m_typed.isEmpty();
+
+    if (key >= Qt::Key_0 && key <= Qt::Key_9) {
+        if (m_typed.size() < kMaxTypedChars)
+            setTyped(m_typed + QChar(u'0' + (key - Qt::Key_0)));
+        return true;
+    }
+    if ((key == Qt::Key_Period || key == Qt::Key_Comma) && MenuValueEntry::allowsDecimal(*item)) {
+        if (!m_typed.contains(u'.'))
+            setTyped(m_typed + (typing && m_typed != QStringLiteral("-") ? QStringLiteral(".") : QStringLiteral("0.")));
+        return true;
+    }
+    if (!typing)
+        return false; // +/- and the arrows still step the value, Enter and Escape leave edit mode
+    switch (key) {
+    case Qt::Key_Minus:
+        // WHY only while typing: before the first digit, - steps the value down, as it always has.
+        if (MenuValueEntry::allowsNegative(*item))
+            setTyped(m_typed.startsWith(u'-') ? m_typed.mid(1) : QStringLiteral("-") + m_typed);
+        return true;
+    case Qt::Key_Backspace: {
+        QString shorter = m_typed.chopped(1);
+        if (shorter == QStringLiteral("-"))
+            shorter.clear();
+        setTyped(shorter);
+        return true;
+    }
+    case Qt::Key_Return:
+    case Qt::Key_Enter: {
+        const std::optional<int> value = MenuValueEntry::rawFromTyped(*item, m_typed);
+        const int id = item->id;
+        setTyped(QString());
+        if (value)
+            emit menuValueSetRequested(id, *value);
+        setEditMode(false);
+        return true;
+    }
+    case Qt::Key_Escape:
+        setTyped(QString()); // back to the value; Escape again leaves edit mode
+        return true;
+    case Qt::Key_Up:
+    case Qt::Key_Down:
+        setTyped(QString());
+        return false; // and step as usual
+    default:
+        return false;
+    }
+}
+
 void MenuOverlayWidget::keyPressEvent(QKeyEvent *event) {
+    if (handleTypedKey(event))
+        return;
     switch (event->key()) {
     case Qt::Key_Up:
         navigateUp();
@@ -598,6 +673,7 @@ void MenuOverlayWidget::ensureSelectedVisible() {
 }
 
 void MenuOverlayWidget::setEditMode(bool editing) {
+    setTyped(QString());
     m_editMode = editing;
     updateSelection();
     updateButtonLabels();

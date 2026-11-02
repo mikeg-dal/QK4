@@ -99,6 +99,16 @@ QByteArray setAntennaConfig(const char *prefix, bool displayAll, const QVector<b
 // relative forms (ME0069.+, .-, ./); this is the absolute one.
 QByteArray setMenuValue(int menuId, int value);
 
+// One XVTR band's setup field (Programmer's Reference D12, XVN/XVR/XVI/XVO): "XVN<band>;" selects the
+// band, then the field. band is 1-12. RF is the band's lower edge in MHz (XVR, 5 digits, 0-99999),
+// IF is in MHz (XVI, 2 digits, 0-53), offset is signed Hz (XVO, sign + 5 digits).
+QByteArray setXvtrRfMhz(int band, int mhz);
+QByteArray setXvtrIfMhz(int band, int mhz);
+QByteArray setXvtrOffsetHz(int band, int hz);
+// Mode (XVM: 0 = off, 1 = external) and power out in 0.1 mW (XVP, 3 digits; XVP010 = 1.0 mW).
+QByteArray setXvtrMode(int band, int mode);
+QByteArray setXvtrPowerTenthsMw(int band, int tenthsMw);
+
 // PCnnnr: nnn is watts in QRO and tenths in QRP and XVTR (PC100L is 10.0 W), r is the range letter.
 // `value` is in the range's own unit: W for QRO and QRP, mW for XVTR.
 // NOT the PCX form below - that one is the extended QUERY, and the radio ignores it as a set.

@@ -2,6 +2,7 @@
 
 #include "models/radiostate/spectrumdisplaystate.h"
 #include <QUrl>
+#include <QtMath>
 #include <algorithm>
 #include <utility>
 
@@ -181,3 +182,51 @@ bool MenuModel::parseME(const QString &meLine) {
 
     return true;
 }
+
+namespace MenuValueEntry {
+
+bool acceptsTyping(const MenuItem &item) {
+    return !item.isReadOnly() && item.options.isEmpty() && item.type != QLatin1String("BIN") &&
+           item.maxValue > item.minValue;
+}
+
+bool allowsNegative(const MenuItem &item) {
+    return item.minValue < 0;
+}
+
+bool allowsDecimal(const MenuItem &item) {
+    return item.type == QLatin1String("D10mW");
+}
+
+QString unitSuffix(const MenuItem &item) {
+    if (item.type == QLatin1String("MHz"))
+        return QStringLiteral(" MHz");
+    if (item.type == QLatin1String("Hz") || item.type == QLatin1String("M50Hz"))
+        return QStringLiteral(" Hz");
+    if (item.type == QLatin1String("ms"))
+        return QStringLiteral(" ms");
+    if (item.type == QLatin1String("D10mW"))
+        return QStringLiteral(" mW");
+    return QString();
+}
+
+std::optional<int> rawFromTyped(const MenuItem &item, const QString &typed) {
+    bool ok = false;
+    int raw = 0;
+    if (allowsDecimal(item)) {
+        const double mw = typed.toDouble(&ok); // D10mW: tenths of a milliwatt
+        raw = qRound(mw * 10.0);
+    } else if (item.type == QLatin1String("M50Hz")) {
+        const int hz = typed.toInt(&ok); // FM deviation, stored as 50 Hz steps
+        raw = qRound(hz / 50.0);
+    } else {
+        raw = typed.toInt(&ok);
+    }
+    if (!ok)
+        return std::nullopt;
+    if (item.step > 1) // onto the item's own grid, counted from its minimum
+        raw = item.minValue + qRound(double(raw - item.minValue) / item.step) * item.step;
+    return std::clamp(raw, item.minValue, item.maxValue);
+}
+
+} // namespace MenuValueEntry

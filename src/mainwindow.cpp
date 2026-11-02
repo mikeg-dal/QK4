@@ -77,7 +77,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // then let setupUi() build widgets and wire them into the existing
     // controllers. VFO widgets are late-injected into PopupManager via
     // setVfos() after setupUi() creates them.
-    m_menuController = new MenuController(m_connectionController, m_spectrumController, this, this);
+    m_menuController = new MenuController(m_connectionController, m_radioState, m_spectrumController, this, this);
     connect(m_menuController, &MenuController::overlayClosed, this, [this]() {
         if (m_bottomMenuBar)
             m_bottomMenuBar->setMenuActive(false);
