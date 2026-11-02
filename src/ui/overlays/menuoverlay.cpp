@@ -447,14 +447,20 @@ bool MenuOverlayWidget::handleTypedKey(const QKeyEvent *event) {
     const int key = event->key();
     const bool typing = !m_typed.isEmpty();
 
+    // A key that would take the value out of the item's range is refused, so the row shows the most
+    // it can hold rather than a number the radio would not take.
+    const auto accept = [&](const QString &candidate) {
+        if (MenuValueEntry::withinTypingBounds(*item, candidate))
+            setTyped(candidate);
+    };
     if (key >= Qt::Key_0 && key <= Qt::Key_9) {
         if (m_typed.size() < kMaxTypedChars)
-            setTyped(m_typed + QChar(u'0' + (key - Qt::Key_0)));
+            accept(m_typed + QChar(u'0' + (key - Qt::Key_0)));
         return true;
     }
     if ((key == Qt::Key_Period || key == Qt::Key_Comma) && MenuValueEntry::allowsDecimal(*item)) {
         if (!m_typed.contains(u'.'))
-            setTyped(m_typed + (typing && m_typed != QStringLiteral("-") ? QStringLiteral(".") : QStringLiteral("0.")));
+            accept(m_typed + (typing && m_typed != QStringLiteral("-") ? QStringLiteral(".") : QStringLiteral("0.")));
         return true;
     }
     if (!typing)
@@ -463,7 +469,7 @@ bool MenuOverlayWidget::handleTypedKey(const QKeyEvent *event) {
     case Qt::Key_Minus:
         // WHY only while typing: before the first digit, - steps the value down, as it always has.
         if (MenuValueEntry::allowsNegative(*item))
-            setTyped(m_typed.startsWith(u'-') ? m_typed.mid(1) : QStringLiteral("-") + m_typed);
+            accept(m_typed.startsWith(u'-') ? m_typed.mid(1) : QStringLiteral("-") + m_typed);
         return true;
     case Qt::Key_Backspace: {
         QString shorter = m_typed.chopped(1);
@@ -475,10 +481,11 @@ bool MenuOverlayWidget::handleTypedKey(const QKeyEvent *event) {
     case Qt::Key_Return:
     case Qt::Key_Enter: {
         const std::optional<int> value = MenuValueEntry::rawFromTyped(*item, m_typed);
+        if (!value)
+            return true; // short of the minimum: keep the typing to be finished or backed out
         const int id = item->id;
         setTyped(QString());
-        if (value)
-            emit menuValueSetRequested(id, *value);
+        emit menuValueSetRequested(id, *value);
         setEditMode(false);
         return true;
     }

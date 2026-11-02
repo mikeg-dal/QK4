@@ -138,9 +138,14 @@ bool allowsDecimal(const MenuItem &item);
 // The unit after the typed digits, as displayValue() shows it (" MHz", " Hz", " ms", " mW" or "").
 QString unitSuffix(const MenuItem &item);
 
-// The stored value for typed text in display units, snapped to the item's step and held to its
-// range; nothing when the text is not a number.
+// The stored value for typed text in display units, snapped to the item's step; nothing when the
+// text is not a number or the value is outside the item's range. Never clamped: a value the operator
+// did not type is never sent.
 std::optional<int> rawFromTyped(const MenuItem &item, const QString &typed);
+
+// Whether typed text may stand while still being typed: not past the maximum, nor past the minimum on
+// the negative side. A value short of a positive minimum is allowed - "1" on the way to "144".
+bool withinTypingBounds(const MenuItem &item, const QString &typed);
 
 } // namespace MenuValueEntry
 

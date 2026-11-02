@@ -231,6 +231,14 @@ void TestMenuOverlay::aValueIsTypedInInsteadOfStepped() {
     QCOMPARE(set.at(0).at(1).toInt(), 10368);
     QCOMPARE(stepped.size(), 0);
     QVERIFY(hasButtonLabelled(overlay, QString::fromUtf8("\xE2\x96\xB2"))); // Enter left edit mode
+
+    // Past the maximum the extra digits are refused: 10368000 (Hz, by habit) stops at 10368.
+    QTest::keyClick(&overlay, Qt::Key_Return);
+    QTest::keyClicks(&overlay, "10368000");
+    QCOMPARE(rowTexts(overlay), (QStringList{"XVTR Band 1 R.F.=10368_ MHz"}));
+    QTest::keyClick(&overlay, Qt::Key_Return);
+    QCOMPARE(set.size(), 2);
+    QCOMPARE(set.at(1).at(1).toInt(), 10368);
 }
 
 // A signed item takes - once digits are typed (before that, - steps down as always); Escape

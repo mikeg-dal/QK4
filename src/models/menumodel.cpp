@@ -210,23 +210,41 @@ QString unitSuffix(const MenuItem &item) {
     return QString();
 }
 
-std::optional<int> rawFromTyped(const MenuItem &item, const QString &typed) {
+namespace {
+// typed in display units -> stored units, nothing else.
+std::optional<qint64> toStored(const MenuItem &item, const QString &typed) {
     bool ok = false;
-    int raw = 0;
+    qint64 raw = 0;
     if (allowsDecimal(item)) {
         const double mw = typed.toDouble(&ok); // D10mW: tenths of a milliwatt
-        raw = qRound(mw * 10.0);
+        raw = qRound64(mw * 10.0);
     } else if (item.type == QLatin1String("M50Hz")) {
-        const int hz = typed.toInt(&ok); // FM deviation, stored as 50 Hz steps
-        raw = qRound(hz / 50.0);
+        const qint64 hz = typed.toLongLong(&ok); // FM deviation, stored as 50 Hz steps
+        raw = qRound64(hz / 50.0);
     } else {
-        raw = typed.toInt(&ok);
+        raw = typed.toLongLong(&ok);
     }
-    if (!ok)
+    return ok ? std::optional<qint64>(raw) : std::nullopt;
+}
+} // namespace
+
+std::optional<int> rawFromTyped(const MenuItem &item, const QString &typed) {
+    const std::optional<qint64> stored = toStored(item, typed);
+    if (!stored)
         return std::nullopt;
+    qint64 raw = *stored;
     if (item.step > 1) // onto the item's own grid, counted from its minimum
-        raw = item.minValue + qRound(double(raw - item.minValue) / item.step) * item.step;
-    return std::clamp(raw, item.minValue, item.maxValue);
+        raw = item.minValue + qRound64(double(raw - item.minValue) / item.step) * item.step;
+    if (raw < item.minValue || raw > item.maxValue)
+        return std::nullopt;
+    return int(raw);
+}
+
+bool withinTypingBounds(const MenuItem &item, const QString &typed) {
+    const std::optional<qint64> stored = toStored(item, typed);
+    if (!stored)
+        return true; // "-" or "0." on the way to a number
+    return *stored <= item.maxValue && *stored >= (std::min)(item.minValue, 0);
 }
 
 } // namespace MenuValueEntry

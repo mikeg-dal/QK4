@@ -144,8 +144,11 @@ void TestMenuModel::testTypedValuesBecomeStoredValues() {
     QVERIFY(acceptsTyping(rf));
     QVERIFY(!allowsNegative(rf));
     QCOMPARE(unitSuffix(rf), QString(" MHz"));
-    QCOMPARE(rawFromTyped(rf, "10368"), std::optional<int>(10368));  // 10 GHz band start
-    QCOMPARE(rawFromTyped(rf, "123456"), std::optional<int>(99999)); // held to the range
+    QCOMPARE(rawFromTyped(rf, "10368"), std::optional<int>(10368)); // 10 GHz band start
+    // Out of range is refused, never clamped: Mike typed past 99999 and the menu sent 99999.
+    QCOMPARE(rawFromTyped(rf, "123456"), std::optional<int>());
+    QVERIFY(withinTypingBounds(rf, "99999"));
+    QVERIFY(!withinTypingBounds(rf, "100000"));
     QCOMPARE(rawFromTyped(rf, "abc"), std::optional<int>());
 
     MenuItem offset;
@@ -154,6 +157,7 @@ void TestMenuModel::testTypedValuesBecomeStoredValues() {
     offset.maxValue = 99999;
     QVERIFY(allowsNegative(offset));
     QCOMPARE(rawFromTyped(offset, "-1234"), std::optional<int>(-1234));
+    QVERIFY(!withinTypingBounds(offset, "-100000"));
 
     MenuItem power;
     power.type = "D10mW"; // tenths of a milliwatt
@@ -161,7 +165,9 @@ void TestMenuModel::testTypedValuesBecomeStoredValues() {
     power.maxValue = 50;
     QVERIFY(allowsDecimal(power));
     QCOMPARE(rawFromTyped(power, "1.5"), std::optional<int>(15));
-    QCOMPARE(rawFromTyped(power, "9"), std::optional<int>(50));
+    QCOMPARE(rawFromTyped(power, "9"), std::optional<int>());
+    QCOMPARE(rawFromTyped(power, "0.0"), std::optional<int>()); // below the 0.1 mW minimum
+    QVERIFY(withinTypingBounds(power, "0."));                   // on the way to 0.5
 
     MenuItem deviation;
     deviation.type = "M50Hz"; // 50 Hz steps
