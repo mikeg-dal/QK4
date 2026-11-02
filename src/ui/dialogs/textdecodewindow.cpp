@@ -80,7 +80,7 @@ void TextDecodeWindow::setupUi() {
     m_wpmBtn = new QPushButton("8-45", titleBar);
     m_wpmBtn->setFixedHeight(ControlButtonHeight);
     m_wpmBtn->setCursor(Qt::PointingHandCursor);
-    m_wpmBtn->setStyleSheet(controlButtonStyle(false));
+    m_wpmBtn->setStyleSheet(K4Styles::controlButton());
 
     // AUTO/MANUAL button
     m_autoManualBtn = new QPushButton("AUTO", titleBar);
@@ -93,7 +93,7 @@ void TextDecodeWindow::setupUi() {
     m_thresholdMinusBtn = new QPushButton("-", titleBar);
     m_thresholdMinusBtn->setFixedSize(ControlButtonHeight, ControlButtonHeight);
     m_thresholdMinusBtn->setCursor(Qt::PointingHandCursor);
-    m_thresholdMinusBtn->setStyleSheet(controlButtonStyle(false));
+    m_thresholdMinusBtn->setStyleSheet(K4Styles::controlButton());
 
     m_thresholdValueLabel = new QLabel("5", titleBar);
     m_thresholdValueLabel->setFixedSize(20, ControlButtonHeight);
@@ -105,28 +105,28 @@ void TextDecodeWindow::setupUi() {
     m_thresholdPlusBtn = new QPushButton("+", titleBar);
     m_thresholdPlusBtn->setFixedSize(ControlButtonHeight, ControlButtonHeight);
     m_thresholdPlusBtn->setCursor(Qt::PointingHandCursor);
-    m_thresholdPlusBtn->setStyleSheet(controlButtonStyle(false));
+    m_thresholdPlusBtn->setStyleSheet(K4Styles::controlButton());
 
     // CLR button - clear text buffer (local only)
     m_clearBtn = new QPushButton("CLR", titleBar);
     m_clearBtn->setFixedHeight(ControlButtonHeight);
     m_clearBtn->setMinimumWidth(36);
     m_clearBtn->setCursor(Qt::PointingHandCursor);
-    m_clearBtn->setStyleSheet(controlButtonStyle(false));
+    m_clearBtn->setStyleSheet(K4Styles::controlButton());
 
     // A- / A+ buttons - shrink/grow decoded-text font size (per receiver, persisted)
     m_fontMinusBtn = new QPushButton(QString::fromUtf8("A−"), titleBar); // A−
     m_fontMinusBtn->setFixedHeight(ControlButtonHeight);
     m_fontMinusBtn->setMinimumWidth(36);
     m_fontMinusBtn->setCursor(Qt::PointingHandCursor);
-    m_fontMinusBtn->setStyleSheet(controlButtonStyle(false));
+    m_fontMinusBtn->setStyleSheet(K4Styles::controlButton());
     m_fontMinusBtn->setToolTip("Decrease decoded text size");
 
     m_fontPlusBtn = new QPushButton("A+", titleBar);
     m_fontPlusBtn->setFixedHeight(ControlButtonHeight);
     m_fontPlusBtn->setMinimumWidth(36);
     m_fontPlusBtn->setCursor(Qt::PointingHandCursor);
-    m_fontPlusBtn->setStyleSheet(controlButtonStyle(false));
+    m_fontPlusBtn->setStyleSheet(K4Styles::controlButton());
     m_fontPlusBtn->setToolTip("Increase decoded text size");
 
     // Title label - smaller, right-aligned
@@ -418,10 +418,6 @@ void TextDecodeWindow::wheelEvent(QWheelEvent *event) {
         return;
     }
     QWidget::wheelEvent(event);
-}
-
-QString TextDecodeWindow::controlButtonStyle(bool selected) const {
-    return K4Styles::controlButton(selected);
 }
 
 void TextDecodeWindow::applyTextFontSize() {

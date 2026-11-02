@@ -191,10 +191,6 @@ QString popupButtonNormal() {
     return gradientButtonCss(Dimensions::FontSizeBody, QString(), false);
 }
 
-QString popupButtonSelected() {
-    return popupSelectedCss(SelectorScope::Always);
-}
-
 QString popupButton() {
     return popupButtonNormal() + popupSelectedCss(SelectorScope::Selectable);
 }
@@ -266,10 +262,6 @@ QString menuBarButtonActive() {
 
 QString menuBarButtonSmall() {
     return gradientButtonCss(Dimensions::FontSizeReadout, QString(), true);
-}
-
-QString menuBarButtonPttPressed() {
-    return pttPressedCss(SelectorScope::Always);
 }
 
 QColor withAlpha(const char *color, int alpha) {
@@ -511,10 +503,6 @@ QString sidePanelButton() {
         .arg(Colors::BorderPressed);
 }
 
-QString sidePanelButtonActive() {
-    return sidePanelActiveCss(SelectorScope::Always);
-}
-
 QString sidePanelButtonSelectable() {
     return sidePanelButton() + sidePanelActiveCss(SelectorScope::Selectable);
 }
@@ -588,34 +576,8 @@ QString dialogButton() {
         .arg(Colors::DialogBorder);
 }
 
-QString controlButton(bool selected) {
-    if (selected) {
-        return QString(R"(
-            QPushButton {
-                background: %1;
-                color: %2;
-                border: 1px solid %3;
-                border-radius: 4px;
-                font-size: %4px;
-                font-weight: bold;
-                padding: 2px 4px;
-            }
-            QPushButton:hover {
-                border: 1px solid %5;
-            }
-            QPushButton:pressed {
-                background: %6;
-            }
-        )")
-            .arg(gradientCss(Colors::SelectedTop, Colors::SelectedMid1, Colors::SelectedMid2, Colors::SelectedBottom))
-            .arg(Colors::TextOnLight)
-            .arg(Colors::BorderSelected)
-            .arg(Dimensions::FontSizeCaption)
-            .arg(Colors::BorderHover)
-            .arg(gradientCssReversed(Colors::SelectedTop, Colors::SelectedMid1, Colors::SelectedMid2,
-                                     Colors::SelectedBottom));
-    } else {
-        return QString(R"(
+QString controlButton() {
+    return QString(R"(
             QPushButton {
                 background: %1;
                 color: %2;
@@ -638,17 +600,16 @@ QString controlButton(bool selected) {
                 border: 1px solid %3;
             }
         )")
-            .arg(gradientCss(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2, Colors::GradientBottom))
-            .arg(Colors::TextPrimary)
-            .arg(Colors::BorderNormal)
-            .arg(Dimensions::FontSizeCaption)
-            .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom))
-            .arg(Colors::BorderHover)
-            .arg(gradientCssReversed(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2,
-                                     Colors::GradientBottom))
-            .arg(Colors::DisabledBackground)
-            .arg(Colors::TextDisabled);
-    }
+        .arg(gradientCss(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2, Colors::GradientBottom))
+        .arg(Colors::TextPrimary)
+        .arg(Colors::BorderNormal)
+        .arg(Dimensions::FontSizeCaption)
+        .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom))
+        .arg(Colors::BorderHover)
+        .arg(gradientCssReversed(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2,
+                                 Colors::GradientBottom))
+        .arg(Colors::DisabledBackground)
+        .arg(Colors::TextDisabled);
 }
 
 namespace Fonts {
@@ -724,13 +685,6 @@ const QString &sectionHeader() {
     static const QString s = QString("color: %1; font-size: %2px; font-weight: bold;")
                                  .arg(Colors::TextPrimary)
                                  .arg(Dimensions::FontSizeHeading);
-    return s;
-}
-
-const QString &statusLabel(const QString &color) {
-    // Not cached: colour is dynamic. Main-thread only (settings pages), so a plain static scratch is safe.
-    static QString s;
-    s = QString("color: %1; font-size: %2px; font-weight: bold;").arg(color).arg(Dimensions::FontSizeHeading);
     return s;
 }
 
@@ -995,21 +949,21 @@ const QString &macroCommandDisplay() {
 } // namespace Dialog
 
 QString controlButtonSelectable() {
-    // WHY: controlButton(true) has no :disabled rule and its :hover keeps the selected background, so
-    // the selected rules restate both or the resting :hover and :disabled looks would show through.
-    // :pressed comes after :hover, as in controlButton(true), so a pressed key under the mouse reverses.
+    // WHY: the selected look has no :disabled rule of its own and its :hover keeps the selected
+    // background, so the selected rules restate both or the resting :hover and :disabled looks would
+    // show through. :pressed comes after :hover, so a pressed key under the mouse reverses.
     const QString selected =
         gradientCss(Colors::SelectedTop, Colors::SelectedMid1, Colors::SelectedMid2, Colors::SelectedBottom);
-    return controlButton(false) + QString("%1 { background: %2; color: %3; border: 1px solid %4; }"
-                                          "%5 { background: %2; border: 1px solid %6; }"
-                                          "%7 { background: %8; }"
-                                          "%9 { background: %2; color: %3; border: 1px solid %4; }")
-                                      .arg(whenFlag("QPushButton", SelectedProperty), selected, Colors::TextOnLight,
-                                           Colors::BorderSelected, whenFlag("QPushButton", SelectedProperty, ":hover"),
-                                           Colors::BorderHover, whenFlag("QPushButton", SelectedProperty, ":pressed"),
-                                           gradientCssReversed(Colors::SelectedTop, Colors::SelectedMid1,
-                                                               Colors::SelectedMid2, Colors::SelectedBottom),
-                                           whenFlag("QPushButton", SelectedProperty, ":disabled"));
+    return controlButton() + QString("%1 { background: %2; color: %3; border: 1px solid %4; }"
+                                     "%5 { background: %2; border: 1px solid %6; }"
+                                     "%7 { background: %8; }"
+                                     "%9 { background: %2; color: %3; border: 1px solid %4; }")
+                                 .arg(whenFlag("QPushButton", SelectedProperty), selected, Colors::TextOnLight,
+                                      Colors::BorderSelected, whenFlag("QPushButton", SelectedProperty, ":hover"),
+                                      Colors::BorderHover, whenFlag("QPushButton", SelectedProperty, ":pressed"),
+                                      gradientCssReversed(Colors::SelectedTop, Colors::SelectedMid1,
+                                                          Colors::SelectedMid2, Colors::SelectedBottom),
+                                      whenFlag("QPushButton", SelectedProperty, ":disabled"));
 }
 
 // =============================================================================

@@ -34,14 +34,9 @@ namespace K4Styles {
 QString popupButtonNormal();
 
 /**
- * @brief Light/white button for selected state in popups.
- * Used for currently selected band/mode.
- */
-QString popupButtonSelected();
-
-/**
- * @brief One sheet for a popup choice key: popupButtonNormal() while unselected, popupButtonSelected()
- * while the button is checked or marked with setSelected(). Set it once; never swap sheets.
+ * @brief One sheet for a popup choice key: popupButtonNormal() while unselected, the light selected
+ * look (currently selected band/mode) while the button is checked or marked with setSelected(). Set it
+ * once; never swap sheets.
  */
 QString popupButton();
 
@@ -105,12 +100,6 @@ QString menuBarButtonActive();
 QString menuBarButtonSmall();
 
 /**
- * @brief PTT button pressed state.
- * Red background with white text for transmit indication.
- */
-QString menuBarButtonPttPressed();
-
-/**
  * @brief Standard horizontal slider stylesheet.
  * Amber handle on dark groove, uses Dimensions::Slider* constants.
  *
@@ -162,15 +151,9 @@ QString compactButton();
 QString sidePanelButton();
 
 /**
- * @brief Active/engaged state for a side-panel icon button (amber-accent highlight), on its own.
- * Buttons use sidePanelButtonSelectable(); this standalone form is the reference its look is held to.
- */
-QString sidePanelButtonActive();
-
-/**
  * @brief One sheet for a side-panel icon key whose target can be open (the globe while the Radio
- * Manager shows): sidePanelButton() normally, sidePanelButtonActive() while the button is checked or
- * marked with setSelected(). Set it once; never swap sheets.
+ * Manager shows): sidePanelButton() normally, an amber-accent engaged look while the button is checked
+ * or marked with setSelected(). Set it once; never swap sheets.
  */
 QString sidePanelButtonSelectable();
 
@@ -195,11 +178,9 @@ QString dialogButton();
 // Control Button Styles
 // =============================================================================
 
-/**
- * @brief Control button for decode windows.
- * @param selected If true, uses light/selected gradient. If false, uses dark gradient with disabled state.
- */
-QString controlButton(bool selected = false);
+/// Control key for the decode windows: dark gradient, with a disabled look. A key that can be selected
+/// uses controlButtonSelectable() instead.
+QString controlButton();
 
 // =============================================================================
 // Common Style Constants
@@ -348,9 +329,6 @@ const QString &helpText();
 /// White bold section header (TextPrimary, FontSizeHeading)
 const QString &sectionHeader();
 
-/// Dynamic-color status label (bold, FontSizeHeading)
-const QString &statusLabel(const QString &color);
-
 /// Generic `color: <c>; font-size: <n>px;` label style. Builds a fresh QString each call (dynamic
 /// color/size, so not cached). Use this instead of inlining `QString("color: %1; font-size: %2px;")`
 /// across widgets — single source of truth keeps styling consistent and makes global tweaks cheap.
@@ -427,8 +405,8 @@ namespace Dialog {
 inline constexpr char StatusOk[] = "ok";     ///< StatusGreen: running, connected, detected
 inline constexpr char StatusIdle[] = "idle"; ///< TextSecondary: nothing connected, nothing wrong
 
-/// Options page status label: statusLabel(TextRed) at rest, statusLabel(StatusGreen) with state
-/// StatusOk, statusLabel(TextSecondary) with state StatusIdle. Set once; change the state.
+/// Options page status label, bold FontSizeHeading: TextRed at rest, StatusGreen with state StatusOk,
+/// TextSecondary with state StatusIdle. Set once; change the state.
 const QString &statusLabelByState();
 
 /// Device-summary value: labelText(TextPrimary, FontSizeHeading); with DimmedProperty the TextSecondary
@@ -456,7 +434,7 @@ const QString &macroCommandDisplay();
 
 } // namespace Dialog
 
-/// One sheet for a decode-window toggle key: controlButton(false) at rest, controlButton(true) while
+/// One sheet for a decode-window toggle key: controlButton() at rest, the light selected look while
 /// marked with setSelected(). Set it once; never swap sheets.
 QString controlButtonSelectable();
 
@@ -464,7 +442,7 @@ QString controlButtonSelectable();
 // State sheets: popups, menu bars and the menu overlay
 // =============================================================================
 
-/// One sheet for the PTT key: menuBarButton() at rest, menuBarButtonPttPressed() while marked with
+/// One sheet for the PTT key: menuBarButton() at rest, the red transmit look while marked with
 /// setSelected() (transmitting).
 QString menuBarButtonPtt();
 

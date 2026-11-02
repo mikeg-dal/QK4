@@ -248,13 +248,16 @@ void addDialogCases(QList<StateCase> &cases) {
     const int heading = Dimensions::FontSizeHeading;
 
     // Options page status labels (CW keyer, DX cluster, KPA1500, K-Pod, CAT server, TCI server):
-    // the old code swapped Dialog::statusLabel(colour). statusLabel() returns a shared scratch, so copy.
+    // the old code swapped Dialog::statusLabel(colour), frozen here.
+    const auto oldStatus = [heading](const char *color) {
+        return QString("color: %1; font-size: %2px; font-weight: bold;").arg(color).arg(heading);
+    };
     const QString status = Dialog::statusLabelByState();
     const QString statusText = QStringLiteral("Listening on port 9299");
-    label("dialogs/statusLabel/resting", QString(Dialog::statusLabel(Colors::TextRed)), status, {}, statusText);
-    label("dialogs/statusLabel/ok", QString(Dialog::statusLabel(Colors::StatusGreen)), status,
+    label("dialogs/statusLabel/resting", oldStatus(Colors::TextRed), status, {}, statusText);
+    label("dialogs/statusLabel/ok", oldStatus(Colors::StatusGreen), status,
           {{StateProperty, QString(Dialog::StatusOk)}}, statusText);
-    label("dialogs/statusLabel/idle", QString(Dialog::statusLabel(Colors::TextSecondary)), status,
+    label("dialogs/statusLabel/idle", oldStatus(Colors::TextSecondary), status,
           {{StateProperty, QString(Dialog::StatusIdle)}}, statusText);
 
     // K-Pod device-summary values: a value, or a dimmed italic "N/A".
@@ -324,13 +327,31 @@ void addDialogCases(QList<StateCase> &cases) {
           {{SelectedProperty, true}}, QStringLiteral("KY CQ TEST;"));
 
     // Text decode window ON/OFF and AUTO/MANUAL keys: controlButton(selected) swapped, enabled and not.
+    // The old selected sheet, frozen (generated from controlButton(true) before it was removed).
+    const QString oldControlSelected = QStringLiteral(R"(
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,stop:0 #E0E0E0, stop:0.4 #D0D0D0, stop:0.6 #C8C8C8, stop:1 #B8B8B8);
+                color: #333333;
+                border: 1px solid #AAAAAA;
+                border-radius: 4px;
+                font-size: 10px;
+                font-weight: bold;
+                padding: 2px 4px;
+            }
+            QPushButton:hover {
+                border: 1px solid #808080;
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,stop:0 #B8B8B8, stop:0.4 #C8C8C8, stop:0.6 #D0D0D0, stop:1 #E0E0E0);
+            }
+        )");
     for (const bool selected : {false, true}) {
         for (const bool enabled : {true, false}) {
             StateCase c;
             c.name = QStringLiteral("dialogs/decodeToggle/%1%2")
                          .arg(selected ? "selected" : "resting", enabled ? "" : "-disabled");
             c.kind = Kind::Button;
-            c.oldSheet = controlButton(selected);
+            c.oldSheet = selected ? oldControlSelected : controlButton();
             c.newSheet = controlButtonSelectable();
             if (selected)
                 c.props = {{SelectedProperty, true}};
@@ -365,7 +386,8 @@ void addPopupCases(QList<StateCase> &cases) {
     const QList<StyleProp> dimmed{{DimmedProperty, true}};
     const QList<StyleProp> selected{{SelectedProperty, true}};
 
-    // Bottom menu bar PTT (BottomMenuBar::setPttActive): menuBarButton() ↔ menuBarButtonPttPressed().
+    // Bottom menu bar PTT (BottomMenuBar::setPttActive): menuBarButton() ↔ menuBarButtonPttPressed(),
+    // frozen here.
     const QSize pttSize(Dimensions::MenuBarButtonWidth, Dimensions::ButtonHeightMedium);
     const QString oldPttPressed =
         QString(R"(
@@ -382,8 +404,6 @@ void addPopupCases(QList<StateCase> &cases) {
             .arg(Colors::TxActiveFill, TextPrimary, QString::number(Dimensions::FontSizeBody));
     cases << button("popups/ptt/resting", menuBarButton(), menuBarButtonPtt(), {}, "PTT", pttSize)
           << button("popups/ptt/transmitting", oldPttPressed, menuBarButtonPtt(), selected, "PTT", pttSize);
-    // The standalone reference must still be the old sheet's look.
-    cases << button("popups/ptt/standalone", oldPttPressed, menuBarButtonPttPressed(), {}, "PTT", pttSize);
 
     // LINE OUT RIGHT key and value (LineOutPopupWidget::updateButtonStyles): greyed while R=L is on.
     const QSize lineOutKey(Dimensions::PopupButtonWidth, Dimensions::ButtonHeightMedium);

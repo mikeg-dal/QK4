@@ -76,7 +76,6 @@ private:
     void updateSpeedButton();
     void updateThresholdControls();
     void updateModeVisibility();
-    QString controlButtonStyle(bool selected = false) const;
     void applyTextFontSize();
 
     Receiver m_receiver;

@@ -155,8 +155,8 @@ selected sheet's.
 - `K4Styles::Dialog::*`: cached `const QString &` sheets for Options pages and dialogs (labels,
   fields, combo box, line edit, spin box, check box, action buttons). `labelText()` and
   `labelTextBold()` build a fresh `QString` for a given colour and size.
-- `Dialog::statusLabel(color)` returns `const QString &` to a buffer that the **next call
-  overwrites**. Pass it straight to `setStyleSheet()`, which copies it; never keep the reference.
+- State sheets (`popupButton()`, `Dialog::statusLabelByState()`, `menuBarButtonPtt()` …): one sheet
+  per widget, the look picked by `setSelected()` / `setStyleFlag()` / `setStyleState()`.
 - QPainter helpers: `buttonGradient()`, `selectedGradient()`, `meterGradient()`, `borderColor*()`,
   `withAlpha()`, `drawDropShadow()`, `drawHaloText()` (text over the spectrum).
 - `applicationStyleSheet()`: the application-wide form-control fallback.
