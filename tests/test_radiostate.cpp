@@ -2831,7 +2831,7 @@ private slots:
     // Handlers: TX/RX (transmit state), SM/SM$ (S-meter — always emits),
     // TM (TX meter telemetry — always emits), PO (not registered; TM carries forward power),
     // SIFP (supply voltage/current), ID/OM/RV. (radio identity — no signals),
-    // MN (message bank), SB/DV/TS/BS (control state flags).
+    // MB (message bank), SB/DV/TS/BS (control state flags).
     // =========================================================================
 
     // --- TX / RX (transmit state: signals fire only on transition) ---
@@ -3125,20 +3125,36 @@ private slots:
         QCOMPARE(rs.firmwareVersions().value("DDC0"), QString("00.65 (0:35)"));
     }
 
-    // --- MN (message bank 1-4) ---
+    // --- MB (message bank: 0 = bank I, 1 = bank II) ---
     void testMessageBankParses() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::messageBankChanged);
-        rs.parseCATCommand("MN2;");
-        QCOMPARE(rs.messageBank(), 2);
+        rs.parseCATCommand("MB1;");
+        QCOMPARE(rs.messageBank(), 1);
         QCOMPARE(spy.count(), 1);
+        rs.parseCATCommand("MB0;"); // BANK pressed: the K4 reports the other bank at AI4
+        QCOMPARE(rs.messageBank(), 0);
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.last().at(0).toInt(), 0);
+        rs.parseCATCommand("MB0;"); // unchanged: no signal
+        QCOMPARE(spy.count(), 2);
     }
 
     void testMessageBankOutOfRangeRejected() {
         RadioState rs;
-        rs.parseCATCommand("MN2;");
-        rs.parseCATCommand("MN5;"); // above 4
-        QCOMPARE(rs.messageBank(), 2);
+        rs.parseCATCommand("MB1;");
+        QSignalSpy spy(&rs, &RadioState::messageBankChanged);
+        for (const char *bad : {"MB2;", "MB-1;", "MB;", "MBX;", "MB10;"})
+            rs.parseCATCommand(bad);
+        QCOMPARE(rs.messageBank(), 1);
+        QCOMPARE(spy.count(), 0);
+    }
+
+    void testMnIsNotTheMessageBank() {
+        // The K4 reports the bank as MB; MN was a guess that never matched anything it sends.
+        RadioState rs;
+        rs.parseCATCommand("MN1;");
+        QCOMPARE(rs.messageBank(), -1);
     }
 
     // --- SB (sub receiver: SB0=off, SB1 or SB3=on) ---
@@ -3624,7 +3640,7 @@ private slots:
         rs.parseCATCommand("RO+0500;");
         rs.parseCATCommand("VT3;");
         rs.parseCATCommand("ML0050;");
-        rs.parseCATCommand("MN2;");
+        rs.parseCATCommand("MB1;");
         rs.parseCATCommand("SL3;");
         rs.parseCATCommand("MI3;");
         rs.parseCATCommand("VGV030;");
@@ -3731,7 +3747,7 @@ private slots:
         rs.parseCATCommand("AT1;");
         rs.parseCATCommand("#SCL080;");
         rs.parseCATCommand("#WBS14;");
-        rs.parseCATCommand("MN2;");
+        rs.parseCATCommand("MB1;");
         rs.parseCATCommand("DT2;");
 
         rs.reset();
@@ -3768,7 +3784,7 @@ private slots:
         }
         {
             QSignalSpy spy(&rs, &RadioState::messageBankChanged);
-            rs.parseCATCommand("MN2;");
+            rs.parseCATCommand("MB1;");
             QCOMPARE(spy.count(), 1);
         }
         {

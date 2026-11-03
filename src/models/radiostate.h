@@ -256,7 +256,7 @@ public:
         return reportedOr(m_frequencyVfoState.ritXitOffsetB, FrequencyVfoState::RitXitOffsetUnknown, 0);
     }
 
-    // Message bank (MN)
+    // Message bank (MB): 0 = bank I, 1 = bank II, -1 until reported
     int messageBank() const { return m_rxTxMeterState.messageBank; }
 
     // VOX
@@ -995,7 +995,7 @@ private:
     void handleSIRF(const QString &cmd); // RF board report (PA drain current, PA/LPA temperatures)
 
     void handleSL(const QString &cmd); // Streaming Latency
-    void handleMN(const QString &cmd); // Message Bank
+    void handleMB(const QString &cmd); // Message Bank
     void handleER(const QString &cmd); // Error notifications
 
     // Display commands (# prefix) — all handlers live in SpectrumDisplayHandlers
