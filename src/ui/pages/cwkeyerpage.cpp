@@ -101,6 +101,16 @@ CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, C
     connect(m_cwKeyerConnectBtn, &QPushButton::clicked, this, &CwKeyerPage::onCwKeyerConnectClicked);
     form->addRow(QString(), m_cwKeyerConnectBtn);
 
+    auto *keyingStatus = new QLabel(m_cwController->keyingStatus(), this);
+    keyingStatus->setWordWrap(true);
+    keyingStatus->setStyleSheet(K4Styles::Dialog::statusLabelByState());
+    OptionsPageLayout::addRow(form, this, "Keying", keyingStatus);
+    connect(m_cwController, &CwController::keyingStatusChanged, keyingStatus, &QLabel::setText);
+    auto *enableKeying = new QPushButton("Enable keying…", this);
+    enableKeying->setStyleSheet(K4Styles::Dialog::actionButtonSmall());
+    connect(enableKeying, &QPushButton::clicked, m_cwController, &CwController::requestKeyingEnable);
+    form->addRow(QString(), enableKeying);
+
     // Keyer section: the PaddleKeyer settings (port of K4-Companion's keyer).
     OptionsPageLayout::addSection(form, this, "Keyer");
 

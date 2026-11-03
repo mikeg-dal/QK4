@@ -1,6 +1,7 @@
 #ifndef HALIKEYDEVICE_H
 #define HALIKEYDEVICE_H
 
+#include "hardware/halikeysafety.h"
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -40,6 +41,11 @@ public:
     explicit HalikeyDevice(int deviceType, QObject *parent = nullptr);
     ~HalikeyDevice();
 
+    void disarmKeying() { m_safety->disarm(); }
+    void enableKeying() { m_safety->enable(m_straightKey.load(std::memory_order_acquire)); }
+    std::uint64_t keyingEpoch() const { return m_safety->epoch(); }
+    bool keyingArmed() const { return m_safety->armed(); }
+
     // Port management
     bool openPort(const QString &portName);
     void closePort();
@@ -75,6 +81,7 @@ signals:
 
 private:
     std::shared_ptr<HaliKeyMidiSink> m_midiSink;
+    std::shared_ptr<HaliKeySafety> m_safety = std::make_shared<HaliKeySafety>();
     QThread *m_workerThread = nullptr;
     HaliKeyWorkerBase *m_worker = nullptr;
 

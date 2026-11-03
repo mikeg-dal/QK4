@@ -9,15 +9,16 @@
 namespace CwGate {
 
 struct Inputs {
+    bool keyingArmed = false;
     bool radioReady = false;     // authenticated and past the RDY dump
     bool inCwMode = false;       // CW or CW-R
     bool kpodPlusOwnsCw = false; // the KPOD+ runs its own keyer and sidetone
     bool halikeyOpen = false;    // a HaliKey port is open: the only source QK4's keyer listens to
 };
 
-// The keyer keys nothing unless the radio is ready, in CW, and the KPOD+ does not own CW.
+// Keying requires an approved, released HaliKey, a ready radio in CW, and no KPOD+ owner.
 inline bool keyerInhibited(const Inputs &in) {
-    return !in.radioReady || !in.inCwMode || in.kpodPlusOwnsCw;
+    return !in.radioReady || !in.inCwMode || in.kpodPlusOwnsCw || !in.halikeyOpen || !in.keyingArmed;
 }
 
 // WHY the sidetone stream follows keyability, not the app's lifetime: an open push sink is pumped

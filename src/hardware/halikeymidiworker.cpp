@@ -201,6 +201,6 @@ void HaliKeyMidiWorker::midiCallback(double deltaTime, std::vector<unsigned char
     // real-time thread (CONVENTIONS Rule 16). The HaliKey MIDI user guide's notes are 20 (left
     // paddle), 21 (right paddle) and 31 (footswitch); the keyer maps 20/21 and ignores the rest,
     // which keeps footswitch PTT withdrawn (see cwcontroller.h).
-    if (self->m_sink)
+    if (self->m_safety && self->m_safety->midiMessage(status, note) && self->m_sink)
         self->m_sink->call(status, note, velocity, deltaTime);
 }

@@ -447,6 +447,11 @@ endif()
 add_test(NAME MidiDeviceWatcherTests COMMAND test_mididevicewatcher)
 
 # CwGate: when the keyer may key and when the sidetone stream is open (#92 idle CPU).
+add_executable(test_halikeysafety test_halikeysafety.cpp)
+target_include_directories(test_halikeysafety PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_halikeysafety Qt6::Core Qt6::Test)
+add_test(NAME HaliKeySafetyTests COMMAND test_halikeysafety)
+
 add_executable(test_cwgate test_cwgate.cpp)
 target_include_directories(test_cwgate PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_cwgate Qt6::Core Qt6::Test)

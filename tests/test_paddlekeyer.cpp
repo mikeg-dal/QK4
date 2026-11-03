@@ -7,6 +7,7 @@
 
 #include "audio/sidetonescheduler.h"
 #include "hardware/paddlekeyer.h"
+#include "hardware/halikeysafety.h"
 #include "paddlekeyersim.h"
 #include "utils/rtsan.h"
 
@@ -81,6 +82,27 @@ class TestPaddleKeyer : public QObject {
     Q_OBJECT
 
 private slots:
+    void midiArmingGestureNeverTransmits() {
+        StraightRig rig;
+        HaliKeySafety guard;
+        auto feed = [&](int status) {
+            if (guard.midiMessage(status, 20))
+                rig.keyer.midiMessage(status, 20, 127, 0.05);
+            rig.drain();
+        };
+        feed(0x90); // held at connection
+        guard.enable(true);
+        feed(0x80); // release arms, without sending a key-up or key-down
+        QVERIFY(guard.armed());
+        QVERIFY(rig.link.sent.empty());
+        feed(0x90);
+        rig.clock.t += 0.05;
+        feed(0x80);
+        QCOMPARE(rig.link.sent.size(), std::size_t{2});
+        QVERIFY(rig.link.sent[0].compare(0, 3, "KZD") == 0);
+        QVERIFY(rig.link.sent[1].compare(0, 3, "KZU") == 0);
+    }
+
     // ---- MoMIDI timing (k4companion:19924-20008) ----
 
     // A note's velocity carries the milliseconds since the device's previous event; poly

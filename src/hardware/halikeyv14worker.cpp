@@ -270,6 +270,12 @@ void HaliKeyV14Worker::monitorLoop() {
             poller.start(read);
             continue;
         }
+        if (!m_safety || !m_safety->serialSample(ditLine, dahLine)) {
+            // Discard debounce history too: an edge captured before approval must never replay.
+            poller = SerialLinePoller(Signal::CTS, Signal::DCD, straight);
+            poller.start(read);
+            continue;
+        }
         // No log line per edge: this is a real-time thread (CONVENTIONS Rule 16). What the keyer
         // made of the edges is in the CAT traffic bench item.
         for (const auto &change : poller.poll(read, clock.now()))
