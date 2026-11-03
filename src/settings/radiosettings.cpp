@@ -676,6 +676,18 @@ void RadioSettings::setMacro(const QString &functionId, const QString &label, co
     }
 }
 
+bool RadioSettings::halikeyAutoConnect() const {
+    return m_halikeyAutoConnect;
+}
+
+void RadioSettings::setHalikeyAutoConnect(bool enabled) {
+    if (m_halikeyAutoConnect != enabled) {
+        m_halikeyAutoConnect = enabled;
+        save();
+        emit halikeyAutoConnectChanged(enabled);
+    }
+}
+
 QString RadioSettings::halikeyPortName() const {
     return m_halikeyPortName;
 }
@@ -991,6 +1003,7 @@ void RadioSettings::load() {
     }
 
     // HaliKey settings
+    m_halikeyAutoConnect = m_settings.value("halikey/autoConnect", false).toBool();
     m_halikeyPortName = m_settings.value("halikey/portName", "").toString();
     m_halikeyDeviceType = halikeyDeviceTypeIndex(storedInt(m_settings.value("halikey/deviceType"), 0));
     m_sidetoneVolume = percent(storedInt(m_settings.value("halikey/sidetoneVolume"), 30));
@@ -1112,6 +1125,7 @@ void RadioSettings::save() {
     m_settings.setValue("tciServer/audio", m_tciAudioEnabled);
 
     // HaliKey settings
+    m_settings.setValue("halikey/autoConnect", m_halikeyAutoConnect);
     m_settings.setValue("halikey/portName", m_halikeyPortName);
     m_settings.setValue("halikey/deviceType", m_halikeyDeviceType);
     m_settings.setValue("halikey/sidetoneVolume", m_sidetoneVolume);

@@ -267,6 +267,25 @@ private slots:
         QCOMPARE(s->lastSelectedIndex(), -1);
     }
 
+    void halikeyAutoConnectIsOptInAndPersisted() {
+        auto *settings = RadioSettings::instance();
+        QVERIFY(!settings->halikeyAutoConnect());
+        QSignalSpy spy(settings, &RadioSettings::halikeyAutoConnectChanged);
+        settings->setHalikeyAutoConnect(true);
+        QVERIFY(settings->halikeyAutoConnect());
+        QCOMPARE(spy.count(), 1);
+        settings->setHalikeyAutoConnect(true);
+        QCOMPARE(spy.count(), 1);
+
+        QSettings stored(QSettings::defaultFormat(), QSettings::UserScope,
+                         QStringLiteral("QK4"), QStringLiteral("QK4"));
+        QCOMPARE(stored.value("halikey/autoConnect").toBool(), true);
+        settings->setHalikeyAutoConnect(false);
+        stored.sync();
+        QCOMPARE(stored.value("halikey/autoConnect").toBool(), false);
+        QCOMPARE(spy.count(), 2);
+    }
+
     void noRadioIsFlaggedByDefault() {
         RadioSettings *s = RadioSettings::instance();
         s->addRadio(makeRadio(QStringLiteral("A"), QStringLiteral("10.0.0.1")));

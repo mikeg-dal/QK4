@@ -44,6 +44,7 @@ public:
     bool openPort(const QString &portName);
     void closePort();
     bool isConnected() const;
+    bool isOpening() const { return m_worker != nullptr && !m_connected; }
     QString portName() const;
 
     // Updates the worker variant used on the next openPort(). Does not
