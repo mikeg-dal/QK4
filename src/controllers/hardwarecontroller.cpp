@@ -242,17 +242,15 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     auto *autoScan = new HaliKeyPortScan(this);
     auto canAutoConnect = [this]() {
         const auto *settings = RadioSettings::instance();
-        return !m_devicesShutDown && settings->halikeyAutoConnect()
-            && settings->halikeyDeviceType() == HaliKeyPortScan::kMidiType
-            && !settings->halikeyPortName().isEmpty()
-            && !m_halikeyDevice->isConnected() && !m_halikeyDevice->isOpening();
+        return !m_devicesShutDown && settings->halikeyAutoConnect() &&
+               settings->halikeyDeviceType() == HaliKeyPortScan::kMidiType && !settings->halikeyPortName().isEmpty() &&
+               !m_halikeyDevice->isConnected() && !m_halikeyDevice->isOpening();
     };
     auto checkAutoConnect = [autoScan, canAutoConnect]() {
         if (canAutoConnect() && !autoScan->isScanning())
             autoScan->request(HaliKeyPortScan::kMidiType, &HalikeyDevice::availableMidiDevices);
     };
-    connect(autoScan, &HaliKeyPortScan::finished, this,
-            [this, canAutoConnect](int, const QStringList &ports) {
+    connect(autoScan, &HaliKeyPortScan::finished, this, [this, canAutoConnect](int, const QStringList &ports) {
         if (!canAutoConnect())
             return;
         const QString savedPort = RadioSettings::instance()->halikeyPortName();
@@ -263,8 +261,7 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     auto *autoTimer = new QTimer(this);
     autoTimer->setInterval(2000);
     connect(autoTimer, &QTimer::timeout, this, checkAutoConnect);
-    connect(RadioSettings::instance(), &RadioSettings::halikeyAutoConnectChanged,
-            this, checkAutoConnect);
+    connect(RadioSettings::instance(), &RadioSettings::halikeyAutoConnectChanged, this, checkAutoConnect);
     connect(m_midiWatcher, &MidiDeviceWatcher::devicesChanged, this, checkAutoConnect);
     autoTimer->start();
     QTimer::singleShot(0, this, checkAutoConnect);

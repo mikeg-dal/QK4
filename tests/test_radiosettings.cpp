@@ -277,8 +277,8 @@ private slots:
         settings->setHalikeyAutoConnect(true);
         QCOMPARE(spy.count(), 1);
 
-        QSettings stored(QSettings::defaultFormat(), QSettings::UserScope,
-                         QStringLiteral("QK4"), QStringLiteral("QK4"));
+        QSettings stored(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("QK4"),
+                         QStringLiteral("QK4"));
         QCOMPARE(stored.value("halikey/autoConnect").toBool(), true);
         settings->setHalikeyAutoConnect(false);
         stored.sync();
