@@ -5,8 +5,10 @@
 #include "ui/overlays/monoverlay.h"
 #include "ui/overlays/baloverlay.h"
 #include "settings/radiosettings.h"
+#include "utils/versiontext.h"
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QFontMetrics>
 #include <QFontMetricsF>
 #include <QEvent>
 #include <QGridLayout>
@@ -262,19 +264,25 @@ void SideControlPanel::setupUi() {
 
     iconRow->addWidget(m_helpBtn);
     iconRow->addWidget(m_connectBtn);
-    // The version beside the icons, bottom-aligned with them. WHY here and not on a line below: that
-    // line cost the panel, and so the window, its height (cf46ebf, the 1366x768 fit). The ~46 px
-    // left of the row is too narrow for "V0.8.0-beta.1" at the 10 px floor, so a pre-release
-    // suffix goes on a second line.
-    const QString version = QCoreApplication::applicationVersion();
-    m_versionLabel = new QLabel(version.isEmpty() ? QString() : "V" + QString(version).replace('-', '\n'), this);
-    m_versionLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                      .arg(K4Styles::Colors::TextSecondary)
-                                      .arg(K4Styles::Dimensions::FontSizeCaption));
-    m_versionLabel->setAlignment(Qt::AlignLeft | Qt::AlignBottom);
-    iconRow->addWidget(m_versionLabel, 0, Qt::AlignBottom);
     iconRow->addStretch();
     layout->addLayout(iconRow);
+
+    // The version on one line of its own under the icons. WHY not beside them: the 46 px left of
+    // the icons cannot hold even "V0.8.0-beta.1" at the 10 px floor, and stacking it there made a
+    // tester build ("development-262ba2b-0.8.1-rc1") four clipped lines. The row costs the panel one
+    // caption line of height. Elided as a last resort, so an unusually long branch name stays on
+    // one line.
+    const QString version = VersionText::panelLabel(QCoreApplication::applicationVersion());
+    if (!version.isEmpty()) {
+        m_versionLabel = new QLabel(this);
+        m_versionLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                          .arg(K4Styles::Colors::TextSecondary)
+                                          .arg(K4Styles::Dimensions::FontSizeCaption));
+        m_versionLabel->ensurePolished();
+        constexpr int rowWidth = K4Styles::Dimensions::LeftSidePanelWidth - 2 * K4Styles::Dimensions::SidePanelMarginH;
+        m_versionLabel->setText(QFontMetrics(m_versionLabel->font()).elidedText(version, Qt::ElideRight, rowWidth));
+        layout->addWidget(m_versionLabel);
+    }
 
     // Connect icon button signals
     connect(m_helpBtn, &QPushButton::clicked, this, &SideControlPanel::helpClicked);
