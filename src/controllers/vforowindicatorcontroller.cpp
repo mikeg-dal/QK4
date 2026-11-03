@@ -73,7 +73,7 @@ void VfoRowIndicatorController::onAtuModeChanged(int mode) {
 }
 
 void VfoRowIndicatorController::onMessageBankChanged(int bank) {
-    m_labels.msgBankLabel->setText(bank == 1 ? "MSG: I" : "MSG: II");
+    m_labels.msgBankLabel->setText(bank == 0 ? "MSG: I" : "MSG: II"); // MB0 = bank I, MB1 = bank II
 }
 
 void VfoRowIndicatorController::reset() {

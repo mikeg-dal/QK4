@@ -198,12 +198,15 @@ void handleER(RxTxMeterState & /*state*/, RadioState &owner, const QString &cmd)
     }
 }
 
-void handleMN(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
-    if (cmd.length() < 3)
+// WHY MB and 0/1: D12 lists MB only as "[Pending] TBD", so this is the radio's observed behaviour
+// (bench 2026-11-03): RDY reports MB0 or MB1, BANK (SW137) flips it and the K4 reports the new value
+// at AI4. MB is read-only: an MB2 or MB0 SET is ignored, so the bank is changed only with SW137.
+void handleMB(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
+    if (cmd.length() != 3)
         return;
     bool ok;
     int bank = cmd.mid(2).toInt(&ok);
-    if (ok && bank >= 1 && bank <= 4 && bank != state.messageBank) {
+    if (ok && (bank == 0 || bank == 1) && bank != state.messageBank) {
         state.messageBank = bank;
         emit owner.messageBankChanged(state.messageBank);
     }

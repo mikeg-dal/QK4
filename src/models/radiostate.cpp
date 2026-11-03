@@ -646,7 +646,7 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"MI", [this](const QString &c) { handleMI(c); }});
     m_commandHandlers.append({"MS", [this](const QString &c) { handleMS(c); }});
     m_commandHandlers.append({"MX", [this](const QString &c) { handleMX(c); }});
-    m_commandHandlers.append({"MN", [this](const QString &c) { handleMN(c); }});
+    m_commandHandlers.append({"MB", [this](const QString &c) { handleMB(c); }});
     m_commandHandlers.append({"ES", [this](const QString &c) { handleES(c); }});
     m_commandHandlers.append({"SD", [this](const QString &c) { handleSD(c); }});
     m_commandHandlers.append({"SL", [this](const QString &c) { handleSL(c); }});
@@ -1060,8 +1060,8 @@ void RadioState::handleSIRF(const QString &cmd) {
     RxTxMeterHandlers::handleSIRF(m_rxTxMeterState, *this, cmd);
 }
 
-void RadioState::handleMN(const QString &cmd) {
-    RxTxMeterHandlers::handleMN(m_rxTxMeterState, *this, cmd);
+void RadioState::handleMB(const QString &cmd) {
+    RxTxMeterHandlers::handleMB(m_rxTxMeterState, *this, cmd);
 }
 
 void RadioState::handleER(const QString &cmd) {

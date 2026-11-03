@@ -74,7 +74,7 @@ struct RxTxMeterState {
     ReportedFlag testMode;
     ReportedFlag bSetEnabled;
 
-    // Message bank (MN).
+    // Message bank (MB): 0 = bank I (messages 1-4), 1 = bank II (5-8); -1 until reported.
     int messageBank = -1;
 
     // Radio identity (ID, OM, RV.).
@@ -99,7 +99,7 @@ void handleID(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleOM(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleRV(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleER(RxTxMeterState &state, RadioState &owner, const QString &cmd);
-void handleMN(RxTxMeterState &state, RadioState &owner, const QString &cmd);
+void handleMB(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSIFP(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSIRF(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSB(RxTxMeterState &state, RadioState &owner, const QString &cmd);
