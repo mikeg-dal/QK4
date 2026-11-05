@@ -28,13 +28,33 @@ or `development: <commit subject>`.
 | `ci-checks.yml` | clang-format gate, Qt version drift check (`scripts/check-qt-version.sh`), unit tests, ASAN + UBSAN, and RealtimeSanitizer (Clang from apt.llvm.org, `-DQK4_TESTS_RTSAN=ON`: every `QK4_NONBLOCKING` function a test reaches must not allocate, lock, sleep or do I/O), all on the pinned official Qt |
 | `ci-codeql.yml` | CodeQL static analysis → Security tab; also weekly |
 | `ci-packaging.yml` | Builds and packages all four platforms, unsigned, through the same `_build-*.yml` builders a release uses. Skips docs-only changes. Its `Packaging result` job is the one to require |
-| `build-signed.yml` | Signed, notarized artifacts for every platform, one run page. Dispatch it on `development` for a tester build. No Release, no gh-pages |
+| `build-signed.yml` | Signed, notarized artifacts for every platform, one run page, kept 90 days. Dispatch it on `development` for a tester build (see Tester builds). No Release, no gh-pages |
 | `release.yml` | The same builders, then the GitHub Release and gh-pages. Refuses a tag unless an on-demand `build-signed.yml` run succeeded on the same shipped code, so what testers approved is what ships |
 | `scheduled-sanitizers.yml` | Weekly ThreadSanitizer over every ctest suite (no list to keep up to date); failures go to a sticky issue. Builds and caches its own TSan-instrumented qtbase (`scripts/build-qtbase-tsan.sh`) and configures the tests with `-DQK4_TESTS_ONLY=ON`: a distro Qt hides its locking from TSan (#172) |
 | `scheduled-qt611-canary.yml` | Monthly: is there an aqtinstall release newer than 3.3.0, and does it install Qt 6.11 for Windows (red if not)? A control job installs 6.11 with aqtinstall from its fix commit, so a broken probe is red too. Delete once the 6.11 bump lands |
 | `repo-issue-triage.yml` | First-pass triage of new issues |
 | `repo-comment-guard.yml` | Hides disguised-download spam from non-maintainers |
 | `_build-macos.yml` `_build-windows.yml` `_build-pi.yml` `_build-flatpak.yml` | The one definition of each platform's build, packaging and packaged-artifact verification |
+
+## Tester builds
+
+A tester build (an RC) is `build-signed.yml` dispatched on `development` with `version_suffix` set
+to `<next version>-rcN`: `0.8.1-rc1`, `0.8.1-rc2`, … and then the tag `v0.8.1`. N counts up from 1
+for each new version and is never reused.
+
+```bash
+gh workflow run build-signed.yml --ref development -f version_suffix=0.8.1-rc1
+```
+
+- The suffix is required on `development` and must match `<major>.<minor>.<patch>-rcN`; the run
+  fails in its first job otherwise. Other branches may leave it blank.
+- Every platform carries the same name, `QK4-<platform>-development-<sha7>-0.8.1-rc1`, and the app
+  shows `V0.8.1-rc1 <sha7>`. A package without `-rcN` is a `ci-packaging.yml` build (macOS ad-hoc
+  signed, kept 1 day) and never goes to testers.
+- macOS fails the run unless the packaged app and DMG carry a Developer ID signature, the app has
+  the hardened runtime, and the DMG has a stapled notarization ticket.
+- Hand testers the run page link from the job summary, and post it in Discussions → Announcements.
+  Downloading an Actions artifact needs a GitHub login.
 
 ## macOS packaging
 
