@@ -26,7 +26,7 @@ A cross-platform desktop application for remote control of Elecraft K4 radios ov
 - **Radio controls** — side panels, feature popups, band and mode selection, K4 menu access
 - **Text decode** — windows for the K4's own decoder output (CW, AFSK, FSK, PSK, DATA, SSB), one per receiver
 - **Macros** — CAT command macros on the Fn and PF keys, KPOD buttons, keyboard F1–F12, and a startup macro run on connect
-- **HaliKey CW keyer** — paddles or straight key through a HaliKey (serial V1.4 or MIDI), keyed by QK4's built-in iambic keyer with a local sidetone
+- **HaliKey CW keyer** — paddles or straight key through a HaliKey (serial V1.4 or MIDI), keyed by QK4's built-in iambic keyer with a local sidetone. After selecting a port and connecting in Settings → HaliKey, use **CW KEY** beside K4 to connect or disconnect; grey means disconnected and green means connected
 - **KPOD / KPOD+** — Elecraft KPOD tuning knob and the KPOD+ CW keyer over USB
 - **KPA1500** — control and status for the Elecraft KPA1500 amplifier
 - **CAT server** — native K4 CAT on TCP port 9299 (default) for WSJT-X, loggers and contest software

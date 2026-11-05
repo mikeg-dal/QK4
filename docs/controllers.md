@@ -117,7 +117,7 @@ Grouped by concern:
 - **MemoryButtonsController** — M1-M4 / REC / STORE / RCL message-memory button dispatch. Primary left-click sends SW17/51/18/52/19/20/34; right-click on REC/STORE/RCL sends alt SW137/138/139 (BANK / AF REC / AF PLAY) via installed event filter.
 
 ### Display / indicator (RadioState → widget)
-- **StatusBarController** — top status bar (clock, readings, K4+KPA status) and the power button's remote power-off `ConfirmPopup`
+- **StatusBarController** — top status bar (clock, readings, K4+KPA status, HaliKey CW KEY connection toggle) and the power button's remote power-off `ConfirmPopup`
 - **ModeLabelController** — VFO A/B mode label text (ESSB "+" suffix included)
 - **VfoFrequencyController** — VFO A/B frequency display (RIT/XIT offset applied)
 - **AntennaDisplayController** — TX / RX Main / RX Sub antenna label text
