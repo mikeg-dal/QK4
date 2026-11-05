@@ -53,7 +53,11 @@ gh workflow run build-signed.yml --ref development -f version_suffix=0.8.1-rc1
   signed, kept 1 day) and never goes to testers.
 - macOS fails the run unless the packaged app and DMG carry a Developer ID signature, the app has
   the hardened runtime, and the DMG has a stapled notarization ticket.
-- Hand testers the run page link from the job summary, and post it in Discussions → Announcements.
+- Hand testers one direct link per platform, `…/actions/runs/<run>/artifacts/<artifact id>`, never
+  the run page: after `gh run rerun --failed` the run page lists only the re-run job's artifact,
+  so a tester sees macOS and nothing else. List them with
+  `gh api repos/mikeg-dal/QK4/actions/runs/<run>/artifacts --jq '.artifacts[] | "\(.name) \(.id)"'`.
+- Post the four links in Discussions → Announcements (discussion #196 is the layout to follow).
   Downloading an Actions artifact needs a GitHub login.
 
 ## macOS packaging
