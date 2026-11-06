@@ -16,6 +16,7 @@
 #include "ui/widgets/vforowwidget.h"
 #include "ui/widgets/sidecontrolpanel.h"
 #include "ui/widgets/sidepanelbutton.h"
+#include "utils/versiontext.h"
 
 #include <QApplication>
 #include <QGridLayout>
@@ -25,6 +26,7 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QVBoxLayout>
+#include <QtMath>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <climits>
@@ -464,13 +466,43 @@ private slots:
         QCOMPARE(functionButtons(panel).first()->mapTo(panel, QPoint()).y(), K4Styles::Dimensions::SidePanelMarginV);
     }
 
-    void versionSitsBesideTheIconsWithoutAddingHeight() {
-        // The version shares the icon row, so it costs the panel no height, and a long pre-release
-        // version still fits the panel's width and the icons' height.
+    void versionLabelText_data() {
+        QTest::addColumn<QString>("version");
+        QTest::addColumn<QString>("label");
+        QTest::newRow("none") << QString() << QString();
+        QTest::newRow("release") << "0.8.0" << "V0.8.0";
+        QTest::newRow("pre-release") << "0.10.0-beta.12" << "V0.10.0-beta.12";
+        QTest::newRow("signed tester build") << "development-262ba2b-0.8.1-rc1" << "V0.8.1-rc1 262ba2b";
+        QTest::newRow("signed, branch with dashes")
+            << "fix-qt-review-findings-a7fefb1-0.8.0-rc3" << "V0.8.0-rc3 a7fefb1";
+        QTest::newRow("unsigned CI build") << "development-262ba2b" << "development 262ba2b";
+        QTest::newRow("pull request build") << "pr190-abc1234" << "pr190 abc1234";
+        QTest::newRow("local dev string") << "dev" << "Vdev";
+    }
+
+    void versionLabelText() {
+        QFETCH(QString, version);
+        QFETCH(QString, label);
+        QCOMPARE(VersionText::panelLabel(version), label);
+    }
+
+    void versionSitsOnOneLineUnderTheIcons_data() {
+        QTest::addColumn<QString>("version");
+        QTest::newRow("pre-release") << "0.10.0-beta.12";
+        QTest::newRow("signed tester build") << "development-262ba2b-0.8.1-rc1";
+        QTest::newRow("unsigned CI build") << "development-262ba2b";
+        QTest::newRow("long branch, elided") << "feature-a-very-long-branch-name-for-testing-262ba2b";
+    }
+
+    void versionSitsOnOneLineUnderTheIcons() {
+        // One readable line under the ? and globe keys, left-aligned with them and on the panel's
+        // bottom edge, costing the panel exactly that line. The stacked form beside the icons made a
+        // tester build four clipped lines.
+        QFETCH(QString, version);
         const QString saved = QCoreApplication::applicationVersion();
         QCoreApplication::setApplicationVersion(QString());
         const int heightWithout = SideControlPanel().minimumSizeHint().height();
-        QCoreApplication::setApplicationVersion(QStringLiteral("0.10.0-beta.12"));
+        QCoreApplication::setApplicationVersion(version);
         QWidget host;
         auto *panel = new SideControlPanel(&host);
         panel->setGeometry(0, 0, panel->width(), panel->minimumSizeHint().height());
@@ -479,27 +511,32 @@ private slots:
         QCoreApplication::processEvents();
         QCoreApplication::setApplicationVersion(saved);
 
-        QCOMPARE(panel->minimumSizeHint().height(), heightWithout);
-        QLabel *version = nullptr;
-        for (QLabel *label : panel->findChildren<QLabel *>())
-            if (label->text().startsWith(QStringLiteral("V0.10.")))
-                version = label;
-        QVERIFY(version);
+        const QString shown = VersionText::panelLabel(version);
+        QLabel *label = nullptr;
+        for (QLabel *candidate : panel->findChildren<QLabel *>())
+            if (candidate->text() == shown || candidate->text().endsWith(QChar(0x2026)))
+                label = candidate;
+        QVERIFY2(label, qPrintable(shown));
+        QVERIFY(!label->text().contains(QLatin1Char('\n')));
         QPushButton *icon = nullptr;
         for (QPushButton *button : panel->findChildren<QPushButton *>(Qt::FindDirectChildrenOnly))
             if (button->size() ==
                 QSize(K4Styles::Dimensions::SideIconButtonSize, K4Styles::Dimensions::SideIconButtonSize))
                 icon = button;
         QVERIFY(icon);
-        const QFontMetrics fm(version->font());
-        const QRect text = fm.boundingRect(QRect(0, 0, 1000, 1000), Qt::AlignLeft, version->text());
-        QVERIFY2(version->geometry().left() + text.width() <= panel->width() - K4Styles::Dimensions::SidePanelMarginH,
-                 qPrintable(QString("version needs %1 px from x=%2 in a %3 px panel")
-                                .arg(text.width())
-                                .arg(version->geometry().left())
+
+        const int textWidth = qCeil(QFontMetricsF(label->font()).horizontalAdvance(label->text()));
+        QVERIFY2(label->geometry().left() + textWidth <= panel->width() - K4Styles::Dimensions::SidePanelMarginH,
+                 qPrintable(QString("\"%1\" needs %2 px from x=%3 in a %4 px panel")
+                                .arg(label->text())
+                                .arg(textWidth)
+                                .arg(label->geometry().left())
                                 .arg(panel->width())));
-        QVERIFY(text.height() <= icon->height());
-        QCOMPARE(version->geometry().bottom(), icon->geometry().bottom());
+        QCOMPARE(label->geometry().left(), K4Styles::Dimensions::SidePanelMarginH);
+        QVERIFY(label->geometry().top() > icon->geometry().bottom());
+        QCOMPARE(label->geometry().bottom() + 1, panel->height() - K4Styles::Dimensions::SidePanelMarginV);
+        QCOMPARE(panel->minimumSizeHint().height(),
+                 heightWithout + label->sizeHint().height() + K4Styles::Dimensions::SidePanelItemSpacing);
     }
 };
 
