@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(QK4 VERSION 0.8.0 LANGUAGES CXX)
+project(QK4 VERSION 0.8.1 LANGUAGES CXX)
 
 # Full version string can include prerelease info (e.g., "0.1.0-alpha.123")
 # CI sets this via -DQK4_VERSION_FULL="x.y.z-prerelease"
