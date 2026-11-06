@@ -1,10 +1,18 @@
 #ifndef MODELS_RADIOSTATE_RXTXMETERSTATE_H
 #define MODELS_RADIOSTATE_RXTXMETERSTATE_H
 
+#include "reportedflag.h"
+
 #include <QMap>
 #include <QString>
 
 class RadioState;
+
+namespace RxTxMeterLimits {
+// SMH / SMH$ before the radio has reported a level (and after reset()). The wire field is a sign and
+// three digits, so it can never carry this value.
+constexpr int SMeterDbmUnknown = -1000;
+} // namespace RxTxMeterLimits
 
 // Operational / meter / radio-identity state. This subsystem owns all
 // non-VFO, non-audio, non-spectrum "what the radio is reporting right
@@ -13,12 +21,18 @@ class RadioState;
 // (ID/OM/RV.), message bank, and a handful of miscellaneous mode
 // toggles that ride along on the same signal path (SB, DV, TS, BS).
 //
-// Covers: TX, RX, SM, SM$, PO, TM, ID, OM, RV., ER, MN, SIFP, SB, DV,
+// Covers: TX, RX, SM, SM$, SMH, SMH$, PO, TM, ID, OM, RV., ER, MN, SIFP, SB, DV,
 // TS, BS.
 struct RxTxMeterState {
     // S-meters (SM / SM$) in S-units (0..9.9 before decimal, 9.x for dB over).
     double sMeter = 0.0;
     double sMeterB = 0.0;
+
+    // SMH / SMH$ — the radio's own signal level in dBm (Programmer's Reference D12: "SMH$+nnn; where
+    // +nnn is the signal level in dBm"). SMeterDbmUnknown until reported. SM stays the bar graph;
+    // anything that needs a level in dBm uses this.
+    int sMeterDbm = RxTxMeterLimits::SMeterDbmUnknown;
+    int sMeterDbmB = RxTxMeterLimits::SMeterDbmUnknown;
 
     // TX meter cluster (TM).
     double swrMeter = 1.0;
@@ -51,20 +65,16 @@ struct RxTxMeterState {
     int lpaTemperatureC = -1;
 
     // TX/RX transition.
-    bool isTransmitting = false;
+    ReportedFlag isTransmitting;
 
-    // Control toggles carried alongside the TX/RX feed.
-    // WHY tri-state (-1 = unknown until first SB/DV): a plain bool defaulting to
-    // false is swallowed by the change-guard when the radio's first report is the
-    // default-off state (SB0/DV0), so no Changed signal ever fires and consumers
-    // (VFO B dimming, sub-RX mute) keep their stale initial state. -1 guarantees
-    // the first update always emits. (0 = off, 1 = on.)
-    int subReceiverEnabled = -1;
-    int diversityEnabled = -1;
-    bool testMode = false;
-    bool bSetEnabled = false;
+    // Control toggles carried alongside the TX/RX feed (SB, DV, TS, BS). Unknown until the radio
+    // reports them — see reportedflag.h.
+    ReportedFlag subReceiverEnabled;
+    ReportedFlag diversityEnabled;
+    ReportedFlag testMode;
+    ReportedFlag bSetEnabled;
 
-    // Message bank (MN).
+    // Message bank (MB): 0 = bank I (messages 1-4), 1 = bank II (5-8); -1 until reported.
     int messageBank = -1;
 
     // Radio identity (ID, OM, RV.).
@@ -80,7 +90,8 @@ namespace RxTxMeterHandlers {
 
 void handleSM(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSMSub(RxTxMeterState &state, RadioState &owner, const QString &cmd);
-void handlePO(RxTxMeterState &state, RadioState &owner, const QString &cmd);
+void handleSMH(RxTxMeterState &state, RadioState &owner, const QString &cmd);
+void handleSMHSub(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleTM(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleTX(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleRX(RxTxMeterState &state, RadioState &owner, const QString &cmd);
@@ -88,7 +99,7 @@ void handleID(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleOM(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleRV(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleER(RxTxMeterState &state, RadioState &owner, const QString &cmd);
-void handleMN(RxTxMeterState &state, RadioState &owner, const QString &cmd);
+void handleMB(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSIFP(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSIRF(RxTxMeterState &state, RadioState &owner, const QString &cmd);
 void handleSB(RxTxMeterState &state, RadioState &owner, const QString &cmd);

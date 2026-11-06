@@ -3,11 +3,6 @@
 
 #include <QMainWindow>
 #include <QLabel>
-#include <QPushButton>
-#include <QMenuBar>
-#include <QMenu>
-#include <QTimer>
-#include <QThread>
 #include "controllers/connectioncontroller.h"
 #include "settings/radiosettings.h"
 #include "models/radiostate.h"
@@ -23,19 +18,14 @@ class BottomMenuBar;
 class MenuController;
 class PopupManager;
 class BandNavigationController;
-class ButtonRowDispatcher;
 class MacroController;
-class ProcessingDisplayController;
 class VfoRowIndicatorController;
 class RitXitController;
 class ModeLabelController;
 class VfoFrequencyController;
 class SubDivIndicatorController;
 class TxStateController;
-class SideControlDisplayController;
-class SideControlScrollController;
 class RightSideController;
-class MemoryButtonsController;
 class AntennaConfigController;
 class AntennaDisplayController;
 class TextDecodeController;
@@ -92,6 +82,11 @@ private slots:
     void closeAllPopups();
 
 private:
+    // TCI, then devices (HaliKey, keyer, sidetone, KPOD), then audio: producers before consumers.
+    // Run once, from closeEvent or else from the destructor before any child is destroyed.
+    void shutdownSubsystems();
+    bool m_subsystemsShutDown = false;
+
     QString m_startupRadioOverride;
 
     // WHY: the width the window has always opened at. Height is whatever the layout needs.
@@ -101,6 +96,8 @@ private:
     void setupUi();
     void sizeToScreen();
     void setupVfoSection(QWidget *parent);
+    void wireVfoWidget(VFOWidget *vfo, bool vfoB);
+    void sendBalance(int mode, int offset);
 
     void setupControllers();
     void setupNotificationWidget();
@@ -111,11 +108,8 @@ private:
     void setupCatServer();
 
     void updateConnectionState(TcpClient::ConnectionState state);
-    // Disconnect-path helper — owners of their own state each implement a
-    // reset method (VFOWidget::resetToDefaults, SideControlPanel::resetToDefaults,
-    // StatusBarController::clearReadings, SpectrumController::clearDisplays,
-    // KPA1500UiController::disconnectFromHost, RadioState::reset). This helper
-    // covers only the labels MainWindow still owns directly.
+    // Returns every owner of radio-derived state to its disconnected default and closes every
+    // popup except the MENU overlay.
     void resetUiForDisconnect();
 
     // Closes menu overlay, antenna-config popups, and mode popup — i.e.,
@@ -137,8 +131,7 @@ private:
     // Top status bar — owned by StatusBarController (see src/controllers/).
     StatusBarController *m_statusBarController = nullptr;
 
-    // VFO widgets (modular, reusable components). Each owns its own multifunction S/Po/ALC/COMP/
-    // SWR/Id meter (VFOWidget::m_txMeter) so there is no standalone TX meter member here.
+    // VFO widgets. Each owns its own S/Po/ALC/COMP/SWR/Id meter.
     VFOWidget *m_vfoA = nullptr;
     VFOWidget *m_vfoB = nullptr;
 
@@ -153,16 +146,11 @@ private:
     // Center section - first row with absolute positioning
     VfoRowWidget *m_vfoRow = nullptr;
 
-    // Center section labels (pointers to VfoRowWidget children)
+    // Center section labels MainWindow itself handles (pointers to VfoRowWidget children);
+    // the rest are read from m_vfoRow where their controllers are built.
     QWidget *m_vfoASquare = nullptr; // VfoSquareWidget - used for event filter
-    QLabel *m_txTriangle = nullptr;  // Left triangle (pointing at A) - shown when split OFF
-    QLabel *m_txTriangleB = nullptr; // Right triangle (pointing at B) - shown when split ON
     QLabel *m_txIndicator = nullptr;
     QWidget *m_vfoBSquare = nullptr; // VfoSquareWidget - used for event filter
-    QLabel *m_splitLabel = nullptr;
-    QLabel *m_subLabel = nullptr; // SUB indicator (green when sub RX enabled)
-    QLabel *m_divLabel = nullptr; // DIV indicator (green when diversity enabled)
-    QLabel *m_msgBankLabel = nullptr;
     QWidget *m_ritXitBox = nullptr;
     QLabel *m_ritLabel = nullptr;
     QLabel *m_xitLabel = nullptr;
@@ -171,8 +159,6 @@ private:
     FilterIndicatorWidget *m_filterAWidget = nullptr; // VFO A filter indicator
     FilterIndicatorWidget *m_filterBWidget = nullptr; // VFO B filter indicator
 
-    // Memory buttons (M1-M4, REC, STORE, RCL) live in
-    // MemoryButtonsController — no pointers retained here.
     QLabel *m_voxLabel = nullptr;
     QLabel *m_qskLabel = nullptr;
     QLabel *m_txAntennaLabel = nullptr;
@@ -190,26 +176,24 @@ private:
     MenuController *m_menuController = nullptr;
     PopupManager *m_popupManager = nullptr;
     BandNavigationController *m_bandNavController = nullptr;
-    ButtonRowDispatcher *m_buttonRowDispatcher = nullptr;
     MacroController *m_macroController = nullptr;
-    ProcessingDisplayController *m_processingDisplayController = nullptr;
+    // Controllers that need no MainWindow call after construction (ButtonRowDispatcher,
+    // ProcessingDisplay, SideControlDisplay/Scroll, MemoryButtons) are parented to the
+    // window and not kept as members.
     VfoRowIndicatorController *m_vfoRowIndicatorController = nullptr;
     RitXitController *m_ritXitController = nullptr;
     ModeLabelController *m_modeLabelController = nullptr;
     VfoFrequencyController *m_vfoFrequencyController = nullptr;
     SubDivIndicatorController *m_subDivIndicatorController = nullptr;
     TxStateController *m_txStateController = nullptr;
-    SideControlDisplayController *m_sideControlDisplayController = nullptr;
-    SideControlScrollController *m_sideControlScrollController = nullptr;
     RightSideController *m_rightSideController = nullptr;
-    MemoryButtonsController *m_memoryButtonsController = nullptr;
     TextDecodeController *m_textDecodeController = nullptr;
     AntennaConfigController *m_antennaCfgController = nullptr;
     AntennaDisplayController *m_antennaDisplayController = nullptr;
     FeatureMenuController *m_featureMenuController = nullptr;
     ModePopupController *m_modePopupController = nullptr;
 
-    // Hardware controller (owns KPOD, HaliKey, IambicKeyer, SidetoneGenerator and their threads)
+    // Hardware controller (owns KPOD, HaliKey, PaddleKeyer, SidetoneGenerator and their threads)
     HardwareController *m_hardwareController = nullptr;
     CwController *m_cwController = nullptr;
 

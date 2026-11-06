@@ -2,8 +2,7 @@
 
 #include <QtTest>
 
-// Port-name matching for the MIDI HaliKey. Pure logic, so no RtMidi or MIDI subsystem is needed —
-// same shape as test_halikeydevice.cpp, which covers the edge-dedupe helper.
+// Port-name matching for the MIDI HaliKey. Pure logic, so no RtMidi or MIDI subsystem is needed.
 //
 // This decides both which port is opened and whether the opened port has disappeared, so a wrong
 // answer either fails to connect or reports a device that is still plugged in as removed.

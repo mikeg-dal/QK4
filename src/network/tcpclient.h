@@ -8,7 +8,12 @@
 #include <QTimer>
 #include <atomic>
 #include "connect_failure.h"
+#include "pingtracker.h"
 #include "protocol.h"
+#include "settings/radiosettings.h"
+#include "utils/latencyhistogram.h"
+
+class KzEgress;
 
 class TcpClient : public QObject {
     Q_OBJECT
@@ -28,41 +33,38 @@ public:
      * @param password Account password. Used as the PSK when @p useTls is true.
      * @param useTls  Select the encrypted transport (TLS + PSK on port 9204).
      * @param identity PSK identity. Only used in TLS mode; empty is accepted.
-     * @param encodeMode Opus encode profile sent to the K4 in the startup macro.
-     *                   Valid range: 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode).
-     * EM3 is the default. Values outside 0-3 are undefined.
-     * @param streamingLatency SL tier (audio packet bundling). Valid range 0–7; there are four
-     *                   distinct tiers — 20/40/60/120 ms per packet, verified in
-     *                   `memory/k4-streaming-latency.md`. Default 3 ≈ 40 ms.
+     * @param encodeMode Audio encode mode, sent as `EMn;` once the radio has accepted the session.
+     *                   0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float
+     *                   decode); 0-3, EM3 the radio's default (Programmer's Reference D12, EM).
+     * @param streamingLatency Streaming audio latency, sent as `SLn;` after `EMn;`. 0-7, 3 the
+     *                   radio's default (Programmer's Reference D12, SL). The tiers give 20/40/60/120
+     *                   ms packets (SL0, SL1-2, SL3-5, SL6-7), so the default is 60 ms; the map is
+     *                   RadioUtils::slTierToFrameSamples().
      *
-     * Must be called on the IO thread (or via `QMetaObject::invokeMethod`); annotated Q_INVOKABLE
-     * so callers on the main thread can queue it.
+     * Must be called on the IO thread; callers elsewhere queue it with the functor overload of
+     * `QMetaObject::invokeMethod` (checked at compile time).
      */
-    Q_INVOKABLE void connectToHost(const QString &host, quint16 port, const QString &password, bool useTls = false,
-                                   const QString &identity = QString(), int encodeMode = 3, int streamingLatency = 3);
-    Q_INVOKABLE void disconnectFromHost();
+    void connectToHost(const QString &host, quint16 port, const QString &password, bool useTls = false,
+                       const QString &identity = QString(), int encodeMode = RadioEntry::EncodeModeDefault,
+                       int streamingLatency = RadioEntry::StreamingLatencyDefault);
+    void disconnectFromHost();
     bool isConnected() const;
     ConnectionState connectionState() const;
-    bool isUsingTls() const { return m_useTls; }
 
-    Q_INVOKABLE void sendCAT(const QString &command);
-    Q_INVOKABLE void sendRaw(const QByteArray &data);
+    void sendCAT(const QString &command);
+    void sendRaw(const QByteArray &data);
 
-    // WHY: lets the KPOD+ EP02 reader (HighPriority worker thread) deliver
-    // KZ batches straight to the I/O thread via a queued connection,
-    // bypassing the main thread. Trims trailing NUL padding from the
-    // device's 32-byte fixed-size frames and dispatches through sendCAT()
-    // so existing K4-packet framing and the cross-thread marshal apply.
-    Q_INVOKABLE void sendCATBytes(const QByteArray &raw);
+    // Where the CW keying threads post KZ and ML frames (the keyer, and the KPOD+'s own KZ strings).
+    // Posting is lock-free and allocation-free from any thread; this object writes the frames from
+    // the I/O thread, in order. Lives as long as this TcpClient.
+    KzEgress *kzEgress() const { return m_kzEgress; }
 
     // Pre-RDY command string sent before the state dump on connect.
     // Must be called before connectToHost() — both are queued to the IO thread,
     // so ordering is guaranteed as long as the caller doesn't interleave.
-    Q_INVOKABLE void setStartupMacro(const QString &macro) { m_startupMacro = macro; }
+    void setStartupMacro(const QString &macro) { m_startupMacro = macro; }
 
     Protocol *protocol() { return m_protocol; }
-
-    int latencyMs() const { return m_latencyMs; }
 
 signals:
     void stateChanged(ConnectionState state);
@@ -93,10 +95,14 @@ private slots:
 
 private:
     void setState(ConnectionState state);
+    void writeKzFrames();
+    void logKzLatency();
     void sendAuthentication();
     void startPingTimer();
     void stopPingTimer();
     void attemptConnection();
+    enum class Close { Graceful, Abort };
+    void endSession(Close how);
 
     QSslSocket *m_socket;
     Protocol *m_protocol;
@@ -105,7 +111,10 @@ private:
     QTimer *m_pingTimer;
     QTimer *m_retryTimer;
     int m_retryCount = 0;
-    // Bumped by every connectToHost() and disconnectFromHost(), so an asynchronous step started for
+    // sendRaw() calls refused because the session was not Connected, since the last state change.
+    // I/O thread only.
+    quint64 m_rawDropped = 0;
+    // Bumped by every connectToHost() and endSession(), so an asynchronous step started for
     // one attempt (the mDNS lookup) can tell that it has since been replaced. I/O thread only.
     quint64 m_attemptId = 0;
 
@@ -113,9 +122,9 @@ private:
     quint16 m_port;
     QString m_password; // Also used as PSK when TLS enabled
     bool m_useTls;
-    QString m_identity;     // TLS-PSK identity (optional)
-    int m_encodeMode;       // Audio encode mode (0-3)
-    int m_streamingLatency; // Remote streaming audio latency (0-7)
+    QString m_identity;                                           // TLS-PSK identity (optional)
+    int m_encodeMode = RadioEntry::EncodeModeDefault;             // Audio encode mode (0-3)
+    int m_streamingLatency = RadioEntry::StreamingLatencyDefault; // Remote streaming audio latency (0-7)
     // WHY atomic: m_state is written on the IO thread (this object's affinity)
     // by setState() and read on the main thread via connectionState() →
     // ConnectionController::connectionState() → MainWindow seeding paths. A
@@ -129,8 +138,17 @@ private:
     std::atomic<bool> m_connected{false}; // Thread-safe read for isConnected()
     bool m_authResponseReceived;
 
-    QElapsedTimer m_pingElapsed;
-    int m_latencyMs = -1;
+    KzEgress *m_kzEgress;
+    // Enqueue on the keying thread to the socket write here, per frame, since the session began.
+    // Written on the I/O thread only. Logged once a minute while keying and when the session ends.
+    LatencyHistogram m_kzLatency;
+    std::uint64_t m_kzLatencyLogged = 0; // samples covered by the last summary
+    int m_pingTicks = 0;
+
+    // One monotonic clock per session, started when it reaches Connected; every PING's send time
+    // and every PONG's arrival are read from it. See PingTracker for why not a timer per ping.
+    QElapsedTimer m_linkClock;
+    PingTracker m_pings;
     QString m_startupMacro; // Sent before RDY so state dump reflects macro changes
 };
 

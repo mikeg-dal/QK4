@@ -93,6 +93,7 @@ public:
         return out;
     }
 
+    QTcpSocket &socket() { return m_socket; }
     void close() { m_socket.abort(); }
 
 private:

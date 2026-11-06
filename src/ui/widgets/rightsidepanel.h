@@ -2,7 +2,6 @@
 #define RIGHTSIDEPANEL_H
 
 #include <QWidget>
-#include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -28,10 +27,7 @@ class Kpa1500MiniPanel;
  * - Row 0: FREQ ENT/SCAN, RATE/KHZ
  * - Row 1: LOCK A/LOCK B, SUB/DIVERSITY
  *
- * Dimensions:
- * - Fixed width: 105px (matches left panel)
- * - Margins: 6, 8, 6, 8
- * - Spacing: 4
+ * Width: RightSidePanelWidth (= left panel); RightSidePanelKpaWidth while setKpa1500SlotReserved(true).
  */
 class RightSidePanel : public QWidget {
     Q_OBJECT
@@ -40,9 +36,6 @@ public:
     explicit RightSidePanel(QWidget *parent = nullptr);
     ~RightSidePanel() = default;
 
-    // Access main layout for adding content
-    QVBoxLayout *contentLayout() { return m_layout; }
-
     // Drop a KPA1500 mini panel into the reserved slot of this panel's
     // vertical layout. RightSidePanel takes Qt parent ownership but
     // KPA1500UiController constructs the widget and drives its state —
@@ -50,6 +43,11 @@ public:
     // here, not in the controller. Single-shot — calling twice is a
     // programming error.
     void embedKpa1500Panel(Kpa1500MiniPanel *panel);
+
+    // With the KPA1500 enabled the panel is wide enough for its meters and keeps the card's height
+    // while the card is hidden, so the window is sized for it from launch; disabled, the panel is as
+    // narrow as the left one and spends no height on a card that never appears.
+    void setKpa1500SlotReserved(bool reserved);
 
 signals:
     // Button click signals (main function - left click)
@@ -72,10 +70,9 @@ signals:
     void manualClicked(); // NTCH right-click
     void apfClicked();    // FIL right-click
     void splitClicked();  // A/B right-click
-    // REV right-click - TBD
-    void btoaClicked(); // A→B right-click
-    void autoClicked(); // SPOT right-click
-    void altClicked();  // MODE right-click
+    void btoaClicked();   // A→B right-click
+    void autoClicked();   // SPOT right-click
+    void altClicked();    // MODE right-click
 
     // PF row signals (left click)
     void bsetClicked();
@@ -110,8 +107,9 @@ private:
 
     QVBoxLayout *m_layout;
     int m_kpa1500SlotIdx = -1; // layout index reserved for KPA1500 mini panel
+    Kpa1500MiniPanel *m_kpa1500Panel = nullptr;
 
-    // Button pointers (existing 5x2 grid)
+    // 5×2 grid
     QPushButton *m_preBtn;
     QPushButton *m_nbBtn;
     QPushButton *m_nrBtn;
@@ -123,13 +121,13 @@ private:
     QPushButton *m_spotBtn;
     QPushButton *m_modeBtn;
 
-    // New button pointers (PF row)
+    // PF row
     QPushButton *m_bsetBtn;
     QPushButton *m_clrBtn;
     QPushButton *m_ritBtn;
     QPushButton *m_xitBtn;
 
-    // New button pointers (bottom row)
+    // Bottom row
     QPushButton *m_freqEntBtn;
     QPushButton *m_rateBtn;
     QPushButton *m_lockABtn;

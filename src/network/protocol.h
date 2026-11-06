@@ -2,6 +2,8 @@
 #define PROTOCOL_H
 
 #include <QObject>
+#include <cstddef>
+#include <string_view>
 #include <QByteArray>
 
 // K4 Protocol Constants.
@@ -18,6 +20,12 @@ namespace K4Protocol {
 // Packet markers (inline to avoid ODR violations - single definition across all TUs)
 inline const QByteArray START_MARKER = QByteArray::fromHex("FEFDFCFB");
 inline const QByteArray END_MARKER = QByteArray::fromHex("FBFCFDFE");
+
+// Frame layout around the payload: START_MARKER, the big-endian payload length, END_MARKER.
+constexpr int MARKER_SIZE = 4;
+constexpr int LENGTH_SIZE = 4;
+constexpr int FRAME_HEADER_SIZE = MARKER_SIZE + LENGTH_SIZE;    // before the payload
+constexpr int FRAME_OVERHEAD = FRAME_HEADER_SIZE + MARKER_SIZE; // 12: header plus END_MARKER
 
 // Payload types (first byte of payload)
 enum PayloadType : quint8 {
@@ -37,7 +45,21 @@ constexpr int CONNECTION_TIMEOUT_MS = 10000; // 10 seconds
 constexpr int AUTH_TIMEOUT_MS = 5000;        // 5 seconds for auth response
 
 // Buffer limits
-constexpr int MAX_BUFFER_SIZE = 1024 * 1024; // 1MB max buffer before reset
+constexpr int MAX_BUFFER_SIZE = 1024 * 1024; // CatServer: 1 MB of client input without a terminator
+
+// The largest payload a frame header may announce. A larger length is not a packet but a false
+// start marker - four payload bytes that happen to read FE FD FC FB - and the parser steps past it.
+// WHY 256 KiB: the largest binary packets are far smaller (RAW EM0 audio at the 120 ms SL tier is
+// 7 + 1440 x 2 x 4 = 11,527 bytes; a PAN is 27 + 1024 bins), but the size of the largest CAT packet
+// (the RDY state dump with every MEDF menu definition) has not been measured on the framed ports.
+// A whole 222 s CAT session captured on port 9200, menus included, was 108 KB; 256 KiB is over twice
+// that. The bound also caps how long a bogus length can stall parsing.
+constexpr quint32 MAX_PAYLOAD_SIZE = 256 * 1024;
+
+// CAT packet (Type 0x00): [0x00][0x00][0x00][ASCII command or response]
+namespace CatPacket {
+constexpr int HEADER_SIZE = 3; // type byte and two zero bytes
+} // namespace CatPacket
 
 // PAN packet byte offsets (Type 0x02)
 namespace PanPacket {
@@ -55,15 +77,24 @@ constexpr int BINS_OFFSET = 27;        // Compressed bin data starts here
 constexpr int HEADER_SIZE = 27;        // Minimum packet size before bins
 } // namespace PanPacket
 
-// MiniPAN packet byte offsets (Type 0x03)
+// MiniPAN packet byte offsets (Type 0x03).
+//
+// WHY the PAN layout: a MiniPAN frame carries the same 27-byte header as a PAN frame (measured
+// 2026-10-30 on K4D SN1641, docs/k4-protocol-quirks.md section 15): u16 LE data length at 5 (1024),
+// int64 LE centre at 11, 1024 bins from 27. Two fields mean something different:
+//   - the int32 at 19 is the mini-pan's span in kHz (3 in CW, 12 in DATA-A), not a tier rate;
+//   - the int32 at 23 is not a noise floor (positive, 192-319, meaning unknown) and is ignored.
+// The centre is the frequency in the middle of the span: dial + CW pitch in CW, the dial in DATA-A.
+// The old 5-byte header drew bytes 5..26 as bins; a 75-bin trim at each edge hid them.
 namespace MiniPanPacket {
-constexpr int TYPE_OFFSET = 0;
-constexpr int VERSION_OFFSET = 1;
-constexpr int SEQUENCE_OFFSET = 2;
-constexpr int RESERVED_OFFSET = 3;
-constexpr int RECEIVER_OFFSET = 4; // 0=Main, 1=Sub
-constexpr int BINS_OFFSET = 5;     // Mini PAN data starts here
-constexpr int HEADER_SIZE = 5;
+constexpr int RECEIVER_OFFSET = PanPacket::RECEIVER_OFFSET;       // 0=Main, 1=Sub
+constexpr int DATA_LENGTH_OFFSET = PanPacket::DATA_LENGTH_OFFSET; // uint16 LE, bin count
+constexpr int CENTER_FREQ_OFFSET = PanPacket::CENTER_FREQ_OFFSET; // int64 LE, Hz
+constexpr int SPAN_KHZ_OFFSET = PanPacket::SAMPLE_RATE_OFFSET;    // int32 LE, kHz
+constexpr int BINS_OFFSET = PanPacket::BINS_OFFSET;
+constexpr int HEADER_SIZE = PanPacket::HEADER_SIZE;
+// Sanity bound on the span field, far above any measured value: keeps kHz x 1000 inside an int.
+constexpr qint32 MAX_SPAN_KHZ = 1000;
 } // namespace MiniPanPacket
 
 // Audio packet byte offsets (Type 0x01)
@@ -83,7 +114,6 @@ namespace Commands {
 constexpr const char *READY = "RDY;";
 constexpr const char *ENABLE_K4_MODE = "K41;";
 constexpr const char *ENABLE_LONG_ERRORS = "ER1;";
-constexpr const char *PING = "PING;";
 constexpr const char *DISCONNECT = "RRN;";
 } // namespace Commands
 
@@ -100,10 +130,18 @@ public:
 
     // Discard any partly received packet. Called at every connection boundary: bytes left over from
     // one session must never be joined to the next session's.
-    void reset() { m_buffer.clear(); }
+    void reset() {
+        m_buffer.clear();
+        m_readOffset = 0;
+    }
 
     // Build a CAT command packet
     static QByteArray buildCATPacket(const QString &command);
+
+    // The same packet as buildCATPacket, framed into a caller's buffer: no allocation, for the KZ
+    // egress on the I/O thread. Returns the packet length, or 0 if it does not fit in `capacity`.
+    static std::size_t writeCATPacket(std::string_view command, char *out, std::size_t capacity);
+    static constexpr std::size_t kCatPacketOverhead = K4Protocol::FRAME_OVERHEAD + K4Protocol::CatPacket::HEADER_SIZE;
 
     // Build authentication data (SHA-384 hash as hex string)
     static QByteArray buildAuthData(const QString &password);
@@ -116,11 +154,12 @@ public:
 
 signals:
     void audioDataReady(const QByteArray &opusData);
-    void audioSequenceReceived(quint8 seq);
     // receiver: 0 = Main (VFO A), 1 = Sub (VFO B)
     void spectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
                            qint32 sampleRate, float noiseFloor);
-    void miniSpectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount);
+    // centerFreq is the frequency at the middle of the bins (Hz), spanHz the width they cover.
+    void miniSpectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
+                               int spanHz);
     void catResponseReceived(const QString &response);
     void packetReceived(quint8 type, const QByteArray &payload);
 
@@ -131,6 +170,8 @@ private:
     static QByteArray buildPacket(const QByteArray &payload);
 
     QByteArray m_buffer;
+    // Start of the unconsumed bytes in m_buffer; consumed bytes are removed once per parse().
+    qsizetype m_readOffset = 0;
 };
 
 #endif // PROTOCOL_H

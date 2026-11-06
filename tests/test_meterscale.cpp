@@ -31,6 +31,7 @@ private slots:
     void alcMarksAreNotEvenlySpaced();
     void swrSpansOneToThree();
     void evenlySpacedMetersAreUnchanged();
+    void endLabelsStayWithinTheBar();
 
 private:
     // The affine mapping every meter's fill uses: ratio = (value - min) / (max - min).
@@ -147,6 +148,16 @@ void TestMeterScale::evenlySpacedMetersAreUnchanged() {
     const auto id = TxMeterWidget::currentMarks();
     for (int i = 0; i < id.size(); i++)
         QVERIFY(std::fabs(id[i].pos - i / 5.0) < 1e-9);
+}
+
+void TestMeterScale::endLabelsStayWithinTheBar() {
+    // The first and last labels (0, 7, +60, 25dB, 3+, 25A) used to overhang the bar's ends.
+    const qreal left = 100.0, right = 560.0;
+    QCOMPARE(TxMeterWidget::scaleLabelLeft(left, 8.0, left, right), left);           // "0" starts at the bar
+    QCOMPARE(TxMeterWidget::scaleLabelLeft(right, 30.0, left, right), right - 30.0); // "25dB" ends at it
+    QCOMPARE(TxMeterWidget::scaleLabelLeft(330.0, 20.0, left, right), 320.0);        // mid labels stay centred
+    // Wider than the bar: pinned to the left edge rather than past it.
+    QCOMPARE(TxMeterWidget::scaleLabelLeft(105.0, 600.0, left, right), left);
 }
 
 // APPLESS: every assertion is on static functions, so no QApplication and no display server.

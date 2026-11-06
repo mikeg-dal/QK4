@@ -19,10 +19,6 @@ ModeLabelController::ModeLabelController(RadioState *radioState, QLabel *modeALa
     connect(m_radioState, &RadioState::essbChanged, this, [this](bool, int) { refresh(); });
 }
 
-ModeLabelController::~ModeLabelController() {
-    disconnect(this);
-}
-
 void ModeLabelController::refresh() {
     // VFO A: mode string with "+" appended for SSB when ESSB is on.
     QString modeA = m_radioState->modeStringFull();

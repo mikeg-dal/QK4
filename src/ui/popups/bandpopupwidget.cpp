@@ -1,6 +1,7 @@
 #include "ui/popups/bandpopupwidget.h"
 #include "models/radiostate.h"
 #include "ui/styling/k4styles.h"
+#include "utils/radioutils.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 
@@ -9,7 +10,9 @@ namespace {
 const int ButtonWidth = K4Styles::Dimensions::PopupButtonWidth;
 const int ButtonHeight = K4Styles::Dimensions::PopupButtonHeight;
 const int ButtonSpacing = K4Styles::Dimensions::PopupButtonSpacing;
-const int RowSpacing = 2;
+// WHY the column gap: one gutter on both axes reads as one grid of keys. At 2 px the rows nearly
+// touched and read as two separate strips (most noticeable at 150 % interface scale).
+const int RowSpacing = ButtonSpacing;
 
 // K4 Band Number mapping (BN command)
 // Band number -> button label
@@ -29,9 +32,7 @@ const QMap<int, QString> BandNumToName = {
     // by sending BN11..BN22 and observing FA jumps to configured XVTR dial frequencies.
 };
 
-// Button label -> band number. Includes both the legacy "XVTR" → 11 fallback
-// (in case anything still calls it generically) and the per-band "XVTR1".."XVTR12"
-// → 11..22 mapping used by the new sub-grid picker.
+// Button label -> band number: "XVTR1".."XVTR12" -> 11..22, and bare "XVTR" -> 11.
 const QMap<QString, int> buildBandNameToNum() {
     QMap<QString, int> m{
         {"1.8", 0}, {"3.5", 1}, {"5", 2},  {"7", 3},  {"10", 4},  {"14", 5},
@@ -73,7 +74,6 @@ void BandPopupWidget::setupUi() {
     // Update styles to show selected band
     updateButtonStyles();
 
-    // Initialize popup size from base class
     initPopup();
 }
 
@@ -169,6 +169,7 @@ QPushButton *BandPopupWidget::createBandButton(const QString &text) {
     QPushButton *btn = new QPushButton(text, this);
     btn->setFixedSize(ButtonWidth, ButtonHeight);
     btn->setFocusPolicy(Qt::NoFocus);
+    btn->setStyleSheet(K4Styles::popupButton());
     btn->setProperty("bandName", text);
 
     connect(btn, &QPushButton::clicked, this, &BandPopupWidget::onBandButtonClicked);
@@ -183,7 +184,8 @@ QPushButton *BandPopupWidget::createXvtrCell(int bandIndex) {
     if (m_radioState && bandIndex >= 1 && bandIndex <= m_radioState->xvtrBands().size()) {
         const XvtrBandConfig &cfg = m_radioState->xvtrBands().at(bandIndex - 1);
         if (cfg.configured()) {
-            freqLine = QString::number(cfg.rfMhz);
+            if (cfg.rfMhz != XvtrBandConfig::Unknown)
+                freqLine = QString::number(cfg.rfMhz);
             enabled = true;
         }
     }
@@ -192,6 +194,7 @@ QPushButton *BandPopupWidget::createXvtrCell(int bandIndex) {
     btn->setFixedSize(ButtonWidth, ButtonHeight);
     btn->setFocusPolicy(Qt::NoFocus);
     btn->setEnabled(enabled);
+    btn->setStyleSheet(K4Styles::popupButton());
     btn->setProperty("bandName", QString("XVTR%1").arg(bandIndex));
     connect(btn, &QPushButton::clicked, this, &BandPopupWidget::onBandButtonClicked);
     return btn;
@@ -211,7 +214,8 @@ void BandPopupWidget::refreshXvtrCellLabels() {
         if (m_radioState && n - 1 < m_radioState->xvtrBands().size()) {
             const XvtrBandConfig &cfg = m_radioState->xvtrBands().at(n - 1);
             if (cfg.configured()) {
-                freqLine = QString::number(cfg.rfMhz);
+                if (cfg.rfMhz != XvtrBandConfig::Unknown)
+                    freqLine = QString::number(cfg.rfMhz);
                 enabled = true;
             }
         }
@@ -221,13 +225,8 @@ void BandPopupWidget::refreshXvtrCellLabels() {
 }
 
 void BandPopupWidget::updateButtonStyles() {
-    for (auto it = m_buttonMap.begin(); it != m_buttonMap.end(); ++it) {
-        if (it.key() == m_selectedBand) {
-            it.value()->setStyleSheet(K4Styles::popupButtonSelected());
-        } else {
-            it.value()->setStyleSheet(K4Styles::popupButtonNormal());
-        }
-    }
+    for (auto it = m_buttonMap.begin(); it != m_buttonMap.end(); ++it)
+        K4Styles::setSelected(it.value(), it.key() == m_selectedBand);
 }
 
 void BandPopupWidget::setSelectedBand(const QString &bandName) {
@@ -271,9 +270,8 @@ int BandPopupWidget::getBandNumber(const QString &bandName) const {
 
 QString BandPopupWidget::getBandName(int bandNum) const {
     // Transverter bands 11-22 (XVTR Band 1-12) map to "XVTR<n>" so the
-    // sub-grid can highlight the active cell. Callers that just want the
-    // generic "XVTR" label can compare against the prefix.
-    if (bandNum >= 11 && bandNum <= 22) {
+    // sub-grid can highlight the active cell.
+    if (RadioUtils::isXvtrBandNumber(bandNum)) {
         return QString("XVTR%1").arg(bandNum - 10);
     }
     return BandNumToName.value(bandNum, QString());

@@ -5,7 +5,7 @@
 #include <QStringList>
 
 // Port-name matching for the MIDI HaliKey. Pure logic with no RtMidi dependency so it can be
-// unit-tested without a MIDI subsystem, in the same spirit as halikey_edge.h.
+// unit-tested without a MIDI subsystem.
 namespace HalikeyMidiPorts {
 
 // Index of the first port whose name CONTAINS `needle` (case-insensitive), or -1 if none does.

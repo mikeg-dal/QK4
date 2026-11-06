@@ -4,7 +4,15 @@ What QK4's TCI server implements, measured against **TCI Protocol Ver. 2.0** (Ex
 12 January 2024), and how deep each command actually reaches toward the K4.
 
 Source spec: `TCI Protocol.pdf` from the TCI-Keyer repository. Companion to
-`docs/tci-server-design.md`, which covers the wire format and the phased build.
+`docs/tci-server-design.md`, a dated design record of the wire format and the phased build.
+
+**How to read this file.** §1–§5, §7, §8, §10 and §11.1–§11.3 and §11.6 describe the code as it is
+(checked 2026-10-29). §6, §9's measured result, §11.4–§11.5 and §12 are a dated bench log from
+2026-09-15 to 09-17 and keep the numbers measured then. When this file and the code disagree, the
+code wins. The places to check are `TciServer::initBurst()` / `receiverBurst()` and
+`TciServer::answerReadOnly()` / `applySet()` (`src/network/tciserverstate.cpp`), the dispatch in
+`TciServer::onTextMessageReceived()` (`src/network/tciserver.cpp`), and the SET wiring in
+`TciController::wireCatSets()` and `publishSnapshot()` (`src/controllers/tcicontroller.cpp`).
 
 **Three separate questions are kept apart throughout, because conflating them hides the real gaps:**
 
@@ -12,35 +20,30 @@ Source spec: `TCI Protocol.pdf` from the TCI-Keyer repository. Companion to
 2. **Does it reach the radio?** — whether a SET actually moves the K4.
 3. **Can the K4 even do it?** — hardware limits that no amount of QK4 work removes.
 
-A command can be answered and still be a lie. The read-only group (phase 8a) answers from QK4's
-snapshot and deliberately does not touch the radio; a client cannot tell the difference from the
-reply alone, which is why column 3 exists.
+A command can be answered and still be a lie. Every reply, SET or not, carries the value in QK4's
+snapshot, never the value requested. A client cannot tell from the reply alone whether a SET reached
+the radio, which is why column 3 exists and why §3.2 lists the commands that are answered but
+never move the radio.
 
 ---
 
 ## 1. Summary
 
-| Category | Spec commands | QK4 implements | Notes |
-|---|---:|---:|---|
-| Initialization (4.1) | 9 | 9 | Complete |
-| Bidirectional control (4.2) | 42 | 6 SET + 24 reported | Reporting is real, not constants — §3.2 |
-| Unidirectional control (4.3) | 21 | 8 | Audio stream config + start/stop |
-| Notification (4.4) | 11 | 5 | Sensors implemented — §7.2 |
-| New in 2.0 (4.5) | 2 | 1 | `RX_CHANNEL_SENSORS` done; `VFO_LOCK` absent |
-| CW (3.2) | 9 | 3 | `CW_MACROS`, `CW_MACROS_STOP`, speed. **Verified on air — see §5** |
-
-A fourth defect — **no transmit-status message was ever sent** — was found later with TR4W as the
-client and is covered in §11, along with an audit of everything a server must send unprompted.
+| Category | Spec commands | QK4 | Notes |
+|---|---:|---|---|
+| Initialization (4.1) | 9 | all 9 | Complete — §2 |
+| Bidirectional control (4.2) | 42 | SETs in §3.1, answered-only in §3.2 | Reporting comes from the radio, not constants, except `sql_*`, `mute` and `volume` |
+| Unidirectional control (4.3) | 21 | audio stream config, `audio_start`/`audio_stop`, sensor enables | |
+| Notification (4.4) | 11 | `trx`, `tx_frequency`, sensors | Sensors — §7.2 |
+| New in 2.0 (4.5) | 2 | both | `RX_CHANNEL_SENSORS` and `VFO_LOCK` (reported, broadcast and settable) |
+| CW (3.2) | 9 | `CW_MACROS`, `CW_MACROS_STOP`, speed | **Verified on air — see §5** |
 
 **Headline:** QK4 is complete for a *digital-mode* client (WSJT-X works end to end — receive,
 decode, transmit, and a full FT8 QSO), reports **two receivers** with independent mode, filter,
-AGC, RIT, volume and S-meter, and now **keys CW** for a logger — QLog sends its macros through
-QK4 to the radio and they key correctly, chunking and prosigns included (§5, §12.7).
+AGC, RIT, volume and S-meter, and **keys CW** for a logger — QLog sends its macros through QK4 to
+the radio and they key correctly, chunking and prosigns included (§5, §12.7).
 
-**Everything below the protocol tables has been verified against a live K4**, not just unit-tested
-— see §12 for what the radio actually confirmed.
-
-**Three defects were found while writing this document and are now fixed** — see §6.
+§12 records what a live K4 confirmed, and §12.8 what it has not.
 
 ---
 
@@ -52,15 +55,17 @@ QK4 to the radio and they key correctly, chunking and prosigns included (§5, §
 | `IF_LIMITS` | ✅ | Static | `-48000,48000` |
 | `TRX_COUNT` | ✅ | Static `2` | Main and Sub, both fully addressable. See §4.2 |
 | `CHANNEL_COUNT` | ✅ | Static `2` | **Sent as `channels_count` (plural)** — see §6.4 |
-| `DEVICE` | ✅ | Static | `QK4` |
+| `DEVICE` | ✅ | Static | `QK4 <version>` (`deviceIdentity()` in `tciserver_internal.h`) |
 | `RECEIVE_ONLY` | ✅ | Static `false` | |
-| `MODULATIONS_LIST` | ✅ | Static | 11 modes, all mapped to K4 modes |
+| `MODULATIONS_LIST` | ✅ | Static | 10 modes, all mapped to K4 modes (`kModulationsList`); no `nfm` |
 | `PROTOCOL` | ✅ | Static | Announces `ExpertSDR3,1.5`, not 2.0. Deliberate — see §6.5 |
 | `READY` | ✅ | — | Sent last, after `START` |
 
-QK4's init burst is 42 commands, larger than this table, because it also seeds current state
-(`vfo`, `modulation`, `drive`, …). That matches what a real ExpertSDR3 server does; clients cache
-the burst and act on it.
+QK4's init burst is larger than this table, because it also seeds current state for both
+receivers (`vfo`, `modulation`, `drive`, …). That matches what a real ExpertSDR3 server does;
+clients cache the burst and act on it. The contents are `TciServer::initBurst()` plus
+`receiverBurst()` for each receiver; it was 76 commands on 2026-10-29. To count it against a
+running QK4: `python3 scripts/tciclient.py --audit` prints `init burst: N commands` first.
 
 ---
 
@@ -68,64 +73,59 @@ the burst and act on it.
 
 ### 3.1 Implemented as real SETs — these move the radio
 
-| Spec | QK4 | K4 path | Depth |
+Each SET goes TciServer → a `set…Requested` signal → `TciController` on the main thread →
+`CatFrames` → `ConnectionController::sendCAT`, with a queued `RadioState::parseCATCommand` of the
+same string (`TciController::applyCat`). The reply always carries the value the snapshot holds.
+
+| Spec | K4 path | Receivers | Notes |
 |---|---|---|---|
-| `VFO` | ✅ | `CatFrames::frequencyA` / `frequencyB` (`FA`/`FB`) | Both receivers, and channel 1 of receiver 0 |
-| `DDS` | ✅ | `CatFrames::frequencyA` | Alias for a receiver's own VFO |
-| `MODULATION` | ✅ | `CatFrames::modeA` / `modeB` (`MD`/`MD$`) | Per receiver, for the 10 announced modes |
-| `TRX` | ✅ | PTT gate + TX audio | Receiver 0 only — one transmitter. **arg3 ignored**, §7.1 |
-| `SPLIT_ENABLE` | ✅ | `CatFrames::split` (`FT`) | Edge-triggered only, by design |
-| `RX_CHANNEL_ENABLE` | ✅ | `CatFrames::subReceiver` (`SB`) | Sub RX on/off. `rx_enable` accepted as a synonym, §4.2 |
+| `VFO` | `CatFrames::frequencyA` / `frequencyB` (`FA`/`FB`) | 0, 1, and channel 1 of receiver 0 | Channel 1 of receiver 0 is VFO B |
+| `DDS` | `CatFrames::frequencyA` / `frequencyB` | 0, 1 | Alias for a receiver's own VFO |
+| `MODULATION` | `CatFrames::modeA` / `modeB` (`MD`/`MD$`) | 0, 1 | The 10 announced modes; `nfm` accepted as FM; unknown refused |
+| `TRX` | `TransmitController::engage(TciClient, StreamedFromHere)` / `release` | 0 only | One transmitter. **arg3 ignored**, §7.1 |
+| `SPLIT_ENABLE` | `CatFrames::split` (`FT`) | 0 | Edge-triggered only, by design |
+| `RX_CHANNEL_ENABLE` / `RX_ENABLE` | `CatFrames::subReceiver` (`SB`) | Sub RX | Both spellings, §4.2 |
+| `RIT_ENABLE`, `XIT_ENABLE` | `CatFrames::ritEnabled` / `xitEnabled` (`RT`/`XT`) | 0 | |
+| `RIT_OFFSET`, `XIT_OFFSET` | `CatFrames::ritOffset` (`RO`) | 0 | One register; either name moves both, §4.1 |
+| `RX_NB_ENABLE` | `CatFrames::setNoiseBlanker` (`NB`) | 0 | Keeps the current level |
+| `RX_NB_PARAM` | `CatFrames::setNoiseBlanker` (`NB`) | 0 | Level and filter width; keeps on/off |
+| `RX_NR_ENABLE` | `CatFrames::noiseReduction` (`NR`) | 0 | Keeps the current level |
+| `AGC_MODE` | `CatFrames::agcSpeed` (`GT`) | 0 | `off`/`normal`/`fast` only; anything else refused, §6.1 |
+| `AGC_GAIN` | `CatFrames::setMenuValue` (menu 10) | 0 | Raw 2–8, clamped; one radio-wide setting |
+| `RX_FILTER_BAND` | `CatFrames::setFilterBandwidth` (`BW`) | 0 | Width only (`high − low`); `high > low` required |
+| `DRIVE` | `CatFrames::setRfPower` (`PC`) | 0 | Range letter from `powerRange()`, §4.4 |
+| `TUNE_DRIVE` | `CatFrames::setMenuValue` (menu 69, "TUNE LP") | 0 | 1–50 W, clamped; never `PC` |
+| `VFO_LOCK` | `CatFrames::setVfoLock` (`LK`/`LK$`) | 0, 1 | Channel 1 of receiver 0 addresses VFO B |
+| `CW_KEYER_SPEED`, `CW_MACROS_SPEED` | `CatFrames::keyerSpeed` (`KS`) | global | Clamped 8–100 |
+| `CW_MACROS`, `CW_MACROS_STOP` | `CatFrames::cwText` (`KY`) / `cwAbort` | global | §5 |
 
-These six are what a digital-mode client needs, and they are bench-verified against a live K4
-through a completed FT8 QSO.
+SETs in the per-receiver group (`applySet`) are acted on for receiver 0 only. The K4's Sub forms
+are `$`-suffixed (`RT$`, `GT$`, `NB$`, `NR$`, `BW$`) and `CatFrames` has no set builders for them,
+so a SET addressed to receiver 1 is answered and not acted on.
 
-### 3.2 Answered read-only — QK4 reports, the radio does not move
+### 3.2 Answered, never moves the radio
 
-Phase 8a. A SET-shaped command gets the current value back, never a false acknowledgement.
+These are answered from the snapshot. A SET-shaped command gets the current value back and changes
+nothing.
 
-`RIT_ENABLE`, `XIT_ENABLE`, `RIT_OFFSET`, `XIT_OFFSET`, `RX_FILTER_BAND`, `DRIVE`, `TUNE_DRIVE`,
-`AGC_MODE`, `LOCK`, `SQL_ENABLE`, `SQL_LEVEL`, `MUTE`, `VOLUME`, `RX_NB_ENABLE`, `RX_NR_ENABLE`,
-`RX_ANF_ENABLE`, `RX_APF_ENABLE`
+| Command | What it reports |
+|---|---|
+| `LOCK` | The receiver's VFO lock (`lockA`/`lockB`). Settable only as `VFO_LOCK` |
+| `RX_ANF_ENABLE`, `RX_APF_ENABLE`, `RX_NF_ENABLE` | The radio's auto-notch, APF and manual notch, per receiver, broadcast on change. No set builder |
+| `RX_VOLUME` | QK4's Main/Sub mix in dB, §4.5. Channel A only |
+| `MIC_LEVEL` | `RadioState::micGain()` (K4 `MG`, 0–80), §6.6 |
+| `TX_ENABLE` | `true` for receiver 0, `false` for receiver 1. Sent in the burst; answered to a SET too |
+| `SQL_ENABLE` | Always `false`. `publishSnapshot` does not fill it |
+| `SQL_LEVEL` | Always −140 dBm, §6.2 |
+| `MUTE` | Always `false`. Not modelled for TCI |
+| `VOLUME` | Always `0` |
 
-**Almost all of these now report the actual radio and broadcast on change**, per receiver:
-`RIT_ENABLE`, `XIT_ENABLE`, `RIT_OFFSET`, `XIT_OFFSET`, `AGC_MODE`, `DRIVE`, `TUNE_DRIVE`,
-`RX_FILTER_BAND`, `RX_NB_ENABLE`, `RX_NR_ENABLE`, `RX_ANF_ENABLE`, `RX_APF_ENABLE`,
-`RX_NF_ENABLE`, `RX_VOLUME`, `LOCK`, `SQL_ENABLE`, plus the globals `MIC_LEVEL` and
-`CW_KEYER_SPEED` / `CW_MACROS_SPEED`.
+Receiver 1 always reports `xit_enable` false: `publishSnapshot` does not set it for the Sub.
 
-Only **`SQL_LEVEL`** and **`MUTE`** are still constants. `SQL_LEVEL` is blocked on units (§6.2);
-`MUTE` is not modelled for TCI.
-
-A note on why the broadcasts matter as much as the replies: every one of these was answerable on
-request *before* it was broadcast on change, and that gap is a bug in itself — §11.3. `DRIVE` is
+A note on why broadcasts matter as much as replies: every one of the reported values was answerable
+on request *before* it was broadcast on change, and that gap is a bug in itself — §11.3. `DRIVE` is
 the worked example: it answered queries correctly while a client watched the power knob move and
 saw nothing.
-
-**These used to be hardcoded constants.** The snapshot once carried only frequency, mode and split
-from `RadioState`, so `rx_nb_enable:0,false;` meant "I don't model this" rather than "the K4's
-noise blanker is off" — a reply a client cannot distinguish from a measurement. They are now wired
-through, per receiver, and broadcast on change.
-
-**QK4 already has the K4 builders for most of the missing SETs:**
-
-| TCI SET | Existing builder | K4 cmd | Blocker |
-|---|---|---|---|
-| `DRIVE` / `TUNE_DRIVE` | `rfPower` / `rfPowerExtended` | `PC` | **Reporting done** (§4.4). The SET is still not wired |
-| `RIT_ENABLE` | `ritEnabled` | `RT` | None — ready to wire |
-| `XIT_ENABLE` | `xitEnabled` | `XT` | None — ready to wire |
-| `RIT_OFFSET` | `ritOffset` | `RO` | **Shared with XIT — see §4.1** |
-| `XIT_OFFSET` | `ritOffset` | `RO` | **Same control. Cannot be independent** |
-| `AGC_MODE` | `agcSpeed` | `GT` | Vocabulary mismatch — see §6.1 |
-| `RX_NB_ENABLE` | `noiseBlanker` | `NB` | None — ready to wire |
-| `RX_NR_ENABLE` | `noiseReduction` | `NR` | None — ready to wire |
-| `RX_FILTER_BAND` | `filterBandwidth` / `filterWidthExtended` | `BW`/`FW` | TCI passes low+high edges; K4 takes a width. Lossy both ways |
-| `CW_KEYER_SPEED` | `keyerSpeed` | `KS` | None — ready to wire |
-| `LOCK` | *none* | `LK` | No builder |
-
-Deliberately deferred rather than shipped: each one moves real hardware and none has been
-bench-tested. Four defects reached the air during phases 4–6 and every one was found by the radio,
-not by a test.
 
 ### 3.3 Not implemented at all
 
@@ -134,12 +134,9 @@ not by a test.
 | `START` / `STOP` | Device start/stop is meaningless here; QK4 owns the K4 link | n/a |
 | `IF` | IF filter tuning within the panorama | Possible via `FW`/`BW`, no mapping designed |
 | `TUNE` | Tune-mode keying | K4 supports it; **no `CatFrames` builder** |
-| `AGC_GAIN` | AGC threshold in dB | K4 has AGC controls; no builder |
-| `RX_NB_PARAM` | NB threshold + pulse width | `RadioState` tracks `noiseBlankerLevel`; no builder |
 | `RX_BIN_ENABLE` | Binaural/pseudo-stereo | K4 has no equivalent |
 | `RX_ANC_ENABLE` | Adaptive noise cancellation | No K4 equivalent |
 | `RX_DSE_ENABLE` | Digital surround for CW | No K4 equivalent |
-| `RX_NF_ENABLE` | Notch filter module | K4 has notch; no builder |
 | `RX_MUTE`, `RX_BALANCE` | Per-receiver audio | **Local to QK4's audio stack, never CAT** |
 | `MON_VOLUME`, `MON_ENABLE` | TX monitor | Local audio, or K4 `MON` |
 | `DIGL_OFFSET`, `DIGU_OFFSET` | Data-mode carrier offsets | K4 has `DT`/data sub-modes; no mapping |
@@ -180,8 +177,8 @@ against `RO`, document that they are aliases, and never pretend otherwise.
 ### 4.2 Sub receiver — IMPLEMENTED as receiver 1
 
 QK4 declares **`trx_count:2`**. Receiver 0 is the Main RX, receiver 1 the Sub RX, each reporting
-its own frequency, mode, filter, AGC, RIT, squelch, DSP flags, volume and S-meter from
-`RadioState`'s `*B` getters.
+its own frequency, mode, filter, AGC, RIT, DSP flags, volume and S-meter from `RadioState`'s `*B`
+getters. (Squelch is reported per receiver but is a constant for both — §3.2.)
 
 **It had to be a receiver, not a channel, and that was not obvious.** TCI has two axes carrying
 different things:
@@ -211,9 +208,9 @@ explicitly and `tx_enable` reports true only for receiver 0.
 |---|---|---|---|
 | `DRIVE` | 0–100 | `PC` in watts/mW by range | **Resolved — reported as-is, §4.4** |
 | `VOLUME`, `RX_VOLUME` | −60…0 dB | QK4 audio stack, linear | Not CAT at all |
-| `SQL_LEVEL` | −140…0 dBm | K4 squelch 0–29 | Scale conversion required |
+| `SQL_LEVEL` | −140…0 dBm | K4 `SQ` integer scale (range unconfirmed: this file said 0–29, `tciradiostate.h` says 0–40) | Scale conversion required |
 | `AGC_MODE` | `normal`/`fast`/`off` | `GT` numeric | Enum mapping required |
-| `AGC_GAIN` | −20…120 dB | K4 AGC controls | No direct equivalent |
+| `AGC_GAIN` | −20…120 dB | K4 menu 10, AGC threshold 2–8 | Reported and set raw, not converted to dB |
 
 ### 4.4 `DRIVE`: report the power QK4 already displays
 
@@ -239,14 +236,15 @@ the K4's ranges.
 The one place the simple rule loses: QRO runs to 110 W while the protocol field stops at 100, so
 101–110 W all report `100`. Nothing fixes that without normalising.
 
-`TUNE_DRIVE` tracks `DRIVE`. The K4 has no separate tune-power setting, and reporting an
-independent value would invent a control the radio does not have.
+`TUNE_DRIVE` is separate. The K4 keeps tune power in menu item 69, "TUNE LP" (1–50 W). QK4 reads it
+from `MenuModel` and sets it with `ME0069.nnnn`; `TUNE_DRIVE` falls back to the `DRIVE` value only
+until the radio has sent its menu definitions. See §12.6 for how this was found.
 
 **Reported for receiver 0 only.** Drive belongs to the transmitter and the K4 has exactly one, so
 `drive:1,…` would describe a second power control that does not exist. A drive query addressed to
 receiver 1 is recognised and deliberately unanswered.
 
-**Reporting only.** A client sending `drive:0,50;` still does not change power — that SET is in §8.
+**Settable.** `drive:0,50;` sends `PC` with the current range letter (`CatFrames::setRfPower`).
 
 ### 4.5 `RX_VOLUME`: QK4's mix, not the rig's AF gain
 
@@ -267,10 +265,9 @@ QK4 deliberately does **not** parse the radio's `AG`/`AG$` at all. It was writte
 nothing consumes it once `rx_volume` reports QK4's mix, and carrying a CAT parser with no consumer
 on the chance a future change might want it is how a codebase accumulates weight.
 
-Separately, and untouched: `catserver.cpp` answers an `AG;` query with a hardcoded `AG000;`,
-telling every CAT client on port 9299 that the audio is muted whatever the radio is doing. `SQ;`
-has the same shape. Both are pre-existing, unrelated to TCI, and raised with the maintainer rather
-than fixed here.
+Separately, on the CAT server (port 9299, not TCI): `catserver.cpp` used to answer `AG;` with a
+hardcoded `AG000;` and `SQ;` the same way. Both are fixed (#134). `AG;` / `AG$;` are now asked of
+the radio, and `SQ` / `SQ$` are answered from `RadioState` only once the radio has reported them.
 
 ### 4.6 Commands with no K4 concept
 
@@ -346,68 +343,27 @@ Two units, keeping the rule the design doc states — *the TCI layer never spell
   (`(`=KN, `+`=AR, `=`=BT, `%`=AS, `*`=SK, `!`=VE), strips what the radio would act on, chunks,
   and frames as `KY*[text];`.
 
-**Chunking**: 60 characters — the manual's documented maximum, bench-confirmed — splitting on a
-word boundary and carrying the space to the **start** of the next chunk, because the radio trims
-trailing spaces and a chunk ending on a real word gap would lose it, keying `NY4I NY4I` as
-`NY4INY4I`. **Not padded.**
-
-An earlier version chunked at 22 and padded to 22, having read TR4W's `CWFrameRule(22, True)` as a
-maximum. Its 22 is a MINIMUM — padding short commands so they are not swallowed after the keyer
-abort TR4W sends before every message — and QK4 sends no such abort, so neither the length nor the
-padding ever applied here. Read as a maximum it made QK4 send five commands where two would do.
-
-**`KYW`** (the wait flag) only where a `KS` follows, which is the use the manual names. It stalls
-every later command QK4 sends — polling included — until the message has been keyed, so a macro
-with no speed markers pays nothing for it. Speed is restored afterwards only if the macro moved it.
+**Chunking, padding and the `KYW` rule** (60-character chunks on word boundaries, no padding,
+`KYW` only before a following `KS`) are described once, in
+[tci-cw-for-client-authors.md](tci-cw-for-client-authors.md) §3–§4. The bench evidence is in §12.7
+and [cw-by-cat-bench-log.md](cw-by-cat-bench-log.md).
 
 **`CatFrames::keyerSpeed` clamps to 8..100**, the documented `KS` range. It was unreachable with
 bad input before this, but `>` arithmetic has no upper bound of its own.
 
-**Layer 2: an explicit CAT passthrough — STILL DEFERRED TO PHASE 2.** For K4 features with no TCI
+**An explicit CAT passthrough — not built, deferred to phase 2.** For K4 features with no TCI
 equivalent at all (§10.2). Held back because it is the one change that hands an external program
-unmediated control of the radio. When built it should be *deliberate*, not a default-forward:
+unmediated control of the radio. The CAT server already forwards every SET it does not handle
+(`catCommandReceived`); the TCI side has no equivalent, and an unrecognised TCI command is answered
+with silence and a log line. When the passthrough is built it should be *deliberate*, not a
+default-forward:
 
 - **Do not** copy CatServer's fall-through. On a CAT server the client is *already* speaking K4 and
   a raw forward is honest. A TCI client is speaking TCI; forwarding an unrecognised TCI command
   name as a K4 string would forward garbage.
 - **Do** expose it under a distinct command name, and require the client to spell a real K4 command.
-- Gate it behind a setting, default **off**.
-
-### 5.1 Why passthrough is the right shape here
-
-QK4 already does exactly this on the CAT server. `catserver.cpp` handles the prefixes it knows
-specially and then falls through:
-
-```cpp
-// SET commands (have args) - forward to real K4
-qCDebug(netCat) << "   forwarding SET to K4:" << cmd;
-emit catCommandReceived(cmd);
-```
-
-A default-forward path already exists and is proven. The TCI side has no equivalent — an
-unrecognised TCI command is silence.
-
-### 5.2 Recommended approach — two layers, not one
-
-**Layer 1: a `CatFrames::cwText()` builder.** CW-by-CAT is a *known, structured* K4 capability,
-not an escape hatch. It belongs with the other 24 builders, keeping the rule the design doc
-already states: *the TCI layer never spells a K4 command.* `CW_MACROS` then maps to it directly,
-and `CW_MACROS_SPEED` to the existing `keyerSpeed`.
-
-This covers the common case (a logger sending exchange macros) and needs no new protocol concept.
-
-**Layer 2: an explicit CAT passthrough — DEFERRED TO PHASE 2.** For K4 features with no TCI
-equivalent at all (the whole of §10.2), a passthrough is the pragmatic answer. It is deliberately
-held back to its own phase because it is the one change that hands an external program unmediated
-control of the radio. When it is built, it should be *deliberate*, not a default-forward:
-
-- **Do not** copy CatServer's fall-through. On a CAT server the client is *already* speaking K4 and
-  a raw forward is honest. A TCI client is speaking TCI; silently forwarding an unrecognised TCI
-  command name as a K4 string would forward garbage.
-- **Do** expose it under a distinct command name so intent is unambiguous, and require the client
-  to opt in by spelling a real K4 command.
-- Gate it behind a setting, default **off**. It hands an external program unmediated control of the
-  radio, which is a different trust level from the curated command set.
+- Gate it behind a setting, default **off**. It is a different trust level from the curated command
+  set.
 
 ### 5.3 What CW support does *not* need
 
@@ -471,10 +427,13 @@ PDF in favour of what real implementations accept, pinned by
 
 ### 6.5 `PROTOCOL` announces 1.5, not 2.0
 
-QK4 sends `protocol:ExpertSDR3,1.5;`. WSJT-X string-matches this and **halves transmit amplitude**
-when it does not match. It is a compatibility choice, not an oversight, and it means clients will
-not offer 2.0-only features (`VFO_LOCK`, `RX_CHANNEL_SENSORS`). Revisit only with a client that
-needs 2.0 and tolerates the string.
+**This is the one place the `protocol:` rationale is recorded; other documents link here.**
+
+QK4 sends `protocol:ExpertSDR3,1.5;` (`kProtocolIdentity`). WSJT-X string-matches this and **halves
+transmit amplitude** when it does not match. It is a compatibility choice, not an oversight.
+`protocol:` therefore cannot identify QK4; `device:` (`QK4 <version>`) does. A client that keys
+2.0-only features off the protocol string will not offer them, although QK4 sends `vfo_lock` and
+`rx_channel_sensors` anyway. Revisit only with a client that needs 2.0 and tolerates the string.
 
 ### 6.6 `MIC_LEVEL` is not in the published spec
 
@@ -500,8 +459,8 @@ reports:
 
 | Sensor | Source | Notes |
 |---|---|---|
-| `RX_SENSORS` | `RadioState::sMeter` | Deprecated in 2.0, still sent — older clients know only this |
-| `RX_CHANNEL_SENSORS` | `sMeter`, `sMeterB` | Channel B only while the Sub RX is on |
+| `RX_SENSORS` | `RadioState::sMeterDbm` (SMH) | Deprecated in 2.0, still sent — older clients know only this |
+| `RX_CHANNEL_SENSORS` | `sMeterDbm`, `sMeterDbmB` (SMH, SMH$) | Channel B only while the Sub RX is on |
 | `TX_SENSORS` | `forwardPower`, `swrMeter` | Five arguments always; see the mic caveat below |
 
 **Design: telemetry is not state.** Sensors live in `TciSensorReadings`, deliberately *outside*
@@ -515,10 +474,12 @@ The interval is clamped to the spec's 30–1000 ms rather than refused: a client
 means "as fast as you can", and without the clamp it can turn the server into a packet generator
 (measured: 500 readings in 500 ms).
 
-**dBm conversion.** `RadioState` carries the K4's S-meter in its own encoding — 0–9 is S0–S9, and
-anything stronger is `9.0 + dBoverS9/10`, so S9+20 arrives as `11.0`, not `29`. Converting that
-with `sUnitDbm()` would clamp it to S9 and silently discard every strong signal. `SpectrumScale::
-dbmForSMeterReading()` handles it, in the one place that already owns the S-unit convention.
+**dBm source.** The level is the radio's own `SMH` / `SMH$` reading in dBm
+(`docs/k4-protocol-quirks.md` §14), chosen by `SpectrumScale::rxLevelDbm()`. Until the first `SMH`
+arrives it falls back to an estimate from the `SM` bars via `SpectrumScale::dbmForSMeterReading()`,
+which read 3–5 dB low against `SMH` on a K4D. That fallback must handle RadioState's S-meter encoding
+— 0–9 is S0–S9, and anything stronger is `9.0 + dBoverS9/10`, so S9+20 arrives as `11.0`, not `29`;
+`sUnitDbm()` would clamp it to S9.
 
 **Two fields QK4 cannot fill honestly**, both recorded in the code rather than faked:
 
@@ -558,22 +519,24 @@ which is what makes the radio-touching items benchable at all.
 - ~~**All eight SETs**~~ — rit/xit enable and offset, NB, NR, AGC, filter band and drive, each
   confirmed on the radio as a round trip (§12.6).
 - ~~FM reported as `nfm`~~ — the K4 has one FM mode; `nfm` is no longer advertised, still accepted.
+- ~~`agc_gain`, `rx_nb_param`, `vfo_lock`~~ — reported, broadcast and settable (§3.1). Not in the
+  §12.6 round-trip run.
 
 ### Next
 
 1. ~~**`CW_MACROS` + a `CatFrames::cwText`**~~ — done and verified on air (§5, §12.7).
-2. **The SETs still missing a builder** — `mute`, `sql_enable`/`sql_level`, `lock`,
-   `rx_anf_enable`, `rx_apf_enable`, `rx_nf_enable`. Each needs a `CatFrames` builder in the
-   K4 set form, which is where the last three bugs lived; bench each with `tcitester.py`.
+2. **The SETs still missing** — `mute`, `sql_enable`/`sql_level`, `rx_anf_enable`,
+   `rx_apf_enable`, `rx_nf_enable`, and plain `lock` (only `vfo_lock` sets; `CatFrames::setVfoLock`
+   exists). Each needs a `CatFrames` builder in the K4 set form, which is where the §12.6 bugs
+   lived; bench each with `tcitester.py`.
 3. **Sub-receiver SETs** — the K4 forms are $-suffixed (RT$, GT$, NB$, NR$, BW$) and have no
    builders. Reporting for receiver 1 already works.
 4. **`SQL_LEVEL`** — needs a decided K4-to-dBm scale before it can report anything true (§6.2).
-5. **`VFO_LOCK`** and **`tx_enable` on band change** — small, read-only, both tracked already
-   (§11.6).
+5. **`tx_enable` on band change** — small and read-only (§11.6).
 
 ### Phase 2
 
-6. **Explicit opt-in CAT passthrough** (§5.2 layer 2), default off. Held to its own phase: it is
+6. **Explicit opt-in CAT passthrough** (§5.2), default off. Held to its own phase: it is
    the one change that hands an external program unmediated control of the radio, and §10.3 sets
    its proper scope — the categories TCI has no vocabulary for, never the commands it does.
 
@@ -595,12 +558,15 @@ would key the transmitter unless `--allow-tx` is given. The bare `trx;` read is 
 without keying (pinned by `doesNotKeyOnAMalformedBoolean`) and can still be skipped with
 `--no-trx`.
 
-It is deliberately a **second, independent implementation** of RFC 6455 rather than a wrapper
-around the same library QK4 uses — the same library on both ends agrees with itself even when
-both are wrong. It also exercises `TciController`'s thread hop, which the unit tests cannot: they
+It is deliberately a **second, independent implementation** of RFC 6455. QK4's own WebSocket
+transport is hand-rolled too (`src/network/websocketserver.h`, `websocketframe.h`); sharing one
+implementation on both ends would agree with itself even when both are wrong. It also exercises `TciController`'s thread hop, which the unit tests cannot: they
 drive `TciServer` directly on one thread.
 
 ### Measured result (2026-09-15, QK4 at `8942e1e`, radio disconnected)
+
+Dated. The burst has grown since (76 commands on 2026-10-29), and `agc_mode` / `sql_level` were
+fixed (§6.1, §6.2).
 
 ```
 init burst: 42 commands, 41 distinct names
@@ -620,9 +586,10 @@ reading the spec — which is the point of having both.
 
 **Caveat on "answered":** the count measures the TCI surface, not truthfulness. At the time of
 that run most of the answers were struct defaults rather than the radio, and **an audit sweep
-cannot tell the difference — neither can a client.** That is why §3.2 tracks which values are real
-and why a count like this should never be read as a feature-coverage percentage. Most of those
-values are now wired to `RadioState`; §12 records what a live radio confirmed.
+cannot tell the difference — neither can a client.** That is why §3.2 lists which values are
+constants and why a count like this should never be read as a feature-coverage percentage. Most of
+those values are now wired to `RadioState`; §12 records what a live radio confirmed.
+
 ---
 
 ## 10. The other direction: QK4 capabilities with no TCI representation
@@ -634,25 +601,23 @@ CAT passthrough (§5.2, now phase 2) would be *for*.
 
 `RadioState` exposes roughly 180 getters. Almost all of them are invisible over TCI.
 
-### 10.1 Already modelled, TCI has a command, QK4 does not wire it
+### 10.1 Modelled by QK4 and TCI has a command — status
 
-These are pure wiring — the data and the K4 builder both exist.
-
-| Capability | QK4 has | TCI command |
-|---|---|---|
-| Noise blanker on/off + level | `noiseBlankerEnabled/Level`, `CatFrames::noiseBlanker` | `RX_NB_ENABLE`, `RX_NB_PARAM` |
-| Noise reduction on/off + level | `noiseReductionEnabled/Level`, `CatFrames::noiseReduction` | `RX_NR_ENABLE` |
-| Auto-notch | `autoNotchEnabled` | `RX_ANF_ENABLE` |
-| Manual notch + pitch | `manualNotchEnabled`, `manualNotchPitch` | `RX_NF_ENABLE` |
-| APF + bandwidth | `apfEnabled`, `apfBandwidth` | `RX_APF_ENABLE` |
-| Squelch level | `squelchLevel` | `SQL_LEVEL` (needs a dBm mapping — see §6.2) |
-| Filter bandwidth | `filterBandwidth`, `CatFrames::filterBandwidth` | `RX_FILTER_BAND` |
-| RF power | `rfPower`, `CatFrames::rfPower` | `DRIVE`, `TUNE_DRIVE` |
-| CW keyer speed | `keyerSpeed`, `CatFrames::keyerSpeed` | `CW_KEYER_SPEED`, `CW_MACROS_SPEED` |
-| VFO lock | `lockA`, `lockB` | `LOCK`, `VFO_LOCK` |
-| S-meter (both receivers) | `sMeter`, `sMeterB` | `RX_SENSORS`, `RX_CHANNEL_SENSORS` |
-| ALC / SWR / forward power | `alcMeter`, `swrMeter`, `forwardPower` | `TX_SENSORS` |
-| Mic gain | `micGain` | `MIC_LEVEL` (undocumented extension — §6.6) |
+| Capability | QK4 has | TCI command | Status |
+|---|---|---|---|
+| Noise blanker on/off + level/width | `noiseBlankerEnabled/Level/FilterWidth`, `CatFrames::setNoiseBlanker` | `RX_NB_ENABLE`, `RX_NB_PARAM` | Reported and set (receiver 0) |
+| Noise reduction on/off | `noiseReductionEnabled/Level`, `CatFrames::noiseReduction` | `RX_NR_ENABLE` | Reported and set (receiver 0) |
+| Auto-notch | `autoNotchEnabled` | `RX_ANF_ENABLE` | Reported only |
+| Manual notch | `manualNotchEnabled` | `RX_NF_ENABLE` | Reported only |
+| APF | `apfEnabled` | `RX_APF_ENABLE` | Reported only |
+| Squelch level | `squelchLevel` | `SQL_LEVEL` | Not wired; needs a dBm mapping (§6.2) |
+| Filter bandwidth | `filterBandwidth`, `CatFrames::setFilterBandwidth` | `RX_FILTER_BAND` | Reported and set (width only) |
+| RF power / tune power | `rfPower`, `CatFrames::setRfPower`; menu 69 | `DRIVE`, `TUNE_DRIVE` | Reported and set |
+| CW keyer speed | `keyerSpeed`, `CatFrames::keyerSpeed` | `CW_KEYER_SPEED`, `CW_MACROS_SPEED` | Reported and set |
+| VFO lock | `lockA`, `lockB`, `CatFrames::setVfoLock` | `LOCK`, `VFO_LOCK` | Both reported; `VFO_LOCK` sets |
+| S-meter (both receivers) | `sMeterDbm`, `sMeterDbmB` (SMH) | `RX_SENSORS`, `RX_CHANNEL_SENSORS` | Sent (§7.2) |
+| SWR / forward power | `swrMeter`, `forwardPower` | `TX_SENSORS` | Sent; mic level and peak power cannot be measured (§7.2) |
+| Mic gain | `micGain` | `MIC_LEVEL` | Reported only (undocumented extension — §6.6) |
 
 ### 10.2 Modelled by QK4, no TCI command exists at all
 
@@ -661,7 +626,7 @@ implementation becomes, because the protocol has no vocabulary for it.
 
 **Antenna and front end**
 `rxAntennaMain`, `rxAntennaSub`, `txAntenna` (+ names), `preamp`/`preampEnabled`,
-`attenuatorEnabled`/`attenuatorLevel`, `rfGain`, `atuMode`, `xvtrBandSelect`, `isXvtrPowerMode`.
+`attenuatorEnabled`/`attenuatorLevel`, `rfGain`, `atuMode`, `xvtrBands`, `isXvtrPowerMode`.
 TCI has `AGC_GAIN` and nothing else here. Antenna switching and ATU state are completely absent
 from the protocol.
 
@@ -712,12 +677,13 @@ fraction; the K4's routing matrix does not fit.
    a measure of how well QK4 controls the radio — QK4's own CAT server on 9299 will always reach
    further.
 2. **This is the real argument for the phase 2 passthrough.** Not "some commands are unimplemented"
-   — §3.2 shows most of those are wiring — but that entire categories above have no TCI
+   — the remaining gaps in §10.1 are wiring — but that entire categories above have no TCI
    vocabulary and never will. An escape hatch is the only way a client reaches antenna switching,
    diversity, text decode or PA telemetry.
 3. **It also bounds the passthrough.** Anything in §10.1 should be a *proper* TCI command, not a
    passthrough, because the protocol already has a word for it. Passthrough is for §10.2 only.
    A passthrough used where a real command exists is how a protocol rots.
+
 ---
 
 ## 11. Server-to-client obligations — what QK4 must send unprompted
@@ -763,8 +729,16 @@ because it also seeds current state, which is what real servers do.
 | `trx` | ✅ | **Fixed — see §11.4** |
 | `rit_enable`, `xit_enable`, `rit_offset`, `xit_offset` | ✅ | |
 | `agc_mode` | ✅ | |
+| `agc_gain` | ✅ | |
+| `rx_nb_enable`, `rx_nb_param`, `rx_nr_enable`, `rx_anf_enable`, `rx_apf_enable`, `rx_nf_enable` | ✅ | |
+| `lock`, `vfo_lock` | ✅ | |
+| `rx_volume` | ✅ | QK4's mix, §4.5 |
+| `sql_enable` | ✅ | Wired to broadcast, but the value never changes (§3.2) |
 | `drive`, `tune_drive` | ✅ | **Fixed** — see §4.4 |
-| Everything else in §3.2 | n/a | Reported from constants, so nothing ever changes. **When those are wired to `RadioState` they must gain a broadcast in the same commit** — a value that can change and is not broadcast is this same bug again. |
+| `mic_level`, `cw_keyer_speed` + `cw_macros_speed` | ✅ | Global, no receiver index |
+| `sql_level`, `mute`, `volume`, `tx_enable` | ✗ | Constants, so nothing changes. **When one is wired to `RadioState` it must gain a broadcast in the same commit** — a value that can change and is not broadcast is this same bug again. |
+
+The broadcasts are in `TciServer::setSnapshot()`, which diffs the new snapshot against the last.
 
 ### 11.4 The `trx` defect — FIXED
 
@@ -815,14 +789,13 @@ an amplifier or band-decoder client needs.
 | `rx_sensors`, `rx_channel_sensors` | Yes | **Implemented** — §7.2 |
 | `tx_sensors` | Partly | **Implemented**; mic level and peak power cannot be measured — §7.2 |
 | `tx_enable` on band change | Yes — frequency is tracked | Sent at connect only. The spec says also "when the band is changed, in case transmitter permission was changed" |
-| `vfo_lock` | **Yes** — `lockA`, `lockB` | Not sent. TCI 2.0 |
 | `tx_footswitch` | **No** | The K4 reports that it is transmitting, not *what* keyed it. Cannot be sent honestly |
 | `clicked_on_spot`, `rx_clicked_on_spot` | Partly | Needs panadapter/DX-cluster UI integration, not radio work |
 | `app_focus` | Yes | About the server's own window; low value for a headless-ish control app |
 | `cw_macros_empty`, `callsign_send` | No | CW, §5 |
 
-With the sensors done, the largest remaining omissions are `tx_enable` on band change and
-`vfo_lock` — both small, both read-only.
+With the sensors and `vfo_lock` done, the largest remaining omission is `tx_enable` on band change
+— small and read-only.
 
 ### 11.7 Why `--audit` cannot catch this class
 
@@ -909,8 +882,8 @@ reached the radio replies identically to one that did.
 `rx_nr_enable`, `agc_mode`, `rx_filter_band`, `vfo`, `dds`, `modulation`, `split_enable`,
 `rx_channel_enable`, `drive`, `tune_drive`.
 
-Getting there took three rounds and found three bugs of one kind, none of which any unit test
-could have caught, because all three were about the **bytes on the wire**:
+Getting there took several rounds and found four bugs of one kind, none of which any unit test
+could have caught, because all four were about the **bytes on the wire**:
 
 | Command | Was sent | The K4 wants |
 |---|---|---|
@@ -919,15 +892,14 @@ could have caught, because all three were about the **bytes on the wire**:
 | `drive` | `PCX045H;` | `PC045H;` — `PCX` is the extended *query* |
 | `tune_drive` | `PC…` — the operating power | `ME0069.nnnn` — a menu item, not a command |
 
-All three came from `CatFrames` builders that had **never sent anything to a radio**. Their only
+The first three came from `CatFrames` builders that had **never sent anything to a radio**. Their only
 callers were `catserver.cpp` and `catpushbroadcaster.cpp`, both formatting *replies to a CAT
 client*, and none of the three is in the K4's set form. The TCI SET path was the first outbound
 user of any of them, which is why this surfaced now rather than years ago. QK4's own UI has always
 sent these correctly by hand.
 
 The fix added separate `setNoiseBlanker`, `setFilterBandwidth` and `setRfPower` builders rather
-than changing the existing ones, so nothing a port-9299 client sees has changed. The reply-side
-bugs are real and are reported to the maintainer — see §4.5.
+than changing the existing ones, so nothing a port-9299 client sees has changed.
 
 **`tune_drive` took a fourth round and is the most instructive.** It first shared `drive`'s
 handler, so asking for *tune* power sent `PC` and changed the **operating** power — the wrong
@@ -1004,11 +976,14 @@ commands is the known remedy — that is the one flow where the swallow hazard c
 
 ### 12.8 Still unverified
 
-- **The report-only group** — `mute`, `sql_enable`, `sql_level`, `lock`, `rx_anf_enable`,
-  `rx_apf_enable`, `rx_nf_enable`. They answer but cannot be set, because no `CatFrames` builder
-  exists. §8.
-- **SETs addressed to the sub receiver.** Refused by design: the K4's sub forms are `$`-suffixed
-  and have no builders yet.
+- **The answered-only group** — `mute`, `sql_enable`, `sql_level`, `lock`, `rx_anf_enable`,
+  `rx_apf_enable`, `rx_nf_enable`. They answer but cannot be set. §3.2, §8.
+- **SETs not in the §12.6 run** — `agc_gain`, `rx_nb_param`, `vfo_lock`. This file holds no
+  round-trip record for them. (`cw_macros_speed` was measured; see
+  [tci-client-compatibility-notes.md](tci-client-compatibility-notes.md) §2.)
+- **Per-receiver SETs addressed to the sub receiver** (`rit_*`, `xit_*`, NB, NR, AGC, filter,
+  drive). Not acted on by design: the K4's sub forms are `$`-suffixed and have no set builders yet.
+  `vfo`, `dds`, `modulation`, `rx_enable` and `vfo_lock` do reach the Sub.
 
 ### 12.9 How to repeat it
 

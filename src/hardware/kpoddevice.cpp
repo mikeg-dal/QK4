@@ -1,6 +1,15 @@
 #include "kpoddevice.h"
 #include "kpodhidworker.h"
+#include "logging/logcategories.h"
+#include "utils/threadshutdown.h"
 #include <QThread>
+#include <chrono>
+
+namespace {
+// WHY 2 s: shutdown() is queued behind whatever the worker is doing, and the slowest thing it does
+// is device detection - up to 400 ms of open retries plus two 500 ms ID queries on Windows.
+constexpr std::chrono::milliseconds kHidStopTimeout{2000};
+} // namespace
 
 KpodDevice::KpodDevice(QObject *parent) : QObject(parent) {
     m_hidThread = new QThread(this);
@@ -36,15 +45,15 @@ KpodDevice::KpodDevice(QObject *parent) : QObject(parent) {
 }
 
 KpodDevice::~KpodDevice() {
-    if (m_hidWorker) {
-        // Synchronously drain the worker (stop timers, close handle, hid_exit) before
-        // tearing the thread down — mirrors KpodPlusDevice's shutdown pattern.
-        QMetaObject::invokeMethod(m_hidWorker, "shutdown", Qt::BlockingQueuedConnection);
+    // Drain the worker on its own thread (stop timers, close the handle, hid_exit) before the
+    // thread is torn down - mirrors KpodPlusDevice's shutdown pattern. One deadline for both.
+    const QDeadlineTimer deadline(kHidStopTimeout);
+    if (KpodHidWorker *worker = m_hidWorker) {
+        ThreadShutdown::callBlocking(worker, [worker]() { worker->shutdown(); }, deadline);
     }
-    if (m_hidThread) {
-        m_hidThread->quit();
-        m_hidThread->wait(2000);
-    }
+    // The worker is deleted with its thread (finished -> deleteLater), or left on it if disowned.
+    ThreadShutdown::retire(m_hidThread, deadline, lcKpod());
+    m_hidWorker = nullptr;
 }
 
 bool KpodDevice::isDetected() const {

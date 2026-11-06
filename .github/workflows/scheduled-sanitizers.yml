@@ -51,6 +51,9 @@ jobs:
             libfontconfig1-dev libfreetype-dev \
             libopus-dev libhidapi-dev libusb-1.0-0-dev libssl-dev libudev-dev
 
+      # The key hashes .github/qt-version as well as the script: the script reads the version from
+      # that file, so a version bump changes no byte of the script and would otherwise restore the
+      # old Qt.
       # WHY the compiler version is in the key: Qt and the tests must share one TSan runtime. When the
       # runner image moves to a new compiler, a Qt cached by the old one must be rebuilt, not reused.
       # (${{ env.ImageOS }} cannot do this: the env context sees only workflow-defined variables.)
@@ -63,7 +66,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ~/qt-tsan
-          key: qtbase-tsan-${{ runner.os }}-gcc${{ steps.qt-key.outputs.compiler }}-${{ hashFiles('scripts/build-qtbase-tsan.sh') }}
+          key: qtbase-tsan-${{ runner.os }}-gcc${{ steps.qt-key.outputs.compiler }}-${{ hashFiles('scripts/build-qtbase-tsan.sh', '.github/qt-version') }}
 
       - name: Build TSan-instrumented qtbase
         if: steps.qt-cache.outputs.cache-hit != 'true'

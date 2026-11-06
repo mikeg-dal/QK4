@@ -41,7 +41,6 @@ public:
 
     explicit VfoRowIndicatorController(RadioState *radioState, SpectrumController *spectrum, VfoRowWidget *vfoRow,
                                        const Labels &labels, QObject *parent = nullptr);
-    ~VfoRowIndicatorController() override;
 
     // Resets split/bSet/vox/qsk/atu/msgBank indicators to their disconnected
     // defaults. (TX triangles are TxStateController territory.)

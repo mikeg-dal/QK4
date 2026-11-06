@@ -8,16 +8,19 @@
 #include <QListWidget>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QSpinBox>
+#include <QStringList>
+
+#include <optional>
+
 #include "settings/radiosettings.h"
 #include "network/k4discovery.h"
 
 /**
  * @brief Dialog for managing saved K4 connections. Shows the stored RadioEntry list, exposes the
- *        host/port/password/TLS-PSK fields, embeds a mDNS discovery list (K4Discovery), and the
- *        per-entry encode-mode + streaming-latency selectors. Emits connectRequested /
- *        disconnectRequested; also emits streamingLatencyChanged so MainWindow can re-send SL
- *        without reconnecting.
+ *        host/port/password/TLS-PSK fields, lists the radios K4Discovery's UDP broadcast probe
+ *        finds, and the per-entry encode-mode + streaming-latency selectors. Emits
+ *        connectRequested / disconnectRequested; also emits streamingLatencyChanged so
+ *        MainWindow can re-send SL without reconnecting.
  */
 class RadioManagerDialog : public QDialog {
     Q_OBJECT
@@ -25,16 +28,16 @@ class RadioManagerDialog : public QDialog {
 public:
     explicit RadioManagerDialog(QWidget *parent = nullptr);
 
-    RadioEntry selectedRadio() const;
-    bool hasSelection() const;
-
     // Set the currently connected radio host (empty string if disconnected)
     void setConnectedHost(const QString &host);
+
+public slots:
+    void reject() override;
 
 signals:
     void connectRequested(const RadioEntry &radio);
     void disconnectRequested();
-    void streamingLatencyChanged(int tier); // Emitted on save while connected
+    void streamingLatencyChanged(int tier); // Emitted when the connected radio's entry is saved
 
 private slots:
     void onConnectClicked();
@@ -51,8 +54,11 @@ private slots:
 
 private:
     void setupUi();
-    static QString lineEditStyle(const QString &borderColor);
     void updateButtonStates();
+    QStringList fieldValues() const;
+    bool confirmUnsavedChanges();
+    // The port the form describes, or nullopt if the field holds something that is not one.
+    std::optional<quint16> portFromField() const;
     void updateHostFieldStyle();
     void clearFields();
     void populateFieldsFromSelection();
@@ -81,10 +87,10 @@ private:
     QTimer *m_scanCountdown = nullptr;
     int m_scanSecondsLeft = 0;
 
-    QString m_hostNormalStyle; // m_hostEdit style with normal border
-    QString m_hostErrorStyle;  // m_hostEdit style with red border (invalid host)
-
     int m_currentIndex;
+    int m_selectedRow = -1;
+    QStringList m_loadedFields;
+    bool m_confirmingChanges = false;
     QString m_connectedHost; // Host of currently connected radio (empty if disconnected)
 
     K4Discovery *m_discovery;

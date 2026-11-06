@@ -20,7 +20,6 @@ class SideControlDisplayController : public QObject {
 
 public:
     explicit SideControlDisplayController(RadioState *radioState, SideControlPanel *panel, QObject *parent = nullptr);
-    ~SideControlDisplayController() override;
 
 private slots:
     void refreshFilterDisplay();

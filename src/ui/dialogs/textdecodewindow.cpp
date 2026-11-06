@@ -1,4 +1,5 @@
 #include "ui/dialogs/textdecodewindow.h"
+#include "models/radiostate/textdecodestate.h"
 #include "settings/radiosettings.h"
 #include "ui/styling/k4styles.h"
 #include <QVBoxLayout>
@@ -11,6 +12,9 @@
 #include <QTextCursor>
 #include <QWheelEvent>
 
+#include <algorithm>
+#include <initializer_list>
+
 namespace {
 const int TitleBarHeight = K4Styles::Dimensions::ButtonHeightMedium;
 const int BorderWidth = 4;
@@ -21,12 +25,28 @@ const int DefaultHeight = 300;
 const int CloseButtonSize = K4Styles::Dimensions::ButtonHeightMini;
 const int ControlButtonHeight = K4Styles::Dimensions::ButtonHeightMini;
 const int ResizeGripSize = 16;
+const int SpeedButtonMinWidth = 40;
+const int AutoManualButtonMinWidth = 48;
+
+// Fixes a key's width to the widest text it can show, never below `floorWidth`, so a text change
+// never clips. WHY: an explicit minimum width overrides the button's own minimum size hint (Qt docs,
+// QWidget::minimumSize), so a floor narrower than the text squeezed "MANUAL" into a 48 px key.
+void fitWidthToTexts(QPushButton *button, std::initializer_list<const char *> texts, int floorWidth) {
+    button->ensurePolished(); // the style sheet's font decides the width
+    const QString shown = button->text();
+    int widest = floorWidth;
+    for (const char *text : texts) {
+        button->setText(QString::fromUtf8(text));
+        widest = (std::max)(widest, button->sizeHint().width());
+    }
+    button->setText(shown);
+    button->setMinimumWidth(widest);
+}
 } // namespace
 
 TextDecodeWindow::TextDecodeWindow(Receiver rx, QWidget *parent) : QWidget(parent), m_receiver(rx) {
     setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground);
-    setMinimumSize(MinWidth, MinHeight);
     resize(DefaultWidth, DefaultHeight);
     setupUi();
 }
@@ -36,6 +56,10 @@ void TextDecodeWindow::setupUi() {
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(BorderWidth, BorderWidth, BorderWidth, BorderWidth);
     mainLayout->setSpacing(0);
+    // WHY: the window's minimum follows its layout, so it can never be narrower than the title row
+    // the current mode shows. A fixed minimum would override the layout's (Qt docs,
+    // QLayout::SizeConstraint), which is how the keys came to be drawn over each other.
+    mainLayout->setSizeConstraint(QLayout::SetMinimumSize);
 
     // Title bar container
     auto *titleBar = new QWidget(this);
@@ -50,60 +74,59 @@ void TextDecodeWindow::setupUi() {
     m_onOffBtn->setFixedHeight(ControlButtonHeight);
     m_onOffBtn->setMinimumWidth(36);
     m_onOffBtn->setCursor(Qt::PointingHandCursor);
-    m_onOffBtn->setStyleSheet(controlButtonStyle(false));
+    m_onOffBtn->setStyleSheet(K4Styles::controlButtonSelectable());
 
-    // WPM button (CW mode only)
+    // Speed button: WPM range in CW, data rate in AFSK/FSK/PSK
     m_wpmBtn = new QPushButton("8-45", titleBar);
     m_wpmBtn->setFixedHeight(ControlButtonHeight);
-    m_wpmBtn->setMinimumWidth(40);
     m_wpmBtn->setCursor(Qt::PointingHandCursor);
-    m_wpmBtn->setStyleSheet(controlButtonStyle(false));
+    m_wpmBtn->setStyleSheet(K4Styles::controlButton());
 
     // AUTO/MANUAL button
     m_autoManualBtn = new QPushButton("AUTO", titleBar);
     m_autoManualBtn->setFixedHeight(ControlButtonHeight);
-    m_autoManualBtn->setMinimumWidth(48);
     m_autoManualBtn->setCursor(Qt::PointingHandCursor);
-    m_autoManualBtn->setStyleSheet(controlButtonStyle(true)); // AUTO is default (highlighted)
+    m_autoManualBtn->setStyleSheet(K4Styles::controlButtonSelectable());
+    K4Styles::setSelected(m_autoManualBtn, true); // AUTO is default (highlighted)
 
     // Threshold controls: [-] [5] [+]
     m_thresholdMinusBtn = new QPushButton("-", titleBar);
     m_thresholdMinusBtn->setFixedSize(ControlButtonHeight, ControlButtonHeight);
     m_thresholdMinusBtn->setCursor(Qt::PointingHandCursor);
-    m_thresholdMinusBtn->setStyleSheet(controlButtonStyle(false));
+    m_thresholdMinusBtn->setStyleSheet(K4Styles::controlButton());
 
     m_thresholdValueLabel = new QLabel("5", titleBar);
     m_thresholdValueLabel->setFixedSize(20, ControlButtonHeight);
     m_thresholdValueLabel->setAlignment(Qt::AlignCenter);
     m_thresholdValueLabel->setStyleSheet(QString("QLabel { color: %1; font-size: %2px; font-weight: bold; }")
                                              .arg(K4Styles::Colors::DarkBackground)
-                                             .arg(K4Styles::Dimensions::FontSizeNormal));
+                                             .arg(K4Styles::Dimensions::FontSizeCaption));
 
     m_thresholdPlusBtn = new QPushButton("+", titleBar);
     m_thresholdPlusBtn->setFixedSize(ControlButtonHeight, ControlButtonHeight);
     m_thresholdPlusBtn->setCursor(Qt::PointingHandCursor);
-    m_thresholdPlusBtn->setStyleSheet(controlButtonStyle(false));
+    m_thresholdPlusBtn->setStyleSheet(K4Styles::controlButton());
 
     // CLR button - clear text buffer (local only)
     m_clearBtn = new QPushButton("CLR", titleBar);
     m_clearBtn->setFixedHeight(ControlButtonHeight);
     m_clearBtn->setMinimumWidth(36);
     m_clearBtn->setCursor(Qt::PointingHandCursor);
-    m_clearBtn->setStyleSheet(controlButtonStyle(false));
+    m_clearBtn->setStyleSheet(K4Styles::controlButton());
 
     // A- / A+ buttons - shrink/grow decoded-text font size (per receiver, persisted)
     m_fontMinusBtn = new QPushButton(QString::fromUtf8("A−"), titleBar); // A−
     m_fontMinusBtn->setFixedHeight(ControlButtonHeight);
     m_fontMinusBtn->setMinimumWidth(36);
     m_fontMinusBtn->setCursor(Qt::PointingHandCursor);
-    m_fontMinusBtn->setStyleSheet(controlButtonStyle(false));
+    m_fontMinusBtn->setStyleSheet(K4Styles::controlButton());
     m_fontMinusBtn->setToolTip("Decrease decoded text size");
 
     m_fontPlusBtn = new QPushButton("A+", titleBar);
     m_fontPlusBtn->setFixedHeight(ControlButtonHeight);
     m_fontPlusBtn->setMinimumWidth(36);
     m_fontPlusBtn->setCursor(Qt::PointingHandCursor);
-    m_fontPlusBtn->setStyleSheet(controlButtonStyle(false));
+    m_fontPlusBtn->setStyleSheet(K4Styles::controlButton());
     m_fontPlusBtn->setToolTip("Increase decoded text size");
 
     // Title label - smaller, right-aligned
@@ -111,25 +134,27 @@ void TextDecodeWindow::setupUi() {
     m_titleLabel = new QLabel(titleText, titleBar);
     m_titleLabel->setStyleSheet(QString("QLabel { color: %1; font-size: %2px; font-weight: bold; }")
                                     .arg(K4Styles::Colors::DarkBackground)
-                                    .arg(K4Styles::Dimensions::FontSizeMedium));
+                                    .arg(K4Styles::Dimensions::FontSizeCaption));
 
     // Close button - dark text to match
     m_closeBtn = new QPushButton("\u2715", titleBar); // ✕
     m_closeBtn->setFixedSize(CloseButtonSize, CloseButtonSize);
     m_closeBtn->setCursor(Qt::PointingHandCursor);
-    m_closeBtn->setStyleSheet(QString("QPushButton {"
-                                      "  background: transparent;"
-                                      "  color: %1;"
-                                      "  border: none;"
-                                      "  font-size: %2px;"
-                                      "  font-weight: bold;"
-                                      "}"
-                                      "QPushButton:hover {"
-                                      "  background: rgba(0, 0, 0, 0.2);"
-                                      "  border-radius: 4px;"
-                                      "}")
-                                  .arg(K4Styles::Colors::DarkBackground)
-                                  .arg(K4Styles::Dimensions::FontSizePopup));
+    m_closeBtn->setStyleSheet(
+        QString("QPushButton {"
+                "  background: transparent;"
+                "  color: %1;"
+                "  border: none;"
+                "  font-size: %2px;"
+                "  font-weight: bold;"
+                "}"
+                "QPushButton:hover {"
+                "  background: %3;"
+                "  border-radius: 4px;"
+                "}")
+            .arg(K4Styles::Colors::DarkBackground)
+            .arg(K4Styles::Dimensions::FontSizeHeading)
+            .arg(K4Styles::cssRgba(K4Styles::Colors::Black, K4Styles::Colors::Alpha::CloseButtonHover)));
 
     // Layout: [ON][WPM][AUTO][-][5][+][CLR][A-][A+] <stretch> TITLE [X]
     titleLayout->addWidget(m_onOffBtn);
@@ -149,6 +174,8 @@ void TextDecodeWindow::setupUi() {
     m_textDisplay = new QPlainTextEdit(this);
     m_textDisplay->setReadOnly(true);
     m_textDisplay->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    // The window's floor size, carried by the text area so the layout includes it.
+    m_textDisplay->setMinimumSize(MinWidth - 2 * BorderWidth, MinHeight - TitleBarHeight - 2 * BorderWidth);
 
     // Initial font size from persisted settings (per receiver), then apply stylesheet + line spacing.
     m_textFontSize = RadioSettings::instance()->textDecodeFontSize(m_receiver == SubRx);
@@ -165,14 +192,14 @@ void TextDecodeWindow::setupUi() {
 
     // A- / A+ buttons - adjust decoded-text font size, persist per receiver
     connect(m_fontMinusBtn, &QPushButton::clicked, this, [this]() {
-        if (m_textFontSize <= 7)
+        if (m_textFontSize <= K4Styles::Dimensions::FontSizeTextDecodeMin)
             return;
         m_textFontSize -= 1;
         applyTextFontSize();
         RadioSettings::instance()->setTextDecodeFontSize(m_receiver == SubRx, m_textFontSize);
     });
     connect(m_fontPlusBtn, &QPushButton::clicked, this, [this]() {
-        if (m_textFontSize >= 24)
+        if (m_textFontSize >= K4Styles::Dimensions::FontSizeTextDecodeMax)
             return;
         m_textFontSize += 1;
         applyTextFontSize();
@@ -224,6 +251,8 @@ void TextDecodeWindow::setupUi() {
         }
     });
 
+    fitWidthToTexts(m_autoManualBtn, {"AUTO", "MANUAL"}, AutoManualButtonMinWidth);
+
     // Initial state
     updateModeVisibility();
     updateThresholdControls();
@@ -247,7 +276,7 @@ void TextDecodeWindow::clearText() {
 }
 
 void TextDecodeWindow::setMaxLines(int lines) {
-    m_maxLines = qBound(1, lines, 10);
+    m_maxLines = qBound(TextDecodeState::LinesMin, lines, TextDecodeState::LinesMax);
     trimToMaxLines();
 }
 
@@ -346,8 +375,8 @@ void TextDecodeWindow::mouseMoveEvent(QMouseEvent *event) {
         move(event->globalPosition().toPoint() - m_dragPosition);
     } else if (m_resizing) {
         QPoint delta = event->globalPosition().toPoint() - m_resizeStartPos;
-        int newWidth = qMax(MinWidth, m_resizeStartSize.width() + delta.x());
-        int newHeight = qMax(MinHeight, m_resizeStartSize.height() + delta.y());
+        int newWidth = (std::max)(minimumWidth(), m_resizeStartSize.width() + delta.x());
+        int newHeight = (std::max)(minimumHeight(), m_resizeStartSize.height() + delta.y());
         resize(newWidth, newHeight);
     } else {
         // Update cursor for resize grip
@@ -391,13 +420,8 @@ void TextDecodeWindow::wheelEvent(QWheelEvent *event) {
     QWidget::wheelEvent(event);
 }
 
-QString TextDecodeWindow::controlButtonStyle(bool selected) const {
-    return K4Styles::controlButton(selected);
-}
-
 void TextDecodeWindow::applyTextFontSize() {
-    // Stylesheet template — colors / scrollbar / padding identical to the original; only the
-    // font-size value changes. Re-applying mergeBlockFormat after the size change re-anchors the
+    // Only the font size varies. Re-applying mergeBlockFormat after the size change re-anchors the
     // 1.5x line spacing on every existing block so scrollback re-flows cleanly.
     m_textDisplay->setStyleSheet(QString("QPlainTextEdit {"
                                          "  background: %1;"
@@ -421,26 +445,41 @@ void TextDecodeWindow::applyTextFontSize() {
                                          "  height: 0px;"
                                          "}")
                                      .arg(K4Styles::Colors::DarkBackground)
-                                     .arg(K4Styles::Colors::TextWhite)
+                                     .arg(K4Styles::Colors::TextPrimary)
                                      .arg(m_textFontSize)
                                      .arg(K4Styles::Colors::Background)
                                      .arg(K4Styles::Colors::BorderNormal)
                                      .arg(K4Styles::Fonts::Data));
 
-    QTextCursor cursor = m_textDisplay->textCursor();
+    QTextCursor cursor(m_textDisplay->document());
     QTextBlockFormat blockFormat;
     blockFormat.setLineHeight(150, QTextBlockFormat::ProportionalHeight);
     cursor.select(QTextCursor::Document);
     cursor.mergeBlockFormat(blockFormat);
-    m_textDisplay->setTextCursor(cursor);
 }
 
 void TextDecodeWindow::updateButtonStates() {
     m_onOffBtn->setText(m_decodeEnabled ? "ON" : "OFF");
-    m_onOffBtn->setStyleSheet(controlButtonStyle(m_decodeEnabled));
+    K4Styles::setSelected(m_onOffBtn, m_decodeEnabled);
 }
 
 void TextDecodeWindow::updateSpeedButton() {
+    // Sized for the widest label of the current mode, so cycling the range never changes the key's width.
+    switch (m_operatingMode) {
+    case ModeCW:
+        fitWidthToTexts(m_wpmBtn, {"8-45", "8-60", "8-90"}, SpeedButtonMinWidth);
+        break;
+    case ModeAFSK:
+    case ModeFSK:
+        fitWidthToTexts(m_wpmBtn, {"RTTY45", "RTTY75"}, SpeedButtonMinWidth);
+        break;
+    case ModePSK:
+        fitWidthToTexts(m_wpmBtn, {"PSK31", "PSK63"}, SpeedButtonMinWidth);
+        break;
+    default:
+        break;
+    }
+
     switch (m_operatingMode) {
     case ModeCW: {
         static const char *wpmLabels[] = {"8-45", "8-60", "8-90"};
@@ -461,7 +500,7 @@ void TextDecodeWindow::updateSpeedButton() {
 
 void TextDecodeWindow::updateThresholdControls() {
     m_autoManualBtn->setText(m_autoThreshold ? "AUTO" : "MANUAL");
-    m_autoManualBtn->setStyleSheet(controlButtonStyle(m_autoThreshold));
+    K4Styles::setSelected(m_autoManualBtn, m_autoThreshold);
 
     // Enable/disable threshold +/- buttons based on mode
     bool enableThreshold = !m_autoThreshold && m_operatingMode == ModeCW;
@@ -488,7 +527,6 @@ void TextDecodeWindow::setDecodeEnabled(bool enabled) {
     if (m_decodeEnabled != enabled) {
         m_decodeEnabled = enabled;
         updateButtonStates();
-        emit enabledChanged(enabled);
     }
 }
 

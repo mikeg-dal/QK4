@@ -13,6 +13,8 @@ private slots:
     void testResolvedNameAllAffectedXvtrIds();
     void testDisplayValueUnitFormatters();
     void testClearAnnouncesItselfAndEmptiesTheModel();
+    void testItemIdsOrderedByNameAndFiltered();
+    void testTypedValuesBecomeStoredValues();
 };
 
 void TestMenuModel::testResolvedNamePassesThrough() {
@@ -98,27 +100,98 @@ void TestMenuModel::testDisplayValueUnitFormatters() {
     QCOMPARE(model.getMenuItem(103)->displayValue(), QStringLiteral("5"));
 }
 
-// Regression: clear() used to empty the map silently. Consumers hold raw MenuItem * into it —
-// the menu overlay keeps one per row — so a silent clear left them dangling and the next ME
-// update after a reconnect dereferenced freed memory.
+// clear() runs on every disconnect; views drop their rows when it announces itself (#124).
 void TestMenuModel::testClearAnnouncesItselfAndEmptiesTheModel() {
     MenuModel model;
     QVERIFY(model.parseMEDF("MEDF0007,AGC Hold Time,RX AGC,DEC,1,0,200,0,0,1;"));
     QVERIFY(model.parseMEDF("MEDF0008,AGC Decay,RX AGC,DEC,1,0,200,0,0,1;"));
-    QCOMPARE(model.getAllItems().size(), 2);
+    QCOMPARE(model.itemIds().size(), 2);
 
     QSignalSpy cleared(&model, &MenuModel::modelCleared);
     model.clear();
 
     QCOMPARE(cleared.count(), 1);
-    QCOMPARE(model.getAllItems().size(), 0);
+    QCOMPARE(model.itemIds().size(), 0);
     QVERIFY(model.getMenuItem(7) == nullptr);
 
     // A value update for an item that no longer exists must not resurrect one or emit.
     QSignalSpy changed(&model, &MenuModel::menuValueChanged);
     model.parseME("ME0007.0005;");
     QCOMPARE(changed.count(), 0);
-    QCOMPARE(model.getAllItems().size(), 0);
+    QCOMPARE(model.itemIds().size(), 0);
+}
+
+void TestMenuModel::testItemIdsOrderedByNameAndFiltered() {
+    MenuModel model;
+    QVERIFY(model.parseMEDF("MEDF0086,XVTR Band # Select,XV,XVTR,1,1,12,1,1,1;"));
+    QVERIFY(model.parseMEDF("MEDF0008,agc Decay,RX AGC,DEC,1,0,200,0,0,1;"));
+    QVERIFY(model.parseMEDF("MEDF0007,AGC Hold Time,RX AGC,DEC,1,0,200,0,0,1;"));
+
+    QCOMPARE(model.itemIds(), (QList<int>{8, 7, 86}));
+    QCOMPARE(model.itemIds(QStringLiteral("AGC")), (QList<int>{8, 7}));
+    QCOMPARE(model.itemIds(QStringLiteral("hold")), (QList<int>{7}));
+    QVERIFY(model.itemIds(QStringLiteral("nothing")).isEmpty());
+}
+
+// Type-in: the operator types in the units the row shows; the K4 stores its own units, on its step,
+// inside its range.
+void TestMenuModel::testTypedValuesBecomeStoredValues() {
+    using namespace MenuValueEntry;
+    MenuItem rf;
+    rf.type = "MHz";
+    rf.minValue = 0;
+    rf.maxValue = 99999;
+    QVERIFY(acceptsTyping(rf));
+    QVERIFY(!allowsNegative(rf));
+    QCOMPARE(unitSuffix(rf), QString(" MHz"));
+    QCOMPARE(rawFromTyped(rf, "10368"), std::optional<int>(10368)); // 10 GHz band start
+    // Out of range is refused, never clamped: Mike typed past 99999 and the menu sent 99999.
+    QCOMPARE(rawFromTyped(rf, "123456"), std::optional<int>());
+    QVERIFY(withinTypingBounds(rf, "99999"));
+    QVERIFY(!withinTypingBounds(rf, "100000"));
+    QCOMPARE(rawFromTyped(rf, "abc"), std::optional<int>());
+
+    MenuItem offset;
+    offset.type = "Hz";
+    offset.minValue = -99999;
+    offset.maxValue = 99999;
+    QVERIFY(allowsNegative(offset));
+    QCOMPARE(rawFromTyped(offset, "-1234"), std::optional<int>(-1234));
+    QVERIFY(!withinTypingBounds(offset, "-100000"));
+
+    MenuItem power;
+    power.type = "D10mW"; // tenths of a milliwatt
+    power.minValue = 1;
+    power.maxValue = 50;
+    QVERIFY(allowsDecimal(power));
+    QCOMPARE(rawFromTyped(power, "1.5"), std::optional<int>(15));
+    QCOMPARE(rawFromTyped(power, "9"), std::optional<int>());
+    QCOMPARE(rawFromTyped(power, "0.0"), std::optional<int>()); // below the 0.1 mW minimum
+    QVERIFY(withinTypingBounds(power, "0."));                   // on the way to 0.5
+
+    MenuItem deviation;
+    deviation.type = "M50Hz"; // 50 Hz steps
+    deviation.minValue = 0;
+    deviation.maxValue = 200;
+    QCOMPARE(rawFromTyped(deviation, "2510"), std::optional<int>(50));
+
+    MenuItem stepped;
+    stepped.type = "DEC";
+    stepped.minValue = 0;
+    stepped.maxValue = 100;
+    stepped.step = 5;
+    QCOMPARE(rawFromTyped(stepped, "12"), std::optional<int>(10));
+    QCOMPARE(rawFromTyped(stepped, "13"), std::optional<int>(15));
+
+    MenuItem choice = rf;
+    choice.options = {"OFF", "External"};
+    QVERIFY(!acceptsTyping(choice));
+    MenuItem binary = rf;
+    binary.type = "BIN";
+    QVERIFY(!acceptsTyping(binary));
+    MenuItem locked = rf;
+    locked.flag = 2;
+    QVERIFY(!acceptsTyping(locked));
 }
 
 QTEST_MAIN(TestMenuModel)

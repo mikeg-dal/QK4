@@ -4,6 +4,8 @@
 #include <QWidget>
 #include "utils/wheelaccumulator.h"
 
+class PopupDismissal;
+
 /**
  * @brief Base class for overlay panels in SideControlPanel.
  *
@@ -14,7 +16,9 @@
  * - Colored indicator bar (orange for Global, cyan for MainRx, green for SubRx)
  * - Dark background with rounded corners
  * - Mouse wheel handling for value adjustment
- * - Click outside to close
+ * - Closed by pressing its key again, the other overlay's key, the disconnect reset, and the same
+ *   rule as every popup (PopupDismissal): a press anywhere outside it, Escape, the side panel being
+ *   hidden, the window moving, resizing or changing state
  */
 class SideControlOverlay : public QWidget {
     Q_OBJECT
@@ -23,7 +27,7 @@ public:
     enum Context { Global, MainRx, SubRx };
 
     explicit SideControlOverlay(Context ctx, QWidget *parent = nullptr);
-    virtual ~SideControlOverlay() = default;
+    ~SideControlOverlay() override;
 
     /**
      * @brief Show the overlay positioned over the given widgets.
@@ -41,6 +45,8 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 
     /**
      * @brief Get the color for the indicator bar based on context.
@@ -61,6 +67,7 @@ protected:
 
 private:
     Context m_context;
+    PopupDismissal *m_dismissal; // watching while shown: closes the overlay like any popup
 };
 
 #endif // SIDECONTROLOVERLAY_H

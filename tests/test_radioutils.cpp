@@ -1,6 +1,16 @@
 #include <QTest>
 #include "utils/radioutils.h"
 
+namespace {
+constexpr RadioUtils::FilterEdgeLimits kSsbLimits{5, 500, 30, 300, false};
+int loDah(RadioUtils::FilterBwIs f) {
+    return qMax(0, f.isDah - f.bwDah / 2);
+}
+int hiDah(RadioUtils::FilterBwIs f) {
+    return loDah(f) + f.bwDah;
+}
+} // namespace
+
 class TestRadioUtils : public QObject {
     Q_OBJECT
 
@@ -31,24 +41,15 @@ private slots:
     }
     void testDigitStep_negativeHasNoStep() { QCOMPARE(RadioUtils::tuningStepForDigit(-1), -1); }
 
-    // getBandFromFrequency
-    void testBand_160m() { QCOMPARE(RadioUtils::getBandFromFrequency(1900000), 0); }
-    void testBand_80m() { QCOMPARE(RadioUtils::getBandFromFrequency(3573000), 1); }
-    void testBand_60m() { QCOMPARE(RadioUtils::getBandFromFrequency(5357000), 2); }
-    void testBand_40m() { QCOMPARE(RadioUtils::getBandFromFrequency(7074000), 3); }
-    void testBand_30m() { QCOMPARE(RadioUtils::getBandFromFrequency(10136000), 4); }
-    void testBand_20m() { QCOMPARE(RadioUtils::getBandFromFrequency(14074000), 5); }
-    void testBand_17m() { QCOMPARE(RadioUtils::getBandFromFrequency(18100000), 6); }
-    void testBand_15m() { QCOMPARE(RadioUtils::getBandFromFrequency(21074000), 7); }
-    void testBand_12m() { QCOMPARE(RadioUtils::getBandFromFrequency(24915000), 8); }
-    void testBand_10m() { QCOMPARE(RadioUtils::getBandFromFrequency(28074000), 9); }
-    void testBand_6m() { QCOMPARE(RadioUtils::getBandFromFrequency(50313000), 10); }
-    void testBand_xvtr() { QCOMPARE(RadioUtils::getBandFromFrequency(144174000), 16); }
-    void testBand_outOfBand() { QCOMPARE(RadioUtils::getBandFromFrequency(100000), -1); }
-    void testBand_gapBetweenBands() { QCOMPARE(RadioUtils::getBandFromFrequency(8000000), -1); }
-    void testBand_lowerEdge_20m() { QCOMPARE(RadioUtils::getBandFromFrequency(14000000), 5); }
-    void testBand_upperEdge_20m() { QCOMPARE(RadioUtils::getBandFromFrequency(14350000), 5); }
-    void testBand_justAbove_20m() { QCOMPARE(RadioUtils::getBandFromFrequency(14350001), -1); }
+    // isXvtrBandNumber: BN11..BN22 are XVTR1..12 (Programmer's Reference D12, XV$)
+    void testXvtrBandNumbers() {
+        QVERIFY(!RadioUtils::isXvtrBandNumber(-1));
+        QVERIFY(!RadioUtils::isXvtrBandNumber(0));
+        QVERIFY(!RadioUtils::isXvtrBandNumber(10)); // 6 m
+        QVERIFY(RadioUtils::isXvtrBandNumber(11));  // XVTR1
+        QVERIFY(RadioUtils::isXvtrBandNumber(22));  // XVTR12
+        QVERIFY(!RadioUtils::isXvtrBandNumber(23));
+    }
 
     // getNextSpanUp
     void testSpanUp_min() { QCOMPARE(RadioUtils::getNextSpanUp(5000), 6000); }
@@ -82,6 +83,14 @@ private slots:
         }
     }
 
+    // nextDdcNoiseBlankerMode - DISPLAY NB key: OFF -> ON -> AUTO -> OFF
+    void testDdcNbCycle() {
+        QCOMPARE(RadioUtils::nextDdcNoiseBlankerMode(0), 1);
+        QCOMPARE(RadioUtils::nextDdcNoiseBlankerMode(1), 2);
+        QCOMPARE(RadioUtils::nextDdcNoiseBlankerMode(2), 0);
+        QCOMPARE(RadioUtils::nextDdcNoiseBlankerMode(-1), 1); // not reported yet: taken as OFF
+    }
+
     // nextFilterPreset
     void testFilterPreset_1GoesTo3() { QCOMPARE(RadioUtils::nextFilterPreset(1), 3); }
     void testFilterPreset_3GoesTo2() { QCOMPARE(RadioUtils::nextFilterPreset(3), 2); }
@@ -98,6 +107,87 @@ private slots:
         QCOMPARE(RadioUtils::nextFilterPreset(-1), -1);
         QCOMPARE(RadioUtils::nextFilterPreset(0), -1);
         QCOMPARE(RadioUtils::nextFilterPreset(4), -1);
+    }
+
+    // filterAfterEdgeStep — HI/LO scroll keeps the opposite edge fixed
+    void testEdgeStep_hiMovesHiOnly() {
+        const auto next = RadioUtils::filterAfterEdgeStep({240, 150}, true, 1, kSsbLimits);
+        QVERIFY(next);
+        QCOMPARE(next->bwDah, 242);
+        QCOMPARE(loDah(*next), 30);
+        QCOMPARE(hiDah(*next), 272);
+    }
+    void testEdgeStep_hiAtMaxBandwidthIsIgnored() {
+        // BW already at its limit: the old code still re-centred IS, dragging LO up.
+        QVERIFY(!RadioUtils::filterAfterEdgeStep({500, 270}, true, 1, kSsbLimits));
+    }
+    void testEdgeStep_loPastMaxBandwidthKeepsHiFixed() {
+        const RadioUtils::FilterBwIs current{498, 270};
+        const auto next = RadioUtils::filterAfterEdgeStep(current, false, -2, kSsbLimits);
+        QVERIFY(next);
+        QCOMPARE(next->bwDah, 500);
+        QCOMPARE(hiDah(*next), hiDah(current));
+        QCOMPARE(loDah(*next), 19);
+    }
+    void testEdgeStep_loPastMinBandwidthKeepsHiFixed() {
+        const RadioUtils::FilterBwIs current{6, 100};
+        const auto next = RadioUtils::filterAfterEdgeStep(current, false, 1, kSsbLimits);
+        QVERIFY(next);
+        QCOMPARE(next->bwDah, 5);
+        QCOMPARE(hiDah(*next), hiDah(current));
+    }
+    void testEdgeStep_isLimitWouldMoveFixedEdgeIsIgnored() {
+        const auto ok = RadioUtils::filterAfterEdgeStep({40, 35}, true, -5, kSsbLimits);
+        QVERIFY(ok);
+        QCOMPARE(ok->isDah, 30);
+        QCOMPARE(loDah(*ok), 15);
+        // One more step needs IS 29: clamping it to 30 would move LO, so the tick is dropped.
+        QVERIFY(!RadioUtils::filterAfterEdgeStep({40, 35}, true, -6, kSsbLimits));
+    }
+    void testEdgeStep_lockedShiftChangesBandwidthOnly() {
+        const auto next = RadioUtils::filterAfterEdgeStep({50, 100}, true, 1, {5, 80, 30, 300, true});
+        QVERIFY(next);
+        QCOMPARE(next->bwDah, 52);
+        QCOMPARE(next->isDah, 100);
+    }
+    void testEdgeStep_sweepFixedEdgeNeverMoves() {
+        for (int bw = 5; bw <= 500; bw += 7) {
+            for (int is = 30; is <= 300; is += 11) {
+                for (int steps : {-25, -3, -1, 1, 3, 25}) {
+                    for (bool adjustHi : {true, false}) {
+                        const RadioUtils::FilterBwIs current{bw, is};
+                        const auto next = RadioUtils::filterAfterEdgeStep(current, adjustHi, steps, kSsbLimits);
+                        if (!next)
+                            continue;
+                        QVERIFY(next->bwDah >= 5 && next->bwDah <= 500);
+                        QVERIFY(next->isDah >= 30 && next->isDah <= 300);
+                        if (adjustHi)
+                            QCOMPARE(loDah(*next), loDah(current));
+                        else
+                            QCOMPARE(hiDah(*next), hiDah(current));
+                    }
+                }
+            }
+        }
+    }
+
+    // agcLabel / agcActive
+    void testAgcLabel() {
+        QCOMPARE(RadioUtils::agcLabel(0), QString("AGC"));
+        QCOMPARE(RadioUtils::agcLabel(1), QString("AGC-S"));
+        QCOMPARE(RadioUtils::agcLabel(2), QString("AGC-F"));
+        QCOMPARE(RadioUtils::agcLabel(-1), QString("AGC"));
+    }
+    void testAgcOffIsNotActive() {
+        // The VFO indicator used to parse its own text and treated plain "AGC" (off) as active.
+        QVERIFY(!RadioUtils::agcActive(0));
+        QVERIFY(RadioUtils::agcActive(1));
+        QVERIFY(RadioUtils::agcActive(2));
+        QVERIFY(!RadioUtils::agcActive(-1));
+    }
+    void testTxBandwidthLabel() {
+        QCOMPARE(RadioUtils::txBandwidthLabel(28), QString("2.8k"));
+        QCOMPARE(RadioUtils::txBandwidthLabel(45), QString("4.5k"));
     }
 
     // buildEqCommand
@@ -134,28 +224,6 @@ private slots:
     void testSlTier_SL7() { QCOMPARE(RadioUtils::slTierToFrameSamples(7), 1440); }
     void testSlTier_outOfRange_negative() { QCOMPARE(RadioUtils::slTierToFrameSamples(-1), 720); }
     void testSlTier_outOfRange_high() { QCOMPARE(RadioUtils::slTierToFrameSamples(8), 720); }
-
-    // RX jitter-buffer watermarks — MUST scale with packet size (the SL bundle), never a fixed ms.
-    // SL0 packet = 1920 bytes (20ms), SL7 packet = 11520 bytes (120ms) at 12kHz stereo Float32.
-    void testJitterTarget_scalesWithPacket() {
-        QCOMPARE(RadioUtils::jitterTargetBytes(1920), 1920 * RadioUtils::JITTER_TARGET_PACKETS);
-        QCOMPARE(RadioUtils::jitterTargetBytes(11520), 11520 * RadioUtils::JITTER_TARGET_PACKETS);
-    }
-    void testJitterHighWater_scalesWithPacket() {
-        QCOMPARE(RadioUtils::jitterHighWaterBytes(1920), 1920 * RadioUtils::JITTER_HIGH_WATER_PACKETS);
-        QCOMPARE(RadioUtils::jitterHighWaterBytes(11520), 11520 * RadioUtils::JITTER_HIGH_WATER_PACKETS);
-    }
-    // The SL7 target must NOT be a fixed ms — it must exceed one SL7 packet, or high SL would drop
-    // every packet. Guards against a fixed-millisecond regression.
-    void testJitterTarget_highSlExceedsOnePacket() {
-        QVERIFY(RadioUtils::jitterTargetBytes(11520) > 11520);
-        QVERIFY(RadioUtils::jitterHighWaterBytes(11520) > RadioUtils::jitterTargetBytes(11520));
-    }
-    void testJitterWatermarks_nonPositiveSafe() {
-        QCOMPARE(RadioUtils::jitterTargetBytes(0), 0);
-        QCOMPARE(RadioUtils::jitterHighWaterBytes(0), 0);
-        QCOMPARE(RadioUtils::jitterTargetBytes(-5), 0);
-    }
 
     // fixedTuneModeFromCat — verified against hardware + K4 command reference 2026-05-28
     // FXT0 = Track (FXA ignored); FXT1: 0=Fixed1,1=Fixed2,2=Slide1,3=Static,4=Slide2
@@ -222,6 +290,73 @@ private slots:
     void testSnap_otherArtifact() { QCOMPARE(RadioUtils::snapFreqToStep(14286750, 100), Q_INT64_C(14286700)); }
     void testSnap_zeroFreq() { QCOMPARE(RadioUtils::snapFreqToStep(0, 100), Q_INT64_C(0)); }
     void testSnap_guardZeroStep() { QCOMPARE(RadioUtils::snapFreqToStep(7277380, 0), Q_INT64_C(7277380)); }
+
+    // vfoWheelTuneTarget — wheel over a VFO's frequency display; a locked VFO (LK / LK$) never tunes
+    void testVfoWheel_tunesUnlocked() {
+        QCOMPARE(RadioUtils::vfoWheelTuneTarget(14074000, 3, 100, false), Q_INT64_C(14074300));
+        QCOMPARE(RadioUtils::vfoWheelTuneTarget(14074000, -2, 1000, false), Q_INT64_C(14072000));
+    }
+    void testVfoWheel_lockedNeverTunes() {
+        for (int steps : {-1000, -1, 1, 1000})
+            QCOMPARE(RadioUtils::vfoWheelTuneTarget(14074000, steps, 100, true), Q_INT64_C(0));
+    }
+    void testVfoWheel_nonPositiveRefused() {
+        QCOMPARE(RadioUtils::vfoWheelTuneTarget(500, -1, 1000, false), Q_INT64_C(0));
+        QCOMPARE(RadioUtils::vfoWheelTuneTarget(1000, -1, 1000, false), Q_INT64_C(0));
+    }
+
+    // vfosMovedByCat / catMovesLockedVfo — every frequency SET respects LK (A) and LK$ (B) on its own
+    void testVfosMoved_frequencySets() {
+        QCOMPARE(RadioUtils::vfosMovedByCat("FA00014074000;"), int(RadioUtils::VfoA));
+        QCOMPARE(RadioUtils::vfosMovedByCat("FB7100"), int(RadioUtils::VfoB));
+        QCOMPARE(RadioUtils::vfosMovedByCat("UP;"), int(RadioUtils::VfoA));
+        QCOMPARE(RadioUtils::vfosMovedByCat("DN;"), int(RadioUtils::VfoA));
+        QCOMPARE(RadioUtils::vfosMovedByCat("UPB;"), int(RadioUtils::VfoB));
+        QCOMPARE(RadioUtils::vfosMovedByCat("DNB;"), int(RadioUtils::VfoB));
+        QCOMPARE(RadioUtils::vfosMovedByCat("VO+00100;"), int(RadioUtils::VfoA));
+        QCOMPARE(RadioUtils::vfosMovedByCat("VO$-00100;"), int(RadioUtils::VfoB));
+    }
+    void testVfosMoved_copyAndSwap() {
+        QCOMPARE(RadioUtils::vfosMovedByCat("AB0;"), int(RadioUtils::VfoB));
+        QCOMPARE(RadioUtils::vfosMovedByCat("AB1;"), int(RadioUtils::VfoA));
+        QCOMPARE(RadioUtils::vfosMovedByCat("AB2;"), int(RadioUtils::VfoA | RadioUtils::VfoB));
+        QCOMPARE(RadioUtils::vfosMovedByCat("AB3;"), int(RadioUtils::VfoB));
+        QCOMPARE(RadioUtils::vfosMovedByCat("AB4;"), int(RadioUtils::VfoA));
+        QCOMPARE(RadioUtils::vfosMovedByCat("AB5;"), int(RadioUtils::VfoA | RadioUtils::VfoB));
+        QCOMPARE(RadioUtils::vfosMovedByCat("AB9;"), int(RadioUtils::VfoNone));
+    }
+    void testVfosMoved_notFrequencySets() {
+        for (const char *c : {"FA;", "FB;", "FT1;", "FR0;", "LK1;", "LK$1;", "MD3;", "SW72;", "RU;", "VO;", "VO$;", ""})
+            QVERIFY2(RadioUtils::vfosMovedByCat(c) == RadioUtils::VfoNone, c);
+    }
+    void testLockedVfo_eachLockOnItsOwn() {
+        QVERIFY(!RadioUtils::catMovesLockedVfo("FA14074000;", false, true));
+        QVERIFY(RadioUtils::catMovesLockedVfo("FA14074000;", true, false));
+        QVERIFY(!RadioUtils::catMovesLockedVfo("FB14074000;", true, false));
+        QVERIFY(RadioUtils::catMovesLockedVfo("FB14074000;", false, true));
+        // A copy into B is refused only when B is locked; a swap when either is.
+        QVERIFY(!RadioUtils::catMovesLockedVfo("AB0;", true, false));
+        QVERIFY(RadioUtils::catMovesLockedVfo("AB0;", false, true));
+        QVERIFY(RadioUtils::catMovesLockedVfo("AB2;", true, false));
+        QVERIFY(RadioUtils::catMovesLockedVfo("AB2;", false, true));
+        QVERIFY(!RadioUtils::catMovesLockedVfo("AB2;", false, false));
+    }
+
+    // textDecodeSetAllowed — TD is decode only in CW/DATA; in SSB TD1 arms 2-TONE (transmit safety)
+    void testTextDecode_onlyCwAndData() {
+        for (int md : {3, 7, 6, 9})
+            QVERIFY2(RadioUtils::textDecodeSetAllowed(md), qPrintable(QString::number(md)));
+        for (int md : {0, 1, 2, 4, 5, 8}) // unknown, LSB, USB, FM, AM, reserved
+            QVERIFY2(!RadioUtils::textDecodeSetAllowed(md), qPrintable(QString::number(md)));
+    }
+
+    // apfAvailable — APF exists only in CW / CW-R; elsewhere the RX row key reads "N/A"
+    void testApf_onlyCw() {
+        QVERIFY(RadioUtils::apfAvailable(3));
+        QVERIFY(RadioUtils::apfAvailable(7));
+        for (int md : {0, 1, 2, 4, 5, 6, 9})
+            QVERIFY2(!RadioUtils::apfAvailable(md), qPrintable(QString::number(md)));
+    }
 
     // isValidIpv4 — strict dotted-quad
     void testIpv4_simple() { QVERIFY(RadioUtils::isValidIpv4("192.168.1.10")); }
@@ -304,6 +439,205 @@ private slots:
     // The two thresholds the status bar colours on, so a unit change cannot shift a warning.
     void testTemp_warnThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(60), 140); }
     void testTemp_critThreshold() { QCOMPARE(RadioUtils::celsiusToFahrenheit(75), 167); }
+
+    // modeClass - the K4's C / V / D settings groups (APP-007). Direct data (DATA in FSK D or PSK D)
+    // is in the CW group: SD "C = CW & direct data", ML "CW/direct-data modes".
+    void testModeClass_table() {
+        using RadioUtils::ModeClass;
+        struct Row {
+            int md;
+            int dt;
+            ModeClass expected;
+        };
+        const Row rows[] = {
+            {3, -1, ModeClass::CwDirect}, {7, -1, ModeClass::CwDirect}, {6, 2, ModeClass::CwDirect},
+            {6, 3, ModeClass::CwDirect},  {9, 2, ModeClass::CwDirect},  {9, 3, ModeClass::CwDirect},
+            {6, 0, ModeClass::AfData},    {6, 1, ModeClass::AfData},    {9, 0, ModeClass::AfData},
+            {6, -1, ModeClass::AfData},   {1, -1, ModeClass::Voice},    {2, 2, ModeClass::Voice},
+            {4, 3, ModeClass::Voice},     {5, -1, ModeClass::Voice},    {0, -1, ModeClass::Voice},
+        };
+        for (const Row &row : rows)
+            QCOMPARE(RadioUtils::modeClass(row.md, row.dt), row.expected);
+    }
+    void testModeClass_letterAndMonitorCode() {
+        using RadioUtils::ModeClass;
+        QCOMPARE(RadioUtils::modeClassLetter(ModeClass::CwDirect), 'C');
+        QCOMPARE(RadioUtils::modeClassLetter(ModeClass::Voice), 'V');
+        QCOMPARE(RadioUtils::modeClassLetter(ModeClass::AfData), 'D');
+        QCOMPARE(RadioUtils::monitorModeCode(ModeClass::CwDirect), 0);
+        QCOMPARE(RadioUtils::monitorModeCode(ModeClass::AfData), 1);
+        QCOMPARE(RadioUtils::monitorModeCode(ModeClass::Voice), 2);
+    }
+
+    // filterLimits - the one BW/IS table for the filter knobs (APP-004).
+    void testFilterLimits_voiceAndCw() {
+        const auto usb = RadioUtils::filterLimits(2, -1);
+        QCOMPARE(usb.bwMinDah, 5);
+        QCOMPARE(usb.bwMaxDah, 500);
+        QCOMPARE(usb.isMinDah, 30);
+        QCOMPARE(usb.isMaxDah, 300);
+        QVERIFY(!usb.isLocked);
+        for (const int cw : {3, 7}) {
+            QCOMPARE(RadioUtils::filterLimits(cw, -1).isMaxDah, 200);
+            QVERIFY(!RadioUtils::filterLimits(cw, -1).isLocked);
+        }
+    }
+    void testFilterLimits_amAndFmFixIs() {
+        QVERIFY(RadioUtils::filterLimits(4, -1).isLocked);
+        QVERIFY(RadioUtils::filterLimits(5, -1).isLocked);
+    }
+    void testFilterLimits_dataSubModes() {
+        for (const int data : {6, 9}) {
+            const auto fsk = RadioUtils::filterLimits(data, 2);
+            QCOMPARE(fsk.bwMinDah, 15);
+            QCOMPARE(fsk.bwMaxDah, 80);
+            QVERIFY(fsk.isLocked);
+            const auto psk = RadioUtils::filterLimits(data, 3);
+            QCOMPARE(psk.bwMinDah, 5);
+            QCOMPARE(psk.bwMaxDah, 20);
+            QVERIFY(psk.isLocked);
+            for (const int afData : {-1, 0, 1}) {
+                QCOMPARE(RadioUtils::filterLimits(data, afData).bwMaxDah, 500);
+                QVERIFY(!RadioUtils::filterLimits(data, afData).isLocked);
+            }
+        }
+    }
+    // DT outside DATA is not the operating mode ("the returned value may not be valid").
+    void testFilterLimits_dataSubModeIgnoredOutsideData() {
+        for (const int md : {1, 2, 3, 7}) {
+            QCOMPARE(RadioUtils::filterLimits(md, 2).bwMaxDah, 500);
+            QVERIFY(!RadioUtils::filterLimits(md, 3).isLocked);
+        }
+    }
+
+    // Knob limits come from the K4 (APP-003): KS 8-100, CW 25-95 x10 Hz, SQ 0-40. The knobs stopped
+    // at 50 WPM, went past 950 Hz to 990 (CW99 is out of range) and stopped squelch at 29.
+    void testKeyerSpeed_stepsPastFifty() { QCOMPARE(RadioUtils::nextKeyerSpeed(50, 1), std::optional<int>(51)); }
+    void testKeyerSpeed_stopsAtTheRadioLimits() {
+        QVERIFY(!RadioUtils::nextKeyerSpeed(100, 1));
+        QVERIFY(!RadioUtils::nextKeyerSpeed(8, -1));
+        QCOMPARE(RadioUtils::nextKeyerSpeed(98, 5), std::optional<int>(100));
+    }
+    void testCwPitch_staysAtTheTopOfTheRange() { QVERIFY(!RadioUtils::nextCwPitch(950, 1)); }
+    void testCwPitch_reachesTheBottomOfTheRange() {
+        QCOMPARE(RadioUtils::nextCwPitch(260, -1), std::optional<int>(250));
+        QVERIFY(!RadioUtils::nextCwPitch(250, -1));
+    }
+    void testSquelch_stepsPastTwentyNine() { QCOMPARE(RadioUtils::nextSquelch(35, 1), std::optional<int>(36)); }
+    void testSquelch_stopsAtForty() {
+        QCOMPARE(RadioUtils::nextSquelch(29, 1), std::optional<int>(30));
+        QVERIFY(!RadioUtils::nextSquelch(40, 1));
+    }
+    // A value the radio has not reported yet is never stepped: from the -1 sentinel the old knobs
+    // sent KS008, CW30, SQ000, MG000 or a 0 ms delay.
+    void testKnobs_unknownValueSendsNothing() {
+        QVERIFY(!RadioUtils::nextKeyerSpeed(-1, 1));
+        QVERIFY(!RadioUtils::nextCwPitch(-1, 1));
+        QVERIFY(!RadioUtils::nextSquelch(-1, 1));
+        QVERIFY(!RadioUtils::stepWithin(-999, -1, 0, RadioUtils::RF_GAIN_MAX));
+        QVERIFY(!RadioUtils::stepWithin(-1, 1, 0, RadioUtils::QSK_DELAY_MAX));
+    }
+    // Sweep: from every legal value, any tick lands on a legal value (and on the pitch grid).
+    void testKnobs_neverLeaveTheRadioRange() {
+        for (int steps = -120; steps <= 120; ++steps) {
+            for (int wpm = RadioUtils::KEYER_WPM_MIN; wpm <= RadioUtils::KEYER_WPM_MAX; ++wpm) {
+                const auto next = RadioUtils::nextKeyerSpeed(wpm, steps);
+                QVERIFY(!next || (*next >= 8 && *next <= 100));
+            }
+            for (int hz = RadioUtils::CW_PITCH_MIN_HZ; hz <= RadioUtils::CW_PITCH_MAX_HZ; hz += 10) {
+                const auto next = RadioUtils::nextCwPitch(hz, steps);
+                QVERIFY(!next || (*next >= 250 && *next <= 950 && *next % 10 == 0));
+            }
+            for (int sq = 0; sq <= RadioUtils::SQUELCH_MAX; ++sq) {
+                const auto next = RadioUtils::nextSquelch(sq, steps);
+                QVERIFY(!next || (*next >= 0 && *next <= 40));
+            }
+        }
+    }
+
+    // nextRfPower - the PWR knob steps within the range the radio reported (APP-002 / CAT-003).
+    void testRfPower_qrpTopStepsUpIntoQro() {
+        const auto next = RadioUtils::nextRfPower(10.0, LevelsState::PowerRange::Qrp, 1);
+        QVERIFY(next);
+        QCOMPARE(next->value, 11.0);
+        QCOMPARE(next->range, LevelsState::PowerRange::Qro);
+    }
+    void testRfPower_qroElevenStepsDownIntoQrp() {
+        const auto next = RadioUtils::nextRfPower(11.0, LevelsState::PowerRange::Qro, -1);
+        QVERIFY(next);
+        QCOMPARE(next->value, 10.0);
+        QCOMPARE(next->range, LevelsState::PowerRange::Qrp);
+    }
+    // The K4's QRO range is 1-110 W. A QRO 5 W the radio reported is not QRP 5.0 W.
+    void testRfPower_lowQroStaysQro() {
+        for (const int steps : {-1, 1}) {
+            const auto next = RadioUtils::nextRfPower(5.0, LevelsState::PowerRange::Qro, steps);
+            QVERIFY(next);
+            QCOMPARE(next->value, 5.0 + steps);
+            QCOMPARE(next->range, LevelsState::PowerRange::Qro);
+        }
+        QVERIFY(!RadioUtils::nextRfPower(1.0, LevelsState::PowerRange::Qro, -1));
+    }
+    void testRfPower_qrpStepsTenths() {
+        const auto next = RadioUtils::nextRfPower(9.9, LevelsState::PowerRange::Qrp, -1);
+        QVERIFY(next);
+        QCOMPARE(next->value, 9.8);
+        QCOMPARE(next->range, LevelsState::PowerRange::Qrp);
+        QVERIFY(!RadioUtils::nextRfPower(0.1, LevelsState::PowerRange::Qrp, -1));
+    }
+    void testRfPower_qroTopStops() { QVERIFY(!RadioUtils::nextRfPower(110.0, LevelsState::PowerRange::Qro, 1)); }
+    void testRfPower_unknownSendsNothing() {
+        QVERIFY(!RadioUtils::nextRfPower(-1.0, LevelsState::PowerRange::Qro, 1));
+        QVERIFY(!RadioUtils::nextRfPower(-1.0, LevelsState::PowerRange::Qrp, -1));
+    }
+    // Sweep: from every XVTR setting, any tick stays XVTR (mW) and inside 0.1-10.0 mW.
+    void testRfPower_xvtrNeverLeavesXvtr() {
+        for (int tenths = 1; tenths <= 100; ++tenths) {
+            for (int steps = -120; steps <= 120; ++steps) {
+                const auto next = RadioUtils::nextRfPower(tenths / 10.0, LevelsState::PowerRange::Xvtr, steps);
+                if (!next)
+                    continue;
+                QCOMPARE(next->range, LevelsState::PowerRange::Xvtr);
+                QVERIFY(next->value >= 0.1 - 1e-9 && next->value <= 10.0 + 1e-9);
+            }
+        }
+    }
+    // Sweep: every result is on its range's grid and inside it, and a range change happens only at
+    // the QRP 10.0 W / QRO 11 W boundary.
+    void testRfPower_resultsStayInRangeAndCrossOnlyAtTheBoundary() {
+        using R = LevelsState::PowerRange;
+        struct Start {
+            double value;
+            R range;
+        };
+        QVector<Start> starts;
+        for (int t = 1; t <= 100; ++t)
+            starts.append({t / 10.0, R::Qrp});
+        for (int w = 1; w <= 110; ++w)
+            starts.append({static_cast<double>(w), R::Qro});
+        for (const Start &start : starts) {
+            for (int steps = -150; steps <= 150; ++steps) {
+                const auto next = RadioUtils::nextRfPower(start.value, start.range, steps);
+                if (!next)
+                    continue;
+                if (next->range == R::Qrp) {
+                    const double tenths = next->value * 10.0;
+                    QCOMPARE(tenths, static_cast<double>(qRound(tenths)));
+                    QVERIFY(tenths >= 1.0 && tenths <= 100.0);
+                } else {
+                    QCOMPARE(next->range, R::Qro);
+                    QCOMPARE(next->value, static_cast<double>(qRound(next->value)));
+                    QVERIFY(next->value >= 1.0 && next->value <= 110.0);
+                }
+                if (next->range != start.range) {
+                    if (next->range == R::Qro)
+                        QCOMPARE(next->value, 11.0);
+                    else
+                        QCOMPARE(next->value, 10.0);
+                }
+            }
+        }
+    }
 };
 
 QTEST_MAIN(TestRadioUtils)

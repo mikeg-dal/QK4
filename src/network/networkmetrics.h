@@ -1,6 +1,7 @@
 #ifndef NETWORKMETRICS_H
 #define NETWORKMETRICS_H
 
+#include "audio/rxplayout.h"
 #include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
@@ -8,11 +9,11 @@
 
 /**
  * @brief Rolling-window TCP health metrics: RTT (mean + jitter over RTT_WINDOW samples), audio
- *        packet loss (by sequence-gap detection), underrun count, buffer-fill snapshots, and a
- *        derived Green/Yellow/Orange/Red `HealthTier`. Drives `NetHealthWidget`.
+ *        packet activity, buffer-fill snapshots, and a derived Green/Yellow/Orange/Red
+ *        `HealthTier`. Drives `NetHealthWidget`.
  *
- * Also keeps a 10-second timestamped trail of RTT, jitter, and buffer-depth so the hover popup
- * can plot live sparklines (the scalar getters only expose the latest value).
+ * Also keeps a timestamped trail of RTT, jitter, and buffer-depth (HISTORY_WINDOW_MS, 30 s) so
+ * the hover popup can plot live sparklines (the scalar getters only expose the latest value).
  */
 class NetworkMetrics : public QObject {
     Q_OBJECT
@@ -27,19 +28,27 @@ public:
         float value;
     };
 
+    // The RX queue holds decoded audio at 12 kHz, stereo, Float32; RxPlayout owns that size.
+    static constexpr double kDecodedBytesPerMs = RxPlayout::BYTES_PER_MS;
+
     explicit NetworkMetrics(QObject *parent = nullptr);
 
-    HealthTier healthTier() const { return m_tier; }
     int rttCurrent() const { return m_rttCurrent; }
     double rttAvg() const { return m_rttAvg; }
     double rttJitter() const { return m_rttJitter; }
-    int bufferBytes() const { return m_bufferBytes; }
-    int bufferMaxBytes() const { return m_bufferMaxBytes; }
-    int underrunsTotal() const { return m_underrunsTotal; }
-    int lostPacketsTotal() const { return m_lostPacketsTotal; }
-    int packetRate() const { return m_totalPacketsInterval; }
+    double bufferMs() const { return m_bufferBytes / kDecodedBytesPerMs; }
 
-    // 10-second rolling history for the live sparkline popup. Read on the main thread only.
+    // The health a buffer depth alone implies, for audio arriving in packets of packetMs. Yellow and
+    // orange start a fixed distance above a normal steady state, which is one packet deep plus the
+    // jitter target: 200 / 500 ms up to SL5's 60 ms packets, packet + 140 / 440 ms above that.
+    static HealthTier bufferTier(double bufferedMs, int packetMs);
+
+    // RX playout trouble since this connection began: sink underruns (audible gaps) and packets the
+    // jitter policy dropped to claw latency back.
+    quint32 rxUnderruns() const { return m_rxUnderruns - m_rxUnderrunsBase; }
+    quint32 rxDroppedPackets() const { return m_rxDropped - m_rxDroppedBase; }
+
+    // Rolling history (HISTORY_WINDOW_MS) for the live sparkline popup. Read on the main thread only.
     const std::deque<TimedSample> &rttHistory() const { return m_rttHistory; }
     const std::deque<TimedSample> &jitterHistory() const { return m_jitterHistory; }
     const std::deque<TimedSample> &bufferHistory() const { return m_bufferHistory; }
@@ -48,9 +57,15 @@ public:
 
 public slots:
     void onLatencyChanged(int ms);
-    void onAudioSequence(quint8 seq);
-    void onBufferStatus(int queueBytes, int maxBytes, bool prebuffering);
+    void onAudioSequence();
+    void onBufferStatus(int queueBytes);
+    // Cumulative counters from AudioEngine, sampled on the main thread. The first sample after a
+    // (re)connect becomes the baseline, so the getters count from the connection's start.
+    void onRxPlayoutCounters(quint32 underruns, quint32 droppedPackets);
     void onConnectionStateChanged(bool connected);
+    // Audio per received packet (the SL tier, RadioUtils::slTierToFrameSamples): the buffer thresholds
+    // follow it.
+    void setPacketMs(int packetMs) { m_packetMs = packetMs; }
 
 signals:
     void healthTierChanged(HealthTier tier);
@@ -70,8 +85,8 @@ private:
     // Monotonic clock for history timestamps (immune to wall-clock jumps).
     QElapsedTimer m_clock;
 
-    // 30-second sparkline trail. RTT/jitter append ~1/s (per PONG); buffer appends ~100/s
-    // (AudioEngine feed timer, 10 ms). 30 s × 100/s = 3000 buffer samples → cap with headroom.
+    // 30-second sparkline trail. RTT/jitter append ~1/s (per PONG); buffer appends 20/s
+    // (AudioController samples the engine every 50 ms). 30 s × 20/s = 600; the cap is a backstop.
     static constexpr int HISTORY_WINDOW_MS = 30000;
     static constexpr int HISTORY_MAX_SAMPLES = 4000;
     std::deque<TimedSample> m_rttHistory;
@@ -85,24 +100,16 @@ private:
     double m_rttAvg = 0.0;
     double m_rttJitter = 0.0;
 
-    // Packet loss tracking
-    int m_lastAudioSeq = -1;
-    int m_lostPacketsInterval = 0;
-    int m_totalPacketsInterval = 0;
-    int m_lostPacketsTotal = 0;
-    int m_totalPacketsTotal = 0;
-
     // Audio buffer depth (latest snapshot).
-    // 96000 bytes = 1.0 s at 12 kHz stereo Float32 (12000 × 2 × 4 = 96000). The 1 s ceiling
-    // matches AudioEngine::MAX_QUEUE_BYTES so the health meter's denominator is meaningful.
-    static constexpr int kDefaultBufferMaxBytes = 96000;
     int m_bufferBytes = 0;
-    int m_bufferMaxBytes = kDefaultBufferMaxBytes;
-    bool m_prebuffering = true;
+    int m_packetMs = 20;
 
-    // Underrun counter
-    int m_underrunsInterval = 0;
-    int m_underrunsTotal = 0;
+    // RX playout counters, cumulative as AudioEngine reports them, and the connection's baseline.
+    quint32 m_rxUnderruns = 0;
+    quint32 m_rxDropped = 0;
+    quint32 m_rxUnderrunsBase = 0;
+    quint32 m_rxDroppedBase = 0;
+    bool m_rxCountersBaselined = false;
 
     // Audio activity tracking
     bool m_audioActive = false;    // Received packets this interval

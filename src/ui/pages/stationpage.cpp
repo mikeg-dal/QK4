@@ -1,66 +1,42 @@
 #include "ui/pages/stationpage.h"
 #include "settings/radiosettings.h"
 #include "ui/styling/k4styles.h"
-#include <QFrame>
-#include <QGridLayout>
-#include <QLabel>
+#include "ui/pages/optionspagelayout.h"
+#include <QFormLayout>
 #include <QVBoxLayout>
 
 StationPage::StationPage(QWidget *parent) : QWidget(parent) {
-    setStyleSheet(K4Styles::Dialog::pageBackground());
-
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
-                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
-    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
-
-    auto *titleLabel = new QLabel("Station", this);
-    titleLabel->setStyleSheet(K4Styles::Dialog::titleLabel());
-    layout->addWidget(titleLabel);
-
-    auto *line = new QFrame(this);
-    line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet(K4Styles::Dialog::separator());
-    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line);
+    namespace D = K4Styles::Dimensions;
+    auto *layout = OptionsPageLayout::createPage(this);
+    OptionsPageLayout::addTitle(layout, this, "Station");
 
     RadioSettings *settings = RadioSettings::instance();
+    auto *form = OptionsPageLayout::addForm(layout);
 
-    // Form grid: label on the left, field on the right.
-    auto *form = new QGridLayout();
-    form->setHorizontalSpacing(K4Styles::Dimensions::PaddingMedium);
-    form->setVerticalSpacing(K4Styles::Dimensions::PaddingMedium);
-    int row = 0;
-
-    auto addField = [&](const QString &labelText, QLineEdit *edit, const QString &placeholder) {
-        auto *lbl = new QLabel(labelText, this);
-        lbl->setStyleSheet(K4Styles::Dialog::formLabel());
+    auto addField = [&](const QString &labelText, QLineEdit *edit, const QString &placeholder, int maxWidth) {
         edit->setStyleSheet(K4Styles::Dialog::lineEdit());
         edit->setPlaceholderText(placeholder);
-        form->addWidget(lbl, row, 0);
-        form->addWidget(edit, row, 1);
-        row++;
+        OptionsPageLayout::capWidth(edit, maxWidth);
+        OptionsPageLayout::addRow(form, this, labelText, edit);
     };
 
     m_callSignEdit = new QLineEdit(this);
     m_callSignEdit->setText(settings->callSign());
-    addField("Call Sign", m_callSignEdit, "e.g. KF5O");
+    addField("Call Sign", m_callSignEdit, "e.g. KF5O", D::OptionsShortFieldWidth);
 
     m_operatorNameEdit = new QLineEdit(this);
     m_operatorNameEdit->setText(settings->operatorName());
-    addField("Operator Name", m_operatorNameEdit, "Your name");
+    addField("Operator Name", m_operatorNameEdit, "Your name", D::OptionsFieldMaxWidth);
 
     m_gridSquareEdit = new QLineEdit(this);
     m_gridSquareEdit->setText(settings->gridSquare());
-    addField("Grid Square", m_gridSquareEdit, "e.g. EM12");
+    addField("Grid Square", m_gridSquareEdit, "e.g. EM12", D::OptionsShortFieldWidth);
 
     m_qthEdit = new QLineEdit(this);
     m_qthEdit->setText(settings->qth());
-    addField("QTH / Location", m_qthEdit, "City / location");
+    addField("QTH / Location", m_qthEdit, "City / location", D::OptionsFieldMaxWidth);
 
     // IARU Region dropdown — drives the band-plan overlay.
-    auto *regionLabel = new QLabel("IARU Region", this);
-    regionLabel->setStyleSheet(K4Styles::Dialog::formLabel());
     m_regionCombo = new QComboBox(this);
     m_regionCombo->setStyleSheet(K4Styles::Dialog::comboBox());
     m_regionCombo->addItem("Region 1 — Europe / Africa", 1);
@@ -69,25 +45,19 @@ StationPage::StationPage(QWidget *parent) : QWidget(parent) {
     m_regionCombo->addItem("United States (FCC)", 4);
     int regionIdx = m_regionCombo->findData(settings->iaruRegion());
     m_regionCombo->setCurrentIndex(regionIdx >= 0 ? regionIdx : 1);
-    form->addWidget(regionLabel, row, 0);
-    form->addWidget(m_regionCombo, row, 1);
-    row++;
-
-    layout->addLayout(form);
+    OptionsPageLayout::addRow(form, this, "IARU Region", m_regionCombo);
 
     // Band-plan overlay toggle.
     m_bandPlanCheck = new QCheckBox("Show band-plan overlay on spectrum", this);
     m_bandPlanCheck->setStyleSheet(K4Styles::Dialog::checkBox());
     m_bandPlanCheck->setChecked(settings->bandPlanOverlayEnabled());
-    layout->addWidget(m_bandPlanCheck);
+    form->addRow(QString(), m_bandPlanCheck);
 
-    auto *help = new QLabel("Sets the band-plan strip at the top of the spectrum. IARU regions are voluntary "
-                            "recommendations; \"United States (FCC)\" uses practical Extra-class mode boundaries "
-                            "plus FT8/FT4/WSPR markers. Your national regulations and license class take precedence.",
-                            this);
-    help->setWordWrap(true);
-    help->setStyleSheet(K4Styles::Dialog::helpText());
-    layout->addWidget(help);
+    OptionsPageLayout::addHelp(
+        layout, this,
+        "Sets the band-plan strip at the top of the spectrum. IARU regions are voluntary "
+        "recommendations; \"United States (FCC)\" uses practical Extra-class mode boundaries "
+        "plus FT8/FT4/WSPR markers. Your national regulations and license class take precedence.");
 
     layout->addStretch();
 

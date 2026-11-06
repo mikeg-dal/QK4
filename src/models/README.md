@@ -1,21 +1,20 @@
 # models/
 
-Radio state model. One `QObject` façade (`RadioState`) over 11 plain-struct subsystems.
+Radio state model. One `QObject` façade (`RadioState`) over plain-struct subsystems (`ls src/models/radiostate/*.h`), plus the K4 menu model and the transmit arbiter.
 
 ## Files
 
-- `radiostate.{cpp,h}` — `RadioState` façade: CAT handler registry (longest-prefix-first), public getters/setters/signals. The only `QObject` in this layer.
-- `radiostate/` — 11 subsystem structs. One `.h` + `.cpp` pair per subsystem. See `radiostate/README.md` for the inventory.
-- `menumodel.{cpp,h}` — K4 MEDF menu tree model. Used by `MenuController`.
-- `macroids.h` — Shared enum for macro identifiers (F1–F12, PF1–PF4).
-- `transmitowner.h` — Header-only transmit arbiter: who owns the transmitter (`Owner`), how the radio was keyed (`Route`), and the `Effects` needed to move between states. Pure logic, no Qt — `test_transmitowner` links it alone. Route is the load-bearing idea: `TX;` keys the K4 expecting its OWN mic input, while streamed packets carry a tunnel header, so recording which mechanism was used is what lets a release be the exact inverse of its engage. Closes the G1 violation in `AUDIT.md`.
+- `radiostate.{cpp,h}` — `RadioState` façade: CAT handler registry (longest-prefix-first), public getters/setters/signals.
+- `radiostate/` — subsystem structs. One `.h` + `.cpp` pair per subsystem. See `radiostate/README.md` for the inventory.
+- `menumodel.{cpp,h}` — `MenuModel`, a `QObject` holding the K4 MEDF menu tree. Used by `MenuController`.
+- `transmitowner.h` — Header-only transmit arbiter: who owns the transmitter (`Owner`), how the radio was keyed (`Route`), and the `Effects` needed to move between states. Pure logic, no Qt — `test_transmitowner` links it alone. Route is the load-bearing idea: `TX;` keys the K4 expecting its OWN mic input, while streamed packets carry a tunnel header, so recording which mechanism was used is what lets a release be the exact inverse of its engage.
 
 ## Pattern C — plain-struct subsystems
 
 Internal state is partitioned across plain `struct` subsystems, each with a matching `*Handlers` namespace of free functions. The façade composes them and emits signals. See `PATTERNS.md` → "Subsystem State" for the full rules.
 
 Why:
-- One `QObject`, one thread affinity, one `Q_ASSERT(currentThread() == thread())` check.
+- One `QObject` for all radio state: one thread affinity, one `Q_ASSERT(QThread::currentThread() == thread())` check.
 - No moc storm when adding a subsystem.
 - Public API (getters + signals) stays on `RadioState` — external callers unaffected when internals reorganize.
 
@@ -28,7 +27,7 @@ Why:
 
 ## Architecture Rule 4
 
-`RadioState::parseCATCommand()` is main-thread only, enforced by `Q_ASSERT`. All callers must be on the GUI thread. Cross-thread parsing requires `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`.
+`RadioState::parseCATCommand()` is main-thread only, enforced by `Q_ASSERT(QThread::currentThread() == thread())`. `Q_ASSERT` is compiled out of Release builds, so it fires only in Debug builds (in CI, the sanitizer job). All callers must be on the GUI thread. Cross-thread parsing requires `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`.
 
 ## See also
 

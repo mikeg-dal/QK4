@@ -136,6 +136,30 @@ private slots:
 
     // ---- over a real socket -------------------------------------------------------------------
 
+    // TciController posts start/stop to the TCI thread and learns the result only from this.
+    void reportsListeningAfterEveryStartAndStop() {
+        TciServer server;
+        QSignalSpy spy(&server, &TciServer::listeningChanged);
+        QVERIFY(server.start(0));
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), true);
+        QVERIFY(spy.at(0).at(1).value<quint16>() != 0); // the port actually bound, not the 0 asked for
+        QCOMPARE(spy.at(0).at(1).value<quint16>(), server.port());
+
+        // A second listener on the same port cannot bind; it says so rather than staying silent.
+        TciServer clash;
+        QSignalSpy clashSpy(&clash, &TciServer::listeningChanged);
+        QVERIFY(!clash.start(server.port()));
+        QCOMPARE(clashSpy.count(), 1);
+        QCOMPARE(clashSpy.at(0).at(0).toBool(), false);
+        QCOMPARE(clashSpy.at(0).at(1).value<quint16>(), quint16(0));
+
+        server.stop();
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(1).at(0).toBool(), false);
+        QCOMPARE(spy.at(1).at(1).value<quint16>(), quint16(0));
+    }
+
     void sendsTheBurstOnConnect() {
         TciServer server;
         QVERIFY(server.start(0));
@@ -217,7 +241,6 @@ private slots:
     void stopsAudioWhenTheLastSubscriberLeaves() {
         TciServer server;
         QVERIFY(server.start(0));
-        QSignalSpy stopped(&server, &TciServer::audioStopRequested);
 
         TciTestClient client;
         QVERIFY(client.connectTo(server.port()));
@@ -226,8 +249,7 @@ private slots:
         QTRY_COMPARE(server.audioClientCount(), 1);
 
         client.send("audio_stop:0;");
-        QTRY_COMPARE(stopped.count(), 1);
-        QCOMPARE(server.audioClientCount(), 0);
+        QTRY_COMPARE(server.audioClientCount(), 0);
 
         client.close();
         server.stop();
@@ -237,7 +259,6 @@ private slots:
         // Fail closed: a client that disappears mid-stream must not leave the source running.
         TciServer server;
         QVERIFY(server.start(0));
-        QSignalSpy stopped(&server, &TciServer::audioStopRequested);
 
         TciTestClient client;
         QVERIFY(client.connectTo(server.port()));
@@ -246,8 +267,7 @@ private slots:
         QTRY_COMPARE(server.audioClientCount(), 1);
 
         client.close();
-        QTRY_COMPARE(stopped.count(), 1);
-        QCOMPARE(server.audioClientCount(), 0);
+        QTRY_COMPARE(server.audioClientCount(), 0);
         server.stop();
     }
 

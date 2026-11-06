@@ -1,5 +1,6 @@
 #include "ui/widgets/controlgroupwidget.h"
 #include "ui/styling/k4styles.h"
+#include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QWheelEvent>
@@ -25,14 +26,33 @@ void ControlGroupWidget::setValue(const QString &value) {
 void ControlGroupWidget::setShowAutoButton(bool show) {
     if (m_showAutoButton != show) {
         m_showAutoButton = show;
-        // Resize widget to accommodate AUTO button
-        if (show) {
-            setFixedSize(220, ControlGroupHeight);
-        } else {
-            setFixedSize(180, ControlGroupHeight);
-        }
+        updateWidth(); // room for the AUTO key
         update();
     }
+}
+
+void ControlGroupWidget::setCompact(bool compact) {
+    if (compact) {
+        QFont labelFont = font();
+        labelFont.setPixelSize(K4Styles::Dimensions::FontSizeBody);
+        labelFont.setBold(true);
+        m_labelWidth = QFontMetrics(labelFont).horizontalAdvance(m_label) + 6;
+        m_valueWidth = 36; // "100%" is 31 px in Inter
+        m_buttonWidth = K4Styles::Dimensions::MinClickTarget;
+    } else {
+        m_labelWidth = 60;
+        m_valueWidth = 52;
+        m_buttonWidth = 32;
+    }
+    updateWidth();
+    update();
+}
+
+void ControlGroupWidget::updateWidth() {
+    constexpr int kInset = 4;
+    constexpr int kAutoWidth = 40;
+    setFixedSize(kInset + m_labelWidth + (m_showAutoButton ? kAutoWidth : 0) + m_valueWidth + 2 * m_buttonWidth,
+                 ControlGroupHeight);
 }
 
 void ControlGroupWidget::setAutoEnabled(bool enabled) {
@@ -55,10 +75,10 @@ void ControlGroupWidget::paintEvent(QPaintEvent *event) {
     painter.setRenderHint(QPainter::Antialiasing);
 
     // Layout depends on whether AUTO button is shown
-    const int labelWidth = 60; // Fits "AVERAGE" label
+    const int labelWidth = m_labelWidth;
     const int autoWidth = m_showAutoButton ? 40 : 0;
-    const int valueWidth = 52;
-    const int buttonWidth = 32;
+    const int valueWidth = m_valueWidth;
+    const int buttonWidth = m_buttonWidth;
 
     // Draw container background with gradient
     QLinearGradient grad = K4Styles::buttonGradient(0, height());
@@ -100,46 +120,48 @@ void ControlGroupWidget::paintEvent(QPaintEvent *event) {
 
     m_plusRect = QRect(x, 2, buttonWidth, height() - 4);
 
+    const QColor textPrimary(K4Styles::Colors::TextPrimary);
+
     // Draw label
     QFont labelFont = font();
-    labelFont.setPixelSize(K4Styles::Dimensions::FontSizeLarge);
+    labelFont.setPixelSize(K4Styles::Dimensions::FontSizeBody);
     labelFont.setBold(true);
     painter.setFont(labelFont);
-    painter.setPen(Qt::white);
+    painter.setPen(textPrimary);
     painter.drawText(labelRect, Qt::AlignCenter, m_label);
 
     // Draw AUTO button if shown
     if (m_showAutoButton) {
         if (m_autoEnabled) {
-            painter.fillRect(m_autoRect, Qt::white);
-            painter.setPen(QColor(K4Styles::Colors::InactiveGray));
+            painter.fillRect(m_autoRect, QColor(K4Styles::Colors::White));
+            painter.setPen(QColor(K4Styles::Colors::TextOnLight));
         } else {
-            painter.setPen(Qt::white);
+            painter.setPen(textPrimary);
         }
         QFont autoFont = font();
-        autoFont.setPixelSize(K4Styles::Dimensions::FontSizeMedium);
+        autoFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
         autoFont.setBold(true);
         painter.setFont(autoFont);
         painter.drawText(m_autoRect, Qt::AlignCenter, "AUTO");
         painter.setFont(labelFont);
-        painter.setPen(Qt::white);
+        painter.setPen(textPrimary);
     }
 
-    // Draw value (faded grey when auto mode)
+    // Draw value (grey when auto mode sets it)
     if (m_valueFaded) {
-        painter.setPen(QColor(K4Styles::Colors::TextFaded));
+        painter.setPen(QColor(K4Styles::Colors::TextSecondaryOnRaised));
     } else {
-        painter.setPen(Qt::white);
+        painter.setPen(textPrimary);
     }
     painter.drawText(valueRect, Qt::AlignCenter, m_value);
-    painter.setPen(Qt::white); // Reset for buttons
+    painter.setPen(textPrimary); // Reset for buttons
 
     // Draw minus/plus buttons (faded when auto mode disables them)
     QFont buttonFont = font();
-    buttonFont.setPixelSize(K4Styles::Dimensions::FontSizeTitle);
+    buttonFont.setPixelSize(K4Styles::Dimensions::FontSizeIndicator);
     buttonFont.setBold(true);
     painter.setFont(buttonFont);
-    painter.setPen(m_autoEnabled ? QColor(K4Styles::Colors::TextFaded) : Qt::white);
+    painter.setPen(m_autoEnabled ? QColor(K4Styles::Colors::TextDisabled) : textPrimary);
     painter.drawText(m_minusRect, Qt::AlignCenter, "-");
     painter.drawText(m_plusRect, Qt::AlignCenter, "+");
 }

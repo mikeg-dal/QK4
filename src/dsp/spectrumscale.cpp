@@ -35,12 +35,12 @@ int roundedDbStride(float neededDb) {
     return static_cast<int>(std::ceil(neededDb / 100.0f)) * 100;
 }
 
-// Minimum dB between labels for them not to overlap, given how many pixels the window occupies.
-float minDbSeparation(float minDb, float maxDb, int availablePx, int labelHeightPx) {
+// Minimum dB between labels for them to sit kLabelPitchLines apart on a window this many pixels tall.
+float minDbSeparation(float minDb, float maxDb, int availablePx, float lineSpacingPx) {
     const float span = maxDb - minDb;
     if (availablePx <= 0 || span <= 0.0f)
         return 0.0f;
-    return span * (static_cast<float>(labelHeightPx) / static_cast<float>(availablePx));
+    return span * (kLabelPitchLines * lineSpacingPx / static_cast<float>(availablePx));
 }
 
 } // namespace
@@ -60,6 +60,10 @@ float dbmForSMeterReading(double sMeterReading) {
     return static_cast<float>(S9_DBM - below * DB_PER_S_UNIT);
 }
 
+float rxLevelDbm(std::optional<int> radioDbm, double sMeterReading) {
+    return radioDbm ? static_cast<float>(*radioDbm) : dbmForSMeterReading(sMeterReading);
+}
+
 float normalizedForDb(float dbm, float minDb, float maxDb) {
     const float range = maxDb - minDb;
     if (range <= 0.0f)
@@ -67,12 +71,12 @@ float normalizedForDb(float dbm, float minDb, float maxDb) {
     return qMax(0.0f, (dbm - minDb) / range);
 }
 
-QVector<Label> labelsFor(float minDb, float maxDb, bool useSUnits, int availablePx, int labelHeightPx) {
+QVector<Label> labelsFor(float minDb, float maxDb, bool useSUnits, int availablePx, float lineSpacingPx) {
     QVector<Label> out;
     if (maxDb <= minDb)
         return out;
 
-    const float needed = minDbSeparation(minDb, maxDb, availablePx, labelHeightPx);
+    const float needed = minDbSeparation(minDb, maxDb, availablePx, lineSpacingPx);
 
     if (!useSUnits) {
         const int step = roundedDbStride(needed);

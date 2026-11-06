@@ -4,8 +4,8 @@
 #include <QWidget>
 
 /**
- * @brief Small cursor-follow indicator that colors itself cyan (VFO A) or green (VFO B) while the
- *        pointer is over a panadapter. Purely visual — no CAT, no RadioState sync.
+ * @brief Small panadapter badge showing which VFO the scroll wheel tunes: A (cyan) or B (green),
+ *        set by the last click-tune. Purely visual — no CAT, no RadioState sync.
  */
 class MouseVfoIndicator : public QWidget {
     Q_OBJECT

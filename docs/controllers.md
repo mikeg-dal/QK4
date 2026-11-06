@@ -3,7 +3,7 @@
 > **Purpose:** if something is broken in the UI, find the owning controller here first.
 > Each entry maps a user-visible feature → the controller that owns it → the file path.
 
-Last updated: TransmitController added — one owner of transmit (31 controllers).
+Count the controllers with `ls src/controllers/*.h | wc -l`.
 
 ---
 
@@ -39,6 +39,7 @@ Last updated: TransmitController added — one owner of transmit (31 controllers
 | "Clicking a frequency digit doesn't change the tuning rate (underline)" | VfoFrequencyController::setTuningRateFromDigit | `src/controllers/vfofrequencycontroller.cpp` |
 | "FREQ ENT doesn't open frequency entry / opens it on the wrong VFO" | RightSideController (frequencyEntryRequested) → VfoFrequencyController::toggleFrequencyEntry | `src/controllers/vfofrequencycontroller.cpp` |
 | "Memory buttons M1-M4 / REC / STORE / RCL left/right click wrong" | MemoryButtonsController | `src/controllers/memorybuttonscontroller.cpp` |
+| "Memory keys the wrong size or overlapping" | MemoryKeyRow (built by MainWindow, no controller) | `src/ui/widgets/memorykeyrow.cpp` |
 | "B-SET label visibility wrong (still showing SPLIT when B-SET on)" | VfoRowIndicatorController | `src/controllers/vforowindicatorcontroller.cpp` |
 | "Side panel BW/SHFT color wrong on Sub-RX active (B-SET)" | SideControlDisplayController | `src/controllers/sidecontroldisplaycontroller.cpp` |
 | "Menu overlay / MEDF system not working" | MenuController | `src/controllers/menucontroller.cpp` |
@@ -47,9 +48,12 @@ Last updated: TransmitController added — one owner of transmit (31 controllers
 | "Band/Display/Fn/Main RX/Sub RX/TX popup won't open or close" | PopupManager | `src/controllers/popupmanager.cpp` |
 | "Fn popup macro buttons not sending CAT" | MacroController | `src/controllers/macrocontroller.cpp` |
 | "PF1-PF4 / F1-F12 keyboard shortcuts / KPOD macro buttons" | MacroController | same |
+| "Macro editor won't open / edits not kept" | PopupManager (owns `MacroDialog`) | `src/controllers/popupmanager.cpp`, `src/ui/dialogs/macrodialog.cpp` |
 | "Connection to K4 / status indicator wrong" | ConnectionController + MainWindow::updateConnectionState | `src/controllers/connectioncontroller.cpp` + `src/mainwindow.cpp` |
 | "Top status bar label / KPA1500 badge wrong" | StatusBarController | `src/controllers/statusbarcontroller.cpp` |
+| "Power button does nothing / no power-off confirm" | StatusBarController (owns the `ConfirmPopup`, sends `PS0;`) | `src/controllers/statusbarcontroller.cpp` |
 | "Audio (RX/TX, PTT) not working" | AudioController | `src/controllers/audiocontroller.cpp` |
+| "PTT does nothing in voice modes" / microphone banner on screen | AudioController → TxAudioPipeline | `src/audio/txaudiopipeline.cpp` `setupAudioInput()` (rate rule: `src/audio/audioresampler.h`, wording: `src/audio/micrate.h`) |
 | "Radio stays keyed after I stop transmitting" | TransmitController | `src/controllers/transmitcontroller.cpp` (decision: `src/models/transmitowner.h`) |
 | "PTT indicator lit but nothing is transmitting (or the reverse)" | TransmitController | same |
 | "WSJT-X keyed while I was already transmitting" | TransmitController | same |
@@ -57,6 +61,7 @@ Last updated: TransmitController added — one owner of transmit (31 controllers
 | "Enable K-Pod does nothing / device opens with the box unchecked" | HardwareController, applying `src/hardware/usbdevicelifecycle.h` | same |
 | "Unplugging a K-Pod raised two popups, or unchecking the box raised one" | same — effects come from state EDGES | same |
 | "CW keying / paddle / sidetone wrong" | CwController | `src/controllers/cwcontroller.cpp` |
+| "CW over the network breaks up" / "Key-Down Delay won't change" | CwController (`setKeyDownInitialDelay`, KZL) + CW Keyer page | `src/controllers/cwcontroller.cpp`, `src/ui/pages/cwkeyerpage.cpp` |
 | "My foot pedal on the HaliKey does nothing" | Withdrawn on purpose — see the note in `src/controllers/cwcontroller.h` | n/a |
 | "Spectrum / panadapter / click-tune not working" | SpectrumController | `src/controllers/spectrumcontroller.cpp` |
 | "VFO mini-pan doesn't follow the radio's MINI-PAN button" / "mini-pan stuck open after reconnect" | SpectrumController | `src/controllers/spectrumcontroller.cpp` |
@@ -64,42 +69,43 @@ Last updated: TransmitController added — one owner of transmit (31 controllers
 | "Removed a cluster and another shows the wrong status / opens twice" | DxClusterController (`removeCluster`), DxClusterPage | `src/controllers/dxclustercontroller.cpp`, `src/ui/pages/dxclusterpage.cpp` |
 | "WSJT-X / QLog / RumLogNG over TCI: no connect, no audio, PTT or CW wrong" | TciController | `src/controllers/tcicontroller.cpp` (server: `src/network/tciserver.cpp`) |
 | "TCI Server options tab status or client list wrong" | TciServerPage | `src/ui/pages/tciserverpage.cpp` |
+| "An Options page is clipped, too wide, or laid out differently from the others" | OptionsPageLayout (no controller) | `src/ui/pages/optionspagelayout.cpp` |
 
 ---
 
 ## What's still in MainWindow (and why)
 
-MainWindow is now ~1,460 LOC. What remains is genuinely MainWindow responsibility:
+`wc -l src/mainwindow.cpp` gives its current size. What remains is genuinely MainWindow responsibility:
 
-- **Widget construction** — `setupUi()` and `setupVfoSection()` build the window layout tree. This is MainWindow's job; controllers observe widgets they don't own.
+- **Widget construction** — `setupUi()` and `setupVfoSection()` build the window layout tree, including the memory key row (`MemoryKeyRow::create`). This is MainWindow's job; controllers observe widgets they don't own.
 - **Setup helpers** — `setupControllers()`, `setupNotificationWidget()`, `setupConnectionWiring()`, `setupRadioStateWiring()`, `setupSpectrumDataRouting()`, `setupHardwareController()`, `setupCatServer()`, `setupMenuBar()`. Construction orchestration.
 - **Event filter dispatch** — `eventFilter()` routes widget-level mouse events to the right controller. MainWindow is the natural dispatcher because it owns the top-level event filter installation.
-- **Connection lifecycle** — `onRadioReady()`, `onCatResponse()`, `onConnectionStateChanged()`, `onConnectionError()`, `onAuthFailed()` orchestrate startup / teardown across multiple controllers. This is coordination, not feature logic.
+- **Connection lifecycle** — `onRadioReady()`, `onCatResponse()`, `onConnectionStateChanged()`, `onConnectionError()` orchestrate startup / teardown across multiple controllers. This is coordination, not feature logic.
 - **resetUiForDisconnect()** — single place that calls each controller's / widget's reset on K4 disconnect. Also coordination.
 - **Window chrome** — `closeEvent`, `moveEvent`, `keyPressEvent`. Native QMainWindow overrides.
 - **closeAllPopups / closeNonPopupManagerPopups / toggleXPopup** — cross-controller popup coordination.
 
 ---
 
-## The 30 controllers at a glance
+## The controllers at a glance
 
 Grouped by concern:
 
-### Core (exist before refactor)
+### Core
 - **ConnectionController** — TCP connection state machine, network I/O thread, CAT send
-- **AudioController** — audio engine, Opus codecs, the PTT gate, audio thread
+- **AudioController** — RX audio engine (audio thread), TX pipeline (AudioTX thread), the PTT gate
 - **TransmitController** — the single owner of "are we transmitting". Every producer (PTT button, XMIT, Esc, CAT client, TCI client, and the radio itself) asks it instead of writing the audio gate and the indicator directly. Records HOW each transmission was keyed so the release is the exact inverse. Esc is not a release: `operatorStop()` also always sends the K4's CW abort (`KY<04>;RX;`), because a KY macro or TCI `cw_macros` is keyed from the radio's buffer and never reaches the arbiter (#173). Decision logic is header-only in `src/models/transmitowner.h` and unit-tested standalone.
 - **SpectrumController** — panadapters, spectrum data routing, click-tune, passband overlays
-- **HardwareController** — constructs + owns KPOD, KPOD+, HaliKey, IambicKeyer, SidetoneGenerator + their threads; KPOD tuning-knob → CAT; device-config push; signal forwarding. **Sole owner of USB device lifecycle policy**: holds one `UsbDeviceLifecycle::State` per device and applies the returned effects. The workers report arrival and loss; they do not decide to open. It also emits `kpodPlusOwnsCw(bool)` from that state, which is what the CW gate follows — detection is not ownership.
-- **CwController** — CW keying orchestration across the HardwareController-owned devices: IambicKeyer↔CAT/sidetone wiring, the single HaliKey line handler (both levers passed to the keyer as one sample), V1.4 pedal demux, KPOD+ keyer-active gate. Paddle input is gated on CW/CW_R for both levers, and both are released on any mode change. See `cwcontroller.h` for the threading-invariant doc.
+- **HardwareController** — constructs + owns KPOD, KPOD+, HaliKey, PaddleKeyer (with its clock, link, sidetone scheduler and timer), SidetoneGenerator + their threads; KPOD tuning-knob → CAT; device-config push; signal forwarding. **Sole owner of USB device lifecycle policy**: holds one `UsbDeviceLifecycle::State` per device and applies the returned effects. The workers report arrival and loss; they do not decide to open. It also emits `kpodPlusOwnsCw(bool)` from that state, which is what the CW gate follows — detection is not ownership.
+- **CwController** — CW keying orchestration across the HardwareController-owned devices: PaddleKeyer → K4 link, V1.4 lines and raw MIDI → keyer, keyer configuration from RadioState (speed, KP weight/mode/orientation, ML, KZL) and the HaliKey settings, and the keyer inhibit (radio not ready, not CW/CW_R, or the KPOD+ owning CW). Esc calls `stopKeying()`. See `cwcontroller.h` for the threading-invariant doc.
 - **DxClusterController** — DX cluster client (multi-instance; spot cache)
 - **TciController** — TCI 2.0 server for external apps: owns the TCI thread, `TciServer` and `TciAudioBridge`; maps client SETs to `CatFrames`, pushes `RadioState` snapshots to the server, routes TCI PTT/TX audio to `AudioController`. See `docs/tci-server-design.md`.
 
 ### Popup-family
-- **PopupManager** — owns 14 popups: band, display, Fn, macro dialog, 3 button rows (Main/Sub/Tx), RX EQ, TX EQ, line in/out, mic input/config, VOX, SSB BW, keying weight, software list. Also wires RX-row button label state observers.
+- **PopupManager** — owns 16 popups and the `MacroDialog`: band, display, Fn, macro dialog, 3 button rows (Main/Sub/Tx), RX EQ, TX EQ, line in/out, mic input/config, VOX, SSB BW, keying weight, software list. Also wires RX-row button label state observers.
 - **ModePopupController** — mode selector popup
-- **FeatureMenuController** — ATTN/NB/NR/NOTCH feature popup
-- **AntennaConfigController** — three antenna-config popups
+- **FeatureMenuController** — ATTN/NB/NR/NOTCH feature menu bar (`FeatureMenuBar`, a `K4PopupBase` popup)
+- **AntennaConfigController** — three antenna-config popups (Main RX, Sub RX, TX)
 - **MenuController** — K4 MEDF menu system + overlay
 
 ### Signal dispatch (plumbing)
@@ -111,7 +117,7 @@ Grouped by concern:
 - **MemoryButtonsController** — M1-M4 / REC / STORE / RCL message-memory button dispatch. Primary left-click sends SW17/51/18/52/19/20/34; right-click on REC/STORE/RCL sends alt SW137/138/139 (BANK / AF REC / AF PLAY) via installed event filter.
 
 ### Display / indicator (RadioState → widget)
-- **StatusBarController** — top status bar (clock, readings, K4+KPA status)
+- **StatusBarController** — top status bar (clock, readings, K4+KPA status) and the power button's remote power-off `ConfirmPopup`
 - **ModeLabelController** — VFO A/B mode label text (ESSB "+" suffix included)
 - **VfoFrequencyController** — VFO A/B frequency display (RIT/XIT offset applied)
 - **AntennaDisplayController** — TX / RX Main / RX Sub antenna label text
@@ -122,7 +128,7 @@ Grouped by concern:
 - **TxStateController** — TX triangles + indicator colors + VFO meter mode flip + PA current calc
 - **RitXitController** — RIT/XIT label state + wheel accumulator + click handlers + BSet-aware display routing
 - **KPA1500UiController** — KPA1500 mini panel + amp status + client lifecycle
-- **TextDecodeController** — text decode window lifecycle + CAT dispatch
+- **TextDecodeController** — lifecycle + CAT dispatch for the windows showing the K4's own on-radio decoder (CW / AFSK / FSK / PSK / DATA / SSB)
 
 ---
 
@@ -134,5 +140,7 @@ Adding a new user-visible feature?
 3. If it's a CAT-dispatching action → dispatcher / config controller
 4. If it's a widget that needs RadioState reactions → new small presentation controller
 
-Controllers should generally be 50-300 LOC. If yours grows past that, split by responsibility.
+Keep a new controller to one responsibility; if it grows past a few hundred lines, look for a split.
+Some existing controllers are far larger (`wc -l src/controllers/*.cpp | sort -n | tail`); PopupManager,
+TciController and SpectrumController are the known cases.
 See `PATTERNS.md` → Controller Pattern for the dependency-injection / lifecycle rules.

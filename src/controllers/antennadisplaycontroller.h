@@ -21,7 +21,6 @@ class AntennaDisplayController : public QObject {
 public:
     explicit AntennaDisplayController(RadioState *radioState, BandNavigationController *bandNav, QLabel *txAntennaLabel,
                                       QLabel *rxAntALabel, QLabel *rxAntBLabel, QObject *parent = nullptr);
-    ~AntennaDisplayController() override;
 
     // Clears all three antenna labels on K4 disconnect.
     void reset();

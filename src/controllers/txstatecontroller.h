@@ -20,7 +20,7 @@ class QLabel;
 //
 //   - txMeterChanged → routes meter tuple to the active TX VFO's meter
 //     and to the side-panel forward-power display. PA drain current Id
-//     comes from the K4's SIRF stream directly (RadioState::paDrainCurrent).
+//     comes from RadioState::paDrainCurrent (SIRF, smoothed at TM rate).
 //
 // Split-state dispatch: SPLIT OFF → VFO A transmits; SPLIT ON → VFO B.
 class TxStateController : public QObject {
@@ -30,7 +30,6 @@ public:
     explicit TxStateController(RadioState *radioState, SideControlPanel *sideControlPanel,
                                VfoFrequencyController *vfoFrequencyController, VFOWidget *vfoA, VFOWidget *vfoB,
                                QLabel *txIndicator, QLabel *txTriangle, QLabel *txTriangleB, QObject *parent = nullptr);
-    ~TxStateController() override;
 
     // Resets the TX triangles to their RX-state default on K4 disconnect.
     void reset();

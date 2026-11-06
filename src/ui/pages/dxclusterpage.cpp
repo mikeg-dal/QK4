@@ -2,7 +2,10 @@
 #include "controllers/dxclustercontroller.h"
 #include "settings/radiosettings.h"
 #include "ui/styling/k4styles.h"
-#include <QFrame>
+#include "ui/pages/optionspagelayout.h"
+#include <QFontDatabase>
+#include <QFormLayout>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QSpinBox>
 #include <QTimer>
@@ -10,52 +13,38 @@
 
 DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
     : QWidget(parent), m_controller(controller) {
-    setStyleSheet(K4Styles::Dialog::pageBackground());
+    namespace D = K4Styles::Dimensions;
+    auto *layout = OptionsPageLayout::createPage(this);
+    OptionsPageLayout::addTitle(layout, this, "DX Cluster");
 
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
-                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
-    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
-
-    // === Status row ===
-    auto *statusLayout = new QHBoxLayout();
-    auto *statusTitleLabel = new QLabel("Status:", this);
-    statusTitleLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    statusTitleLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+    auto *statusForm = OptionsPageLayout::addForm(layout);
     m_statusLabel = new QLabel("Disconnected", this);
-    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextGray));
-    statusLayout->addWidget(statusTitleLabel);
-    statusLayout->addWidget(m_statusLabel);
-    statusLayout->addStretch();
-    layout->addLayout(statusLayout);
+    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
+    K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusIdle);
+    OptionsPageLayout::addRow(statusForm, this, "Status", m_statusLabel);
 
-    // === Separator ===
-    auto *line1 = new QFrame(this);
-    line1->setFrameShape(QFrame::HLine);
-    line1->setStyleSheet(K4Styles::Dialog::separator());
-    line1->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line1);
-
-    // === Cluster Servers section ===
-    auto *sectionLabel = new QLabel("Cluster Servers", this);
-    sectionLabel->setStyleSheet(K4Styles::Dialog::sectionHeader());
-    layout->addWidget(sectionLabel);
-
-    // Split layout: cluster list (left) + form (right)
+    // === Servers: list (left) + the selected entry (right) ===
     auto *splitLayout = new QHBoxLayout();
-    splitLayout->setSpacing(K4Styles::Dimensions::DialogMargin);
+    splitLayout->setSpacing(D::OptionsLabelGap);
 
-    // ── Left column: cluster list + New/Remove buttons ──
     auto *leftLayout = new QVBoxLayout();
+    leftLayout->setSpacing(D::OptionsRowSpacing);
     m_clusterList = new QListWidget(this);
     m_clusterList->setStyleSheet(
         QString("QListWidget { background-color: %1; color: %2; border: 1px solid %3; font-size: %4px; }"
-                "QListWidget::item { padding: 6px 8px; }"
+                "QListWidget::item { padding: 4px 6px; }"
                 "QListWidget::item:selected { background-color: %5; color: %1; }")
-            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
-            .arg(K4Styles::Dimensions::FontSizeMedium)
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextPrimary, K4Styles::Colors::DialogBorder)
+            .arg(D::FontSizeReadout)
             .arg(K4Styles::Colors::AccentAmber));
-    m_clusterList->setMinimumHeight(100);
+    // WHY Ignored vertically: a list view asks for 192 px whatever it holds. The row is as tall as the
+    // entry form beside it, and the list fills that with a floor of three entries.
+    m_clusterList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
+    {
+        QFont listFont = m_clusterList->font();
+        listFont.setPixelSize(D::FontSizeReadout);
+        m_clusterList->setMinimumHeight(3 * (QFontMetrics(listFont).height() + 2 * D::OptionsRowSpacing));
+    }
     auto loadEntry = [this]() {
         int row = m_clusterList->currentRow();
         if (row >= 0) {
@@ -67,61 +56,48 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
         }
     };
     connect(m_clusterList, &QListWidget::currentRowChanged, this, loadEntry);
-    connect(m_clusterList, &QListWidget::itemClicked, this, loadEntry);
+    // WHY: add mode clears the selection but not the current row, so clicking that row again
+    // raises no currentRowChanged. Only that click needs loading here; any other has been loaded.
+    connect(m_clusterList, &QListWidget::itemClicked, this, [this, loadEntry]() {
+        if (m_addMode)
+            loadEntry();
+    });
     leftLayout->addWidget(m_clusterList, 1);
 
     auto *listBtnLayout = new QHBoxLayout();
+    listBtnLayout->setSpacing(D::OptionsRowSpacing);
     m_newBtn = new QPushButton("+ New", this);
     m_newBtn->setStyleSheet(K4Styles::Dialog::actionButtonSmall());
     m_newBtn->setCursor(Qt::PointingHandCursor);
     connect(m_newBtn, &QPushButton::clicked, this, &DxClusterPage::enterAddMode);
-
     m_removeBtn = new QPushButton("- Remove", this);
     m_removeBtn->setStyleSheet(K4Styles::Dialog::actionButtonSmall());
     m_removeBtn->setCursor(Qt::PointingHandCursor);
     connect(m_removeBtn, &QPushButton::clicked, this, &DxClusterPage::removeEntry);
-
     listBtnLayout->addWidget(m_newBtn);
     listBtnLayout->addWidget(m_removeBtn);
     listBtnLayout->addStretch();
     leftLayout->addLayout(listBtnLayout);
     splitLayout->addLayout(leftLayout, 2);
 
-    // ── Right column: edit form ──
-    auto *formLayout = new QVBoxLayout();
-    formLayout->setSpacing(K4Styles::Dimensions::PaddingMedium);
-
+    auto *formColumn = new QVBoxLayout();
+    formColumn->setSpacing(D::OptionsRowSpacing);
     m_formTitleLabel = new QLabel("Edit Cluster", this);
     m_formTitleLabel->setStyleSheet(K4Styles::Dialog::sectionHeader());
-    formLayout->addWidget(m_formTitleLabel);
+    formColumn->addWidget(m_formTitleLabel);
 
-    // Host
-    auto *hostLayout = new QHBoxLayout();
-    auto *hostLabel = new QLabel("Host:", this);
-    hostLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    hostLabel->setFixedWidth(50);
+    auto *entryForm = new QFormLayout();
+    OptionsPageLayout::configureForm(entryForm);
     m_hostEdit = new QLineEdit(this);
     m_hostEdit->setStyleSheet(K4Styles::Dialog::lineEdit());
     m_hostEdit->setPlaceholderText("hostname or IP address");
-    hostLayout->addWidget(hostLabel);
-    hostLayout->addWidget(m_hostEdit, 1);
-    formLayout->addLayout(hostLayout);
-
-    // Port
-    auto *portLayout = new QHBoxLayout();
-    auto *portLabel = new QLabel("Port:", this);
-    portLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    portLabel->setFixedWidth(50);
+    OptionsPageLayout::addRow(entryForm, this, "Host", m_hostEdit);
     m_portEdit = new QLineEdit(this);
     m_portEdit->setStyleSheet(K4Styles::Dialog::lineEdit());
-    m_portEdit->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
     m_portEdit->setPlaceholderText("7000");
-    portLayout->addWidget(portLabel);
-    portLayout->addWidget(m_portEdit);
-    portLayout->addStretch();
-    formLayout->addLayout(portLayout);
+    OptionsPageLayout::capWidth(m_portEdit, D::OptionsShortFieldWidth);
+    OptionsPageLayout::addRow(entryForm, this, "Port", m_portEdit);
 
-    // Auto-connect checkbox
     m_autoConnectCheck = new QCheckBox("Auto-connect on startup", this);
     m_autoConnectCheck->setStyleSheet(K4Styles::Dialog::checkBox());
     connect(m_autoConnectCheck, &QCheckBox::toggled, this, [this](bool checked) {
@@ -135,15 +111,14 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
         entry.autoConnect = checked;
         RadioSettings::instance()->updateDxCluster(row, entry);
     });
-    formLayout->addWidget(m_autoConnectCheck);
+    entryForm->addRow(QString(), m_autoConnectCheck);
 
-    // Save + Connect/Disconnect buttons
     auto *btnLayout = new QHBoxLayout();
+    btnLayout->setSpacing(D::OptionsRowSpacing);
     m_saveBtn = new QPushButton("Save", this);
     m_saveBtn->setStyleSheet(K4Styles::Dialog::actionButtonSmall());
     m_saveBtn->setCursor(Qt::PointingHandCursor);
     connect(m_saveBtn, &QPushButton::clicked, this, &DxClusterPage::saveEntry);
-
     m_connectBtn = new QPushButton("Connect", this);
     m_connectBtn->setStyleSheet(K4Styles::Dialog::actionButtonSmall());
     m_connectBtn->setCursor(Qt::PointingHandCursor);
@@ -157,7 +132,7 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
         QString callsign = RadioSettings::instance()->dxClusterCallsign();
         if (callsign.isEmpty()) {
             m_statusLabel->setText("Set your callsign in Cluster Settings below");
-            m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::ErrorRed));
+            K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
             return;
         }
         m_controller->connectCluster(row, clusters[row].host, clusters[row].port, callsign);
@@ -176,105 +151,94 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
     btnLayout->addWidget(m_connectBtn);
     btnLayout->addWidget(m_disconnectBtn);
     btnLayout->addStretch();
-    formLayout->addLayout(btnLayout);
-
-    formLayout->addStretch();
-    splitLayout->addLayout(formLayout, 3);
+    entryForm->addRow(QString(), btnLayout);
+    formColumn->addLayout(entryForm);
+    formColumn->addStretch();
+    splitLayout->addLayout(formColumn, 3);
     layout->addLayout(splitLayout);
 
-    // === Separator ===
-    auto *line2 = new QFrame(this);
-    line2->setFrameShape(QFrame::HLine);
-    line2->setStyleSheet(K4Styles::Dialog::separator());
-    line2->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line2);
+    // === Settings shared by every cluster: two compact rows ===
+    OptionsPageLayout::addSection(layout, this, "Cluster Settings");
+    auto *settingsGrid = new QGridLayout();
+    settingsGrid->setHorizontalSpacing(D::OptionsLabelGap);
+    settingsGrid->setVerticalSpacing(D::OptionsRowSpacing);
+    auto gridLabel = [this](const QString &text) {
+        auto *label = new QLabel(text, this);
+        label->setStyleSheet(K4Styles::Dialog::formLabel());
+        return label;
+    };
 
-    // === Cluster Settings section ===
-    auto *settingsLabel = new QLabel("Cluster Settings", this);
-    settingsLabel->setStyleSheet(K4Styles::Dialog::sectionHeader());
-    layout->addWidget(settingsLabel);
-
-    // Callsign + Spot age — single row
-    auto *settingsRow = new QHBoxLayout();
-
-    auto *callLabel = new QLabel("Callsign:", this);
-    callLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    callLabel->setFixedWidth(70);
     m_callsignEdit = new QLineEdit(this);
     m_callsignEdit->setStyleSheet(K4Styles::Dialog::lineEdit());
-    m_callsignEdit->setPlaceholderText("Your callsign (required)");
-    m_callsignEdit->setFixedWidth(140);
+    m_callsignEdit->setPlaceholderText("Required");
     m_callsignEdit->setText(RadioSettings::instance()->dxClusterCallsign());
+    OptionsPageLayout::capWidth(m_callsignEdit, D::OptionsShortFieldWidth);
     connect(m_callsignEdit, &QLineEdit::editingFinished, this,
             [this]() { RadioSettings::instance()->setDxClusterCallsign(m_callsignEdit->text()); });
 
-    auto *ageLabel = new QLabel("Spot age:", this);
-    ageLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    ageLabel->setFixedWidth(70);
+    m_spotFontSizeSpin = new QSpinBox(this);
+    m_spotFontSizeSpin->setStyleSheet(K4Styles::Dialog::spinBox());
+    m_spotFontSizeSpin->setRange(D::FontSizeSpotMin, D::FontSizeSpotMax);
+    m_spotFontSizeSpin->setSingleStep(1);
+    m_spotFontSizeSpin->setSuffix(" px");
+    m_spotFontSizeSpin->setValue(RadioSettings::instance()->dxClusterSpotFontSize());
+    connect(m_spotFontSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int value) { RadioSettings::instance()->setDxClusterSpotFontSize(value); });
+
     m_ageSlider = new QSlider(Qt::Horizontal, this);
     m_ageSlider->setRange(5, 30);
     m_ageSlider->setSingleStep(1);
     m_ageSlider->setValue(RadioSettings::instance()->dxClusterSpotAge() / 60);
     m_ageSlider->setStyleSheet(
         K4Styles::sliderHorizontal(K4Styles::Colors::DarkBackground, K4Styles::Colors::AccentAmber));
-    m_ageValueLabel = new QLabel(QString("%1 min").arg(RadioSettings::instance()->dxClusterSpotAge() / 60), this);
-    m_ageValueLabel->setStyleSheet(K4Styles::Dialog::formValue());
-    connect(m_ageSlider, &QSlider::valueChanged, this, [this](int value) {
-        RadioSettings::instance()->setDxClusterSpotAge(value * 60);
-        m_controller->setSpotMaxAge(value * 60);
+    m_ageValueLabel =
+        OptionsPageLayout::sliderValue(QString("%1 min").arg(RadioSettings::instance()->dxClusterSpotAge() / 60), this);
+    // WHY apply on release, not on every value: each set is a full settings save. Keyboard and
+    // click steps arrive with the slider up and are applied at once.
+    auto applySpotAge = [this]() {
+        const int seconds = m_ageSlider->value() * 60;
+        RadioSettings::instance()->setDxClusterSpotAge(seconds);
+        m_controller->setSpotMaxAge(seconds);
+    };
+    connect(m_ageSlider, &QSlider::valueChanged, this, [this, applySpotAge](int value) {
         m_ageValueLabel->setText(QString("%1 min").arg(value));
+        if (!m_ageSlider->isSliderDown())
+            applySpotAge();
     });
+    connect(m_ageSlider, &QSlider::sliderReleased, this, applySpotAge);
 
-    auto *fontLabel = new QLabel("Spot label size:", this);
-    fontLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    fontLabel->setFixedWidth(100);
-    m_spotFontSizeSpin = new QSpinBox(this);
-    m_spotFontSizeSpin->setStyleSheet(K4Styles::Dialog::spinBox());
-    m_spotFontSizeSpin->setRange(K4Styles::Dimensions::FontSizeSpotMin, K4Styles::Dimensions::FontSizeSpotMax);
-    m_spotFontSizeSpin->setSingleStep(1);
-    m_spotFontSizeSpin->setSuffix(" px");
-    m_spotFontSizeSpin->setFixedWidth(80);
-    m_spotFontSizeSpin->setValue(RadioSettings::instance()->dxClusterSpotFontSize());
-    connect(m_spotFontSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
-            [](int value) { RadioSettings::instance()->setDxClusterSpotFontSize(value); });
+    settingsGrid->addWidget(gridLabel("Callsign"), 0, 0);
+    settingsGrid->addWidget(m_callsignEdit, 0, 1);
+    settingsGrid->addWidget(gridLabel("Spot label size"), 0, 2);
+    settingsGrid->addWidget(m_spotFontSizeSpin, 0, 3, Qt::AlignLeft);
+    settingsGrid->addWidget(gridLabel("Spot age"), 1, 0);
+    settingsGrid->addWidget(OptionsPageLayout::sliderField(m_ageSlider, m_ageValueLabel, this), 1, 1, 1, 3);
+    settingsGrid->setColumnStretch(3, 1);
+    layout->addLayout(settingsGrid);
 
-    settingsRow->addWidget(callLabel);
-    settingsRow->addWidget(m_callsignEdit);
-    settingsRow->addSpacing(K4Styles::Dimensions::PaddingMedium);
-    settingsRow->addWidget(ageLabel);
-    settingsRow->addWidget(m_ageSlider, 1);
-    settingsRow->addWidget(m_ageValueLabel);
-    settingsRow->addSpacing(K4Styles::Dimensions::PaddingMedium);
-    settingsRow->addWidget(fontLabel);
-    settingsRow->addWidget(m_spotFontSizeSpin);
-    layout->addLayout(settingsRow);
-
-    // === Separator ===
-    auto *line3 = new QFrame(this);
-    line3->setFrameShape(QFrame::HLine);
-    line3->setStyleSheet(K4Styles::Dialog::separator());
-    line3->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line3);
-
-    // === Console section ===
-    auto *consoleLabel = new QLabel("Console", this);
-    consoleLabel->setStyleSheet(K4Styles::Dialog::sectionHeader());
-    layout->addWidget(consoleLabel);
-
+    // === Console: everything left over goes to it ===
+    OptionsPageLayout::addSection(layout, this, "Console");
     m_consoleOutput = new QPlainTextEdit(this);
     m_consoleOutput->setReadOnly(true);
     m_consoleOutput->setFocusPolicy(Qt::NoFocus);
     m_consoleOutput->setMaximumBlockCount(500);
+    // WHY no wrap: cluster lines are fixed-column (call, frequency, comment, then the time at the
+    // right), and wrapping put the time alone on the next line. Long lines scroll sideways instead.
+    m_consoleOutput->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_consoleOutput->setStyleSheet(
-        QString("QPlainTextEdit { background-color: %1; color: %2; border: 1px solid %3; "
-                "font-family: 'Menlo', 'Consolas', monospace; font-size: %4px; }")
-            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
-            .arg(K4Styles::Dimensions::FontSizePopup));
-    m_consoleOutput->setMinimumHeight(80);
+        QString("QPlainTextEdit { background-color: %1; color: %2; border: 1px solid %3; }")
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextPrimary, K4Styles::Colors::DialogBorder));
+    // WHY the family list: the system fixed font is Courier New on Windows, far less legible at this
+    // size than Consolas; Menlo (macOS) and Consolas (Windows) come first, the platform's own
+    // monospace is the fallback.
+    QFont consoleFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    consoleFont.setFamilies({QStringLiteral("Menlo"), QStringLiteral("Consolas"), consoleFont.family()});
+    consoleFont.setPixelSize(D::FontSizeReadout);
+    m_consoleOutput->setFont(consoleFont);
+    m_consoleOutput->setMinimumHeight(D::OptionsConsoleMinHeight);
+    m_consoleOutput->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     layout->addWidget(m_consoleOutput, 1);
 
-    // Command input
-    auto *inputLayout = new QHBoxLayout();
     m_consoleInput = new QLineEdit(this);
     m_consoleInput->setStyleSheet(K4Styles::Dialog::lineEdit());
     m_consoleInput->setPlaceholderText("Send command (e.g., set/dx filter skimmer)");
@@ -291,8 +255,7 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
         // on the wrong widget during the Enter keypress.
         QTimer::singleShot(0, m_consoleInput, [this]() { m_consoleInput->setFocus(); });
     });
-    inputLayout->addWidget(m_consoleInput, 1);
-    layout->addLayout(inputLayout);
+    layout->addWidget(m_consoleInput);
 
     // Wire controller signals
     if (m_controller) {
@@ -305,7 +268,7 @@ DxClusterPage::DxClusterPage(DxClusterController *controller, QWidget *parent)
         connect(m_controller, &DxClusterController::clusterError, this, [this](int index, const QString &error) {
             if (index == m_clusterList->currentRow()) {
                 m_statusLabel->setText("Error: " + error);
-                m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::ErrorRed));
+                K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
             }
         });
         // Per-cluster console lines — only append if this cluster is selected
@@ -355,7 +318,7 @@ void DxClusterPage::updateListIndicators() {
         } else if (state == DxClusterClient::Connecting) {
             item->setForeground(QColor(K4Styles::Colors::AccentAmber));
         } else {
-            item->setForeground(QColor(K4Styles::Colors::TextWhite));
+            item->setForeground(QColor(K4Styles::Colors::TextPrimary));
         }
     }
 }
@@ -451,13 +414,13 @@ void DxClusterPage::updateStatus() {
 
     if (connectedCount == 0) {
         m_statusLabel->setText("Disconnected");
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextGray));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusIdle);
     } else if (connectedCount == 1) {
         m_statusLabel->setText("1 cluster connected");
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
     } else {
         m_statusLabel->setText(QString("%1 clusters connected").arg(connectedCount));
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
     }
 
     // Per-cluster button state based on selected entry

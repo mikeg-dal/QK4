@@ -1,17 +1,10 @@
 #include "ui/popups/displaypopupwidget.h"
+#include "dsp/waterfallgeometry.h"
 #include "ui/styling/k4constants.h"
 #include "utils/radioutils.h"
-#include <QApplication>
 #include <QHBoxLayout>
-#include <QHideEvent>
 #include <QLabel>
-#include <QKeyEvent>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QPainterPath>
-#include <QScreen>
 #include <QVBoxLayout>
-#include <QWheelEvent>
 
 namespace {
 // Layout constants
@@ -56,7 +49,6 @@ void DisplayPopupWidget::setupUi() {
     updateToggleStyles();
     updateMenuButtonLabels();
 
-    // Initialize popup size from base class
     initPopup();
 }
 
@@ -70,31 +62,15 @@ void DisplayPopupWidget::setupTopRow() {
     m_lcdExtGroup = new ToggleGroupWidget("LCD", "EXT", this);
     m_lcdExtGroup->setLeftSelected(m_lcdEnabled);
     m_lcdExtGroup->setRightSelected(m_extEnabled);
-    connect(m_lcdExtGroup, &ToggleGroupWidget::leftClicked, this, [this]() {
-        m_lcdEnabled = true;
-        m_extEnabled = false;
-        m_lcdExtGroup->setLeftSelected(true);
-        m_lcdExtGroup->setRightSelected(false);
-    });
-    connect(m_lcdExtGroup, &ToggleGroupWidget::rightClicked, this, [this]() {
-        m_lcdEnabled = false;
-        m_extEnabled = true;
-        m_lcdExtGroup->setLeftSelected(false);
-        m_lcdExtGroup->setRightSelected(true);
-    });
-    connect(m_lcdExtGroup, &ToggleGroupWidget::bothClicked, this, [this]() {
-        m_lcdEnabled = true;
-        m_extEnabled = true;
-        m_lcdExtGroup->setLeftSelected(true);
-        m_lcdExtGroup->setRightSelected(true);
-    });
+    connect(m_lcdExtGroup, &ToggleGroupWidget::leftClicked, this, [this]() { selectDisplayTarget(true, false); });
+    connect(m_lcdExtGroup, &ToggleGroupWidget::rightClicked, this, [this]() { selectDisplayTarget(false, true); });
+    connect(m_lcdExtGroup, &ToggleGroupWidget::bothClicked, this, [this]() { selectDisplayTarget(true, true); });
     topRow->addWidget(m_lcdExtGroup);
 
     // A & B toggle group
     m_vfoAbGroup = new ToggleGroupWidget("A", "B", this);
     m_vfoAbGroup->setLeftSelected(m_vfoAEnabled);
     m_vfoAbGroup->setRightSelected(m_vfoBEnabled);
-    m_vfoAbGroup->setRightEnabled(m_vfoBAvailable);
     connect(m_vfoAbGroup, &ToggleGroupWidget::leftClicked, this, [this]() {
         m_vfoAEnabled = true;
         m_vfoBEnabled = false;
@@ -104,24 +80,20 @@ void DisplayPopupWidget::setupTopRow() {
         updateSpanControlGroup();     // Sync span display
     });
     connect(m_vfoAbGroup, &ToggleGroupWidget::rightClicked, this, [this]() {
-        if (m_vfoBAvailable) {
-            m_vfoAEnabled = false;
-            m_vfoBEnabled = true;
-            m_vfoAbGroup->setLeftSelected(false);
-            m_vfoAbGroup->setRightSelected(true);
-            updateRefLevelControlGroup(); // Sync ref level display
-            updateSpanControlGroup();     // Sync span display
-        }
+        m_vfoAEnabled = false;
+        m_vfoBEnabled = true;
+        m_vfoAbGroup->setLeftSelected(false);
+        m_vfoAbGroup->setRightSelected(true);
+        updateRefLevelControlGroup(); // Sync ref level display
+        updateSpanControlGroup();     // Sync span display
     });
     connect(m_vfoAbGroup, &ToggleGroupWidget::bothClicked, this, [this]() {
-        if (m_vfoBAvailable) {
-            m_vfoAEnabled = true;
-            m_vfoBEnabled = true;
-            m_vfoAbGroup->setLeftSelected(true);
-            m_vfoAbGroup->setRightSelected(true);
-            updateRefLevelControlGroup(); // Sync ref level display
-            updateSpanControlGroup();     // Sync span display
-        }
+        m_vfoAEnabled = true;
+        m_vfoBEnabled = true;
+        m_vfoAbGroup->setLeftSelected(true);
+        m_vfoAbGroup->setRightSelected(true);
+        updateRefLevelControlGroup(); // Sync ref level display
+        updateSpanControlGroup();     // Sync span display
     });
     topRow->addWidget(m_vfoAbGroup);
 
@@ -136,6 +108,7 @@ void DisplayPopupWidget::setupTopRow() {
     m_averageControlPage = createAverageControlPage();
     m_nbControlPage = createNbControlPage();
     m_waterfallControlPage = createWaterfallControlPage();
+    m_wtrClrsControlPage = createWtrClrsControlPage();
     m_defaultControlPage = createDefaultControlPage();
 
     m_controlStack->addWidget(m_spanControlPage);
@@ -144,10 +117,32 @@ void DisplayPopupWidget::setupTopRow() {
     m_controlStack->addWidget(m_averageControlPage);
     m_controlStack->addWidget(m_nbControlPage);
     m_controlStack->addWidget(m_waterfallControlPage);
+    m_controlStack->addWidget(m_wtrClrsControlPage);
     m_controlStack->addWidget(m_defaultControlPage);
+
+    // WHY pinned: the WTRFALL page, with two groups, is now the widest, and the stack takes its width.
+    // Every other page keeps the place it had in the 220 px stack it had before (centred; REF, with
+    // its AUTO key, flush), so nothing but the WTRFALL page moves.
+    constexpr int kClassicStackWidth = 220;
+    for (QWidget *page : {m_spanControlPage, m_refLevelControlPage, m_scaleControlPage, m_averageControlPage,
+                          m_nbControlPage, m_wtrClrsControlPage}) {
+        auto *pageLayout = qobject_cast<QHBoxLayout *>(page->layout());
+        const auto *group = page->findChild<ControlGroupWidget *>();
+        if (!pageLayout || !group)
+            continue;
+        pageLayout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        pageLayout->setContentsMargins((kClassicStackWidth - group->width()) / 2, 0, 0, 0);
+    }
 
     // Default to SPAN page
     m_controlStack->setCurrentWidget(m_spanControlPage);
+
+    // WHY: pages differ in width (REF's AUTO key makes it the only one filling the stack). On a page
+    // change Qt repaints the stack's own area, and at a fractional scale its edge rounds to device
+    // pixels - the last column was left holding REF's right border as a stray vertical line. The
+    // popup paints the background under the stack, so it repaints the area, a pixel beyond each edge.
+    connect(m_controlStack, &QStackedWidget::currentChanged, this,
+            [this]() { update(m_controlStack->geometry().adjusted(-1, -1, 1, 1)); });
 
     topRow->addWidget(m_controlStack);
     topRow->addStretch();
@@ -180,19 +175,15 @@ QWidget *DisplayPopupWidget::createRefLevelControlPage() {
     m_refLevelControlGroup = new ControlGroupWidget("REF", page);
     m_refLevelControlGroup->setShowAutoButton(true);
     m_refLevelControlGroup->setValue("-108");
-    // Ref level increment/decrement - MainWindow handles CAT commands with absolute values
+    // Ref level +/-: PopupManager steps it (RadioState::stepRefLevel) and sends #REF
     connect(m_refLevelControlGroup, &ControlGroupWidget::decrementClicked, this,
             &DisplayPopupWidget::refLevelDecrementRequested);
     connect(m_refLevelControlGroup, &ControlGroupWidget::incrementClicked, this,
             &DisplayPopupWidget::refLevelIncrementRequested);
     connect(m_refLevelControlGroup, &ControlGroupWidget::autoClicked, this, [this]() {
-        // Auto-ref is GLOBAL - affects both VFOs, no suffix needed
-        // K4 doesn't echo #AR commands, so use optimistic update
-        emit catCommandRequested(QString("#AR/;")); // Toggle GLOBAL AUTO/MAN
-
-        // Optimistic local update
-        m_autoRef = !m_autoRef;
-        updateRefLevelControlGroup();
+        // WHY: no optimistic flip. The K4 answers #AR/; at once with the new #AR state, which arrives
+        // through setAutoRefLevel(); guessing here could only disagree with it. AutoRef is global.
+        emit catCommandRequested(QString("#AR/;"));
     });
     layout->addWidget(m_refLevelControlGroup);
 
@@ -293,16 +284,79 @@ QWidget *DisplayPopupWidget::createWaterfallControlPage() {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    // WTRFALL (the radio's #WFH) and SPEED (QK4's history length) side by side: both shape the
+    // waterfall. Compact, so the pair fits the room the top row has beside the toggle groups.
+    layout->setSpacing(4);
+    layout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_waterfallControlGroup = new ControlGroupWidget("WTRFALL", page);
+    m_waterfallControlGroup->setCompact(true);
     updateWaterfallControlGroup();
-    // Just emit signals - MainWindow handles CAT commands and state updates
+    // PopupManager sends #WFH/#HWFH and updates RadioState
     connect(m_waterfallControlGroup, &ControlGroupWidget::decrementClicked, this,
             &DisplayPopupWidget::waterfallHeightDecrementRequested);
     connect(m_waterfallControlGroup, &ControlGroupWidget::incrementClicked, this,
             &DisplayPopupWidget::waterfallHeightIncrementRequested);
     layout->addWidget(m_waterfallControlGroup);
 
+    m_waterfallSpeedGroup = new ControlGroupWidget("SPEED", page);
+    m_waterfallSpeedGroup->setCompact(true);
+    m_waterfallSpeedGroup->setValue(WaterfallGeometry::speedLabel(WaterfallGeometry::SpeedFill));
+    // PopupManager steps RadioSettings, which both panadapters and this popup follow.
+    connect(m_waterfallSpeedGroup, &ControlGroupWidget::decrementClicked, this,
+            &DisplayPopupWidget::waterfallSpeedDecrementRequested);
+    connect(m_waterfallSpeedGroup, &ControlGroupWidget::incrementClicked, this,
+            &DisplayPopupWidget::waterfallSpeedIncrementRequested);
+    layout->addWidget(m_waterfallSpeedGroup);
+
     return page;
+}
+
+// WTR CLRS: the radio's waterfall colour range (#WBS / #HWBS, 5-30), the right-click function of the
+// NB / WTR CLRS key as on the K4. QK4 draws its waterfall from this value (WaterfallGeometry::
+// colorWindowFor), so stepping it here changes both screens.
+QWidget *DisplayPopupWidget::createWtrClrsControlPage() {
+    auto *page = new QWidget(this);
+    auto *layout = new QHBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    m_wtrClrsControlGroup = new ControlGroupWidget("WTR CLRS", page);
+    updateWtrClrsControlGroup();
+    connect(m_wtrClrsControlGroup, &ControlGroupWidget::decrementClicked, this,
+            &DisplayPopupWidget::waterfallColorRangeDecrementRequested);
+    connect(m_wtrClrsControlGroup, &ControlGroupWidget::incrementClicked, this,
+            &DisplayPopupWidget::waterfallColorRangeIncrementRequested);
+    layout->addWidget(m_wtrClrsControlGroup);
+    return page;
+}
+
+void DisplayPopupWidget::updateWtrClrsControlGroup() {
+    if (!m_wtrClrsControlGroup)
+        return;
+    const int range = (m_extEnabled && !m_lcdEnabled) ? m_waterfallColorRangeExt : m_waterfallColorRange;
+    // The K4 shows WTR CLRS as #WBS / 10: 0.5 to 3.0 in 0.1 steps (bench 2026-10-30).
+    m_wtrClrsControlGroup->setValue(range < 0 ? QStringLiteral("--") : QString::number(range / 10.0, 'f', 1));
+}
+
+void DisplayPopupWidget::setWaterfallColorRange(int db) {
+    m_waterfallColorRange = db;
+    updateWtrClrsControlGroup();
+}
+
+void DisplayPopupWidget::setWaterfallColorRangeExt(int db) {
+    m_waterfallColorRangeExt = db;
+    updateWtrClrsControlGroup();
+}
+
+void DisplayPopupWidget::selectDisplayTarget(bool lcd, bool ext) {
+    m_lcdEnabled = lcd;
+    m_extEnabled = ext;
+    m_lcdExtGroup->setLeftSelected(lcd);
+    m_lcdExtGroup->setRightSelected(ext);
+    // The PAN/display-mode labels and the waterfall height are per-target values.
+    updateMenuButtonLabels();
+    updateWaterfallControlGroup();
+    updateWtrClrsControlGroup();
 }
 
 void DisplayPopupWidget::updateWaterfallControlGroup() {
@@ -423,13 +477,12 @@ void DisplayPopupWidget::onMenuItemClicked(MenuItem item) {
         updateRefLevelControlGroup(); // Sync ref level display with A/B
         updateSpanControlGroup();     // Sync span display with A/B
 
-        // Notify MainWindow to update panadapter display
         emit dualPanModeChanged(newMode);
         break;
     }
     case NbWtrClrs:
-        // Toggle NB - handled elsewhere via existing NB command
-        emit catCommandRequested("NB;");
+        // The panadapter (DDC) noise blanker this key's control page shows, not the receiver NB.
+        emit ddcNbModeCycleRequested();
         break;
     // Note: AveragePeak only shows control page (first switch) - no CAT command on click
     // The +/- buttons in the control page handle averaging changes via averagingIncrement/DecrementRequested signals
@@ -464,7 +517,9 @@ void DisplayPopupWidget::onMenuItemClicked(MenuItem item) {
         }
 
         // Server-authoritative: set, then read back. The K4 does not echo #FXT/#FXA
-        // SETs at AI4 (QK4's operating mode), so we append a GET; the reply flows
+        // SETs (observed). QK4's link runs at AI4, which RDY; enables (owner-confirmed on
+        // a K4, not in D12), and AI4 does not report changes made over this link (D12:
+        // "4 = Immediate notification of changes not made by client"). So we append a GET; the reply flows
         // through RadioState -> setFixedTuneMode() and updates the label. No
         // optimistic write here, so the displayed mode can never diverge from the radio.
         emit catCommandRequested(RadioUtils::fixedTuneSetCommand(next) + "#FXA;#FXT;");
@@ -490,7 +545,13 @@ void DisplayPopupWidget::onMenuItemRightClicked(MenuItem item) {
         updateWaterfallControlGroup();
         break;
     }
-    // NbWtrClrs right-click: waterfall color cycling removed (not needed)
+    case NbWtrClrs:
+        // Show the WTR CLRS (waterfall colour range) control page, as the K4's right-click does
+        m_selectedItem = NbWtrClrs;
+        updateMenuButtonStyles();
+        m_controlStack->setCurrentWidget(m_wtrClrsControlPage);
+        updateWtrClrsControlGroup();
+        break;
     case RefLvlScale:
         // Show SCALE control page (right-click on REF LVL/SCALE button)
         m_selectedItem = RefLvlScale;
@@ -534,7 +595,6 @@ void DisplayPopupWidget::updateToggleStyles() {
     if (m_vfoAbGroup) {
         m_vfoAbGroup->setLeftSelected(m_vfoAEnabled);
         m_vfoAbGroup->setRightSelected(m_vfoBEnabled);
-        m_vfoAbGroup->setRightEnabled(m_vfoBAvailable);
     }
 }
 
@@ -561,11 +621,6 @@ void DisplayPopupWidget::updateSpanControlGroup() {
     bool useB = m_vfoBEnabled && !m_vfoAEnabled;
     double value = useB ? m_spanB : m_spanA;
     m_spanControlGroup->setValue(QString::number(value, 'f', 1));
-}
-
-void DisplayPopupWidget::setRefLevelValue(int dB) {
-    // Legacy: forward to A
-    setRefLevelValueA(dB);
 }
 
 void DisplayPopupWidget::setAutoRefLevel(bool enabled) {
@@ -736,6 +791,11 @@ void DisplayPopupWidget::setWaterfallHeight(int percent) {
     }
 }
 
+void DisplayPopupWidget::setWaterfallSpeed(int seconds) {
+    if (m_waterfallSpeedGroup)
+        m_waterfallSpeedGroup->setValue(WaterfallGeometry::speedLabel(seconds));
+}
+
 void DisplayPopupWidget::setWaterfallHeightExt(int percent) {
     // External HDMI waterfall height (#HWFHxx;)
     if (m_waterfallHeightExt != percent) {
@@ -805,12 +865,4 @@ void DisplayPopupWidget::updateMenuButtonLabels() {
     if (m_vfbMode >= 0 && m_vfbMode <= 3) {
         m_menuButtons[6]->setAlternateText(cursorBNames[m_vfbMode]);
     }
-}
-
-QString DisplayPopupWidget::getCommandPrefix() const {
-    // Returns "H" for EXT-only mode, empty string otherwise
-    if (m_extEnabled && !m_lcdEnabled) {
-        return "H";
-    }
-    return "";
 }

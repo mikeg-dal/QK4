@@ -1,6 +1,11 @@
 #include "radiosettings.h"
+#include "dsp/waterfallgeometry.h"
+#include "logging/logrules.h"
+#include "logging/logsink.h"
 #include "audio/rxoutputstage.h"
+#include "ui/styling/k4constants.h"
 #include "utils/windowfit.h"
+#include <numeric>
 #include <algorithm>
 #include <cmath>
 
@@ -29,6 +34,59 @@
 // It coincides with the Mic Gain default by measurement, not derivation - the two are tuned against
 // different sources and different meters, and either may move without the other.
 static constexpr int kTciTxGainDefault = 25;
+
+namespace {
+
+// One range rule per field, applied by its setter and by load() alike: a settings file can hold
+// anything - a hand edit, another build's value, a type QSettings cannot convert. Values from the
+// file are read wide, so an out-of-range number is caught before it is narrowed.
+
+qint64 storedInt(const QVariant &value, qint64 fallback) {
+    bool ok = false;
+    const qint64 number = value.toLongLong(&ok);
+    return ok ? number : fallback;
+}
+
+// The CAT and TCI listeners: unprivileged ports only.
+quint16 listenPort(qint64 port) {
+    return static_cast<quint16>(std::clamp<qint64>(port, 1024, 65535));
+}
+
+// A port on another host (K4, KPA1500, DX cluster). 0 would mean "any port", so it is refused.
+quint16 remotePort(qint64 port, quint16 fallback) {
+    return (port >= 1 && port <= 65535) ? static_cast<quint16>(port) : fallback;
+}
+
+int kpa1500PollIntervalMs(qint64 ms) {
+    return static_cast<int>(std::clamp<qint64>(ms, 100, 5000));
+}
+
+int dxClusterSpotAgeSeconds(qint64 seconds) {
+    return static_cast<int>(std::clamp<qint64>(seconds, 300, 1800)); // 5-30 minutes
+}
+
+int dxClusterSpotFontSizePx(qint64 sizePx) {
+    return static_cast<int>(
+        std::clamp<qint64>(sizePx, K4Styles::Dimensions::FontSizeSpotMin, K4Styles::Dimensions::FontSizeSpotMax));
+}
+
+int percent(qint64 value) {
+    return static_cast<int>(std::clamp<qint64>(value, 0, 100));
+}
+
+int halikeyDeviceTypeIndex(qint64 type) {
+    return static_cast<int>(std::clamp<qint64>(type, 0, 1)); // 0 = V1.4 serial, 1 = MIDI
+}
+
+int halikeyKeyerModeIndex(qint64 mode) {
+    return static_cast<int>(std::clamp<qint64>(mode, 0, 2));
+}
+
+int kpodPlusEncodeModeIndex(qint64 mode) {
+    return static_cast<int>(std::clamp<qint64>(mode, 0, 1));
+}
+
+} // namespace
 
 static const QByteArray obfuscationKey = "K4RemoteObfuscation";
 
@@ -112,8 +170,20 @@ void RadioSettings::setConnectAtStartupRadio(int index) {
     }
 }
 
+// WHY the saved radio becomes the selected one: the Radio Manager reselects lastSelectedIndex when
+// radiosChanged() refreshes it, and the radio just saved is the one the operator is working on.
+// Before this, the list re-sorted under a stale index and the form refilled from another entry -
+// an SL3 save appeared to bounce back to SL0 when the row under the old index still said SL0.
 void RadioSettings::addRadio(const RadioEntry &radio) {
-    m_radios.append(radio);
+    // The same radio (name, host, port) saved again is an update, not a second copy.
+    const int existing = m_radios.indexOf(radio);
+    if (existing >= 0) {
+        m_radios[existing] = sanitized(radio);
+        m_lastSelectedIndex = existing;
+    } else {
+        m_radios.append(sanitized(radio));
+        m_lastSelectedIndex = static_cast<int>(m_radios.size()) - 1;
+    }
     sortRadios();
     save();
     emit radiosChanged();
@@ -122,8 +192,12 @@ void RadioSettings::addRadio(const RadioEntry &radio) {
 void RadioSettings::removeRadio(int index) {
     if (index >= 0 && index < m_radios.size()) {
         m_radios.removeAt(index);
-        if (m_lastSelectedIndex >= m_radios.size()) {
-            m_lastSelectedIndex = m_radios.isEmpty() ? -1 : m_radios.size() - 1;
+        // The selection follows its radio: an earlier removal moves it up one. Removing the selected
+        // radio selects its neighbour (the Radio Manager shows that entry next), none if the list is empty.
+        if (index == m_lastSelectedIndex) {
+            m_lastSelectedIndex = m_radios.isEmpty() ? -1 : std::min(index, static_cast<int>(m_radios.size()) - 1);
+        } else if (index < m_lastSelectedIndex) {
+            --m_lastSelectedIndex;
         }
         save();
         emit radiosChanged();
@@ -132,7 +206,8 @@ void RadioSettings::removeRadio(int index) {
 
 void RadioSettings::updateRadio(int index, const RadioEntry &radio) {
     if (index >= 0 && index < m_radios.size()) {
-        m_radios[index] = radio;
+        m_radios[index] = sanitized(radio);
+        m_lastSelectedIndex = index; // see addRadio
         sortRadios();
         save();
         emit radiosChanged();
@@ -179,6 +254,7 @@ quint16 RadioSettings::kpa1500Port() const {
 }
 
 void RadioSettings::setKpa1500Port(quint16 port) {
+    port = remotePort(port, m_kpa1500Port);
     if (m_kpa1500Port != port) {
         m_kpa1500Port = port;
         save();
@@ -203,8 +279,7 @@ int RadioSettings::kpa1500PollInterval() const {
 }
 
 void RadioSettings::setKpa1500PollInterval(int intervalMs) {
-    // Clamp to reasonable range: 100ms - 5000ms
-    intervalMs = qBound(100, intervalMs, 5000);
+    intervalMs = kpa1500PollIntervalMs(intervalMs);
     if (m_kpa1500PollInterval != intervalMs) {
         m_kpa1500PollInterval = intervalMs;
         save();
@@ -233,16 +308,31 @@ void RadioSettings::setSubVolume(int value) {
 }
 
 int RadioSettings::textDecodeFontSize(bool subRx) const {
-    // Default 9 px matches K4Styles::Dimensions::FontSizeNormal — keep first-launch look.
-    const int defaultSize = 9;
-    int value = m_settings.value(subRx ? "textDecode/subFontSize" : "textDecode/mainFontSize", defaultSize).toInt();
-    return qBound(7, value, 24);
+    using namespace K4Styles::Dimensions;
+    const int value =
+        m_settings.value(subRx ? "textDecode/subFontSize" : "textDecode/mainFontSize", FontSizeTextDecode).toInt();
+    return qBound(FontSizeTextDecodeMin, value, FontSizeTextDecodeMax);
 }
 
 void RadioSettings::setTextDecodeFontSize(bool subRx, int sizePx) {
-    sizePx = qBound(7, sizePx, 24);
+    sizePx = qBound(K4Styles::Dimensions::FontSizeTextDecodeMin, sizePx, K4Styles::Dimensions::FontSizeTextDecodeMax);
     m_settings.setValue(subRx ? "textDecode/subFontSize" : "textDecode/mainFontSize", sizePx);
     m_settings.sync();
+}
+
+int RadioSettings::waterfallSpeedSeconds() const {
+    const int seconds = m_settings.value("display/waterfallSpeedSeconds", WaterfallGeometry::SpeedFill).toInt();
+    return WaterfallGeometry::isSpeedStep(seconds) ? seconds : WaterfallGeometry::SpeedFill;
+}
+
+void RadioSettings::setWaterfallSpeedSeconds(int seconds) {
+    if (!WaterfallGeometry::isSpeedStep(seconds))
+        seconds = WaterfallGeometry::SpeedFill;
+    if (waterfallSpeedSeconds() == seconds)
+        return;
+    m_settings.setValue("display/waterfallSpeedSeconds", seconds);
+    m_settings.sync();
+    emit waterfallSpeedChanged(seconds);
 }
 
 int RadioSettings::iaruRegion() const {
@@ -315,7 +405,6 @@ void RadioSettings::setTemperatureInFahrenheit(bool fahrenheit) {
     if (temperatureInFahrenheit() != fahrenheit) {
         m_settings.setValue("ui/temperatureFahrenheit", fahrenheit);
         m_settings.sync();
-        emit temperatureInFahrenheitChanged(fahrenheit);
     }
 }
 
@@ -332,7 +421,7 @@ int sanitizeInterfaceScale(int percent) {
 
 double sanitizeAutoScaleFactor(double factor) {
     return std::isfinite(factor) ? std::clamp(factor, WindowFit::kMinScale, WindowFit::kMaxScale)
-                                 : WindowFit::kMaxScale;
+                                 : WindowFit::kNativeScale;
 }
 
 } // namespace
@@ -350,8 +439,66 @@ void RadioSettings::setInterfaceScale(int percent) {
     }
 }
 
+bool RadioSettings::logFileEnabled() const {
+    return m_settings.value("Logging/fileEnabled", false).toBool();
+}
+
+void RadioSettings::setLogFileEnabled(bool enabled) {
+    if (logFileEnabled() != enabled) {
+        m_settings.setValue("Logging/fileEnabled", enabled);
+        m_settings.sync();
+        emit loggingChanged();
+    }
+}
+
+QString RadioSettings::logLevel() const {
+    return Logging::levelId(Logging::levelFromId(m_settings.value("Logging/level").toString()));
+}
+
+void RadioSettings::setLogLevel(const QString &level) {
+    const QString sanitized = Logging::levelId(Logging::levelFromId(level));
+    if (logLevel() != sanitized) {
+        m_settings.setValue("Logging/level", sanitized);
+        m_settings.sync();
+        emit loggingChanged();
+    }
+}
+
+QStringList RadioSettings::logGroups() const {
+    return Logging::sanitizeGroupIds(m_settings.value("Logging/groups").toStringList());
+}
+
+void RadioSettings::setLogGroups(const QStringList &groups) {
+    const QStringList sanitized = Logging::sanitizeGroupIds(groups);
+    if (logGroups() != sanitized) {
+        m_settings.setValue("Logging/groups", sanitized);
+        m_settings.sync();
+        emit loggingChanged();
+    }
+}
+
+Logging::LogConfig RadioSettings::logConfig() const {
+    Logging::LogConfig config;
+    config.level = Logging::levelFromId(logLevel());
+    config.groups = logGroups();
+    config.bench = logBench();
+    return config;
+}
+
+QStringList RadioSettings::logBench() const {
+    return m_logBench;
+}
+
+void RadioSettings::setLogBench(const QStringList &bench) {
+    const QStringList sanitized = Logging::sanitizeBenchIds(bench);
+    if (m_logBench != sanitized) {
+        m_logBench = sanitized;
+        emit loggingChanged();
+    }
+}
+
 double RadioSettings::autoScaleFactor() const {
-    return sanitizeAutoScaleFactor(m_settings.value("ui/autoScaleFactor", WindowFit::kMaxScale).toDouble());
+    return sanitizeAutoScaleFactor(m_settings.value("ui/autoScaleFactor", WindowFit::kNativeScale).toDouble());
 }
 
 void RadioSettings::setAutoScaleFactor(double factor) {
@@ -366,7 +513,7 @@ double RadioSettings::startupInterfaceScale(bool *isAuto) {
     if (isAuto)
         *isAuto = percent == kInterfaceScaleAuto;
     if (percent == kInterfaceScaleAuto)
-        return sanitizeAutoScaleFactor(store.value("ui/autoScaleFactor", WindowFit::kMaxScale).toDouble());
+        return sanitizeAutoScaleFactor(store.value("ui/autoScaleFactor", WindowFit::kNativeScale).toDouble());
     return percent / 100.0;
 }
 
@@ -393,7 +540,6 @@ void RadioSettings::setMicDevice(const QString &deviceId) {
     if (oldDevice != deviceId) {
         m_settings.setValue("audio/micDevice", deviceId);
         m_settings.sync();
-        emit micDeviceChanged(deviceId);
     }
 }
 
@@ -427,8 +573,7 @@ quint16 RadioSettings::catServerPort() const {
 }
 
 void RadioSettings::setCatServerPort(quint16 port) {
-    // Clamp to valid port range (1024-65535)
-    port = qBound(quint16(1024), port, quint16(65535));
+    port = listenPort(port);
     if (m_catServerPort != port) {
         m_catServerPort = port;
         save();
@@ -453,8 +598,7 @@ quint16 RadioSettings::tciServerPort() const {
 }
 
 void RadioSettings::setTciServerPort(quint16 port) {
-    // Clamp to valid port range (1024-65535)
-    port = qBound(quint16(1024), port, quint16(65535));
+    port = listenPort(port);
     if (m_tciServerPort != port) {
         m_tciServerPort = port;
         save();
@@ -484,7 +628,6 @@ void RadioSettings::setTciTxGain(int value) {
     if (oldValue != value) {
         m_settings.setValue("tci/txGain", value);
         m_settings.sync();
-        emit tciTxGainChanged(value);
     }
 }
 
@@ -497,7 +640,6 @@ void RadioSettings::setRxAudioBoostDb(int db) {
     if (rxAudioBoostDb() != db) {
         m_settings.setValue("audio/rxBoostDb", db);
         m_settings.sync();
-        emit rxAudioBoostDbChanged(db);
     }
 }
 
@@ -524,8 +666,8 @@ void RadioSettings::setMacro(const QString &functionId, const QString &label, co
         }
     } else {
         // Add or update macro
-        bool changed = !m_macros.contains(functionId) || m_macros[functionId].label != label ||
-                       m_macros[functionId].command != command;
+        const auto existing = m_macros.constFind(functionId);
+        const bool changed = existing == m_macros.cend() || existing->label != label || existing->command != command;
         if (changed) {
             m_macros[functionId] = entry;
             save();
@@ -542,19 +684,6 @@ void RadioSettings::setHalikeyPortName(const QString &portName) {
     if (m_halikeyPortName != portName) {
         m_halikeyPortName = portName;
         save();
-        emit halikeyPortNameChanged(portName);
-    }
-}
-
-bool RadioSettings::halikeyEnabled() const {
-    return m_halikeyEnabled;
-}
-
-void RadioSettings::setHalikeyEnabled(bool enabled) {
-    if (m_halikeyEnabled != enabled) {
-        m_halikeyEnabled = enabled;
-        save();
-        emit halikeyEnabledChanged(enabled);
     }
 }
 
@@ -563,6 +692,7 @@ int RadioSettings::halikeyDeviceType() const {
 }
 
 void RadioSettings::setHalikeyDeviceType(int type) {
+    type = halikeyDeviceTypeIndex(type);
     if (m_halikeyDeviceType != type) {
         m_halikeyDeviceType = type;
         save();
@@ -575,11 +705,61 @@ int RadioSettings::sidetoneVolume() const {
 }
 
 void RadioSettings::setSidetoneVolume(int value) {
-    value = qBound(0, value, 100);
+    value = percent(value);
     if (m_sidetoneVolume != value) {
         m_sidetoneVolume = value;
         save();
         emit sidetoneVolumeChanged(value);
+    }
+}
+
+int RadioSettings::halikeyKeyerMode() const {
+    return m_halikeyKeyerMode;
+}
+
+void RadioSettings::setHalikeyKeyerMode(int mode) {
+    mode = halikeyKeyerModeIndex(mode);
+    if (m_halikeyKeyerMode != mode) {
+        m_halikeyKeyerMode = mode;
+        save();
+        emit halikeyKeyerModeChanged(mode);
+    }
+}
+
+bool RadioSettings::halikeyStraightKey() const {
+    return m_halikeyStraightKey;
+}
+
+void RadioSettings::setHalikeyStraightKey(bool straight) {
+    if (m_halikeyStraightKey != straight) {
+        m_halikeyStraightKey = straight;
+        save();
+        emit halikeyStraightKeyChanged(straight);
+    }
+}
+
+int RadioSettings::halikeyDitMemoryDelay() const {
+    return m_halikeyDitMemoryDelay;
+}
+
+void RadioSettings::setHalikeyDitMemoryDelay(int percent) {
+    percent = ::percent(percent);
+    if (m_halikeyDitMemoryDelay != percent) {
+        m_halikeyDitMemoryDelay = percent;
+        save();
+        emit halikeyDitMemoryDelayChanged(percent);
+    }
+}
+
+bool RadioSettings::halikeyMuteRadioMonitor() const {
+    return m_halikeyMuteRadioMonitor;
+}
+
+void RadioSettings::setHalikeyMuteRadioMonitor(bool mute) {
+    if (m_halikeyMuteRadioMonitor != mute) {
+        m_halikeyMuteRadioMonitor = mute;
+        save();
+        emit halikeyMuteRadioMonitorChanged(mute);
     }
 }
 
@@ -592,11 +772,10 @@ int RadioSettings::kpodPlusEncodeMode() const {
 }
 
 void RadioSettings::setKpodPlusEncodeMode(int mode) {
-    mode = qBound(0, mode, 1);
+    mode = kpodPlusEncodeModeIndex(mode);
     if (m_kpodPlusEncodeMode != mode) {
         m_kpodPlusEncodeMode = mode;
         save();
-        emit kpodPlusSettingsChanged();
     }
 }
 
@@ -611,7 +790,6 @@ void RadioSettings::setRxEqPreset(int index, const EqPreset &preset) {
     if (index >= 0 && index < 4) {
         m_rxEqPresets[index] = preset;
         save();
-        emit rxEqPresetsChanged();
     }
 }
 
@@ -619,7 +797,6 @@ void RadioSettings::clearRxEqPreset(int index) {
     if (index >= 0 && index < 4) {
         m_rxEqPresets[index] = EqPreset();
         save();
-        emit rxEqPresetsChanged();
     }
 }
 
@@ -634,7 +811,6 @@ void RadioSettings::setTxEqPreset(int index, const EqPreset &preset) {
     if (index >= 0 && index < 4) {
         m_txEqPresets[index] = preset;
         save();
-        emit txEqPresetsChanged();
     }
 }
 
@@ -642,7 +818,6 @@ void RadioSettings::clearTxEqPreset(int index) {
     if (index >= 0 && index < 4) {
         m_txEqPresets[index] = EqPreset();
         save();
-        emit txEqPresetsChanged();
     }
 }
 
@@ -651,7 +826,7 @@ QVector<DxClusterEntry> RadioSettings::dxClusters() const {
 }
 
 void RadioSettings::addDxCluster(const DxClusterEntry &entry) {
-    m_dxClusters.append(entry);
+    m_dxClusters.append(sanitized(entry));
     save();
     emit dxClusterSettingsChanged();
 }
@@ -666,7 +841,7 @@ void RadioSettings::removeDxCluster(int index) {
 
 void RadioSettings::updateDxCluster(int index, const DxClusterEntry &entry) {
     if (index >= 0 && index < m_dxClusters.size()) {
-        m_dxClusters[index] = entry;
+        m_dxClusters[index] = sanitized(entry);
         save();
         emit dxClusterSettingsChanged();
     }
@@ -677,7 +852,7 @@ int RadioSettings::dxClusterSpotAge() const {
 }
 
 void RadioSettings::setDxClusterSpotAge(int seconds) {
-    seconds = qBound(300, seconds, 1800); // 5-30 minutes
+    seconds = dxClusterSpotAgeSeconds(seconds);
     if (m_dxClusterSpotAge != seconds) {
         m_dxClusterSpotAge = seconds;
         save();
@@ -703,12 +878,32 @@ int RadioSettings::dxClusterSpotFontSize() const {
 }
 
 void RadioSettings::setDxClusterSpotFontSize(int sizePx) {
-    sizePx = qBound(8, sizePx, 16); // mirrors K4Styles::Dimensions::FontSizeSpot{Min,Max}
+    sizePx = dxClusterSpotFontSizePx(sizePx);
     if (m_dxClusterSpotFontSize != sizePx) {
         m_dxClusterSpotFontSize = sizePx;
         save();
         emit dxClusterSettingsChanged();
     }
+}
+
+quint16 RadioSettings::defaultRadioPort(bool useTls) {
+    return useTls ? K4Protocol::TLS_PORT : K4Protocol::DEFAULT_PORT;
+}
+
+RadioEntry RadioSettings::sanitized(RadioEntry radio) {
+    Logging::registerSecret(radio.password);
+    Logging::registerSecret(radio.identity);
+    radio.port = remotePort(radio.port, defaultRadioPort(radio.useTls));
+    radio.encodeMode = std::clamp(radio.encodeMode, RadioEntry::EncodeModeMin, RadioEntry::EncodeModeMax);
+    radio.streamingLatency =
+        std::clamp(radio.streamingLatency, RadioEntry::StreamingLatencyMin, RadioEntry::StreamingLatencyMax);
+    radio.displayFps = std::clamp(radio.displayFps, RadioEntry::DisplayFpsMin, RadioEntry::DisplayFpsMax);
+    return radio;
+}
+
+DxClusterEntry RadioSettings::sanitized(DxClusterEntry entry) {
+    entry.port = remotePort(entry.port, kDefaultDxClusterPort);
+    return entry;
 }
 
 void RadioSettings::load() {
@@ -720,14 +915,23 @@ void RadioSettings::load() {
         entry.name = m_settings.value("name").toString();
         entry.host = m_settings.value("host").toString();
         entry.password = deobfuscatePassword(m_settings.value("password").toString());
-        entry.port = m_settings.value("port").toUInt();
         entry.useTls = m_settings.value("useTls", false).toBool();
+        entry.port = remotePort(storedInt(m_settings.value("port"), 0), defaultRadioPort(entry.useTls));
         entry.identity = m_settings.value("identity").toString();
-        entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus)
-        entry.streamingLatency = m_settings.value("streamingLatency", 3).toInt(); // Default SL3
-        entry.displayFps = m_settings.value("displayFps", 15).toInt();            // Default 15 FPS
+        // Clamped while still wide, so a huge stored number cannot wrap into range when narrowed.
+        const auto storedIn = [this](const char *key, int fallback, int lo, int hi) {
+            return static_cast<int>(std::clamp<qint64>(storedInt(m_settings.value(key), fallback), lo, hi));
+        };
+        entry.encodeMode =
+            storedIn("encodeMode", RadioEntry::EncodeModeDefault, RadioEntry::EncodeModeMin, RadioEntry::EncodeModeMax);
+        entry.streamingLatency = storedIn("streamingLatency", RadioEntry::StreamingLatencyDefault,
+                                          RadioEntry::StreamingLatencyMin, RadioEntry::StreamingLatencyMax);
+        entry.displayFps =
+            storedIn("displayFps", RadioEntry::DisplayFpsDefault, RadioEntry::DisplayFpsMin, RadioEntry::DisplayFpsMax);
         entry.connectAtStartup = m_settings.value("connectAtStartup", false).toBool();
-        m_radios.append(entry);
+        // The same range rules as an edited entry, so a hand-edited or old file cannot send the
+        // radio EM9 or SL12.
+        m_radios.append(sanitized(entry));
     }
     m_settings.endArray();
     sortRadios();
@@ -751,15 +955,15 @@ void RadioSettings::load() {
 
     // KPA1500 settings
     m_kpa1500Host = m_settings.value("kpa1500/host", "").toString();
-    m_kpa1500Port = m_settings.value("kpa1500/port", 1500).toUInt();
+    m_kpa1500Port = remotePort(storedInt(m_settings.value("kpa1500/port"), kDefaultKpa1500Port), kDefaultKpa1500Port);
     m_kpa1500Enabled = m_settings.value("kpa1500/enabled", false).toBool();
-    m_kpa1500PollInterval = m_settings.value("kpa1500/pollInterval", 300).toInt();
+    m_kpa1500PollInterval = kpa1500PollIntervalMs(storedInt(m_settings.value("kpa1500/pollInterval"), 300));
 
     // CAT Server settings (migrate from old rigctld keys if present)
     m_catServerEnabled = m_settings.value("catServer/enabled", m_settings.value("rigctld/enabled", false)).toBool();
-    m_catServerPort = m_settings.value("catServer/port", m_settings.value("rigctld/port", 9299)).toUInt();
+    m_catServerPort = listenPort(storedInt(m_settings.value("catServer/port", m_settings.value("rigctld/port")), 9299));
     m_tciServerEnabled = m_settings.value("tciServer/enabled", false).toBool();
-    m_tciServerPort = m_settings.value("tciServer/port", 50001).toUInt();
+    m_tciServerPort = listenPort(storedInt(m_settings.value("tciServer/port"), 50001));
     m_tciAudioEnabled = m_settings.value("tciServer/audio", true).toBool();
 
     // DX Cluster settings
@@ -769,15 +973,14 @@ void RadioSettings::load() {
         m_settings.setArrayIndex(i);
         DxClusterEntry entry;
         entry.host = m_settings.value("host").toString();
-        entry.port = m_settings.value("port", 7000).toUInt();
-        entry.callsign = m_settings.value("callsign").toString();
+        entry.port = remotePort(storedInt(m_settings.value("port"), kDefaultDxClusterPort), kDefaultDxClusterPort);
         entry.autoConnect = m_settings.value("autoConnect", false).toBool();
         m_dxClusters.append(entry);
     }
     m_settings.endArray();
-    m_dxClusterSpotAge = m_settings.value("dxCluster/spotAge", 600).toInt();
+    m_dxClusterSpotAge = dxClusterSpotAgeSeconds(storedInt(m_settings.value("dxCluster/spotAge"), 600));
     m_dxClusterCallsign = m_settings.value("dxCluster/callsign", "").toString();
-    m_dxClusterSpotFontSize = qBound(8, m_settings.value("dxCluster/spotFontSize", 11).toInt(), 16);
+    m_dxClusterSpotFontSize = dxClusterSpotFontSizePx(storedInt(m_settings.value("dxCluster/spotFontSize"), 11));
 
     // Seed default cluster entry on first run
     if (m_dxClusters.isEmpty()) {
@@ -789,12 +992,15 @@ void RadioSettings::load() {
 
     // HaliKey settings
     m_halikeyPortName = m_settings.value("halikey/portName", "").toString();
-    m_halikeyEnabled = m_settings.value("halikey/enabled", false).toBool();
-    m_halikeyDeviceType = m_settings.value("halikey/deviceType", 0).toInt();
-    m_sidetoneVolume = m_settings.value("halikey/sidetoneVolume", 30).toInt();
+    m_halikeyDeviceType = halikeyDeviceTypeIndex(storedInt(m_settings.value("halikey/deviceType"), 0));
+    m_sidetoneVolume = percent(storedInt(m_settings.value("halikey/sidetoneVolume"), 30));
+    m_halikeyKeyerMode = halikeyKeyerModeIndex(storedInt(m_settings.value("halikey/keyerMode"), 0));
+    m_halikeyStraightKey = m_settings.value("halikey/straightKey", false).toBool();
+    m_halikeyDitMemoryDelay = percent(storedInt(m_settings.value("halikey/ditMemoryDelay"), 33));
+    m_halikeyMuteRadioMonitor = m_settings.value("halikey/muteRadioMonitor", false).toBool();
 
     // KPOD+ keyer settings
-    m_kpodPlusEncodeMode = m_settings.value("kpodPlus/encodeMode", 0).toInt();
+    m_kpodPlusEncodeMode = kpodPlusEncodeModeIndex(storedInt(m_settings.value("kpodPlus/encodeMode"), 0));
 
     // Macro settings
     int macroCount = m_settings.beginReadArray("macros");
@@ -848,12 +1054,28 @@ void RadioSettings::load() {
     }
 }
 
+// Sorts by display name and keeps lastSelectedIndex on the same entry. WHY by position and not by
+// RadioEntry::operator==: two entries can compare equal (same name, host and port), and the
+// selection must stay on the one it was on.
 void RadioSettings::sortRadios() {
-    std::sort(m_radios.begin(), m_radios.end(), [](const RadioEntry &a, const RadioEntry &b) {
-        QString nameA = a.name.isEmpty() ? a.host : a.name;
-        QString nameB = b.name.isEmpty() ? b.host : b.name;
+    QVector<int> order(m_radios.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [this](int a, int b) {
+        const QString nameA = m_radios[a].name.isEmpty() ? m_radios[a].host : m_radios[a].name;
+        const QString nameB = m_radios[b].name.isEmpty() ? m_radios[b].host : m_radios[b].name;
         return nameA.compare(nameB, Qt::CaseInsensitive) < 0;
     });
+    QVector<RadioEntry> sorted;
+    sorted.reserve(m_radios.size());
+    int selected = -1;
+    for (int pos = 0; pos < order.size(); ++pos) {
+        sorted.append(m_radios[order[pos]]);
+        if (order[pos] == m_lastSelectedIndex) {
+            selected = pos;
+        }
+    }
+    m_radios = std::move(sorted);
+    m_lastSelectedIndex = selected;
 }
 
 void RadioSettings::save() {
@@ -891,9 +1113,12 @@ void RadioSettings::save() {
 
     // HaliKey settings
     m_settings.setValue("halikey/portName", m_halikeyPortName);
-    m_settings.setValue("halikey/enabled", m_halikeyEnabled);
     m_settings.setValue("halikey/deviceType", m_halikeyDeviceType);
     m_settings.setValue("halikey/sidetoneVolume", m_sidetoneVolume);
+    m_settings.setValue("halikey/keyerMode", m_halikeyKeyerMode);
+    m_settings.setValue("halikey/straightKey", m_halikeyStraightKey);
+    m_settings.setValue("halikey/ditMemoryDelay", m_halikeyDitMemoryDelay);
+    m_settings.setValue("halikey/muteRadioMonitor", m_halikeyMuteRadioMonitor);
 
     // KPOD+ keyer settings
     m_settings.setValue("kpodPlus/encodeMode", m_kpodPlusEncodeMode);
@@ -915,7 +1140,6 @@ void RadioSettings::save() {
         m_settings.setArrayIndex(j);
         m_settings.setValue("host", m_dxClusters[j].host);
         m_settings.setValue("port", m_dxClusters[j].port);
-        m_settings.setValue("callsign", m_dxClusters[j].callsign);
         m_settings.setValue("autoConnect", m_dxClusters[j].autoConnect);
     }
     m_settings.endArray();

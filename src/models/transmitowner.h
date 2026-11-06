@@ -4,14 +4,12 @@
 // Decides who owns the transmitter and what has to happen when that changes.
 //
 // Pure logic with no Qt, no audio and no network dependency, so it can be unit-tested without
-// standing up AudioController or a socket — mirroring hardware/halikey_edge.h and
-// network/connect_failure.h.
+// standing up AudioController or a socket — mirroring network/connect_failure.h.
 //
 // WHY this exists at all: QK4 had no owner of "are we transmitting". Several producers each wrote
 // an audio gate and a button independently, only one of them put TX;/RX; on the wire, the radio's
-// own TX state was never fed back, and no disconnect path released anything. That is the G1
-// violation in AUDIT.md, and AUD-001 / INT-001 / INT-002 are three symptoms of it rather than three
-// bugs.
+// own TX state was never fed back, and no disconnect path released anything. AUD-001 / INT-001 /
+// INT-002 were three symptoms of that rather than three bugs.
 //
 // The design separates three things that were tangled into one:
 //
@@ -31,7 +29,7 @@ enum class Owner {
     Xmit,      // the side-panel XMIT button
     CatClient, // WSJT-X and friends over the native CAT server
     TciClient, // a TCI client
-    Radio      // the K4 keyed itself: front panel, footswitch at the radio, TUNE, a fault
+    Radio,     // the K4 keyed itself: front panel, footswitch at the radio, TUNE, a fault
 };
 
 enum class Route {
@@ -39,7 +37,7 @@ enum class Route {
     StreamedFromHere,    // open the audio gate and stream; NO TX; — the tunnel header keys the K4
     RadioLocal,          // TX; only; never open the gate — the K4 transmits from its own input
     CatKeyedAndStreamed, // TX; AND the gate: what XMIT does today. See the WHY below.
-    Observed             // the radio is already transmitting; reflect it and touch nothing
+    Observed,            // the radio is already transmitting; reflect it and touch nothing
 };
 
 // WHY CatKeyedAndStreamed exists rather than XMIT being classed as one of the other two: it is
@@ -52,7 +50,10 @@ enum class Route {
 // Mirrors AudioController::TxSource. Duplicated rather than included so this header — and the test
 // that links it alone — stays clear of the controller layer. transmitcontroller.cpp static_asserts
 // that the two agree, so drift is a build error rather than a silently wrong source.
-enum class AudioSource { Microphone = 0, Tci = 1 };
+enum class AudioSource {
+    Microphone = 0,
+    Tci = 1,
+};
 
 struct State {
     Owner owner = Owner::None;

@@ -1,13 +1,20 @@
 name: Scheduled · Qt 6.11 canary
 
-# Windows CI is held at Qt 6.10 because Qt 6.11 restructured its download
-# repository and the installer tooling can't fetch it yet. This monthly
-# canary attempts a real Qt 6.11 install on a Windows runner; the first
-# time it succeeds, it opens a tracking issue so the version pins in
-# _build-windows.yml gets bumped (the single Windows Qt pin).
-# While the install keeps failing, the workflow exits green and silent.
+# QK4 moves every runner to Qt 6.11 in one commit (.github/qt-version). Every platform but Windows
+# can install 6.11 today. Qt 6.11 split the Windows repository per toolchain, and aqtinstall 3.3.0
+# (the newest release, and what install-qt-action uses) cannot read it. The fix is merged in
+# aqtinstall (PR #1000) but unreleased. This canary watches for the release.
 #
-# Delete this workflow after the Qt 6.11 bump lands.
+# released-aqt: reads the newest aqtinstall on PyPI. While it is still the known-broken one the job
+#   ends green with a notice. When a newer one appears, it installs Qt 6.11 for Windows with it, with
+#   no continue-on-error: success opens the tracking issue, failure turns the run red, because a new
+#   release that still cannot install 6.11 is news.
+# git-aqt-control: installs Qt 6.11 for Windows with aqtinstall built from the commit that carries
+#   the fix. It proves the probe works at all: a broken action, runner or repository turns it red
+#   instead of being mistaken for "6.11 still not installable", which the old canary could not tell
+#   apart.
+#
+# Delete this workflow once a released aqtinstall installs 6.11 and .github/qt-version moves to it.
 
 on:
   schedule:
@@ -16,37 +23,62 @@ on:
 
 permissions:
   contents: read
-  issues: write
+
+env:
+  # The release the canary waits to see superseded.
+  KNOWN_BROKEN_AQT: '3.3.0'
+  # aqtinstall master with PR #1000 ("Support Qt 6.11+ for Windows x64").
+  AQT_FIX_SOURCE: 'git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7'
 
 jobs:
-  probe:
+  released-aqt:
     # See ci-codeql.yml — keeps scheduled runs from charging forkers.
     if: github.repository == 'mikeg-dal/QK4'
     runs-on: windows-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
     steps:
-      - name: Attempt Qt 6.11 install
-        id: probe
-        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125
-        continue-on-error: true
+      - name: Find the newest released aqtinstall
+        id: pypi
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest="$(curl -sSf --retry 3 https://pypi.org/pypi/aqtinstall/json | jq -r '.info.version')"
+          if [ -z "${latest}" ] || [ "${latest}" = "null" ]; then
+            echo "::error::Could not read the aqtinstall version from PyPI"
+            exit 1
+          fi
+          echo "latest=${latest}" >> "$GITHUB_OUTPUT"
+          if [ "${latest}" = "${KNOWN_BROKEN_AQT}" ]; then
+            echo "::notice::aqtinstall ${latest} is still the newest release; Windows Qt 6.11 needs the unreleased fix."
+            echo "newer=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "aqtinstall ${latest} is newer than ${KNOWN_BROKEN_AQT}; trying Qt 6.11 with it."
+            echo "newer=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Qt 6.11 with the newest released aqtinstall
+        if: steps.pypi.outputs.newer == 'true'
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
         with:
-          version: '6.11.*'
+          aqtversion: ==${{ steps.pypi.outputs.latest }}
+          version: '6.11.*' # qt-version: probe
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
           modules: 'qtmultimedia qtshadertools qtserialport'
           cache: false
 
-      - name: Report result
+      - name: Open the tracking issue
+        if: steps.pypi.outputs.newer == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
-          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          AQT_VERSION: ${{ steps.pypi.outputs.latest }}
         with:
           script: |
-            if (process.env.PROBE_OUTCOME !== 'success') {
-              core.info('Qt 6.11 is still not installable — expected; nothing to do.');
-              return;
-            }
+            const aqt = process.env.AQT_VERSION;
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -59,23 +91,55 @@ jobs:
             }
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = [
-              'The monthly canary just installed Qt 6.11 (`win64_msvc2022_64` with qtmultimedia/qtshadertools/qtserialport) successfully on a Windows runner — the installer tooling now supports it.',
+              `aqtinstall ${aqt}, a released version, just installed Qt 6.11 for Windows (\`win64_msvc2022_64\` with qtmultimedia, qtshadertools, qtserialport).`,
               '',
               `Run: ${runUrl}`,
               '',
-              'To bump Windows CI from Qt 6.10 to 6.11:',
-              '1. Change `version: \'6.10.*\'` to `version: \'6.11.*\'` and drop the "6.11 pending" comment in:',
-              '   - `.github/workflows/_build-windows.yml`',
-              '   - `.github/workflows/release.yml`',
-              '2. Consider the same bump for the CodeQL workflow (`ci-codeql.yml`, Linux Qt).',
-              '3. Validate with a `build-signed.yml` dispatch and inspect the Windows artifact.',
-              '4. Delete `.github/workflows/scheduled-qt611-canary.yml` — its job is done.',
+              'Every runner can now move to Qt 6.11. In one commit:',
+              `1. Make every \`jurplel/install-qt-action\` step use aqtinstall ${aqt}: add \`aqtversion: '==${aqt}'\`, or bump the action to a release whose default \`aqtversion\` includes it.`,
+              '2. Set `.github/qt-version` to the newest 6.11 patch.',
+              '3. Add that version\'s qtbase sha256 to the table in `scripts/build-qtbase-tsan.sh`.',
+              '4. Flatpak: `runtime-version` in `flatpak/io.github.mikeg_dal.QK4.json`, the `kde-6.11` image (with its new digest) in `.github/workflows/_build-flatpak.yml`, and `org.kde.Platform//6.11` / `org.kde.Sdk//6.11` in `README.md`.',
+              '5. Run `scripts/check-qt-version.sh`; it must pass. Install the same Qt locally and run `scripts/check-qt-version.sh --local`.',
+              '6. Validate with a `build-signed.yml` dispatch: all four platforms.',
+              '7. Delete `.github/workflows/scheduled-qt611-canary.yml`.',
             ].join('\n');
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: 'Qt 6.11 is now installable on Windows CI — bump the version pins',
+              title: `aqtinstall ${aqt} installs Qt 6.11 on Windows — move every runner to 6.11`,
               labels: ['qt-canary'],
               body,
             });
             core.info(`Opened tracking issue #${issue.number}`);
+
+  git-aqt-control:
+    if: github.repository == 'mikeg-dal/QK4'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install Qt 6.11 with aqtinstall from the fix commit
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          aqtsource: ${{ env.AQT_FIX_SOURCE }}
+          version: '6.11.*' # qt-version: probe
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtmultimedia qtshadertools qtserialport'
+          cache: false
+
+      - name: Confirm what was installed
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$(cygpath -u "${QT_ROOT_DIR}")"
+          test -x "${root}/bin/qtpaths.exe" || { echo "::error::No qtpaths.exe under ${QT_ROOT_DIR}"; exit 1; }
+          version="$("${root}/bin/qtpaths.exe" --qt-version | tr -d '\r')"
+          case "${version}" in
+            6.11.*) echo "Installed Qt ${version} at ${QT_ROOT_DIR}" ;;
+            *) echo "::error::Expected Qt 6.11.x, got '${version}'"; exit 1 ;;
+          esac
+          for module in Multimedia ShaderTools SerialPort; do
+            test -f "${root}/bin/Qt6${module}.dll" || { echo "::error::Qt6${module}.dll missing"; exit 1; }
+          done

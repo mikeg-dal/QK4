@@ -1,26 +1,25 @@
 #include "kpa1500uicontroller.h"
+#include "logging/logcategories.h"
 
 #include "controllers/statusbarcontroller.h"
 #include "network/kpa1500client.h"
 #include "settings/radiosettings.h"
-#include "ui/styling/k4constants.h"
 #include "ui/widgets/kpa1500minipanel.h"
 #include "ui/widgets/rightsidepanel.h"
 
 #include <QLoggingCategory>
 #include <QString>
 
-Q_LOGGING_CATEGORY(qk4Kpa, "qk4.kpa1500")
-
 KPA1500UiController::KPA1500UiController(StatusBarController *statusBar, RightSidePanel *rightSidePanel,
                                          QObject *parent)
-    : QObject(parent), m_statusBar(statusBar), m_miniPanel(new Kpa1500MiniPanel(rightSidePanel)),
-      m_client(new KPA1500Client(this)) {
+    : QObject(parent), m_statusBar(statusBar), m_rightSidePanel(rightSidePanel),
+      m_miniPanel(new Kpa1500MiniPanel(rightSidePanel)), m_client(new KPA1500Client(this)) {
 
     // Hand the mini panel to RightSidePanel for layout placement —
     // RightSidePanel takes Qt parent ownership.
     m_miniPanel->setVisible(false);
     rightSidePanel->embedKpa1500Panel(m_miniPanel);
+    rightSidePanel->setKpa1500SlotReserved(RadioSettings::instance()->kpa1500Enabled());
 
     // === Connection lifecycle signals ===
     connect(m_client, &KPA1500Client::connected, this, &KPA1500UiController::onConnected);
@@ -75,24 +74,22 @@ KPA1500UiController::KPA1500UiController(StatusBarController *statusBar, RightSi
             &KPA1500UiController::onEnabledChanged);
     connect(RadioSettings::instance(), &RadioSettings::kpa1500SettingsChanged, this,
             &KPA1500UiController::onSettingsChanged);
+    connect(RadioSettings::instance(), &RadioSettings::kpa1500PollIntervalChanged, this,
+            &KPA1500UiController::onPollIntervalChanged);
 
     // Initialize status bar indicator to reflect current enable/disabled state.
     updateStatus();
 }
 
 KPA1500UiController::~KPA1500UiController() {
-    // WHY: sever BOTH directions before triggering disconnectFromHost() —
-    // that call synchronously emits disconnected signals. If we only cut
-    // outgoing connections (`disconnect(this)` where this is sender), the
-    // client's disconnected signal still reaches our onDisconnected slot,
-    // which then calls into sibling controllers' widgets — and those
-    // widgets may already be gone under Qt's child-destruction order.
-    // See CONVENTIONS.md → Architecture Rule 11.
+    // WHY cut the client's connections into this before disconnectFromHost(): that call emits
+    // disconnected synchronously, and onDisconnected reaches sibling controllers' widgets, which
+    // Qt's child destruction order may already have destroyed. Qt would only drop these
+    // connections in ~QObject, after this body has run.
     if (m_client) {
-        disconnect(m_client, nullptr, this, nullptr);
+        m_client->disconnect(this);
         m_client->disconnectFromHost();
     }
-    disconnect(this);
 }
 
 void KPA1500UiController::connectIfEnabled() {
@@ -102,28 +99,36 @@ void KPA1500UiController::connectIfEnabled() {
 }
 
 void KPA1500UiController::disconnectFromHost() {
-    if (m_client->isConnected()) {
-        m_client->disconnectFromHost();
-    }
+    // WHY not only when connected: a connect still in progress when the K4 dropped used to
+    // complete afterwards and stay up with the K4 gone. The client's disconnect is safe in any state.
+    m_client->disconnectFromHost();
 }
 
 void KPA1500UiController::onConnected() {
-    qCDebug(qk4Kpa) << "KPA1500: Connected to amplifier";
+    qCDebug(lcKpa1500Ui) << "KPA1500: Connected to amplifier";
     const int pollInterval = RadioSettings::instance()->kpa1500PollInterval();
     m_client->startPolling(pollInterval);
     updateStatus();
 }
 
 void KPA1500UiController::onDisconnected() {
-    qCDebug(qk4Kpa) << "KPA1500: Disconnected from amplifier";
+    qCDebug(lcKpa1500Ui) << "KPA1500: Disconnected from amplifier";
     updateStatus();
 }
 
 void KPA1500UiController::onError(const QString &error) {
-    qWarning() << "KPA1500: Error -" << error;
+    qCWarning(lcKpa1500Ui) << "KPA1500: Error -" << error;
+}
+
+void KPA1500UiController::onPollIntervalChanged(int intervalMs) {
+    // startPolling() is a no-op unless connected; a later connect reads the setting itself.
+    m_client->startPolling(intervalMs);
 }
 
 void KPA1500UiController::onEnabledChanged(bool enabled) {
+    if (!enabled)
+        m_miniPanel->setVisible(false);
+    m_rightSidePanel->setKpa1500SlotReserved(enabled);
     if (enabled) {
         const QString host = RadioSettings::instance()->kpa1500Host();
         if (!host.isEmpty()) {
@@ -156,13 +161,5 @@ void KPA1500UiController::updateStatus() {
         return;
     }
     m_statusBar->setKpa1500Visible(true);
-    if (connected) {
-        m_statusBar->setKpa1500Status("KPA1500", QString("color: %1; font-size: %2px; font-weight: bold;")
-                                                     .arg(K4Styles::Colors::StatusGreen)
-                                                     .arg(K4Styles::Dimensions::FontSizeButton));
-    } else {
-        m_statusBar->setKpa1500Status("KPA1500", QString("color: %1; font-size: %2px;")
-                                                     .arg(K4Styles::Colors::InactiveGray)
-                                                     .arg(K4Styles::Dimensions::FontSizeButton));
-    }
+    m_statusBar->setKpa1500Status("KPA1500", connected);
 }

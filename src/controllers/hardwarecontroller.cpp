@@ -1,24 +1,44 @@
 #include "hardwarecontroller.h"
+#include "logging/logcategories.h"
+#include "logging/logsink.h"
 #include "audio/sidetonegenerator.h"
+#include "audio/sidetonescheduler.h"
 #include "connectioncontroller.h"
 #include "hardware/halikeydevice.h"
-#include "hardware/iambickeyer.h"
+#include "hardware/keyerruntime.h"
+#include "hardware/paddlekeyer.h"
 #include "hardware/kpoddevice.h"
 #include "hardware/kpodplusdevice.h"
+#include "hardware/mididevicewatcher.h"
 #include "models/radiostate.h"
+#include "network/catframes.h"
 #include "settings/radiosettings.h"
 #include "utils/radioutils.h"
+#include "utils/rtscheduling.h"
+#include "utils/threadshutdown.h"
 #include <QLoggingCategory>
-
-Q_LOGGING_CATEGORY(qk4Hardware, "qk4.hardware")
+#include <QTimer>
+#include <chrono>
 
 namespace {
 // The K4 reports no stuck-key timeout; push this fixed default to the KPOD+.
 constexpr int kKpodPlusStuckTimeoutSec = 60;
+
+// WHY 1.5 s: close() is queued behind the element the keyer is sending, and an iambic element plus
+// its space is up to 600 ms at the 8 WPM floor (RadioUtils::KEYER_WPM_MIN; a dit is 1200/WPM ms). Then
+// run() returns.
+constexpr std::chrono::milliseconds kKeyerStopTimeout{1500};
+// WHY 2 s: stop() destroys the sidetone QAudioSink, as AudioEngine's does for RX audio.
+constexpr std::chrono::milliseconds kSidetoneStopTimeout{2000};
 } // namespace
 
 HardwareController::HardwareController(RadioState *radioState, ConnectionController *connController, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_connectionController(connController) {
+    // Before anything touches MIDI: the process's first CoreMIDI client must live on a thread with
+    // a running run loop, or devices plugged in later are never seen (mididevicewatcher.h).
+    m_midiWatcher = new MidiDeviceWatcher(this);
+    connect(m_midiWatcher, &MidiDeviceWatcher::devicesChanged, this, &HardwareController::midiDevicesChanged);
+
     // =========================================================================
     // KPOD USB tuning knob
     // =========================================================================
@@ -27,7 +47,7 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     connect(m_kpodDevice, &KpodDevice::encoderRotated, this, &HardwareController::onKpodEncoderRotated);
     connect(m_kpodDevice, &KpodDevice::pollError, this, &HardwareController::onKpodPollError);
 
-    // KPOD button signals → macro execution via MainWindow
+    // KPOD button signals → macroRequested (MacroController)
     connect(m_kpodDevice, &KpodDevice::buttonTapped, this,
             [this](int buttonNum) { emit macroRequested(QString("K-pod.%1T").arg(buttonNum)); });
     connect(m_kpodDevice, &KpodDevice::buttonHeld, this,
@@ -97,9 +117,8 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
         m_kpodPlusDevice->setStuckTimeout(kKpodPlusStuckTimeoutSec);
     };
 
-    // Auto-start polling on device arrival. The KPOD+ keyer-active gate +
-    // EP02 keyer-data routing are wired by CwController, which observes the
-    // same deviceConnected / deviceInfoReady signals independently.
+    // Lifecycle → policy, as for the KPOD. The policy opens the device and raises kpodPlusOwnsCw,
+    // which gates QK4's keyer through CwController::setKpodPlusGate.
     m_applyKpodPlusConfig = applyKpodPlusConfig;
     connect(m_kpodPlusDevice, &KpodPlusDevice::deviceInfoReady, this, [this]() {
         applyKpodPlus(m_kpodPlusDevice->isDetected() ? UsbDeviceLifecycle::Event::Detected
@@ -111,7 +130,7 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
 
     // =========================================================================
     // HaliKey CW paddle device — device type injected here so HalikeyDevice
-    // itself doesn't reach into RadioSettings (Phase 3 layering cleanup).
+    // itself doesn't reach into RadioSettings.
     // =========================================================================
     m_halikeyDevice = new HalikeyDevice(RadioSettings::instance()->halikeyDeviceType(), this);
     connect(RadioSettings::instance(), &RadioSettings::halikeyDeviceTypeChanged, m_halikeyDevice,
@@ -119,89 +138,117 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
 
     // =========================================================================
     // Sidetone generator (dedicated thread for low-latency audio feedback)
-    // MUST be created BEFORE IambicKeyer signal connections that use it
+    // The keyer below refers to the scheduler; the generator owns the clock the scheduler reads.
     // =========================================================================
-    m_sidetoneGenerator = new SidetoneGenerator(nullptr);
+    m_keyerClock = std::make_unique<SteadyKeyerClock>();
+    m_keyerLink = std::make_unique<ForwardingLink>();
+    m_sidetoneScheduler = std::make_unique<SidetoneScheduler>(*m_keyerClock, nullptr);
+
+    m_sidetoneGenerator = new SidetoneGenerator(*m_sidetoneScheduler, *m_keyerClock, nullptr);
+    m_sidetoneScheduler->setStreamTimeSource([sg = m_sidetoneGenerator]() { return sg->streamTime(); });
     m_sidetoneThread = new QThread(this);
     m_sidetoneThread->setObjectName("Sidetone");
+    Logging::markRealtimeOnStart(m_sidetoneThread);
     m_sidetoneGenerator->moveToThread(m_sidetoneThread);
-    // WHY HighPriority: sidetone shares the real-time CW perception path with the keyer
-    // thread (also HighPriority); at default priority the OS could preempt the per-element
-    // synthesis + sink write under load, adding audible onset jitter.
-    m_sidetoneThread->start(QThread::HighPriority);
-    QMetaObject::invokeMethod(m_sidetoneGenerator, "start", Qt::QueuedConnection);
+    // Destroyed on its own thread when that thread finishes (Rule 14). Kept so shutdown can cut it
+    // if the keyer, which reads the generator's stream clock, could not be stopped.
+    m_sidetoneDeleteConnection =
+        connect(m_sidetoneThread, &QThread::finished, m_sidetoneGenerator, &QObject::deleteLater);
+    // Promoted to real-time by SidetoneGenerator::start() on the thread itself: sidetone shares the
+    // CW perception path with the keyer, and a preempted block write is audible onset jitter.
+    m_sidetoneThread->start();
+    QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::start, Qt::QueuedConnection);
 
     // Set sidetone to same output device as AudioEngine
     QString savedSidetoneDevice = RadioSettings::instance()->speakerDevice();
     if (!savedSidetoneDevice.isEmpty()) {
-        QMetaObject::invokeMethod(m_sidetoneGenerator, "setOutputDevice", Qt::QueuedConnection,
-                                  Q_ARG(QString, savedSidetoneDevice));
+        QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::setOutputDevice, Qt::QueuedConnection,
+                                  savedSidetoneDevice);
     }
 
     // Follow speaker device changes at runtime
     connect(RadioSettings::instance(), &RadioSettings::speakerDeviceChanged, this, [this](const QString &deviceId) {
-        QMetaObject::invokeMethod(m_sidetoneGenerator, "setOutputDevice", Qt::QueuedConnection,
-                                  Q_ARG(QString, deviceId));
+        QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::setOutputDevice, Qt::QueuedConnection,
+                                  deviceId);
     });
 
     // Set initial sidetone volume from RadioSettings (independent of K4's MON level)
-    QMetaObject::invokeMethod(m_sidetoneGenerator, "setVolume", Qt::QueuedConnection,
-                              Q_ARG(float, RadioSettings::instance()->sidetoneVolume() / 100.0f));
+    QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::setVolume, Qt::QueuedConnection,
+                              RadioSettings::instance()->sidetoneVolume() / 100.0f);
 
     // Update sidetone volume when changed in Options
     connect(RadioSettings::instance(), &RadioSettings::sidetoneVolumeChanged, this, [this](int value) {
-        QMetaObject::invokeMethod(m_sidetoneGenerator, "setVolume", Qt::QueuedConnection, Q_ARG(float, value / 100.0f));
+        QMetaObject::invokeMethod(m_sidetoneGenerator, &SidetoneGenerator::setVolume, Qt::QueuedConnection,
+                                  value / 100.0f);
     });
 
     // Sidetone CW frequency + keyer-speed wiring lives on CwController.
 
     // =========================================================================
-    // Iambic keyer state machine (HighPriority thread for CW element timing).
-    // Constructed + thread-managed here; all CW signal wiring is on CwController.
+    // Paddle keyer (real-time thread for CW element timing).
+    // Constructed + thread-managed here; all CW wiring is on CwController.
     // =========================================================================
-    m_iambicKeyer = new IambicKeyer(nullptr);
-    m_keyerThread = new QThread(this);
+    m_paddleKeyer = std::make_unique<PaddleKeyer>(*m_keyerClock, *m_keyerLink, *m_sidetoneScheduler);
+    // Nothing is keyed until CwController lifts this: the radio must be ready, in CW, and the
+    // KPOD+ not owning CW.
+    m_paddleKeyer->setInhibited(true);
+    m_keyerThread = QThread::create([keyer = m_paddleKeyer.get()]() {
+        RtScheduling::promoteCurrentThread(RtScheduling::Threads::kKeyer);
+        keyer->run();
+    });
+    m_keyerThread->setParent(this);
     m_keyerThread->setObjectName("Keyer");
-    m_iambicKeyer->moveToThread(m_keyerThread);
-    m_keyerThread->start(QThread::HighPriority);
+    Logging::markRealtimeOnStart(m_keyerThread);
+    // WHY real-time, set by the thread itself: every element boundary is a sleep on this thread,
+    // and a preempted wake is a late decision (the keyer learns and subtracts a steady overrun, not
+    // a random one). QThread::HighPriority is a no-op on Linux and weaker than this elsewhere, and
+    // on macOS the scheduling parameters it sets would opt the thread out of QoS.
+    m_keyerThread->start();
 
-    // All CW signal wiring — keyer init, RadioState observers, IambicKeyer →
-    // CAT/sidetone, HaliKey paddle/PTT demux, keyer enable/disable on
-    // connect/disconnect — lives on CwController (constructed by MainWindow
-    // immediately after this controller). See cwcontroller.h.
+    // All CW wiring — keyer configuration from RadioState and settings, HaliKey lines and MIDI →
+    // keyer, the keyer's link to the K4, inhibit on mode/connection/KPOD+ — lives on CwController
+    // (constructed by MainWindow immediately after this controller). See cwcontroller.h.
 
     // =========================================================================
     // Device notifications — one policy for all four devices
     // =========================================================================
-    // Only the HaliKey used to reach NotificationWidget. The KPOD and KPOD+ announced their arrival
-    // and departure to a label on the Options page and nowhere else, so a KPOD+ that vanished
-    // mid-session said nothing at all — despite taking the whole CW chain with it, because it owns
-    // keying while attached and QK4's keyer is gated off behind it.
+    // Every device reaches NotificationWidget: a KPOD+ that vanishes mid-session takes the whole CW
+    // chain with it, because it owns keying while attached and QK4's keyer is gated off behind it.
     //
     // Each message names the device the operator recognises, and says what STOPPED WORKING rather
     // than what failed internally. "KPOD+ disconnected" is not actionable on its own; "CW keying
     // has returned to QK4's keyer" tells them why the paddle now feels different.
     //
     // WHY pollError is NOT wired to a popup: it comes from a polling loop and can repeat at the
-    // poll rate. A popup per failed poll would bury the screen. It stays a log line, now naming
+    // poll rate. A popup per failed poll would bury the screen. It stays a log line naming
     // which device produced it.
 
     // connectionError only, NOT disconnected. An unplug raises both - the worker's error handler
     // calls closePort(), which emits disconnected(), and then emits connectionError - so wiring
     // both would pop two notifications for one event. disconnected() also fires on a deliberate
     // close (changing the port, or quitting), which deserves no notification at all.
+    // The keyer, sidetone and EP02 threads promote themselves as they start, the HaliKey poller when
+    // its port opens; report each once it has had time to.
+    QTimer::singleShot(2000, this, &HardwareController::reportThreadScheduling);
+    connect(m_halikeyDevice, &HalikeyDevice::connected, this, &HardwareController::reportThreadScheduling);
+
     connect(m_halikeyDevice, &HalikeyDevice::connectionError, this, [this](const QString &error) {
         emit hardwareError(QStringLiteral("%1: %2 — paddle keying has stopped.").arg(halikeyName(), error));
     });
 
     // The KPOD/KPOD+ notifications are raised by applyKpod()/applyKpodPlus() from the policy's
     // Effects, not from deviceDisconnected. That signal cannot distinguish a pulled cable from our
-    // own stopPolling(), and it arrives twice per unplug on both devices — which is exactly what
-    // defeated the one-shot "expected stop" flag this replaces.
+    // own stopPolling(), and it arrives twice per unplug on both devices.
 }
 
 void HardwareController::applyKpod(UsbDeviceLifecycle::Event event) {
     const UsbDeviceLifecycle::Effects e = UsbDeviceLifecycle::apply(m_kpodState, event);
+    if (e.reportArrived)
+        qCInfo(lcKpod) << "KPOD available";
+    if (e.reportRemoved)
+        qCInfo(lcKpod) << "KPOD no longer available";
+    if (e.notifyOpenFailed)
+        qCWarning(lcKpod) << "KPOD could not be opened";
     if (e.open)
         m_kpodDevice->startPolling();
     if (e.close)
@@ -212,18 +259,18 @@ void HardwareController::applyKpod(UsbDeviceLifecycle::Event event) {
 
 void HardwareController::applyKpodPlus(UsbDeviceLifecycle::Event event) {
     const UsbDeviceLifecycle::Effects e = UsbDeviceLifecycle::apply(m_kpodPlusState, event);
+    if (e.notifyOpenFailed)
+        qCWarning(lcKpodPlus) << "KPOD+ could not be opened";
     if (e.open) {
         // Raise the CW gate BEFORE the open, not after: claiming the interface takes 10-100 ms and
         // a paddle event landing in that window would reach QK4's own keyer and sidetone.
         emit kpodPlusOwnsCw(true);
         m_kpodPlusDevice->startPolling();
-        // WHY the config push belongs HERE and not on deviceConnected: the old handler guarded on
-        // !isPolling(), which m_polling had already made false by the time the signal arrived, so
-        // the push never ran and the device kept whatever WPM and pitch it was last given
-        // (USB-006). It also never ran on re-enable. Pushing from the policy's open decision covers
-        // both, and is safe despite the open being asynchronous: startPolling() and every setter
-        // queue to the SAME worker thread, and Qt delivers queued events in order, so openDevice
-        // has run before the first config command is handled.
+        // WHY the config push belongs HERE and not on deviceConnected: by then isPolling() is
+        // already false, and deviceConnected does not fire on re-enable (USB-006). Pushing from the
+        // policy's open decision covers both, and is safe despite the open being asynchronous: startPolling() and every
+        // setter queue to the SAME worker thread, and Qt delivers queued events in order, so openDevice has run before
+        // the first config command is handled.
         if (m_applyKpodPlusConfig)
             m_applyKpodPlusConfig();
     }
@@ -245,6 +292,21 @@ QString HardwareController::halikeyName() const {
                                                                : QStringLiteral("HaliKey V1.4");
 }
 
+void HardwareController::reportThreadScheduling() {
+    for (const RtScheduling::Report &report : RtScheduling::takeUnreported()) {
+        const RtScheduling::Result &r = report.result;
+        QString detail;
+        // Only the RLIMIT_NICE fallback leaves the value out of the mechanism; -10 names itself.
+        if (r.nice != 0 && r.nice != RtScheduling::kLinuxHighNice)
+            detail += QStringLiteral(" (nice %1)").arg(r.nice);
+        if (r.error != 0)
+            detail += QStringLiteral(" (OS error %1)").arg(r.error);
+        qCInfo(lcHardware).nospace().noquote()
+            << report.thread << " thread: asked for " << RtScheduling::className(r.requested) << ", got "
+            << RtScheduling::outcomeName(r.outcome) << " - " << r.mechanism << detail;
+    }
+}
+
 void HardwareController::shutdownDevices() {
     if (m_devicesShutDown) {
         return;
@@ -262,37 +324,59 @@ void HardwareController::shutdownDevices() {
     if (m_halikeyDevice) {
         m_halikeyDevice->closePort();
     }
+    if (m_midiWatcher)
+        m_midiWatcher->stop();
 
+    // close() releases whatever is keyed (an open straight-key KZD gets its KZU, queued for the
+    // keyer thread ahead of Close) and posts Close, which ends run(). quit() would do nothing: the
+    // keyer thread has no event loop.
+    //
+    // WHY the link is cleared only after the join: the keyer may still have a KZU to send (a
+    // straight key held at quit). Dropping it would leave the K4 keyed. ConnectionController is
+    // still alive here (CONC-001), so the send is safe. A keyer that would not stop has it cleared
+    // anyway: it would otherwise send into the KZ egress after ConnectionController destroys it.
     if (m_keyerThread) {
-        QMetaObject::invokeMethod(m_iambicKeyer, "stop", Qt::BlockingQueuedConnection);
-        m_keyerThread->quit();
-        m_keyerThread->wait(2000);
+        m_paddleKeyer->close();
+        m_keyerDisowned = ThreadShutdown::join(m_keyerThread, QDeadlineTimer(kKeyerStopTimeout), lcCwKeyer()) ==
+                          ThreadShutdown::Outcome::Disowned;
+        m_keyerLink->setTarget(nullptr);
     }
-    delete m_iambicKeyer; // No parent, must delete manually
-    m_iambicKeyer = nullptr;
-    m_keyerThread = nullptr; // child of this; Qt deletes it, but never join it twice
 
-    if (m_sidetoneThread) {
-        QMetaObject::invokeMethod(m_sidetoneGenerator, "stop", Qt::BlockingQueuedConnection);
-        m_sidetoneThread->quit();
-        m_sidetoneThread->wait(2000);
+    // WHY a disowned keyer keeps the generator alive: the keyer's SidetoneScheduler reads the
+    // generator's stream clock (setStreamTimeSource), so the generator must outlive any keyer
+    // still running. It is leaked with it rather than deleted when the sidetone thread finishes.
+    if (m_keyerDisowned) {
+        disconnect(m_sidetoneDeleteConnection);
     }
-    delete m_sidetoneGenerator; // No parent, must delete manually
+    if (SidetoneGenerator *generator = m_sidetoneGenerator) {
+        const QDeadlineTimer deadline(kSidetoneStopTimeout);
+        ThreadShutdown::callBlocking(generator, [generator]() { generator->stop(); }, deadline);
+        ThreadShutdown::retire(m_sidetoneThread, deadline, lcAudioSidetone());
+    }
     m_sidetoneGenerator = nullptr;
-    m_sidetoneThread = nullptr;
 
     // Through the policy, so the close is silent: the window is going away and there is nobody
     // left to tell that a device disconnected.
     applyKpodPlus(UsbDeviceLifecycle::Event::ShuttingDown);
     applyKpod(UsbDeviceLifecycle::Event::ShuttingDown);
+    // The KZ egress belongs to the connection, which is destroyed before this controller.
+    m_kpodPlusDevice->setKeyerLink(nullptr);
 }
 
 HardwareController::~HardwareController() {
-    disconnect(this);
-    // Normally a no-op: MainWindow::closeEvent has already run this, which is the whole point —
-    // doing it here for the first time is what CONC-001 was. Still called, because a fatal error
-    // or a window that was never shown reaches the destructor without a closeEvent.
+    // Normally a no-op: MainWindow::shutdownSubsystems() (from closeEvent, or else from ~MainWindow
+    // before any child is destroyed) has already run this, which is the whole point - doing it here
+    // for the first time is what CONC-001 was. Still called as a last backstop.
     shutdownDevices();
+
+    // A keyer thread that would not stop still runs PaddleKeyer::run() against these. Leaked, not
+    // destroyed underneath it; the process is exiting.
+    if (m_keyerDisowned) {
+        (void)m_paddleKeyer.release();
+        (void)m_sidetoneScheduler.release();
+        (void)m_keyerLink.release();
+        (void)m_keyerClock.release();
+    }
 }
 
 // =============================================================================
@@ -303,32 +387,30 @@ void HardwareController::onKpodEncoderRotated(int ticks) {
     if (!m_connectionController->isConnected()) {
         return;
     }
-    // USB-007. isConnected() goes true when the socket authenticates, which is BEFORE the RDY dump
-    // that carries the radio's actual frequencies. A knob turn in that window read vfoA() at its 0
-    // sentinel and sent FA for a near-zero frequency - the radio obeyed and jumped off band. The
-    // `newFreq > 0` guard below does not catch it, because ticks x step is itself positive.
-    //
-    // Waiting for a real frequency is the honest condition: until the K4 has told us where it is,
-    // QK4 has nothing to tune relative to.
-    if (m_radioState->vfoA() == 0) {
-        return;
-    }
     onKpodEncoderRotatedWithRocker(ticks, static_cast<int>(m_kpodDevice->rockerPosition()));
 }
 
 void HardwareController::onKpodEncoderRotatedWithRocker(int ticks, int rockerPos) {
     // Action depends on rocker position (shared by KPOD and KPOD+)
+    //
+    // USB-007. isConnected() goes true when the socket authenticates, which is BEFORE the RDY dump
+    // that carries the radio's actual frequencies. A knob turn in that window read the VFO at its 0
+    // sentinel and sent FA/FB for a near-zero frequency - the radio obeyed and jumped off band. The
+    // `newFreq > 0` guards below do not catch it, because ticks x step is itself positive.
+    //
+    // Waiting for a real frequency is the honest condition: until the K4 has told us where the VFO
+    // being tuned is, QK4 has nothing to tune relative to.
     switch (rockerPos) {
     case 2: // RockerLeft — VFO A
     {
-        if (m_radioState->lockA())
+        if (m_radioState->lockA() || m_radioState->vfoA() == 0)
             break;
         quint64 currentFreq = m_radioState->vfoA();
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStep());
         qint64 newFreq =
             RadioUtils::snapFreqToStep(static_cast<qint64>(currentFreq), stepHz) + static_cast<qint64>(ticks) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
+            const QString cmd = QString::fromLatin1(CatFrames::frequencyA(static_cast<quint64>(newFreq)));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
@@ -336,14 +418,14 @@ void HardwareController::onKpodEncoderRotatedWithRocker(int ticks, int rockerPos
 
     case 0: // RockerCenter — VFO B
     {
-        if (m_radioState->lockB())
+        if (m_radioState->lockB() || m_radioState->vfoB() == 0)
             break;
         quint64 currentFreq = m_radioState->vfoB();
         int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
         qint64 newFreq =
             RadioUtils::snapFreqToStep(static_cast<qint64>(currentFreq), stepHz) + static_cast<qint64>(ticks) * stepHz;
         if (newFreq > 0) {
-            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
+            const QString cmd = QString::fromLatin1(CatFrames::frequencyB(static_cast<quint64>(newFreq)));
             m_connectionController->sendCAT(cmd);
             m_radioState->parseCATCommand(cmd);
         }
@@ -367,7 +449,7 @@ void HardwareController::onKpodEncoderRotatedWithRocker(int ticks, int rockerPos
 
 void HardwareController::onKpodPollError(const QString &error) {
     // Deliberately a log line and not a notification: this arrives from a polling loop and can
-    // repeat at the poll rate, so a popup per occurrence would bury the screen. The user-visible
-    // signal for "the device is gone" is the deviceDisconnected notification, which fires once.
-    qCWarning(qk4Hardware) << "KPOD/KPOD+ poll error:" << error;
+    // repeat at the poll rate, so a popup per occurrence would bury the screen. The operator hears
+    // that the device is gone once, from applyKpod() / applyKpodPlus().
+    qCWarning(lcHardware) << "KPOD/KPOD+ poll error:" << error;
 }

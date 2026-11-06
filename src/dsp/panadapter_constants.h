@@ -10,7 +10,6 @@ namespace PanadapterConstants {
 // FSK Mark-Tone is user-configurable from K4 front panel (default 915 Hz);
 // the shift between Mark and Space is always 170 Hz.
 constexpr float RttyShiftHz = 170.0f;
-constexpr float RttyHalfShiftHz = RttyShiftHz / 2.0f;
 
 // Fixed spectrum grid cell size in LOGICAL px (scaled by devicePixelRatio at draw time so cells
 // stay a constant VISIBLE size — unlike the marker widths below, which are physical px). The grid
@@ -52,15 +51,10 @@ constexpr float MaxDisplayHeightPx = 4320.0f;
 constexpr int MaxDashFloats = dashFloatsFor(MaxDisplayHeightPx);
 
 // Passband alpha (0–255)
-constexpr int PassbandFillAlpha = 64;
 constexpr int PassbandEdgeAlpha = 180;
 
 // MiniPan passband alpha — higher than main pan for visibility at small scale
 constexpr int MiniPanFillAlpha = 100;
-
-// MiniPan span Hz — Narrow used for CW/FSK/AFSK, Wide for all others
-constexpr int SpanNarrowHz = 2000;
-constexpr int SpanWideHz = 10000;
 
 } // namespace PanadapterConstants
 

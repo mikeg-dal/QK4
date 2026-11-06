@@ -7,8 +7,8 @@
 // S16LE mono microphone frame.
 //
 // Pure logic with no Qt, no audio device and no socket, so the wire format can be unit-tested
-// without a radio — mirroring hardware/halikey_edge.h, hardware/usbdevicelifecycle.h,
-// network/connect_failure.h and models/transmitowner.h.
+// without a radio — mirroring hardware/usbdevicelifecycle.h, network/connect_failure.h and
+// models/transmitowner.h.
 //
 // WHY this exists at all (AUD-003). EM0 is documented as "RAW 32-bit float", and QK4's TX path
 // took the documentation at its word: it wrote IEEE-754 float32 in ±1.0. The K4's own EM0 stream

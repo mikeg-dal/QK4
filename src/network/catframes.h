@@ -75,6 +75,14 @@ QByteArray cwAbort();
 // command and change only the level and the on/off flag.
 QByteArray setNoiseBlanker(int level, bool on, int filterWidth = -1);
 
+// #NB$n - the panadapter (DDC) noise blanker: 0 off, 1 on, 2 auto (follows the receiver NB).
+// Not the receiver noise blanker, which is NB / NB$. Out-of-range modes are clamped.
+QByteArray ddcNoiseBlanker(int mode);
+
+// #AVGnn - panadapter averaging, SpectrumDisplayLimits::AveragingMin..Max frames (Programmer's
+// Reference D12: SET/RESP #AVGnn;). Clamped.
+QByteArray averaging(int frames);
+
 // LKn / LK$n - VFO tuning lock, per VFO.
 QByteArray setVfoLock(bool locked, bool subVfo);
 
@@ -91,32 +99,53 @@ QByteArray setAntennaConfig(const char *prefix, bool displayAll, const QVector<b
 // relative forms (ME0069.+, .-, ./); this is the absolute one.
 QByteArray setMenuValue(int menuId, int value);
 
-// PCnnnr: nnn is watts in QRO and watts*10 in QRP (PC100L is 10.0 W), r is the range letter.
-// NOT the PCX form below - that one is the extended QUERY, and the radio ignores it as a set.
-QByteArray setRfPower(int value, bool qrp);
+// One XVTR band's setup field (Programmer's Reference D12, XVN/XVR/XVI/XVO): "XVN<band>;" selects the
+// band, then the field. band is 1-12. RF is the band's lower edge in MHz (XVR, 5 digits, 0-99999),
+// IF is in MHz (XVI, 2 digits, 0-53), offset is signed Hz (XVO, sign + 5 digits).
+QByteArray setXvtrRfMhz(int band, int mhz);
+QByteArray setXvtrIfMhz(int band, int mhz);
+QByteArray setXvtrOffsetHz(int band, int hz);
+// Mode (XVM: 0 = off, 1 = external) and power out in 0.1 mW (XVP, 3 digits; XVP010 = 1.0 mW).
+QByteArray setXvtrMode(int band, int mode);
+QByteArray setXvtrPowerTenthsMw(int band, int tenthsMw);
 
-// NRnnm: nn is the level, m is on/off - the radio's form in both directions (NR050 is level 05, off).
+// PCnnnr: nnn is watts in QRO and tenths in QRP and XVTR (PC100L is 10.0 W), r is the range letter.
+// `value` is in the range's own unit: W for QRO and QRP, mW for XVTR.
+// NOT the PCX form below - that one is the extended QUERY, and the radio ignores it as a set.
+QByteArray setRfPower(double value, LevelsState::PowerRange range);
+
+// NRnnm: nn is the level (clamped to ProcessingLimits::NrLevelMax), m is on/off - the radio's form
+// in both directions (NR050 is level 05, off).
 QByteArray noiseReduction(int level, bool on);
 // GTn, one digit: 0 off, 1 slow, 2 fast - the radio's form in both directions (GT2 at R40).
 QByteArray agcSpeed(int agc);
-// SQnnn / SQ$nnn - the radio's form (SQ010, SQ$005 at R40).
-QByteArray squelch(int level, bool subRx);
-// RG-nn / RG$-nn - the radio's form (RG-00 at R40). RadioState stores the magnitude.
-QByteArray rfGain(int magnitude, bool subRx);
+// SQnnn - the radio's form (SQ010 at R40); subRx() gives SQ$nnn. Clamped to 0-40.
+QByteArray squelch(int level);
+// RG-nn - the radio's form (RG-00 at R40); subRx() gives RG$-nn. RadioState stores the magnitude.
+QByteArray rfGain(int magnitude);
 // The Sub RX form of a two-letter main frame: `$` after the prefix (RT0; -> RT$0;). Every Sub RX
 // reply measured on a K4D at R40 has this shape: RO$+0000, RT$0, GT$2, NB$0301, NR$050, BW$0020, DT$0.
 QByteArray subRx(const QByteArray &mainFrame);
-// VXmn: the radio keeps VOX per mode group (C = CW, V = voice, D = data) and answers a bare `VX;`
-// with the group of the CURRENT mode - measured on a K4D at R40, in DATA: VXD0 while VXC1 was on.
+// VXmn: the radio keeps VOX per mode group (C = CW and direct data, V = voice, D = AF data) and
+// answers a bare `VX;` with the group of the CURRENT mode - measured on a K4D at R40, in DATA: VXD0
+// while VXC1 was on.
 QByteArray vox(const RadioState &rs);
 QByteArray diversity(bool on);
 QByteArray dataSubMode(int subMode);
 QByteArray aiMode(int level);
 
 QByteArray sMeterMain(double sMeter);
+// SMH±nnn / SMH$±nnn: signal level in dBm, a sign and three digits - the radio's form (SMH-110,
+// SMH$-122 from a K4D, 2026-10-30).
+QByteArray signalLevelDbm(int dbm, bool sub);
 
 QByteArray txMeter(int alc, int compression, double fwdPower, double swr, bool qrp);
 
 QByteArray ifFrame(const RadioState &state);
+
+// KP<iambic><paddle><weight>; - iambic A/B, paddle N/R, weight 090-125 (hundredths). The K4 takes all
+// three fields even when only one changes, so a field not yet reported by the radio (null QChar,
+// negative weight) is sent as its default: A, N, 100.
+QByteArray keyerPaddle(QChar iambic, QChar paddle, int weight);
 
 } // namespace CatFrames

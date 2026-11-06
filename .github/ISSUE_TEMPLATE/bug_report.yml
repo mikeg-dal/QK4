@@ -116,6 +116,20 @@ body:
       required: true
 
   - type: textarea
+    id: log-file
+    attributes:
+      label: Log File
+      description: |
+        Turn on Options → Diagnostics → Write a log file, reproduce the problem, then click Open Log Folder
+        and drag qk4.log into this box (and qk4.1.log too if QK4 crashed or restarted). The folder is
+        ~/Library/Logs/QK4 on macOS, %LOCALAPPDATA%\QK4\Logs on Windows, ~/.local/state/QK4/logs on Linux and
+        ~/.var/app/io.github.mikeg_dal.QK4/.local/state/QK4/logs for the Flatpak. A log never contains your
+        radio password or PSK. Leave blank if you could not get one.
+      placeholder: Drag qk4.log here.
+    validations:
+      required: false
+
+  - type: textarea
     id: logs
     attributes:
       label: Log Output / Error Messages

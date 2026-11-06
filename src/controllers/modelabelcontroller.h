@@ -11,21 +11,16 @@ class QLabel;
 // (the ESSB "+" suffix only applies to USB/LSB, but it applies equally
 // to whichever VFO is in that mode).
 //
-// Label WIDGETS are still created by MainWindow (they live in the VFO
-// row) — the controller just observes state and calls setText. Color /
-// styling changes driven by BSET and SUB RX remain in MainWindow, since
-// those overlap with other indicator styling that hasn't been extracted.
+// The labels belong to VfoRowWidget; this controller only sets their text.
+// VFO B's SUB RX dimming is SubDivIndicatorController's.
 class ModeLabelController : public QObject {
     Q_OBJECT
 
 public:
     explicit ModeLabelController(RadioState *radioState, QLabel *modeALabel, QLabel *modeBLabel,
                                  QObject *parent = nullptr);
-    ~ModeLabelController() override;
 
-    // Recompute + set both labels from current RadioState. Public so
-    // other controllers / MainWindow can trigger a refresh (e.g., after
-    // an optimistic ESSB toggle before the radio's ES echo arrives).
+    // Recompute + set both labels from current RadioState.
     void refresh();
 
     // Clears both labels on disconnect. RadioState::reset() does not emit

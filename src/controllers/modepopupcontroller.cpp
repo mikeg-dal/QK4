@@ -1,4 +1,5 @@
 #include "modepopupcontroller.h"
+#include "logging/logcategories.h"
 
 #include "connectioncontroller.h"
 #include "models/radiostate.h"
@@ -8,26 +9,26 @@
 #include <QRegularExpression>
 #include <QWidget>
 
-Q_LOGGING_CATEGORY(qk4ModePopup, "qk4.modepopup")
-
 ModePopupController::ModePopupController(RadioState *radioState, ConnectionController *connection,
                                          QWidget *parentWidget, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_connection(connection), m_popup(new ModePopupWidget(parentWidget)) {
 
     // === User mode selection → CAT dispatch + optimistic DT update ===
     connect(m_popup, &ModePopupWidget::modeSelected, this, [this](const QString &catCmd) {
+        if (!m_connection->isConnected())
+            return;
         m_connection->sendCAT(catCmd);
 
         // WHY: K4 does not echo DT SET commands, so RadioState never learns
         // about a submode change issued by us. Mirror the change optimistically
         // to keep mode-label rendering in sync without waiting for a roundtrip
         // that will never come.
-        QRegularExpression dtRegex("DT(\\$?)(\\d)");
+        static const QRegularExpression dtRegex("DT(\\$?)(\\d)");
         QRegularExpressionMatch match = dtRegex.match(catCmd);
         if (match.hasMatch()) {
             const bool isSubRx = !match.captured(1).isEmpty(); // DT$ = VFO B
             const int subMode = match.captured(2).toInt();
-            qCDebug(qk4ModePopup) << "Optimistic DT update: isSubRx=" << isSubRx << "subMode=" << subMode;
+            qCDebug(lcUiModePopup) << "Optimistic DT update: isSubRx=" << isSubRx << "subMode=" << subMode;
             if (isSubRx)
                 m_radioState->setDataSubModeB(subMode);
             else
@@ -71,10 +72,6 @@ ModePopupController::ModePopupController(RadioState *radioState, ConnectionContr
             m_popup->setCurrentDataSubMode(m_radioState->dataSubMode());
         }
     });
-}
-
-ModePopupController::~ModePopupController() {
-    disconnect(this);
 }
 
 void ModePopupController::toggleForVfoA(QWidget *anchor) {

@@ -21,6 +21,8 @@ public:
 
     void setSpots(const QVector<DxSpot> &spots);
     void setFrequencyRange(qint64 centerFreq, int spanHz);
+    // Pixels at the left edge that labels keep out of (the panadapter's amplitude-axis column).
+    void setLeftReservedPx(int px);
 
 public slots:
     // Pixel size for spot label text (clamped to FontSizeSpotMin..FontSizeSpotMax).
@@ -33,6 +35,7 @@ signals:
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     struct SpotLabel {
@@ -45,12 +48,16 @@ private:
 
     void layoutLabels();
     float freqToX(qint64 freq) const;
+    // Left edge for a label of textWidth centred on xCenter: inside the widget and clear of the
+    // reserved column, unless the widget is too narrow to honour both.
+    int labelLeftFor(int xCenter, int textWidth) const;
     int rowHeight() const { return m_fontPixelSize + 4; }
 
     QVector<DxSpot> m_spots;
     QVector<SpotLabel> m_labels;
     qint64 m_centerFreq = 0;
     int m_spanHz = 10000;
+    int m_leftReservedPx = 0;
     int m_fontPixelSize = 11; // K4Styles::Dimensions::FontSizeSpot default
 
     static constexpr int LABEL_GAP = 4;

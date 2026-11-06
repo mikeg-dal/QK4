@@ -1,16 +1,13 @@
 #include <QtTest/QtTest>
+#include "logging/logcategories.h"
 #include <QLoggingCategory>
+#include <QtEndian>
 #include <cmath>
+#include <cstring>
 
 #include "audio/opusdecoder.h"
 #include "audio/opusencoder.h"
 #include "audio/rawaudioformat.h"
-
-// opusdecoder.cpp logs through qk4Audio, whose definition lives in controllers/audiocontroller.cpp.
-// Linking that file would drag AudioEngine, RadioSettings and the controller layer into a decode
-// test, so the category is defined here instead. (That the audio module's logging category is
-// defined in the controllers module is a wart worth fixing on its own.)
-Q_LOGGING_CATEGORY(qk4Audio, "qk4.audio")
 
 // RX audio normalisation for EM0..EM3 — the gate on the 2026-09-19 calibration.
 //
@@ -38,6 +35,10 @@ private slots:
     void mainAndSubStaySeparate();
     void rejectsMalformedPackets();
 
+    // Alignment and byte order of the raw payloads.
+    void rawSamplesAreReadLittleEndian();
+    void rawDecodeIsIndependentOfAlignment();
+
 private:
     OpusDecoder m_decoder;
 
@@ -57,19 +58,23 @@ private:
     }
 
     // Stereo-duplicated raw payloads, matching what the K4 sends.
+    // Written byte-wise in little-endian order, the wire's, so the fixtures do not depend on the
+    // host's byte order or on the alignment of the buffer.
     static QByteArray em0Data(const QVector<qint32> &mono) {
         QByteArray d(mono.size() * 2 * static_cast<int>(sizeof(qint32)), Qt::Uninitialized);
-        qint32 *out = reinterpret_cast<qint32 *>(d.data());
-        for (int i = 0; i < mono.size(); i++)
-            out[i * 2] = out[i * 2 + 1] = mono[i];
+        for (int i = 0; i < mono.size(); i++) {
+            qToLittleEndian<qint32>(mono[i], d.data() + (i * 2) * 4);
+            qToLittleEndian<qint32>(mono[i], d.data() + (i * 2 + 1) * 4);
+        }
         return d;
     }
 
     static QByteArray em1Data(const QVector<qint16> &mono) {
         QByteArray d(mono.size() * 2 * static_cast<int>(sizeof(qint16)), Qt::Uninitialized);
-        qint16 *out = reinterpret_cast<qint16 *>(d.data());
-        for (int i = 0; i < mono.size(); i++)
-            out[i * 2] = out[i * 2 + 1] = mono[i];
+        for (int i = 0; i < mono.size(); i++) {
+            qToLittleEndian<qint16>(mono[i], d.data() + (i * 2) * 2);
+            qToLittleEndian<qint16>(mono[i], d.data() + (i * 2 + 1) * 2);
+        }
         return d;
     }
 
@@ -243,6 +248,50 @@ void TestOpusDecoder::rejectsMalformedPackets() {
     QVERIFY(m_decoder.decodeK4Packet(wrongType).isEmpty());
 
     QVERIFY(m_decoder.decodeK4Packet(payload(9, 2, em1Data({100, 100}))).isEmpty()); // unknown mode
+}
+
+void TestOpusDecoder::rawSamplesAreReadLittleEndian() {
+    // Bytes spelled out as they arrive on the wire, least significant first. 0x00040000 = 2^18 =
+    // EM0 full scale / 32, and 0x0400 = 1024 = EM1 full scale / 32: both must decode to exactly 1.0.
+    // A negative pair checks the sign survives: 0xFFFC0000 = -2^18, 0xFC00 = -1024.
+    const char em0Bytes[] = {0x00, 0x00, 0x04, 0x00, 0x00, 0x00, static_cast<char>(0xFC), static_cast<char>(0xFF)};
+    const char em1Bytes[] = {0x00, 0x04, 0x00, static_cast<char>(0xFC)};
+
+    const QByteArray em0 = m_decoder.decodeK4Packet(payload(0, 1, QByteArray(em0Bytes, sizeof(em0Bytes))));
+    const QByteArray em1 = m_decoder.decodeK4Packet(payload(1, 1, QByteArray(em1Bytes, sizeof(em1Bytes))));
+    QCOMPARE(em0.size(), 2 * static_cast<int>(sizeof(float)));
+    QCOMPARE(em1.size(), 2 * static_cast<int>(sizeof(float)));
+
+    float a[2];
+    float b[2];
+    std::memcpy(a, em0.constData(), sizeof(a));
+    std::memcpy(b, em1.constData(), sizeof(b));
+    QCOMPARE(a[0], 1.0f);
+    QCOMPARE(a[1], -1.0f);
+    QCOMPARE(b[0], 1.0f);
+    QCOMPARE(b[1], -1.0f);
+}
+
+void TestOpusDecoder::rawDecodeIsIndependentOfAlignment() {
+    // The K4 audio data begins at byte 7 of the packet, so in a freshly allocated packet the raw
+    // samples are never naturally aligned - reading them through a qint32 or qint16 pointer was
+    // undefined behaviour, caught by UBSan in CI. Place the same packet at every start offset in a
+    // larger buffer (so the samples land at every alignment mod 4) and require identical output.
+    // Under the sanitizer build this case fails on the pointer-cast code.
+    const QByteArray em0 = payload(0, 3, em0Data({262144, -131072, 7}));
+    const QByteArray em1 = payload(1, 3, em1Data({1024, -512, 7}));
+
+    for (const QByteArray &packet : {em0, em1}) {
+        const QByteArray reference = m_decoder.decodeK4Packet(packet);
+        QCOMPARE(reference.size(), 6 * static_cast<int>(sizeof(float)));
+
+        QByteArray storage(packet.size() + 8, '\0');
+        for (int offset = 0; offset < 4; ++offset) {
+            std::memcpy(storage.data() + offset, packet.constData(), static_cast<size_t>(packet.size()));
+            const QByteArray view = QByteArray::fromRawData(storage.constData() + offset, packet.size());
+            QCOMPARE(m_decoder.decodeK4Packet(view), reference);
+        }
+    }
 }
 
 QTEST_MAIN(TestOpusDecoder)

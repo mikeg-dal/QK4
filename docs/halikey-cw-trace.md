@@ -1,162 +1,122 @@
-# Tracing the HaliKey → KZ CW pipeline
+# Tracing the HaliKey CW path
 
-A diagnostic recipe for investigating CW-keyer reports such as "extra dits at high
-speed" on HaliKey (MIDI or V1.4). Captures the path from physical paddle edge through
-the IambicKeyer state machine to the `KZ` bytes that hit the K4 over TLS.
+A recipe for investigating HaliKey (V1.4 serial or MIDI) keying reports: wrong elements, wrong
+spacing, sidetone delay. It follows a paddle edge to the timed `KZD`/`KZU` commands that reach the
+K4 and to the local sidetone. The keyer is `PaddleKeyer`, a port of K4-Companion's keyer; its design
+is in `docs/cw-keyer-port-plan.md`.
 
 ## What gets logged
 
-Two logging categories carry the relevant traces:
-
 | Category | Source | Lines you'll see |
 |---|---|---|
-| `cw.keyer` | `src/hardware/iambickeyer.cpp` | `KEYER@HH:mm:ss.zzz [DIT down] ...`, `[ELEM start DIT] ...`, `[TIMER fired wasDit=1] ...`, `[PAUSE emit] ...`, `[IDLE]` |
-| `cat.tx` | `src/network/tcpclient.cpp` | `TX@HH:mm:ss.zzz [ KZ.; ]`, `[ KZ-; ]`, `[ KZP0180; ]`, `[ KZ ; ]` (KZ-prefixed CAT only) |
+| `qk4.cat.tx` | `src/network/tcpclient.cpp` | `sent: "KZD0060;" ( 15 bytes, 42 us from the keying thread)` for every KZ and ML frame, written by the I/O thread as it hands the frame to the socket. The microseconds are how long the frame waited between the keyer (or KPOD+ EP02 reader) posting it and the write. Other commands log `sent: "…"` as before |
+| `qk4.link.tcp` | `src/network/tcpclient.cpp` | at info, once a minute while keying and when the session ends: `KZ egress, keying thread to socket write, this session: N frames, median <= … us, 99% <= … us, max … us, dropped 0` |
+| `qk4.cw.midi` | `src/hardware/halikeymidiworker.cpp` | `MoMIDI detected, version N` (from the presence poll), port open and presence-poll lines |
+| `qk4.audio.sidetone` | `src/audio/sidetonegenerator.cpp` | output dry-outs and short writes |
+| `qk4.cw.keyer` | `src/controllers/cwcontroller.cpp` | the KPOD+ keyer gate only |
 
-The KPOD+ EP02 path also logs in the same `TX@` format via `hw.kpodplus` (`KZ@`)
-and `cat.tx` (`TX@`); you can use the same recipe to A/B a KPOD+ session against a
-HaliKey session of the same character at the same WPM.
+`PaddleKeyer` itself logs nothing: what it decided is exactly what `qk4.cat.tx` shows it sent.
+
+**No line is logged per paddle edge, MIDI note or tone onset.** Those threads (HaliKey worker,
+RtMidi, keyer, sidetone, KPOD+ EP02) are real-time and must not format a string (CONVENTIONS Rule
+16). The per-edge `qk4.cw.halikey` lines, the Windows `raw pins` lines, the per-note `qk4.cw.midi`
+lines, the per-tone `tone on:` line and the KPOD+ `KZ@`/`TX@` pair were removed on 2026-10-29. A
+lock-free trace buffer drained on the log writer thread would bring them back; until then, judge
+paddle input by the `KZU` lengths and a recording of the paddle.
+
+The KPOD+ path's EP02 batches appear as `sent:` lines too, so a KPOD+ session can still be A/B'd
+against a HaliKey session.
 
 ## Enabling the trace
 
-Run the app with:
+Easiest, on any platform: Options → Diagnostics → **Write a log file**, check **CW keying**, and under
+Bench diagnostics **CAT traffic** (for the `sent:` lines). Key, then **Open Log Folder** and take
+`qk4.log`. Every line carries a millisecond timestamp and the thread (`[Keyer]`, `[HaliKey]`,
+`[Sidetone]`). The same from a terminal, with the rules below, is `--log-file --log-rules "<rules>"`.
+
+Or with the environment, to the console. macOS / Linux:
 
 ```bash
-QT_LOGGING_RULES="cw.keyer.debug=true;cat.tx.debug=true" \
-  /Users/mikegarcia/development/QK4/build/QK4.app/Contents/MacOS/QK4 \
-  2>&1 | tee /tmp/qk4-cw-trace.log
+QT_LOGGING_RULES="qk4.cw.midi.debug=true;qk4.cat.tx.debug=true;qk4.audio.sidetone.debug=true" \
+  build/QK4.app/Contents/MacOS/QK4 2>&1 | tee /tmp/qk4-cw-trace.log
 ```
 
-The category is off by default — when disabled, `qCDebug` short-circuits at the
-category check so there is zero hot-path cost.
-
-## What a clean "C" looks like at 20 WPM
-
-A single character `C` (dah-dit-dah-dit) on a HaliKey MIDI paddle, with iambic
-sending, should produce a trace pattern like this (timestamps shortened):
-
-```
-KEYER@... [DAH down] state=Idle  physD=0 physA=1 latchD=0 latchA=1
-KEYER@... [PAUSE emit] elapsed=420ms                          ← (if any gap from last char)
-KEYER@... [ELEM start DAH] interval=240ms ...
-TX@...    [ KZP0420; ]                                        ← restartAfterPause emit
-TX@...    [ KZ-; ]                                            ← elementStarted emit
-KEYER@... [DIT down] state=PlayingDah ...                     ← squeeze begins
-KEYER@... [TIMER fired wasDit=0] liveD=1 liveA=1 ... → both held → alternate
-KEYER@... [ELEM start DIT] interval=120ms ...
-TX@...    [ KZ.; ]
-KEYER@... [TIMER fired wasDit=1] ... → both held → alternate
-KEYER@... [ELEM start DAH] interval=240ms ...
-TX@...    [ KZ-; ]
-KEYER@... [DAH up] state=PlayingDah ...
-KEYER@... [DIT up] state=PlayingDah ...
-KEYER@... [TIMER fired wasDit=0] ... → squeeze-release IambicA → idle
-KEYER@... [IDLE]
-TX@...    [ KZ ; ]                                            ← characterSpace emit
-```
-
-Wire output (extract just the `TX@` lines): `KZP0420; KZ-; KZ.; KZ-; KZ ;` —
-whose command forms are tabulated in `docs/k4-protocol-quirks.md` → "KZ keying protocol".
-
-## What an "extra dit" looks like
-
-A phantom dit will show up as a `[TIMER fired ...] → ...` line where the latch was
-set but the live paddle was already released. Specifically: look for
-
-```
-KEYER@... [DIT down] state=PlayingDit ...                     ← graze during active element
-KEYER@... [DIT up]   state=PlayingDit ...                     ← release ≤ a few ms later
-...
-KEYER@... [TIMER fired wasDit=1] liveD=0 liveA=0 latchD=1 ... → same-paddle repeat dit
-KEYER@... [ELEM start DIT] ...
-TX@...    [ KZ.; ]                                            ← the extra dit
-```
-
-The signature is **`liveD=0 ... latchD=1` followed by a `same-paddle repeat dit`** decision.
-That's the iambic memory latch converting a mid-element graze into an extra element.
-
-If the trace shows no such pattern but the user still reports an extra dit, the
-problem isn't in the keyer — look at the K4's reproduction of a correctly-emitted
-stream, or at local sidetone bleeding back through the audio capture path.
-
-## Correlating across categories
-
-`KEYER@` and `TX@` use the same `HH:mm:ss.zzz` wall-clock format. A diff between
-the timestamp of `[ELEM start DIT]` and the following `TX@... [ KZ.; ]` is the
-end-to-end latency from keyer-thread emit decision to TCP wire write — typically
-sub-millisecond, but useful for diagnosing event-queue backups under load.
-
-## Tracing the V1.4 serial layer (Windows / paddle edges)
-
-To debug the serial-read layer *below* the keyer (raw modem-control pins → dit/dah/ptt
-edges), enable the `hw.halikey` category:
+Windows (PowerShell):
 
 ```powershell
-$env:QT_LOGGING_RULES = "hw.halikey.debug=true;cw.keyer.debug=true;CAT.TX.debug=true"
-$env:QT_FORCE_STDERR_LOGGING = "1"   # Windows GUI app: force logs to stderr (see below)
-$env:QT_MESSAGE_PATTERN = "%{time process} %{category}: %{message}"   # add timestamps
-.\build-qt67\Release\QK4.exe 2> qk4-cw-trace.log
+$env:QT_LOGGING_RULES = "qk4.cw.midi.debug=true;qk4.cat.tx.debug=true;qk4.audio.sidetone.debug=true"
+$env:QT_FORCE_STDERR_LOGGING = "1"
+$env:QT_MESSAGE_PATTERN = "%{time process} %{category}: %{message}"
+.\build\Release\QK4.exe 2> qk4-cw-trace.log
 ```
 
-You'll see `HaliKeyV14Worker: raw pins CTS:.. DCD:.. DSR:..` on every line transition and
-`dit/dah/ptt edge: true|false` when a debounced edge is emitted. The V1.4 pin mapping:
-`CTS` = dit lever / foot pedal (demuxed by mode in `CwController`), `DCD‖DSR` = dah lever.
+Category strings are case-sensitive and all lower case (`qk4.cat.tx`). The names before 2026-10-29
+(`CAT.TX`, `hw.halikey`, …) are listed in `src/logging/README.md`.
 
-> **Windows logging gotcha.** Qt's default handler only writes to stderr if it thinks a
-> console is attached. When you redirect stderr to a *file* (a pipe), `GetConsoleMode`
-> fails and Qt silently routes everything to `OutputDebugString` instead — your log file
-> stays empty. Set `QT_FORCE_STDERR_LOGGING=1` to force it to the redirected handle.
+**Debug output is off by default.** Every QK4 category is declared with `QtInfoMsg` as its default
+severity, so `qCDebug` lines are skipped, arguments and all, until a rule turns them on. That is
+what the `QT_LOGGING_RULES` in the examples above do.
 
-> **Note:** the category strings are case-sensitive — it is `CAT.TX.debug=true`
-> (not `cat.tx`).
+> **Windows logging gotcha.** Qt's default handler writes to stderr only if it thinks a console is
+> attached. Redirected to a file, `GetConsoleMode` fails and Qt routes everything to
+> `OutputDebugString` — the log stays empty. `QT_FORCE_STDERR_LOGGING=1` fixes that, or use the log
+> file above, which does not depend on a console.
 
-## Windows serial monitor: why it polls, not WaitCommEvent
+## Reading the wire
 
-`HaliKeyV14Worker::monitorLoop()` uses a different I/O model per platform: Linux blocks on
-`TIOCMIWAIT`, macOS polls `ioctl(TIOCMGET)` every 500 µs, and **Windows polls
-`GetCommModemStatus` every ~1 ms** (high-resolution waitable timer).
+Each element is one pair: `KZDnnnn;` (the gap before key-down, in ms) then `KZUnnnn;` (how long it
+was down). `docs/k4-protocol-quirks.md` §8 is the reference for these forms. The K4 replays those intervals behind its KZL key-down delay, so the `sent:` times can
+jitter without changing anything on the air — read the numbers, not the timestamps.
 
-Windows originally used `WaitCommEvent` (block until `EV_CTS`/`EV_DSR`/`EV_RLSD` fires).
-**Do not go back to that.** USB-serial (FTDI etc.) VCP drivers do **not** reliably deliver
-modem-status change events: a paddle-line transition with no other line activity often
-fails to wake `WaitCommEvent` at all. The symptom is a stuck key — a release is never
-seen, so the keyer auto-repeats until some *unrelated* line change (e.g. the next press)
-belatedly wakes the loop. Captured signature: a dah `hold=2559ms` that "released" only
-when the next CTS press arrived, with **zero `raw pins` lines** in between. Polling reads
-the lines unconditionally each tick, so every transition is caught within one poll period
-regardless of driver event support. (Bounce defense is the same count-based
-`DEBOUNCE_COUNT` filter on all three platforms; the 8 ms hold gate in `IambicKeyer` is the
-secondary defense.)
-
-## Extra elements: the split-release signature
-
-Symptom reported by operators: an occasional element nobody sent, heard in the sidetone, on the
-wire, or both. Sidetone and the KZ stream share one trigger (`IambicKeyer::elementStarted`), so an
-extra element in either means an extra `enterElement()` — always a keyer-side fault, never the
-sidetone generator.
-
-The cause was that the paddle levers reached the keyer as two independent events. Releasing a
-squeeze then straddled an element boundary: the timer sampled with one lever still down, the
-"both released" guard missed, and the cross-paddle branch appended an element. In Iambic A that is
-always wrong — A must stop at the element boundary.
-
-Signature to look for in `cw.keyer.debug`:
+A clean `C` (dah dit dah dit) at 20 WPM, weight 1.00, sent from idle:
 
 ```
-KEYER@... [TIMER fired wasDit=1] liveD=0 liveA=1 latchD=0 latchA=1 squeezed=1 mode=A → cross-paddle dit→dah
+sent: "KZD0000;"   ← first element of the first burst since start: gap 0 (see below)
+sent: "KZU0180;"   ← dah
+sent: "KZD0060;"   ← inter-element gap
+sent: "KZU0060;"   ← dit
+sent: "KZD0060;"
+sent: "KZU0180;"
+sent: "KZD0060;"
+sent: "KZU0060;"
 ```
 
-`squeezed=1` with `mode=A` and exactly one of `liveD`/`liveA` still 1, taking a `cross-paddle`
-branch instead of `squeeze-release IambicA → idle`, followed by an element the operator did not
-key. Cross-check the `hw.halikey` `lines` entries either side of it: two entries a millisecond or
-two apart, each dropping one lever, is a release that was delivered split.
+The first `KZD` of a burst carries the measured gap since the previous burst's last element,
+which is how the operator's character and word spacing reaches the air. It is 0 only for the first
+burst since start, or when the gap is negative or over 5 s (`PaddleKeyer`, the first-element branch).
+Every later `KZD` in a burst is the nominal gap. Element and gap lengths follow the K4's KS speed and
+KP weight.
 
-This cannot happen on the serial variant any more — `readPinState()` samples every line at once and
-that sample now travels intact to `IambicKeyer::setPaddleState`, which writes both levers in one
-store. The MIDI variant sends one note per lever, so a squeeze release is genuinely two messages
-there; the keyer always sees a coherent pair, but the two messages can still land either side of a
-boundary. If the signature above reappears, it should only ever be on MIDI.
+## Diagnosing
 
-## Disabling cleanly
+- **Wrong element on the wire** (an extra dit, a missing dah): the `KZU` lengths tell you which
+  elements were sent. Line them up against what the paddle did (a recording of it, or a known
+test pattern). The keyer's
+  decision rules — and the recorded runs that pin them — are in `tests/test_paddlekeyersweeps.cpp`;
+  reproduce the edge sequence there before changing the keyer.
+- **Right on the wire, wrong on the air:** the K4's reproduction, not QK4. Check KZL is the value
+  you set in Options → HaliKey → Remote Keying → Key-Down Delay. What KZL means:
+  `docs/k4-protocol-quirks.md` §8, the canonical description of the KZ wire forms.
+- **Sidetone delay or wobble:** the per-tone timing line is gone (real-time thread). An audio loopback
+  of the sidetone against the paddle is the measurement; `qk4.audio.sidetone` still reports the
+  output running dry, which raises the delay one block at a time.
+- **MIDI on Windows:** WinMM delivers MIDI input in bursts — a press and release 60 ms apart can
+  reach RtMidi about 1 ms apart. Arrival time is therefore a poor timestamp there, which is why the
+  keyer uses MoMIDI's own timing when the HaliKey sends it. Never debounce MIDI on processing time:
+  an earlier 3 ms gate did exactly that and dropped real releases, latching both paddles on. There
+  is no electrical bounce in a MIDI message stream to protect against.
+- **V1.4 edges arrive late:** FTDI-class bridges batch modem-status updates on a 16 ms latency
+  timer by default — see `src/hardware/README.md` → "V1.4 serial latency".
 
-`unset QT_LOGGING_RULES` or omit the variable. Nothing else is needed.
+## Why V1.4 polls instead of waiting for line events
+
+`HaliKeyV14Worker::monitorLoop()` polls the modem lines every 1 ms on every OS (a high-resolution
+waitable timer on Windows). **Do not go back to `WaitCommEvent`.** FTDI VCP drivers do not reliably
+deliver `EV_CTS`/`EV_DSR`/`EV_RLSD` for an isolated transition: a release with no other line activity
+often never woke the wait, so the key stayed down until an unrelated line change. Captured
+signature: a dah held 2559 ms that "released" only when the next CTS press arrived, with no
+modem-line change logged in between (the `raw pins` trace of the time). A blocking wait also cannot time the 20 ms quiet a straight key's
+debounce needs.
+
+The V1.4 pin map: `CTS` = dit lever (and a foot pedal, indistinguishable — which is why footswitch
+PTT is withdrawn), `DCD ∥ DSR` = dah lever.

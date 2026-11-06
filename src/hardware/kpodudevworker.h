@@ -29,8 +29,9 @@ signals:
 private:
     quint16 m_vendorId;
     quint16 m_productId;
-    std::atomic<bool> m_running{false};
-    int m_wakePipe[2] = {-1, -1};
+    // WHY a request flag the loop never resets: stop() may arrive before start() runs.
+    std::atomic<bool> m_stopRequested{false};
+    int m_wakePipe[2] = {-1, -1}; // created in the constructor, never changed after
 };
 
 #endif // Q_OS_LINUX

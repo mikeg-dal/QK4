@@ -4,22 +4,26 @@
 
 #include <QtGlobal>
 
+#include <algorithm>
+
 void SpectrumDisplayState::reset() {
-    refLevel = -110;
-    refLevelB = -110;
+    refLevel = SpectrumDisplayLimits::RefLevelUnknown;
+    refLevelB = SpectrumDisplayLimits::RefLevelUnknown;
     spanHz = 0;
     spanHzB = 0;
     scale = -1;
-    miniPanAEnabled = false;
-    miniPanBEnabled = false;
+    miniPanAEnabled.reset();
+    miniPanBEnabled.reset();
     dualPanModeLcd = -1;
     dualPanModeExt = -1;
     displayModeLcd = -1;
     displayModeExt = -1;
-    displayFps = 30;
+    displayFps = SpectrumDisplayLimits::FpsUnknown;
     waterfallColor = -1;
-    waterfallHeight = 50;
-    waterfallHeightExt = 50;
+    waterfallHeight = -1;
+    waterfallHeightExt = -1;
+    waterfallColorRange = -1;
+    waterfallColorRangeExt = -1;
     averaging = -1;
     peakMode = -1;
     fixedTune = -1;
@@ -51,7 +55,8 @@ void handleREF(SpectrumDisplayState &state, RadioState &owner, const QString &cm
     bool ok;
     int val = cmd.mid(4).toInt(&ok);
     if (ok)
-        applyIntInRange(state.refLevel, val, -200, 50, owner, &RadioState::refLevelChanged);
+        applyIntInRange(state.refLevel, val, SpectrumDisplayLimits::RefLevelMin, SpectrumDisplayLimits::RefLevelMax,
+                        owner, &RadioState::refLevelChanged);
 }
 
 void handleREFSub(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
@@ -60,7 +65,8 @@ void handleREFSub(SpectrumDisplayState &state, RadioState &owner, const QString 
     bool ok;
     int val = cmd.mid(5).toInt(&ok);
     if (ok)
-        applyIntInRange(state.refLevelB, val, -200, 50, owner, &RadioState::refLevelBChanged);
+        applyIntInRange(state.refLevelB, val, SpectrumDisplayLimits::RefLevelMin, SpectrumDisplayLimits::RefLevelMax,
+                        owner, &RadioState::refLevelBChanged);
 }
 
 void handleSPN(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
@@ -86,7 +92,8 @@ void handleSCL(SpectrumDisplayState &state, RadioState &owner, const QString &cm
         return;
     bool ok;
     int scale = cmd.mid(4).toInt(&ok);
-    if (ok && scale >= 10 && scale <= 150 && scale != state.scale) {
+    if (ok && scale >= SpectrumDisplayLimits::ScaleMin && scale <= SpectrumDisplayLimits::ScaleMax &&
+        scale != state.scale) {
         state.scale = scale;
         emit owner.scaleChanged(state.scale);
     }
@@ -97,20 +104,16 @@ void handleMP(SpectrumDisplayState &state, RadioState &owner, const QString &cmd
     if (cmd.length() < 4)
         return;
     bool enabled = (cmd.at(3) == '1');
-    if (state.miniPanAEnabled != enabled) {
-        state.miniPanAEnabled = enabled;
+    if (state.miniPanAEnabled.set(enabled))
         emit owner.miniPanAEnabledChanged(enabled);
-    }
 }
 
 void handleMPSub(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 5)
         return;
     bool enabled = (cmd.at(4) == '1');
-    if (state.miniPanBEnabled != enabled) {
-        state.miniPanBEnabled = enabled;
+    if (state.miniPanBEnabled.set(enabled))
         emit owner.miniPanBEnabledChanged(enabled);
-    }
 }
 
 void handleDPM(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
@@ -162,7 +165,7 @@ void handleFPS(SpectrumDisplayState &state, RadioState &owner, const QString &cm
         return;
     bool ok;
     int fps = cmd.mid(4).toInt(&ok);
-    if (ok && fps >= 12 && fps <= 30 && fps != state.displayFps) {
+    if (ok && fps >= SpectrumDisplayLimits::FpsMin && fps <= SpectrumDisplayLimits::FpsMax && fps != state.displayFps) {
         state.displayFps = fps;
         emit owner.displayFpsChanged(state.displayFps);
     }
@@ -184,7 +187,8 @@ void handleWFH(SpectrumDisplayState &state, RadioState &owner, const QString &cm
         return;
     bool ok;
     int height = cmd.mid(4).toInt(&ok);
-    if (ok && height >= 0 && height <= 100 && height != state.waterfallHeight) {
+    if (ok && height >= SpectrumDisplayLimits::WaterfallHeightMin &&
+        height <= SpectrumDisplayLimits::WaterfallHeightMax && height != state.waterfallHeight) {
         state.waterfallHeight = height;
         emit owner.waterfallHeightChanged(state.waterfallHeight);
     }
@@ -195,10 +199,34 @@ void handleHWFH(SpectrumDisplayState &state, RadioState &owner, const QString &c
         return;
     bool ok;
     int height = cmd.mid(5).toInt(&ok);
-    if (ok && height >= 0 && height <= 100 && height != state.waterfallHeightExt) {
+    if (ok && height >= SpectrumDisplayLimits::WaterfallHeightMin &&
+        height <= SpectrumDisplayLimits::WaterfallHeightMax && height != state.waterfallHeightExt) {
         state.waterfallHeightExt = height;
         emit owner.waterfallHeightExtChanged(state.waterfallHeightExt);
     }
+}
+
+void handleWBS(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
+    // #WBSn — prefix length 4.
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    const int range = cmd.mid(4).toInt(&ok);
+    if (ok)
+        applyIntInRange(state.waterfallColorRange, range, SpectrumDisplayLimits::WaterfallColorRangeMin,
+                        SpectrumDisplayLimits::WaterfallColorRangeMax, owner, &RadioState::waterfallColorRangeChanged);
+}
+
+void handleHWBS(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
+    // #HWBSn — prefix length 5.
+    if (cmd.length() <= 5)
+        return;
+    bool ok;
+    const int range = cmd.mid(5).toInt(&ok);
+    if (ok)
+        applyIntInRange(state.waterfallColorRangeExt, range, SpectrumDisplayLimits::WaterfallColorRangeMin,
+                        SpectrumDisplayLimits::WaterfallColorRangeMax, owner,
+                        &RadioState::waterfallColorRangeExtChanged);
 }
 
 void handleAVG(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
@@ -206,7 +234,8 @@ void handleAVG(SpectrumDisplayState &state, RadioState &owner, const QString &cm
         return;
     bool ok;
     int avg = cmd.mid(4).toInt(&ok);
-    if (ok && avg >= 1 && avg <= 20 && avg != state.averaging) {
+    if (ok && avg >= SpectrumDisplayLimits::AveragingMin && avg <= SpectrumDisplayLimits::AveragingMax &&
+        avg != state.averaging) {
         state.averaging = avg;
         emit owner.averagingChanged(state.averaging);
     }
@@ -279,11 +308,21 @@ void handleVFB(SpectrumDisplayState &state, RadioState &owner, const QString &cm
 }
 
 void handleAR(SpectrumDisplayState &state, RadioState &owner, const QString &cmd) {
-    // #AR*********A (or M) — last char is the mode.
-    if (cmd.length() < 12)
+    // WHY: the K4 sends #ARaadd±oom — averaging, debounce, signed offset, then 1 (auto) or 0 (manual).
+    // Only the mode is kept: the radio applies the offset to the #REF it publishes (bench 2026-10-19),
+    // so QK4 follows the offset without reading it. See docs/k4-protocol-quirks.md §13.
+    static constexpr int AR_LENGTH = 11;
+    if (cmd.length() != AR_LENGTH)
         return;
-    QChar mode = cmd.at(cmd.length() - 1);
-    int newValue = (mode == 'A') ? 1 : 0;
+    const QChar sign = cmd.at(7);
+    const QChar mode = cmd.at(10);
+    if ((sign != '+' && sign != '-') || (mode != '0' && mode != '1'))
+        return;
+    for (const int i : {3, 4, 5, 6, 8, 9}) {
+        if (!cmd.at(i).isDigit())
+            return;
+    }
+    const int newValue = (mode == '1') ? 1 : 0;
     if (newValue != state.autoRefLevel) {
         state.autoRefLevel = newValue;
         emit owner.autoRefLevelChanged(state.autoRefLevel > 0);
@@ -324,7 +363,7 @@ void setRefLevel(SpectrumDisplayState &state, RadioState &owner, int level) {
 }
 
 void setScale(SpectrumDisplayState &state, RadioState &owner, int scale) {
-    if (scale >= 10 && scale <= 150 && scale != state.scale) {
+    if (scale >= SpectrumDisplayLimits::ScaleMin && scale <= SpectrumDisplayLimits::ScaleMax && scale != state.scale) {
         state.scale = scale;
         emit owner.scaleChanged(state.scale);
     }
@@ -344,6 +383,22 @@ void setRefLevelB(SpectrumDisplayState &state, RadioState &owner, int level) {
     }
 }
 
+std::optional<int> stepRefLevel(SpectrumDisplayState &state, RadioState &owner, bool sub, int steps) {
+    if (state.autoRefLevel > 0)
+        return std::nullopt;
+    const int current = sub ? state.refLevelB : state.refLevel;
+    if (current == SpectrumDisplayLimits::RefLevelUnknown)
+        return std::nullopt;
+    const int next = qBound(SpectrumDisplayLimits::RefLevelMin, current + steps, SpectrumDisplayLimits::RefLevelMax);
+    if (next == current)
+        return std::nullopt;
+    if (sub)
+        setRefLevelB(state, owner, next);
+    else
+        setRefLevel(state, owner, next);
+    return next;
+}
+
 void setSpanHzB(SpectrumDisplayState &state, RadioState &owner, int spanHz) {
     if (spanHz > 0 && spanHz != state.spanHzB) {
         state.spanHzB = spanHz;
@@ -352,21 +407,17 @@ void setSpanHzB(SpectrumDisplayState &state, RadioState &owner, int spanHz) {
 }
 
 void setMiniPanAEnabled(SpectrumDisplayState &state, RadioState &owner, bool enabled) {
-    if (state.miniPanAEnabled != enabled) {
-        state.miniPanAEnabled = enabled;
+    if (state.miniPanAEnabled.set(enabled))
         emit owner.miniPanAEnabledChanged(enabled);
-    }
 }
 
 void setMiniPanBEnabled(SpectrumDisplayState &state, RadioState &owner, bool enabled) {
-    if (state.miniPanBEnabled != enabled) {
-        state.miniPanBEnabled = enabled;
+    if (state.miniPanBEnabled.set(enabled))
         emit owner.miniPanBEnabledChanged(enabled);
-    }
 }
 
 void setWaterfallHeight(SpectrumDisplayState &state, RadioState &owner, int percent) {
-    percent = qBound(10, percent, 90);
+    percent = std::clamp(percent, SpectrumDisplayLimits::WaterfallHeightMin, SpectrumDisplayLimits::WaterfallHeightMax);
     if (state.waterfallHeight != percent) {
         state.waterfallHeight = percent;
         emit owner.waterfallHeightChanged(percent);
@@ -374,7 +425,7 @@ void setWaterfallHeight(SpectrumDisplayState &state, RadioState &owner, int perc
 }
 
 void setWaterfallHeightExt(SpectrumDisplayState &state, RadioState &owner, int percent) {
-    percent = qBound(10, percent, 90);
+    percent = std::clamp(percent, SpectrumDisplayLimits::WaterfallHeightMin, SpectrumDisplayLimits::WaterfallHeightMax);
     if (state.waterfallHeightExt != percent) {
         state.waterfallHeightExt = percent;
         emit owner.waterfallHeightExtChanged(percent);
@@ -382,7 +433,7 @@ void setWaterfallHeightExt(SpectrumDisplayState &state, RadioState &owner, int p
 }
 
 void setAveraging(SpectrumDisplayState &state, RadioState &owner, int value) {
-    value = qBound(1, value, 20);
+    value = std::clamp(value, SpectrumDisplayLimits::AveragingMin, SpectrumDisplayLimits::AveragingMax);
     if (state.averaging != value) {
         state.averaging = value;
         emit owner.averagingChanged(value);

@@ -1,4 +1,5 @@
 #include "network/websocketserver.h"
+#include "logging/logcategories.h"
 
 #include <QHostAddress>
 #include <QLoggingCategory>
@@ -6,8 +7,7 @@
 #include <QTcpSocket>
 
 // Transport-level events only - liveness probes and backpressure. What a client actually said
-// belongs to net.tci, which sits above this.
-Q_LOGGING_CATEGORY(netWs, "net.ws")
+// belongs to qk4.tci, which sits above this.
 
 namespace {
 
@@ -39,7 +39,6 @@ WebSocketServer::WebSocketServer(QObject *parent)
 }
 
 WebSocketServer::~WebSocketServer() {
-    disconnect(this);
     stop();
 }
 
@@ -49,11 +48,9 @@ bool WebSocketServer::start(quint16 port, bool loopbackOnly) {
     }
     const QHostAddress address = loopbackOnly ? QHostAddress(QHostAddress::LocalHost) : QHostAddress(QHostAddress::Any);
     if (!m_server->listen(address, port)) {
-        m_errorString = m_server->errorString();
-        emit errorOccurred(m_errorString);
+        emit errorOccurred(m_server->errorString());
         return false;
     }
-    m_errorString.clear();
     m_livenessTimer->start();
     emit started(m_server->serverPort());
     return true;
@@ -67,13 +64,21 @@ void WebSocketServer::stop() {
     const QList<int> ids = m_sessions.keys();
     for (int id : ids) {
         closeClient(id, WebSocketFrame::CloseNormal, QStringLiteral("server shutting down"));
-        Session session = m_sessions.take(id);
+        // WHY: closing can deliver `disconnected` synchronously, in which case onDisconnected has
+        // already erased the session and emitted clientDisconnected for it.
+        if (!m_sessions.contains(id)) {
+            continue;
+        }
+        const Session session = m_sessions.take(id);
         if (session.socket) {
             session.socket->disconnect(this);
             session.socket->abort();
             session.socket->deleteLater();
         }
-        emit clientDisconnected(id);
+        // Same rule as onDisconnected: a peer that never upgraded was never a client.
+        if (session.upgraded) {
+            emit clientDisconnected(id);
+        }
     }
     if (m_server->isListening()) {
         m_server->close();
@@ -162,8 +167,9 @@ bool WebSocketServer::tryUpgrade(int clientId) {
     if (key.isEmpty() || upgrade.compare(QStringLiteral("websocket"), Qt::CaseInsensitive) != 0) {
         // Answer plain HTTP rather than dropping silently: a browser or curl pointed here should
         // get a readable error, not a reset connection.
-        socket->write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n"
-                      "Content-Length: 31\r\n\r\nThis endpoint expects WebSocket\n");
+        const QByteArray body = "This endpoint expects WebSocket\n";
+        socket->write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: " +
+                      QByteArray::number(body.size()) + "\r\n\r\n" + body);
         socket->flush();
         closeSocketBounded(socket);
         return false;
@@ -274,8 +280,8 @@ void WebSocketServer::onLivenessTick() {
             // MAX_HANDSHAKE_BYTES bounds how much a peer may send before upgrading; this bounds
             // how long. Not a WebSocket peer yet, so there is no close frame to send.
             if (it->accepted.isValid() && it->accepted.elapsed() > m_handshakeTimeoutMs) {
-                qCWarning(netWs) << "connection" << id << "did not complete the handshake in" << it->accepted.elapsed()
-                                 << "ms - dropping it";
+                qCWarning(lcTciWs) << "connection" << id << "did not complete the handshake in"
+                                   << it->accepted.elapsed() << "ms - dropping it";
                 dropSession(id, WebSocketFrame::CloseProtocolError, QStringLiteral("handshake timeout"),
                             CloseMode::Abort);
             }
@@ -285,8 +291,8 @@ void WebSocketServer::onLivenessTick() {
             continue;
         }
         if (it->lastInbound.elapsed() > m_silenceTimeoutMs) {
-            qCWarning(netWs) << "client" << id << "has not answered in" << it->lastInbound.elapsed()
-                             << "ms - dropping it as dead";
+            qCWarning(lcTciWs) << "client" << id << "has not answered in" << it->lastInbound.elapsed()
+                               << "ms - dropping it as dead";
             // Whatever it was holding is released by the clientDisconnected this raises. For the
             // TCI server that is the transmitter; see TciServer::onClientDisconnected.
             // Abort: a peer that answers nothing is not reading either, so a graceful close would
@@ -387,8 +393,8 @@ bool WebSocketServer::writeFrame(int clientId, const QByteArray &frame, bool she
     const SendDecision decision = decideSend(queued, sheddable);
 
     if (decision == SendDecision::DropSession) {
-        qCWarning(netWs) << "client" << clientId << "has" << queued
-                         << "bytes unread and is not draining - dropping the session";
+        qCWarning(lcTciWs) << "client" << clientId << "has" << queued
+                           << "bytes unread and is not draining - dropping the session";
         // Abort: the peer is by definition not reading, so the close frame would sit behind the
         // megabyte already queued and a graceful close would never finish.
         dropSession(clientId, WebSocketFrame::ClosePolicyViolation, QStringLiteral("send queue overflow"),
@@ -400,8 +406,8 @@ bool WebSocketServer::writeFrame(int clientId, const QByteArray &frame, bool she
         ++it->droppedAudioFrames;
         if (!it->reportedShedding) {
             it->reportedShedding = true;
-            qCInfo(netWs) << "client" << clientId << "is not keeping up (" << queued
-                          << "bytes queued) - dropping audio frames until it does";
+            qCInfo(lcTciWs) << "client" << clientId << "is not keeping up (" << queued
+                            << "bytes queued) - dropping audio frames until it does";
         }
         return false;
     }
@@ -409,8 +415,8 @@ bool WebSocketServer::writeFrame(int clientId, const QByteArray &frame, bool she
     // Recovered: say so once, so a log shows the episode ending as well as starting.
     if (it->reportedShedding && queued <= SEND_QUEUE_AUDIO_DROP_BYTES) {
         it->reportedShedding = false;
-        qCInfo(netWs) << "client" << clientId << "caught up after dropping" << it->droppedAudioFrames
-                      << "audio frame(s)";
+        qCInfo(lcTciWs) << "client" << clientId << "caught up after dropping" << it->droppedAudioFrames
+                        << "audio frame(s)";
     }
 
     socket->write(frame); // write() can re-enter; nothing above is held across it

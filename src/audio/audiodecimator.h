@@ -4,7 +4,7 @@
 // Decimates a captured microphone stream down to the K4's 12 kHz TX rate.
 //
 // Pure logic with no Qt and no audio device, so the rate arithmetic can be unit-tested without
-// hardware — mirroring audio/rawaudioformat.h, hardware/halikey_edge.h and the rest.
+// hardware — mirroring audio/rawaudioformat.h and the rest.
 //
 // WHY the capture rate is not simply 48 kHz any more (INT-005). QK4 opened every microphone at a
 // hardcoded 48 kHz and decimated 4:1. That worked on ordinary sound cards and failed completely on
@@ -26,9 +26,9 @@ namespace AudioDecimator {
 // The K4's TX audio rate. Everything here decimates to this.
 inline constexpr int OUTPUT_RATE = 12000;
 
-// Only exact integer multiples of 12 kHz are handled. Every input device observed so far reports
-// 48000 or 24000, both exact. A rate like 16000 (older AirPods, 4:3) or 44100 needs rational
-// resampling, which is deliberately NOT smuggled in here — see the note on decimate().
+// Only exact integer multiples of 12 kHz are handled. A rate like 16000 (older AirPods, 4:3) or
+// 44100 needs rational resampling, which is AudioResampler's job (audioresampler.h), not this
+// one's — see the note on decimate().
 inline constexpr bool isSupportedRate(int sampleRate) {
     return sampleRate >= OUTPUT_RATE && (sampleRate % OUTPUT_RATE) == 0;
 }
@@ -45,9 +45,7 @@ inline constexpr int outputSampleCount(int inputSamples, int factor) {
 //
 // The averaging is a box filter: crude as an anti-aliasing filter, but it is what the 48 kHz path
 // has always used and generalising the factor must not quietly change how existing setups sound.
-// A proper windowed-sinc decimator — which would also let us accept 16 kHz and 44.1 kHz — is worth
-// doing, and worth doing as its own change with its own tests rather than riding along with a
-// device-negotiation fix.
+// The rates it refuses go through AudioResampler's windowed-sinc filter instead.
 //
 // `out` must have room for outputSampleCount(inputSamples, factor).
 inline void decimate(const float *in, int inputSamples, int factor, float *out) {

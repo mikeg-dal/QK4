@@ -1,16 +1,19 @@
 # network/
 
-TCP / TLS / PSK transport to the K4, binary protocol framing, CAT server for third-party apps, DX cluster client, KPA1500 amplifier client, K4 mDNS discovery.
+TCP / TLS / PSK transport to the K4, binary protocol framing, CAT server for third-party apps, DX cluster client, KPA1500 amplifier client, K4 discovery by UDP broadcast, TCI 2.0 server.
 
 ## Files
 
-- `tcpclient.{cpp,h}` — TLS/PSK socket to K4. State machine with ARP cold-start retry. `sendCAT` + `sendRaw` public entry points.
+- `tcpclient.{cpp,h}` — socket to the K4: TLS/PSK on port 9204, or the unencrypted port 9205 with SHA-384 password auth. State machine with ARP cold-start retry. `sendCAT` + `sendRaw` public entry points. Owns the `Protocol` parser. TLS-PSK needs Qt's OpenSSL TLS backend: Schannel and Secure Transport offer no PSK cipher suites. `TlsBackend::selectOpenSsl()` selects it, and with no PSK cipher available `TcpClient` reports the backend instead of starting a handshake that would only time out. Qt's binary installers do not deploy OpenSSL with an application, so the release packages include it and the CI builders check for it.
+- `tlsbackend.{cpp,h}` — `TlsBackend::` namespace. `selectOpenSsl()` makes Qt's OpenSSL TLS backend the active one before the first `QSslSocket` exists; on macOS, in a build tree whose bundle carries no OpenSSL, it first points Qt's library scan at Homebrew's (a packaged app never uses it). `runSelfCheck()` answers `QK4 --tls-self-check`: backend, OpenSSL version, the libssl file actually loaded and the TLS 1.2+ PSK cipher suites, exit 0 only when PSK is available. The macOS release gate runs it from the DMG.
+- `pingtracker.{cpp,h}` — round-trip time from the K4 PING/PONG keepalive. Keeps each PING's send time until its PONG arrives (a round trip over the 1 s ping interval is not wrapped) and finds a PONG anywhere in a bundled CAT payload. Pure; `TcpClient` feeds it times from one monotonic clock per session. Covered by `test_pingtracker`.
 - `connect_failure.h` — header-only classifier deciding what a failed connection attempt is called and what the operator is told. Pure logic, no socket dependency, so `test_connectfailure` links it alone. The K4 reports neither a refused nor an accepted password, so this is where the limits of what QK4 can honestly claim are written down.
-- `protocol.{cpp,h}` — K4 binary packet framing (`START_MARKER` + big-endian length + `END_MARKER`), payload type dispatch, audio + miniPAN + spectrum routing.
-- `catserver.{cpp,h}` — TCP CAT server for WSJT-X / MacLoggerDX integration. Pinned public API via `docs/radiostate-catserver-api-contract.md`, regression-gated by `test_catserver`.
+- `kzegress.{cpp,h}` — `KzEgress`, the path from the CW keying threads (keyer, KPOD+ EP02 reader) to the K4 socket. A bounded lock-free queue of fixed slots plus a pipe (Unix) or event (Windows) that wakes the I/O thread: posting never locks, allocates, formats or posts a Qt event, so a real-time thread may do it. `TcpClient` owns one and drains it in order, framing each frame with `Protocol::writeCATPacket` into a stack buffer. Covered by `test_kzegress`.
+- `protocol.{cpp,h}` — K4 binary packet framing (`START_MARKER` + big-endian length + `END_MARKER`), payload type dispatch, audio + miniPAN + spectrum routing. MiniPAN frames share the PAN header; its int32 at 19 is the span in kHz (`docs/k4-protocol-quirks.md` section 15).
+- `catserver.{cpp,h}` — TCP CAT server (default port 9299) speaking native K4 CAT, for WSJT-X, MacLoggerDX and other loggers. GETs are answered from `RadioState`; SETs are forwarded to the K4. Pinned public API via `docs/radiostate-catserver-api-contract.md`, regression-gated by `test_catserver`.
 - `networkmetrics.{cpp,h}` — Latency / throughput aggregation. Feeds `NetHealthWidget`.
-- `k4discovery.{cpp,h}` — UDP mDNS discovery for K4 servers on the LAN.
-- `catframes.{h}` — `CatFrames::` namespace of small builders returning the exact `QByteArray` for a CAT command (`frequencyA`, `modeA`, …). Keeps command spelling in one place instead of scattered string literals.
+- `k4discovery.{cpp,h}` — finds K4s on the LAN by sending a UDP broadcast probe to 255.255.255.255 from each interface and listening for replies on a second socket bound to the same port. Not mDNS. A reply is used only when its address is a strict IPv4 address and its index and serial are numeric (`K4Discovery::parseResponse`, covered by `test_k4discovery`). Used by the Server Manager's Scan button.
+- `catframes.{cpp,h}` — `CatFrames::` namespace of small builders returning the exact `QByteArray` for a CAT command (`frequencyA`, `modeA`, …). Keeps command spelling in one place instead of scattered string literals.
 - `catpushbroadcaster.{cpp,h}` — auto-information push for CAT clients. Tracks per-client AI level, subscribes to `RadioState` changes, and pushes updates to subscribers while polling clients receive nothing. Covered by `test_catpushbroadcaster`.
 - `dxclusterclient.{cpp,h}` — TCP client to a single DX cluster node. Used by `DxClusterController` — one instance per configured cluster. Receive buffer capped at 64KB; overflow disconnects.
 - `kpa1500client.{cpp,h}` — TCP client to the KPA1500 amplifier. Receive buffer capped at 64KB; overflow disconnects. Reads the per-band antenna enable map (`^AEbbALL;`) and steps antennas with `^AN+;`; never enables or configures antennas.
@@ -34,10 +37,10 @@ TCI 2.0 over WebSocket: CAT control, RX/TX audio and CW for WSJT-X, QLog, RumLog
 
 ## Threading
 
-- `TcpClient` lives on `ConnectionController::m_ioThread`.
-- `DxClusterClient` lives on a per-instance `QThread` spawned by `DxClusterController::ensureInstance`.
-- `KPA1500Client` lives on its owning `KPA1500UiController`'s thread (main).
+- `TcpClient` and its `Protocol` live on `ConnectionController::m_ioThread`, never on the main thread. The thread is promoted to High (not real-time) on itself as it starts (`RtScheduling::promoteOnStart`, see `src/utils/README.md`). CAT writes reach `TcpClient` by queued connection, except KZ and ML frames from the keying threads, which go through its `KzEgress`. The I/O thread logs the KZ enqueue-to-write latency (median, 99th percentile, max, dropped) at info once a minute while keying and when a session ends. RX audio is decoded on this thread too (see `src/audio/README.md`).
+- `DxClusterClient` lives on a per-instance `QThread` created by `DxClusterController::ensureInstance`.
 - `TciServer`, its `WebSocketServer` and `TciAudioBridge` live on the `TCI` thread owned by `TciController`. State reaches them as queued snapshots; client requests come back as queued signals to the main thread.
+- Main thread: `CatServer`, `CatPushBroadcaster`, `KPA1500Client` (owned by `KPA1500UiController`), `NetworkMetrics` (owned by `ConnectionController`) and `K4Discovery` (owned by `RadioManagerDialog`).
 
 ## K4 framing
 
@@ -45,12 +48,9 @@ TCI 2.0 over WebSocket: CAT control, RX/TX audio and CW for WSJT-X, QLog, RumLog
 
 ## CatServer contract
 
-`docs/radiostate-catserver-api-contract.md` lists the 22 `RadioState` getters that `catserver.cpp` depends on. No signature or semantic change without updating the contract. `test_catserver` (33 cases) catches violations.
+`docs/radiostate-catserver-api-contract.md` lists the `RadioState` getters that `catserver.cpp` depends on. `rg -o 'm_radioState->\w+' src/network/catserver.cpp | sort -u` shows what the code calls today; the contract must cover that list. No signature or semantic change without updating the contract. `test_catserver` catches violations.
 
 ## See also
 
 - `docs/radiostate-catserver-api-contract.md` — pinned `RadioState` API.
 - `docs/k4-protocol-quirks.md` — K4 CAT oddities, packet framing, and the ARP cold-start retry.
-
-`TcpClient` runs on the I/O thread owned by `ConnectionController`, never on the main thread; CAT
-writes reach it by queued connection. `CatServer` and `KPA1500Client` run on the main thread.

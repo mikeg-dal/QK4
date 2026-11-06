@@ -10,7 +10,7 @@
 // `audio_samplerate` command has no dispatch case). So QK4 has to interpolate 4:1 before framing
 // RX_AUDIO. See docs/tci-server-design.md.
 //
-// WHY a real windowed-sinc rather than the 4-tap boxcar already in AudioEngine::resample48kTo12k:
+// WHY a real windowed-sinc rather than a boxcar like AudioDecimator::decimate (4 taps at 48 kHz):
 // zero-stuffing puts images at every multiple of the input rate, and a boxcar's stopband is roughly
 // -10 dB. Those images fold straight back into the passband and would corrupt a digital-mode
 // signal. The measured rejection of this design is better than -100 dB, which test_audioupsampler
@@ -32,13 +32,6 @@ public:
     // inputRateHz  — sample rate of the incoming stream
     // cutoffHz     — lowpass corner, in the OUTPUT rate's terms
     AudioUpsampler(int factor, double inputRateHz, double cutoffHz = DEFAULT_CUTOFF_HZ);
-
-    int factor() const { return m_factor; }
-
-    // Constant group delay, in output samples. A linear-phase FIR delays every frequency equally,
-    // which is why the decoder sees no dispersion; callers that need to align streams can subtract
-    // this.
-    int groupDelaySamples() const { return (m_factor * TAPS_PER_PHASE - 1) / 2; }
 
     // Interpolate `count` input samples, appending `count * factor` samples to `out`.
     // `out` is not cleared, so successive blocks can accumulate into one buffer.

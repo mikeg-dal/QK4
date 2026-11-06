@@ -7,7 +7,7 @@
 #include <algorithm>
 
 FilterIndicatorWidget::FilterIndicatorWidget(QWidget *parent) : QWidget(parent) {
-    setFixedSize(62, 62); // 50 * 1.25 = 62
+    setFixedSize(62, 62);
     setCursor(Qt::PointingHandCursor);
 }
 
@@ -45,7 +45,7 @@ void FilterIndicatorWidget::setFilterPosition(int position) {
 }
 
 void FilterIndicatorWidget::setBandwidth(int bandwidthHz) {
-    int clamped = std::clamp(bandwidthHz, m_minBandwidthHz, m_maxBandwidthHz);
+    int clamped = std::clamp(bandwidthHz, kMinBandwidthHz, kMaxBandwidthHz);
     if (clamped != m_bandwidthHz) {
         m_bandwidthHz = clamped;
         update();
@@ -75,15 +75,8 @@ void FilterIndicatorWidget::setDataSubMode(int subMode) {
     }
 }
 
-void FilterIndicatorWidget::setBandwidthRange(int minHz, int maxHz) {
-    m_minBandwidthHz = minHz;
-    m_maxBandwidthHz = maxHz;
-    update();
-}
-
-void FilterIndicatorWidget::setShapeColor(const QColor &fill, const QColor &outline) {
+void FilterIndicatorWidget::setShapeColor(const QColor &fill) {
     m_shapeColor = fill;
-    m_shapeOutline = outline;
     update();
 }
 
@@ -259,7 +252,7 @@ void FilterIndicatorWidget::paintEvent(QPaintEvent *) {
     // Line parameters
     int lineY = 40;
     int lineHeight = 3;
-    int lineWidth = 58; // 38 + 20 (10px wider on each side)
+    int lineWidth = 58;
     int lineX = (w - lineWidth) / 2;
 
     // Draw bandwidth shape above the line
@@ -270,7 +263,7 @@ void FilterIndicatorWidget::paintEvent(QPaintEvent *) {
         drawRttyToneTriangles(painter, lineY, lineWidth);
     } else if (isPskD) {
         drawPskToneTriangle(painter, lineY, lineWidth);
-    } else {
+    } else if (m_bandwidthHz > 0) {
         drawBandwidthShape(painter, lineY, lineWidth);
     }
 
@@ -282,21 +275,27 @@ void FilterIndicatorWidget::paintEvent(QPaintEvent *) {
 
     // FIL text below line
     QFont textFont = font();
-    textFont.setPixelSize(K4Styles::Dimensions::FontSizeButton);
+    textFont.setPixelSize(K4Styles::Dimensions::FontSizeReadout);
     textFont.setBold(true);
     painter.setFont(textFont);
     painter.setPen(m_textColor);
 
-    QString text = QString("FIL%1").arg(m_filterPosition);
-    int textY = lineY + lineHeight + 2;
-    QRectF textRect(0, textY, w, h - textY);
-    painter.drawText(textRect, Qt::AlignHCenter | Qt::AlignTop, text);
+    if (m_filterPosition > 0) {
+        QString text = QString("FIL%1").arg(m_filterPosition);
+        int textY = lineY + lineHeight + 2;
+        QRectF textRect(0, textY, w, h - textY);
+        painter.drawText(textRect, Qt::AlignHCenter | Qt::AlignTop, text);
+    }
 }
 
+// Back to "not reported": no FIL number and no shape until the radio sends them again. WHY not the
+// setters: setBandwidth clamps to the 50 Hz minimum, which drew a triangle for an unknown width, and
+// setFilterPosition accepts only 1-3, so the old reset showed FIL1.
 void FilterIndicatorWidget::resetToDefaults() {
-    setBandwidth(0);
-    setShift(50);
-    setFilterPosition(1);
-    setMode("");
-    setDataSubMode(0);
+    m_filterPosition = 0;
+    m_bandwidthHz = 0;
+    m_shift = 50;
+    m_mode.clear();
+    m_dataSubMode = 0;
+    update();
 }

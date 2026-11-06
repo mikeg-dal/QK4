@@ -18,8 +18,8 @@ class VFOWidget;
 //   - RIT enabled on B (split/BSET): B shows dial+RO$
 //   - Otherwise: raw dial frequency
 //
-// refresh() is public so RitXitController and MainWindow's transmitting
-// observer can force a re-render when RIT/XIT state or TX state toggles
+// The refresh methods are public so RitXitController (displayRefreshRequested),
+// TxStateController and a refused locked-VFO entry can force a re-render
 // without the dial frequency itself having changed.
 class VfoFrequencyController : public QObject {
     Q_OBJECT
@@ -27,7 +27,6 @@ class VfoFrequencyController : public QObject {
 public:
     explicit VfoFrequencyController(RadioState *radioState, ConnectionController *connection, VFOWidget *vfoA,
                                     VFOWidget *vfoB, QObject *parent = nullptr);
-    ~VfoFrequencyController() override;
 
     void refresh();     // recompute both VFOs
     void refreshVfoA(); // recompute VFO A only

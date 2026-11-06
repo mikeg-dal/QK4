@@ -2,8 +2,9 @@
 #define MODEPOPUPWIDGET_H
 
 #include "ui/popups/k4popupbase.h"
-#include <QMap>
 #include <QPushButton>
+#include <array>
+#include <cstddef>
 
 /**
  * @brief Mode selection popup for QK4.
@@ -37,23 +38,17 @@ protected:
     QSize contentSize() const override;
 
 private:
+    enum class ModeButton { Cw, Ssb, Data, Afsk, Am, Fm, Psk, Fsk, Count };
+
     void setupUi();
     void updateButtonStyles();
-    void onModeButtonClicked();
-    QPushButton *createModeButton(const QString &text);
+    void onModeButtonClicked(ModeButton mode);
+    QPushButton *createModeButton(ModeButton mode, const QString &text);
+    QPushButton *button(ModeButton mode) const { return m_buttons[static_cast<std::size_t>(mode)]; }
     int bandDefaultSideband() const; // Returns MODE_LSB or MODE_USB based on frequency
 
-    // Button pointers
-    QPushButton *m_cwBtn;
-    QPushButton *m_ssbBtn; // Shows LSB or USB
-    QPushButton *m_dataBtn;
-    QPushButton *m_afskBtn;
-    QPushButton *m_amBtn;
-    QPushButton *m_fmBtn;
-    QPushButton *m_pskBtn;
-    QPushButton *m_fskBtn;
-
-    QMap<QString, QPushButton *> m_buttonMap;
+    // SSB shows LSB or USB; CW shows CW or CW-R
+    std::array<QPushButton *, static_cast<std::size_t>(ModeButton::Count)> m_buttons{};
 
     int m_currentMode = 2;        // Default USB
     int m_currentDataSubMode = 0; // Default DATA-A

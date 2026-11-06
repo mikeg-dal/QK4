@@ -1,7 +1,7 @@
 #ifndef OPUSDECODER_H
 #define OPUSDECODER_H
 
-#include <QObject>
+#include <QByteArray>
 #include <array>
 #include "audio/rawaudioformat.h" // EM0_FULL_SCALE
 #include <opus/opus.h>
@@ -30,12 +30,16 @@
  *        32× itself is independently corroborated — K4-Companion, a separate implementation,
  *        applies the same 32× to the same stream.
  */
-class OpusDecoder : public QObject {
-    Q_OBJECT
-
+//
+//        A plain class, not a QObject: it has no signals, slots or timers, and it is used on the I/O
+//        thread while it was created on the main one. Being a QObject only gave it a thread
+//        affinity that was never the thread it ran on. Not copyable - it owns the libopus state.
+class OpusDecoder {
 public:
-    explicit OpusDecoder(QObject *parent = nullptr);
+    OpusDecoder();
     ~OpusDecoder();
+    OpusDecoder(const OpusDecoder &) = delete;
+    OpusDecoder &operator=(const OpusDecoder &) = delete;
 
     // Initialize decoder (K4 uses 12000Hz stereo)
     bool initialize(int sampleRate = 12000, int channels = 2);

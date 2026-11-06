@@ -17,21 +17,54 @@ layout(std140, binding = 0) uniform buf {
     float binCount;         // offset 60: actual spectrum bin count
     vec2 viewportSize;      // offset 64: viewport dimensions
     float textureWidth;     // offset 72: texture width for bin centering
-    float padding;          // offset 76: padding for 16-byte alignment
+    float spanRatio;        // offset 76: display span / tier span (the waterfall's window)
 };  // Total: 80 bytes
 
-// Simple bilinear sampling - let GPU handle interpolation
+// The waterfall's mapping (waterfall.frag), on the same full-tier bins, so the trace sits exactly
+// over the waterfall (SPEC-011): the visible span is centred in the tier, bin i's centre is at
+// i + 0.5, the Linear sampler blends the two nearest bins, and the edges clamp to the outer bin
+// centres so they never blend with the empty texels beside the bins.
 float sampleBilinear(float u) {
+    float r = clamp(spanRatio, 0.0, 1.0);
+    float tierU = (1.0 - r) / 2.0 + u * r;
     // Bins are centered in texture - use floor() to match C++ integer division
     float binOffset = floor((textureWidth - binCount) / 2.0);
-    // Map display X [0,1] to texture coordinate where bins are stored
-    float texU = (binOffset + u * binCount + 0.5) / textureWidth;
+    float binPos = clamp(tierU * binCount, 0.5, binCount - 0.5);
+    float texU = (binOffset + binPos) / textureWidth;
     return texture(spectrumData, vec2(texU, 0.5)).r;
 }
 
+// SPEC-012. When this pixel column spans more than one bin, the strongest bin whose centre it
+// covers, so a carrier one bin wide never falls between two sample points and flickers or vanishes.
+// One bin or less per column: the bilinear blend above, as the waterfall draws. Mirrored by
+// SpectrumGeometry::fillPeakBins (keep the two in step); 64 = SpectrumGeometry::FillMaxBinsPerPixel.
+const int MaxBinsPerPixel = 64;
+float samplePeak(float u) {
+    float r = clamp(spanRatio, 0.0, 1.0);
+    float binsPerPx = binCount * r / max(viewportSize.x, 1.0);
+    if (binsPerPx <= 1.0)
+        return sampleBilinear(u);
+    float centre = ((1.0 - r) / 2.0 + u * r) * binCount;
+    int first = max(int(ceil(centre - binsPerPx * 0.5 - 0.5)), 0);
+    int last = min(int(floor(centre + binsPerPx * 0.5 - 0.5)), int(binCount) - 1);
+    last = min(last, first + MaxBinsPerPixel - 1);
+    if (last < first)
+        return sampleBilinear(u);
+    // WHY texture() at texel centres, not texelFetch(): the shader is also baked for legacy GLSL ES,
+    // which has no texelFetch. At a texel's centre the Linear sampler returns that texel exactly.
+    float binOffset = floor((textureWidth - binCount) / 2.0);
+    float peak = texture(spectrumData, vec2((binOffset + float(first) + 0.5) / textureWidth, 0.5)).r;
+    for (int k = 1; k < MaxBinsPerPixel; ++k) {
+        int i = first + k;
+        if (i > last)
+            break;
+        peak = max(peak, texture(spectrumData, vec2((binOffset + float(i) + 0.5) / textureWidth, 0.5)).r);
+    }
+    return peak;
+}
+
 void main() {
-    // Sample spectrum value using GPU bilinear interpolation
-    float spectrumValue = sampleBilinear(fragTexCoord.x);
+    float spectrumValue = samplePeak(fragTexCoord.x);
 
     // spectrumValue is 0.0 (no signal) to ~1.0 (max signal)
     // Convert to Y threshold: peakY where 0.0 = top, 1.0 = bottom (in texCoord space)
@@ -72,12 +105,13 @@ void main() {
     // Add glow (additive blending for bright halo effect)
     finalColor += glowColor.rgb * glow;
 
-    // Alpha: fill alpha where filled, glow alpha where glowing
+    // Alpha: fill alpha where filled, glow alpha where glowing. Mirrored by
+    // SpectrumGeometry::fillAlphaFor.
+    //
+    // WHY no fade towards the bottom: a fade over the lowest 12% (down to 10% alpha) used to sit
+    // exactly where AutoRef puts the band noise, so the noise was nearly invisible. The K4 draws
+    // that noise at full strength.
     float finalAlpha = max(0.9 * fillMask, glow * glowColor.a);
-
-    // Bottom fade - gentle transition at noise floor
-    float bottomFade = 1.0 - smoothstep(0.88, 0.98, currentY);
-    finalAlpha *= max(bottomFade, 0.1);
 
     // Clamp to prevent over-saturation
     finalColor = clamp(finalColor, 0.0, 1.0);

@@ -3,7 +3,7 @@
 #include "models/radiostate.h"
 
 void QskControlState::reset() {
-    qskEnabled = false;
+    qskEnabled.reset();
     qskDelayCW = -1;
     qskDelayVoice = -1;
     qskDelayData = -1;
@@ -25,35 +25,24 @@ void handleSD(QskControlState &state, RadioState &owner, const QString &cmd) {
     // QSK enable flag is only meaningful on the CW-mode SD echo.
     if (modeChar == 'C') {
         const bool qskOn = (qskFlag == '1');
-        if (qskOn != state.qskEnabled) {
-            state.qskEnabled = qskOn;
-            emit owner.qskEnabledChanged(state.qskEnabled);
-        }
+        if (state.qskEnabled.set(qskOn))
+            emit owner.qskEnabledChanged(qskOn);
     }
 
     // WHY: only emit qskDelayChanged when the updated bucket matches the
     // current operating mode, so UI consumers don't refresh for buckets
     // the user can't see.
-    bool isCurrentMode = false;
-    const RadioState::Mode current = owner.mode();
-    if (modeChar == 'C') {
-        if (state.qskDelayCW != delay) {
-            state.qskDelayCW = delay;
-            isCurrentMode = (current == RadioState::CW || current == RadioState::CW_R);
-        }
-    } else if (modeChar == 'V') {
-        if (state.qskDelayVoice != delay) {
-            state.qskDelayVoice = delay;
-            isCurrentMode = (current == RadioState::LSB || current == RadioState::USB || current == RadioState::AM ||
-                             current == RadioState::FM);
-        }
-    } else if (modeChar == 'D') {
-        if (state.qskDelayData != delay) {
-            state.qskDelayData = delay;
-            isCurrentMode = (current == RadioState::DATA || current == RadioState::DATA_R);
-        }
-    }
-    if (isCurrentMode)
+    int *target = nullptr;
+    if (modeChar == 'C')
+        target = &state.qskDelayCW;
+    else if (modeChar == 'V')
+        target = &state.qskDelayVoice;
+    else if (modeChar == 'D')
+        target = &state.qskDelayData;
+    if (!target || *target == delay)
+        return;
+    *target = delay;
+    if (modeChar == QLatin1Char(RadioUtils::modeClassLetter(owner.modeClass())))
         emit owner.qskDelayChanged(delay);
 }
 

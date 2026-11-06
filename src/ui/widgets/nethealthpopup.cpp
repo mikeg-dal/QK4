@@ -5,33 +5,31 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QScreen>
 #include <QTimer>
 #include <algorithm>
 
 namespace {
 // Repaint cadence while the popup is open. ~4 Hz keeps the fastest series (buffer) scrolling
-// smoothly without burning CPU; the window is only one small widget and only ticks on hover.
+// smoothly without burning CPU; the window is only one small widget and only ticks while shown.
 constexpr int kChartRefreshMs = 250;
 } // namespace
 
-NetHealthPopup::NetHealthPopup(NetworkMetrics *metrics, QWidget *parent)
-    : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint), m_metrics(metrics) {
-    // Frameless tool window: non-activating (never steals focus) + translucent so the rounded
-    // corners + shadow render. Qt::Tool (not Qt::ToolTip) so it reliably receives the dismiss
-    // click across platforms, and is owned by its parent widget so it can't outlive it.
+NetHealthPopup::NetHealthPopup(NetworkMetrics *metrics, QWidget *parent) : K4PopupBase(parent), m_metrics(metrics) {
+    // A read-out, not a control: never steals the keyboard from the main window.
     setAttribute(Qt::WA_ShowWithoutActivating);
-    setAttribute(Qt::WA_TranslucentBackground);
+    setFocusPolicy(Qt::NoFocus);
     setCursor(Qt::PointingHandCursor); // hint: click to dismiss
-
-    const int sm = K4Styles::Dimensions::ShadowMargin;
-    const int contentW = K4Styles::Dimensions::ChartPopupContentWidth;
-    const int contentH = 3 * K4Styles::Dimensions::ChartRowHeight + 2 * K4Styles::Dimensions::PopupContentMargin;
-    setFixedSize(contentW + 2 * sm, contentH + 2 * sm);
 
     m_refreshTimer = new QTimer(this);
     m_refreshTimer->setInterval(kChartRefreshMs);
     connect(m_refreshTimer, &QTimer::timeout, this, qOverload<>(&QWidget::update));
+
+    initPopup();
+}
+
+QSize NetHealthPopup::contentSize() const {
+    return QSize(K4Styles::Dimensions::ChartPopupContentWidth,
+                 3 * K4Styles::Dimensions::ChartRowHeight + 2 * K4Styles::Dimensions::PopupContentMargin);
 }
 
 void NetHealthPopup::showEvent(QShowEvent *event) {
@@ -40,64 +38,17 @@ void NetHealthPopup::showEvent(QShowEvent *event) {
 }
 
 void NetHealthPopup::hideEvent(QHideEvent *event) {
-    QWidget::hideEvent(event);
+    K4PopupBase::hideEvent(event);
     m_refreshTimer->stop();
 }
 
 void NetHealthPopup::mousePressEvent(QMouseEvent *event) {
     event->accept();
-    emit dismissed();
+    hidePopup();
 }
 
-void NetHealthPopup::updatePosition(QWidget *anchor) {
-    if (!anchor)
-        return;
-    const int sm = K4Styles::Dimensions::ShadowMargin;
-    const int gap = K4Styles::Dimensions::ChartPopupGap;
-
-    const QPoint a = anchor->mapToGlobal(QPoint(0, 0));
-    const int anchorTop = a.y();
-    const int anchorBottom = a.y() + anchor->height();
-    const int centerX = a.x() + anchor->width() / 2;
-
-    int x = centerX - width() / 2;
-    // Preferred: card bottom sits `gap` above the anchor. The card is inset `sm` inside the
-    // (transparent) window, so the window extends `sm` lower than the visible card.
-    int y = anchorTop - gap - height() + sm;
-
-    const QRect scr = anchor->screen()->availableGeometry();
-    // Horizontal clamp — offset bounds by the transparent shadow margin.
-    if (x < scr.left() - sm)
-        x = scr.left() - sm;
-    else if (x + width() > scr.right() + sm)
-        x = scr.right() + sm - width();
-
-    // Vertical: flip below the anchor if the card would cross the top edge...
-    if (y < scr.top() - sm)
-        y = anchorBottom + gap - sm;
-    // ...then re-clamp the bottom (fullscreen / bottom-edge case no other popup handles)...
-    if (y + height() > scr.bottom() + sm)
-        y = scr.bottom() + sm - height();
-    // ...and a final guard so the window is always on-screen.
-    y = qBound(scr.top() - sm, y, scr.bottom() + sm - height());
-
-    move(x, y);
-}
-
-void NetHealthPopup::paintEvent(QPaintEvent *) {
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing, true); // smooth curves
-
-    const int sm = K4Styles::Dimensions::ShadowMargin;
-    const int radius = K4Styles::Dimensions::BorderRadiusLarge;
-    const QRect cr = rect().adjusted(sm, sm, -sm, -sm);
-
-    // Rounded, drop-shadowed dark card (matches the app's menu popups).
-    K4Styles::drawDropShadow(painter, cr, radius);
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(K4Styles::Colors::PopupBackground));
-    painter.drawRoundedRect(cr, radius, radius);
-
+void NetHealthPopup::paintContent(QPainter &painter, const QRect &cr) {
+    // The base has drawn the drop shadow and the rounded dark card.
     const bool connected = m_metrics->rttCurrent() >= 0;
 
     const int pad = K4Styles::Dimensions::PopupContentMargin;
@@ -109,7 +60,7 @@ void NetHealthPopup::paintEvent(QPaintEvent *) {
     const QString rttVal = connected ? QString("%1ms").arg(m_metrics->rttCurrent()) : QStringLiteral("--");
     const QString jitVal = connected ? QString::number(m_metrics->rttJitter(), 'f', 1) : QStringLiteral("--");
     const QString bufVal =
-        connected ? QString("%1ms").arg(static_cast<int>(m_metrics->bufferBytes() / 96.0)) : QStringLiteral("--");
+        connected ? QString("%1ms").arg(static_cast<int>(m_metrics->bufferMs())) : QStringLiteral("--");
 
     drawSparklineRow(painter, QRect(rowX, rowY, rowW, rowH), QStringLiteral("RTT"), rttVal,
                      K4Styles::Colors::ChartSeriesRtt, 0, QStringLiteral("ms"), m_metrics->rttHistory(), connected);
@@ -131,8 +82,8 @@ void NetHealthPopup::drawSparklineRow(QPainter &painter, const QRect &rowRect, c
     const int colW = K4Styles::Dimensions::ChartValueColumnWidth;
 
     // --- Left column: legend dot + label (top), current value (below) ---
-    QFont labelFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeSmall);
-    QFont valueFont = K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizePopup);
+    QFont labelFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeCaption);
+    QFont valueFont = K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeHeading);
     QFontMetrics lfm(labelFont);
     QFontMetrics vfm(valueFont);
 
@@ -147,11 +98,11 @@ void NetHealthPopup::drawSparklineRow(QPainter &painter, const QRect &rowRect, c
     painter.drawEllipse(rowRect.left(), dotY, dot, dot);
 
     painter.setFont(labelFont);
-    painter.setPen(QColor(K4Styles::Colors::TextGray));
+    painter.setPen(QColor(K4Styles::Colors::TextSecondary));
     painter.drawText(textX, labelBaselineY, label);
 
     painter.setFont(valueFont);
-    painter.setPen(QColor(K4Styles::Colors::TextWhite));
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
     painter.drawText(textX, valueBaselineY, valueText);
 
     // --- Plot area ---
@@ -251,8 +202,8 @@ void NetHealthPopup::drawSparklineRow(QPainter &painter, const QRect &rowRect, c
 
     // --- Scale labels (drawn last) ---
     // Right-aligned in the gutter between the value column and the plot (clean card background, off
-    // the trace) so they read clearly. Larger bright-neutral font for readability.
-    QFont scaleFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeMedium, QFont::Normal);
+    // the trace) so they read clearly.
+    QFont scaleFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeCaption, QFont::Normal);
     QFontMetrics sfm(scaleFont);
     painter.setFont(scaleFont);
     const int gutterRight = plot.left() - K4Styles::Dimensions::ChartPlotMargin; // just left of the plot/tick

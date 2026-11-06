@@ -9,6 +9,8 @@
 void RxTxMeterState::reset() {
     sMeter = 0.0;
     sMeterB = 0.0;
+    sMeterDbm = RxTxMeterLimits::SMeterDbmUnknown;
+    sMeterDbmB = RxTxMeterLimits::SMeterDbmUnknown;
     swrMeter = 1.0;
     alcMeter = 0;
     compressionDb = 0;
@@ -19,11 +21,11 @@ void RxTxMeterState::reset() {
     calibratedPaEfficiency = 0.0;
     paTemperatureC = -1;
     lpaTemperatureC = -1;
-    isTransmitting = false;
-    subReceiverEnabled = -1;
-    diversityEnabled = -1;
-    testMode = false;
-    bSetEnabled = false;
+    isTransmitting.reset();
+    subReceiverEnabled.reset();
+    diversityEnabled.reset();
+    testMode.reset();
+    bSetEnabled.reset();
     messageBank = -1;
     radioID.clear();
     radioModel.clear();
@@ -66,8 +68,31 @@ void handleSMSub(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     emit owner.sMeterBChanged(state.sMeterB);
 }
 
-void handlePO(RxTxMeterState & /*state*/, RadioState & /*owner*/, const QString & /*cmd*/) {
-    // PO (raw power meter) — unused; forward power already comes from TM.
+// SMH±nnn / SMH$±nnn: a sign, then the level in dBm (SMH-110, SMH$-122 from a K4D, 2026-10-30).
+// WHY the sign is required: the SET that turns on automatic delivery is SMH1, and a bare number
+// would be read as +1 dBm if the radio ever echoed it.
+static void applySignalLevel(int &member, const QString &cmd, int prefixLen, RadioState &owner,
+                             void (RadioState::*signal)(int)) {
+    const QStringView field = QStringView(cmd).mid(prefixLen);
+    if (field.size() < 2 || field.size() > 4 || (field.front() != u'+' && field.front() != u'-'))
+        return;
+    for (const QChar c : field.mid(1)) {
+        if (!c.isDigit())
+            return;
+    }
+    const int dbm = field.toInt();
+    if (dbm != member) {
+        member = dbm;
+        (owner.*signal)(dbm);
+    }
+}
+
+void handleSMH(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
+    applySignalLevel(state.sMeterDbm, cmd, 3, owner, &RadioState::sMeterDbmChanged);
+}
+
+void handleSMHSub(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
+    applySignalLevel(state.sMeterDbmB, cmd, 4, owner, &RadioState::sMeterDbmBChanged);
 }
 
 void handleTM(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
@@ -102,7 +127,7 @@ void handleTM(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     // moments that land in CW key-up gaps — using TM frame rate + SIRF calibration
     // gives both smoothness and accuracy. Fallback: a fixed η=0.34 (the historical
     // hardcoded value) until the first SIRF lands, so the meter is never blank in TX.
-    if (state.isTransmitting && state.supplyVoltage > 0 && state.forwardPower > 0) {
+    if (state.isTransmitting.isOn() && state.supplyVoltage > 0 && state.forwardPower > 0) {
         constexpr double K4_PA_EFFICIENCY_FALLBACK = 0.34;
         const double eff =
             (state.calibratedPaEfficiency > 0) ? state.calibratedPaEfficiency : K4_PA_EFFICIENCY_FALLBACK;
@@ -115,17 +140,13 @@ void handleTM(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
 }
 
 void handleTX(RxTxMeterState &state, RadioState &owner, const QString & /*cmd*/) {
-    if (!state.isTransmitting) {
-        state.isTransmitting = true;
+    if (state.isTransmitting.set(true))
         emit owner.transmitStateChanged(true);
-    }
 }
 
 void handleRX(RxTxMeterState &state, RadioState &owner, const QString & /*cmd*/) {
-    if (state.isTransmitting) {
-        state.isTransmitting = false;
+    if (state.isTransmitting.set(false))
         emit owner.transmitStateChanged(false);
-    }
 }
 
 void handleID(RxTxMeterState &state, RadioState & /*owner*/, const QString &cmd) {
@@ -177,12 +198,15 @@ void handleER(RxTxMeterState & /*state*/, RadioState &owner, const QString &cmd)
     }
 }
 
-void handleMN(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
-    if (cmd.length() < 3)
+// WHY MB and 0/1: D12 lists MB only as "[Pending] TBD", so this is the radio's observed behaviour
+// (bench 2026-11-03): RDY reports MB0 or MB1, BANK (SW137) flips it and the K4 reports the new value
+// at AI4. MB is read-only: an MB2 or MB0 SET is ignored, so the bank is changed only with SW137.
+void handleMB(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
+    if (cmd.length() != 3)
         return;
     bool ok;
     int bank = cmd.mid(2).toInt(&ok);
-    if (ok && bank >= 1 && bank <= 4 && bank != state.messageBank) {
+    if (ok && (bank == 0 || bank == 1) && bank != state.messageBank) {
         state.messageBank = bank;
         emit owner.messageBankChanged(state.messageBank);
     }
@@ -220,7 +244,9 @@ void handleSIFP(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
 }
 
 void handleSIRF(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
-    // SIRF V8:..,V5:..,LT:..,LM:..,PA:..,PM:..,PT:.. — RF deck status. We surface:
+    // SIRF V8:..,V5:..,LT:..,LM:..,PA:..,PM:..,PT:.. — the RF board report. Programmer's Reference
+    // D12 says only that SIRF1 enables "AI4 delivery of RFB info reports" and that the response
+    // format "will be documented in a future revision", so the fields below are as observed. We surface:
     //   - PM (peak drain) ÷ 768 → Id (matches K4 front-panel "Id" within ~1 A)
     //   - PT → PA temperature in °C
     //   - LT → Lower-PA temperature in °C
@@ -262,7 +288,7 @@ void handleSIRF(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     // TX-time SIRF (current > 0.1 A — avoids divide-by-near-zero and TX-edge stale-zero
     // frames) AND a sensible forward power reading. Calibration is sticky: it stays
     // valid across band changes until the next valid SIRF resets it.
-    if (state.isTransmitting && current > 0.1 && state.forwardPower > 0 && state.supplyVoltage > 0) {
+    if (state.isTransmitting.isOn() && current > 0.1 && state.forwardPower > 0 && state.supplyVoltage > 0) {
         const double eff = state.forwardPower / (current * state.supplyVoltage);
         // Sanity-clamp to a plausible PA-efficiency range (15–60 %). Outside this is
         // almost certainly a stale value or PA-load mismatch; keep the previous good
@@ -299,48 +325,38 @@ void handleSB(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     // SB0=off, SB1=on, SB3=on with the Sub mini-pan running (see catframes.h)
     if (cmd.length() <= 2)
         return;
-    int newState = (cmd.mid(2) != "0") ? 1 : 0;
-    if (newState != state.subReceiverEnabled) {
-        state.subReceiverEnabled = newState;
-        emit owner.subRxEnabledChanged(newState == 1);
-    }
+    const bool enabled = (cmd.mid(2) != "0");
+    if (state.subReceiverEnabled.set(enabled))
+        emit owner.subRxEnabledChanged(enabled);
 }
 
 void handleDV(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() <= 2)
         return;
-    int newState = (cmd.mid(2) == "1") ? 1 : 0;
-    if (newState != state.diversityEnabled) {
-        state.diversityEnabled = newState;
-        emit owner.diversityChanged(newState == 1);
-    }
+    const bool enabled = (cmd.mid(2) == "1");
+    if (state.diversityEnabled.set(enabled))
+        emit owner.diversityChanged(enabled);
 }
 
 void handleTS(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3)
         return;
-    bool enabled = (cmd.mid(2, 1) == "1");
-    if (enabled != state.testMode) {
-        state.testMode = enabled;
-        emit owner.testModeChanged(state.testMode);
-    }
+    const bool enabled = (cmd.mid(2, 1) == "1");
+    if (state.testMode.set(enabled))
+        emit owner.testModeChanged(enabled);
 }
 
 void handleBS(RxTxMeterState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3)
         return;
-    bool enabled = (cmd.mid(2, 1) == "1");
-    if (enabled != state.bSetEnabled) {
-        state.bSetEnabled = enabled;
-        emit owner.bSetChanged(state.bSetEnabled);
-    }
+    const bool enabled = (cmd.mid(2, 1) == "1");
+    if (state.bSetEnabled.set(enabled))
+        emit owner.bSetChanged(enabled);
 }
 
 void setBSetEnabled(RxTxMeterState &state, RadioState &owner, bool enabled) {
-    if (enabled != state.bSetEnabled) {
-        state.bSetEnabled = enabled;
-        emit owner.bSetChanged(state.bSetEnabled);
-    }
+    if (state.bSetEnabled.set(enabled))
+        emit owner.bSetChanged(enabled);
 }
 
 } // namespace RxTxMeterHandlers

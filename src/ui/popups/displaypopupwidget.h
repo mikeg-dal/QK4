@@ -11,7 +11,8 @@
 /**
  * @brief DISPLAY bottom-bar popup. Hosts the full panadapter/waterfall control set: REF LEVEL,
  *        SPAN, TUNE-mode, CURSOR A/B, averaging, DDC NB, peak, freeze, waterfall color. Driven
- *        by RadioState setters; emits granular `*Changed` signals for MainWindow to send CAT.
+ *        by RadioState (wired in PopupManager); emits `*Requested` / catCommandRequested signals that
+ *        PopupManager turns into CAT.
  *        Inherits K4PopupBase for shadow/close/positioning.
  */
 class DisplayPopupWidget : public K4PopupBase {
@@ -22,7 +23,6 @@ public:
 
     explicit DisplayPopupWidget(QWidget *parent = nullptr);
 
-    MenuItem selectedItem() const { return m_selectedItem; }
     bool isLcdEnabled() const { return m_lcdEnabled; }
     bool isExtEnabled() const { return m_extEnabled; }
     bool isVfoAEnabled() const { return m_vfoAEnabled; }
@@ -32,7 +32,6 @@ public slots:
     // Span VALUES are per-VFO (A and B can have different spans)
     void setSpanValueA(double spanKHz);
     void setSpanValueB(double spanKHz);
-    void setRefLevelValue(int dB);      // Legacy: sets A
     void setAutoRefLevel(bool enabled); // GLOBAL - affects both VFOs
     void setScale(int scale);           // GLOBAL - affects both panadapters (10-150)
     // Ref level VALUES are per-VFO (A and B can have different levels)
@@ -57,6 +56,10 @@ public slots:
     // Waterfall height percentage (0-100, default 50 = 50/50 split)
     void setWaterfallHeight(int percent);    // LCD: #WFHxx;
     void setWaterfallHeightExt(int percent); // EXT: #HWFHxx;
+    // Waterfall SPEED, seconds of history on screen (0 = Fill); a QK4 setting shown beside WTRFALL.
+    void setWaterfallSpeed(int seconds);
+    void setWaterfallColorRange(int db);    // LCD: #WBSn; (WTR CLRS, 5-30)
+    void setWaterfallColorRangeExt(int db); // EXT: #HWBSn;
 
 signals:
     // Span control signals: + and wheel-up zoom in (narrower span), - and wheel-down zoom out
@@ -75,17 +78,22 @@ signals:
     void scaleDecrementRequested();
 
     // DDC NB control signals
+    void ddcNbModeCycleRequested(); // NB key tapped: next panadapter NB mode (#NB$)
     void nbLevelIncrementRequested();
     void nbLevelDecrementRequested();
 
     // Waterfall height control signals
     void waterfallHeightIncrementRequested();
     void waterfallHeightDecrementRequested();
+    void waterfallSpeedIncrementRequested();
+    void waterfallSpeedDecrementRequested();
+    void waterfallColorRangeIncrementRequested(); // WTR CLRS +
+    void waterfallColorRangeDecrementRequested(); // WTR CLRS -
 
-    // CAT command signal (for MainWindow to forward to TcpClient)
+    // Raw CAT; PopupManager sends it through ConnectionController
     void catCommandRequested(const QString &cmd);
 
-    // Pan mode changed (for MainWindow to update panadapter display)
+    // Pan mode changed (PopupManager sets the panadapter mode)
     // K4 doesn't echo #DPM commands, so we notify directly
     void dualPanModeChanged(int mode);
 
@@ -106,15 +114,13 @@ private:
     QWidget *createDefaultControlPage();
     void updateNbControlGroupValue();
     void updateWaterfallControlGroup();
+    void selectDisplayTarget(bool lcd, bool ext);
 
     void updateToggleStyles();
     void updateMenuButtonStyles();
     void updateMenuButtonLabels();
     void onMenuItemClicked(MenuItem item);
     void onMenuItemRightClicked(MenuItem item);
-
-    // Helper to get command prefix based on LCD/EXT selection
-    QString getCommandPrefix() const;
 
     // Target toggle groups (bordered containers with triangle)
     ToggleGroupWidget *m_lcdExtGroup;
@@ -123,7 +129,6 @@ private:
     bool m_extEnabled = false;
     bool m_vfoAEnabled = true;
     bool m_vfoBEnabled = false;
-    bool m_vfoBAvailable = true;
 
     // Context-dependent controls
     QStackedWidget *m_controlStack;
@@ -153,7 +158,14 @@ private:
 
     // Waterfall height controls
     QWidget *m_waterfallControlPage;
+    QWidget *m_wtrClrsControlPage = nullptr;
+    ControlGroupWidget *m_wtrClrsControlGroup = nullptr;
+    int m_waterfallColorRange = -1;    // LCD #WBS, -1 until the radio reports
+    int m_waterfallColorRangeExt = -1; // EXT #HWBS
+    QWidget *createWtrClrsControlPage();
+    void updateWtrClrsControlGroup();
     ControlGroupWidget *m_waterfallControlGroup;
+    ControlGroupWidget *m_waterfallSpeedGroup = nullptr;
 
     // Menu buttons
     QList<DisplayMenuButton *> m_menuButtons;

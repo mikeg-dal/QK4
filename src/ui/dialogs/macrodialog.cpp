@@ -1,4 +1,5 @@
 #include "ui/dialogs/macrodialog.h"
+#include "logging/logcategories.h"
 #include "ui/styling/k4styles.h"
 #include "settings/radiosettings.h"
 #include "ui/popups/fnpopupwidget.h"
@@ -11,18 +12,14 @@
 #include <QScrollBar>
 #include <QTimer>
 
-Q_LOGGING_CATEGORY(uiMacro, "ui.macro")
-
 namespace {
-// Layout constants
 const int RowHeight = 44;
-// Columns use equal stretch factors (33.3% each) - no fixed widths
 } // namespace
 
 // ============== MacroItemWidget ==============
 
 MacroItemWidget::MacroItemWidget(const QString &functionId, const QString &displayName, QWidget *parent)
-    : QWidget(parent), m_functionId(functionId), m_displayName(displayName) {
+    : QWidget(parent), m_functionId(functionId) {
     setFixedHeight(RowHeight);
     setCursor(Qt::PointingHandCursor);
 
@@ -32,18 +29,14 @@ MacroItemWidget::MacroItemWidget(const QString &functionId, const QString &displ
 
     // Column 1: Function ID (read-only) - 33.3% width
     m_functionLabel = new QLabel(displayName, this);
-    m_functionLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                       .arg(K4Styles::Colors::TextGray)
-                                       .arg(K4Styles::Dimensions::FontSizePopup));
-    layout->addWidget(m_functionLabel, 1); // stretch factor 1
+    m_functionLabel->setStyleSheet(K4Styles::Dialog::macroFunctionLabel());
+    layout->addWidget(m_functionLabel, 1);
 
     // Column 2: Label (editable) - 33.3% width, centered
     m_labelDisplay = new QLabel("Unused", this);
     m_labelDisplay->setAlignment(Qt::AlignCenter);
-    m_labelDisplay->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                      .arg(K4Styles::Colors::TextFaded)
-                                      .arg(K4Styles::Dimensions::FontSizePopup));
-    layout->addWidget(m_labelDisplay, 1); // stretch factor 1
+    m_labelDisplay->setStyleSheet(K4Styles::Dialog::macroLabelDisplay());
+    layout->addWidget(m_labelDisplay, 1);
 
     m_labelEdit = new QLineEdit(this);
     m_labelEdit->setMaxLength(12);
@@ -51,34 +44,33 @@ MacroItemWidget::MacroItemWidget(const QString &functionId, const QString &displ
     m_labelEdit->setStyleSheet(QString("QLineEdit { background: %1; color: %2; border: 1px solid %3; "
                                        "border-radius: 3px; padding: 2px 5px; font-size: %4px; }")
                                    .arg(K4Styles::Colors::GradientMid1)
-                                   .arg(K4Styles::Colors::TextWhite)
-                                   .arg(K4Styles::Colors::InactiveGray)
-                                   .arg(K4Styles::Dimensions::FontSizePopup));
+                                   .arg(K4Styles::Colors::TextPrimary)
+                                   .arg(K4Styles::Colors::MutedGraphic)
+                                   .arg(K4Styles::Dimensions::FontSizeHeading));
     m_labelEdit->hide();
+    m_labelEdit->installEventFilter(this);
     connect(m_labelEdit, &QLineEdit::editingFinished, this, &MacroItemWidget::finishEditing);
-    layout->addWidget(m_labelEdit, 1); // stretch factor 1
+    layout->addWidget(m_labelEdit, 1);
 
     // Column 3: CAT Command (editable) - 33.3% width
     m_commandDisplay = new QLabel("", this);
-    m_commandDisplay->setStyleSheet(QString("color: %1; font-size: %2px; font-family: '%3';")
-                                        .arg(K4Styles::Colors::TextFaded)
-                                        .arg(K4Styles::Dimensions::FontSizePopup)
-                                        .arg(K4Styles::Fonts::Data));
+    m_commandDisplay->setStyleSheet(K4Styles::Dialog::macroCommandDisplay());
     m_commandDisplay->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    layout->addWidget(m_commandDisplay, 1); // stretch factor 1
+    layout->addWidget(m_commandDisplay, 1);
 
     m_commandEdit = new QLineEdit(this);
     m_commandEdit->setMaxLength(64);
     m_commandEdit->setStyleSheet(QString("QLineEdit { background: %1; color: %2; border: 1px solid %3; "
                                          "border-radius: 3px; padding: 2px 5px; font-size: %4px; font-family: '%5'; }")
                                      .arg(K4Styles::Colors::GradientMid1)
-                                     .arg(K4Styles::Colors::TextWhite)
-                                     .arg(K4Styles::Colors::InactiveGray)
-                                     .arg(K4Styles::Dimensions::FontSizePopup)
+                                     .arg(K4Styles::Colors::TextPrimary)
+                                     .arg(K4Styles::Colors::MutedGraphic)
+                                     .arg(K4Styles::Dimensions::FontSizeHeading)
                                      .arg(K4Styles::Fonts::Data));
     m_commandEdit->hide();
+    m_commandEdit->installEventFilter(this);
     connect(m_commandEdit, &QLineEdit::editingFinished, this, &MacroItemWidget::finishEditing);
-    layout->addWidget(m_commandEdit, 1); // stretch factor 1
+    layout->addWidget(m_commandEdit, 1);
 
     setLayout(layout);
 }
@@ -102,51 +94,30 @@ void MacroItemWidget::setCommand(const QString &command) {
 }
 
 void MacroItemWidget::updateDisplay() {
-    // Show label or status
+    const char *look = K4Styles::Dialog::MacroNamed;
     if (m_command.isEmpty()) {
         m_labelDisplay->setText("Unused");
-        m_labelDisplay->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
-                                          .arg(K4Styles::Colors::InactiveGray)
-                                          .arg(K4Styles::Dimensions::FontSizePopup));
+        look = K4Styles::Dialog::MacroUnused;
     } else if (m_label.isEmpty()) {
         m_labelDisplay->setText("Mapped");
-        m_labelDisplay->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                          .arg(K4Styles::Colors::AccentAmber)
-                                          .arg(K4Styles::Dimensions::FontSizePopup));
+        look = K4Styles::Dialog::MacroMapped;
     } else {
         m_labelDisplay->setText(m_label);
-        m_labelDisplay->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                          .arg(K4Styles::Colors::AccentAmber)
-                                          .arg(K4Styles::Dimensions::FontSizePopup));
     }
+    if (m_selected)
+        look = K4Styles::Dialog::MacroSelected;
+    K4Styles::setStyleState(m_labelDisplay, K4Styles::StateProperty, QString::fromLatin1(look));
 
-    // Show command
     m_commandDisplay->setText(m_command.isEmpty() ? "" : m_command);
 }
 
 void MacroItemWidget::setSelected(bool selected) {
     m_selected = selected;
 
-    // Update all label colors based on selection (inverted when selected)
-    if (selected) {
-        // White text on grey background
-        m_functionLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                           .arg(K4Styles::Colors::TextWhite)
-                                           .arg(K4Styles::Dimensions::FontSizePopup));
-        m_labelDisplay->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                          .arg(K4Styles::Colors::TextWhite)
-                                          .arg(K4Styles::Dimensions::FontSizePopup));
-        m_commandDisplay->setStyleSheet(QString("color: %1; font-size: %2px; font-family: '%3';")
-                                            .arg(K4Styles::Colors::TextWhite)
-                                            .arg(K4Styles::Dimensions::FontSizePopup)
-                                            .arg(K4Styles::Fonts::Data));
-    } else {
-        // Grey text on dark background
-        m_functionLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                           .arg(K4Styles::Colors::TextGray)
-                                           .arg(K4Styles::Dimensions::FontSizePopup));
-        updateDisplay(); // Reset label/command colors based on content
-    }
+    // Every column shows the selection (inverted when selected); updateDisplay() picks the label's look.
+    K4Styles::setSelected(m_functionLabel, selected);
+    K4Styles::setSelected(m_commandDisplay, selected);
+    updateDisplay();
 
     update();
 }
@@ -191,20 +162,30 @@ void MacroItemWidget::finishEditing() {
     }
 }
 
+bool MacroItemWidget::eventFilter(QObject *watched, QEvent *event) {
+    // WHY: Tab never reaches a keyPressEvent while a QLineEdit has focus - QWidget::event() spends it
+    // on focus-chain traversal first, which would close the editor without the dialog knowing.
+    if ((watched == m_labelEdit || watched == m_commandEdit) && event->type() == QEvent::KeyPress) {
+        const int key = static_cast<QKeyEvent *>(event)->key();
+        if (key == Qt::Key_Tab || key == Qt::Key_Backtab) {
+            emit fieldSwitchRequested();
+            return true;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
 void MacroItemWidget::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
     if (m_selected) {
-        // Selected: full row grey highlight
         painter.fillRect(rect(), QColor(K4Styles::Colors::SelectionDark));
     } else {
-        // Unselected: dark background
         painter.fillRect(rect(), QColor(K4Styles::Colors::OverlayItemBg));
     }
 
-    // Bottom border
     painter.setPen(QColor(K4Styles::Colors::OverlayDivider));
     painter.drawLine(0, height() - 1, width(), height() - 1);
 }
@@ -232,7 +213,6 @@ MacroDialog::MacroDialog(QWidget *parent) : QWidget(parent) {
 }
 
 void MacroDialog::setupUi() {
-    // Main layout
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
@@ -245,13 +225,12 @@ void MacroDialog::setupUi() {
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(0);
 
-    // Header
     m_headerLabel = new QLabel("MACROS", m_contentWidget);
     m_headerLabel->setStyleSheet(QString("background-color: %1; color: %2; font-size: %3px; "
                                          "font-weight: bold; padding: 8px 15px;")
                                      .arg(K4Styles::Colors::OverlayHeaderBg)
-                                     .arg(K4Styles::Colors::InactiveGray)
-                                     .arg(K4Styles::Dimensions::FontSizeButton));
+                                     .arg(K4Styles::Colors::TextSecondary)
+                                     .arg(K4Styles::Dimensions::FontSizeReadout));
     contentLayout->addWidget(m_headerLabel);
 
     // Column headers
@@ -264,21 +243,21 @@ void MacroDialog::setupUi() {
     headerLayout->setSpacing(0); // No spacing - columns use stretch factors
 
     QString columnHeaderStyle = QString("color: %1; font-size: %2px; font-weight: bold;")
-                                    .arg(K4Styles::Colors::TextGray)
-                                    .arg(K4Styles::Dimensions::FontSizeLarge);
+                                    .arg(K4Styles::Colors::TextSecondary)
+                                    .arg(K4Styles::Dimensions::FontSizeBody);
 
     QLabel *funcHeader = new QLabel("Function", columnHeader);
     funcHeader->setStyleSheet(columnHeaderStyle);
-    headerLayout->addWidget(funcHeader, 1); // stretch factor 1
+    headerLayout->addWidget(funcHeader, 1);
 
     QLabel *labelHeader = new QLabel("Label", columnHeader);
     labelHeader->setAlignment(Qt::AlignCenter);
     labelHeader->setStyleSheet(columnHeaderStyle);
-    headerLayout->addWidget(labelHeader, 1); // stretch factor 1
+    headerLayout->addWidget(labelHeader, 1);
 
     QLabel *cmdHeader = new QLabel("CAT Command", columnHeader);
     cmdHeader->setStyleSheet(columnHeaderStyle);
-    headerLayout->addWidget(cmdHeader, 1); // stretch factor 1
+    headerLayout->addWidget(cmdHeader, 1);
 
     contentLayout->addWidget(columnHeader);
 
@@ -325,9 +304,9 @@ void MacroDialog::setupUi() {
                                   "border-radius: %3px; font-size: %4px; font-weight: bold; }"
                                   "QPushButton:pressed { background-color: %5; }")
                               .arg(K4Styles::Colors::OverlayNavButton)
-                              .arg(K4Styles::Colors::TextWhite)
+                              .arg(K4Styles::Colors::TextPrimary)
                               .arg(K4Styles::Dimensions::BorderRadius)
-                              .arg(K4Styles::Dimensions::FontSizeTitle)
+                              .arg(K4Styles::Dimensions::FontSizeIndicator)
                               .arg(K4Styles::Colors::OverlayNavButtonPressed);
 
     // Row 1: Up and Down buttons
@@ -357,12 +336,13 @@ void MacroDialog::setupUi() {
     m_editBtn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::PopupButtonHeight);
     m_editBtn->setStyleSheet(QString("QPushButton { background-color: %1; color: %2; border: none; "
                                      "border-radius: %3px; font-size: %4px; font-weight: bold; }"
-                                     "QPushButton:pressed { background-color: %5; }")
+                                     "QPushButton:pressed { background-color: %5; color: %6; }")
                                  .arg(K4Styles::Colors::OverlayNavButton)
-                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Colors::TextSecondaryOnRaised)
                                  .arg(K4Styles::Dimensions::BorderRadius)
-                                 .arg(K4Styles::Dimensions::FontSizeMedium)
-                                 .arg(K4Styles::Colors::OverlayNavButtonPressed));
+                                 .arg(K4Styles::Dimensions::FontSizeCaption)
+                                 .arg(K4Styles::Colors::OverlayNavButtonPressed)
+                                 .arg(K4Styles::Colors::TextPrimary));
     connect(m_editBtn, &QPushButton::clicked, this, &MacroDialog::selectCurrent);
     row2->addWidget(m_editBtn);
 
@@ -378,11 +358,11 @@ void MacroDialog::setupUi() {
                                  .arg(K4Styles::Colors::GradientMid1)     // %2
                                  .arg(K4Styles::Colors::GradientMid2)     // %3
                                  .arg(K4Styles::Colors::GradientBottom)   // %4
-                                 .arg(K4Styles::Colors::TextWhite)        // %5
+                                 .arg(K4Styles::Colors::TextPrimary)      // %5
                                  .arg(K4Styles::Dimensions::BorderWidth)  // %6
                                  .arg(K4Styles::Colors::BorderNormal)     // %7
                                  .arg(K4Styles::Dimensions::BorderRadius) // %8
-                                 .arg(K4Styles::Dimensions::FontSizeTitle));
+                                 .arg(K4Styles::Dimensions::FontSizeIndicator));
     connect(m_backBtn, &QPushButton::clicked, this, &MacroDialog::closeDialog);
     row2->addWidget(m_backBtn);
 
@@ -394,7 +374,6 @@ void MacroDialog::setupUi() {
 }
 
 void MacroDialog::populateItems() {
-    // Clear existing
     for (auto *widget : m_itemWidgets) {
         m_listLayout->removeWidget(widget);
         delete widget;
@@ -508,6 +487,11 @@ void MacroDialog::populateItems() {
             }
         });
 
+        connect(widget, &MacroItemWidget::fieldSwitchRequested, this, [this, widget]() {
+            if (m_editMode && m_itemWidgets.indexOf(widget) == m_selectedIndex)
+                setEditMode(true, !m_editingCommand);
+        });
+
         connect(widget, &MacroItemWidget::labelChanged, this, &MacroDialog::onLabelChanged);
         connect(widget, &MacroItemWidget::commandChanged, this, &MacroDialog::onCommandChanged);
 
@@ -524,10 +508,6 @@ void MacroDialog::loadFromSettings() {
     populateItems();
 }
 
-void MacroDialog::saveToSettings() {
-    // Saves happen automatically via onLabelChanged/onCommandChanged
-}
-
 void MacroDialog::show() {
     loadFromSettings();
     QWidget::show();
@@ -536,7 +516,6 @@ void MacroDialog::show() {
 }
 
 void MacroDialog::hide() {
-    // Finish any active editing
     for (auto *widget : m_itemWidgets) {
         widget->finishEditing();
     }
@@ -566,12 +545,6 @@ void MacroDialog::keyPressEvent(QKeyEvent *event) {
             setEditMode(false);
         } else {
             closeDialog();
-        }
-        break;
-    case Qt::Key_Tab:
-        // In edit mode, Tab switches between label and command
-        if (m_editMode) {
-            setEditMode(true, !m_editingCommand);
         }
         break;
     default:
@@ -650,7 +623,7 @@ void MacroDialog::onLabelChanged(const QString &functionId, const QString &label
     auto settings = RadioSettings::instance();
     MacroEntry macro = settings->macro(functionId);
     settings->setMacro(functionId, label, macro.command);
-    qCDebug(uiMacro) << "Macro label updated:" << functionId << "->" << label;
+    qCDebug(lcUiMacro) << "Macro label updated:" << functionId << "->" << label;
 }
 
 void MacroDialog::onCommandChanged(const QString &functionId, const QString &command) {
@@ -658,7 +631,7 @@ void MacroDialog::onCommandChanged(const QString &functionId, const QString &com
     if (functionId == MacroIds::Startup && !command.isEmpty()) {
         QString forbidden = MacroIds::checkForbiddenStartupCommand(command);
         if (!forbidden.isEmpty()) {
-            qWarning() << "Startup macro rejected: contains forbidden command" << forbidden;
+            qCWarning(lcUiMacro) << "Startup macro rejected: contains forbidden command" << forbidden;
             // Revert the widget to the previous saved command
             auto settings = RadioSettings::instance();
             MacroEntry macro = settings->macro(functionId);
@@ -668,13 +641,12 @@ void MacroDialog::onCommandChanged(const QString &functionId, const QString &com
                     break;
                 }
             }
-            // Notify user
             auto *notification = new QLabel(QString("Forbidden command in Startup macro: %1").arg(forbidden), this);
             notification->setStyleSheet(QString("QLabel { color: %1; background: %2; padding: 8px; "
                                                 "border-radius: 4px; font-size: %3px; }")
-                                            .arg(K4Styles::Colors::ErrorRed)
+                                            .arg(K4Styles::Colors::TextRed)
                                             .arg(K4Styles::Colors::ErrorBgDark)
-                                            .arg(K4Styles::Dimensions::FontSizeNotification));
+                                            .arg(K4Styles::Dimensions::FontSizeHeading));
             notification->setAlignment(Qt::AlignCenter);
             notification->move((width() - 350) / 2, 50);
             notification->setFixedWidth(350);
@@ -687,7 +659,7 @@ void MacroDialog::onCommandChanged(const QString &functionId, const QString &com
     auto settings = RadioSettings::instance();
     MacroEntry macro = settings->macro(functionId);
     settings->setMacro(functionId, macro.label, command);
-    qCDebug(uiMacro) << "Macro command updated:" << functionId << "->" << command;
+    qCDebug(lcUiMacro) << "Macro command updated:" << functionId << "->" << command;
 }
 
 void MacroDialog::updateSelection() {
@@ -709,6 +681,9 @@ void MacroDialog::setEditMode(bool editing, bool editCommand) {
     if (m_selectedIndex >= 0 && m_selectedIndex < m_itemWidgets.size()) {
         auto *widget = m_itemWidgets[m_selectedIndex];
         if (editing) {
+            // WHY: commit the field being left first. Opening the other editor moves focus, and the
+            // closing editor's editingFinished would then hide both.
+            widget->finishEditing();
             if (editCommand) {
                 widget->editCommand();
             } else {

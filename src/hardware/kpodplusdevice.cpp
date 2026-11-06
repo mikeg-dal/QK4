@@ -1,24 +1,31 @@
 #include "kpodplusdevice.h"
+#include "logging/logcategories.h"
+#include "logging/logsink.h"
 #include "kpodplususbworker.h"
+#include "utils/threadshutdown.h"
 #include <QLoggingCategory>
 #include <QThread>
+#include <chrono>
 
-// Defined in kpodplususbworker.cpp, which owns the KZ traffic tracing. Shared so a bench log
-// enabled with hw.kpodplus.debug=true carries the device's LIFECYCLE alongside its keying, rather
-// than only the keying — the gap that made a hotplug test uncorroborable on 2026-09-18.
-Q_DECLARE_LOGGING_CATEGORY(hwKpodPlus)
+namespace {
+// WHY 1 s for USB: shutdown() is queued behind at most one EP01 poll (up to 55 ms) or one config
+// command (up to 400 ms), then releases the handle.
+constexpr std::chrono::milliseconds kUsbStopTimeout{1000};
+// WHY 500 ms for EP02: requestStop() wakes an idle reader at once, and a reader inside a transfer
+// sees it within one EP02 timeout (100 ms).
+constexpr std::chrono::milliseconds kEp02StopTimeout{500};
+} // namespace
 
 KpodPlusDevice::KpodPlusDevice(QObject *parent) : QObject(parent) {
-    // --- EP02 reader thread (HighPriority) -----------------------------------
+    // --- EP02 reader thread (promotes itself to real-time in run()) -----------
     m_ep02Thread = new QThread(this);
     m_ep02Thread->setObjectName("KpodPlusEP02");
+    Logging::markRealtimeOnStart(m_ep02Thread);
     m_ep02Worker = new KpodPlusEp02Worker();
     m_ep02Worker->moveToThread(m_ep02Thread);
     connect(m_ep02Thread, &QThread::started, m_ep02Worker, &KpodPlusEp02Worker::run);
-    connect(m_ep02Thread, &QThread::finished, m_ep02Worker, &QObject::deleteLater);
-    connect(m_ep02Worker, &KpodPlusEp02Worker::keyerDataReceived, this, &KpodPlusDevice::keyerDataReceived,
-            Qt::DirectConnection);
-    m_ep02Thread->start(QThread::HighPriority);
+    m_ep02DeleteConnection = connect(m_ep02Thread, &QThread::finished, m_ep02Worker, &QObject::deleteLater);
+    m_ep02Thread->start();
 
     // --- USB worker thread (default priority) --------------------------------
     m_usbThread = new QThread(this);
@@ -37,17 +44,17 @@ KpodPlusDevice::KpodPlusDevice(QObject *parent) : QObject(parent) {
     // Cache + re-emit worker signals.
     connect(m_usbWorker, &KpodPlusUsbWorker::deviceInfoReady, this, [this](KpodPlusDeviceInfo info) {
         m_info = info;
-        qCInfo(hwKpodPlus) << "KPOD+ detected:" << m_info.detected << "- this is the point the CW gate keys off";
+        qCInfo(lcKpodPlus) << "KPOD+ detected:" << m_info.detected << "- this is the point the CW gate keys off";
         emit deviceInfoReady();
     });
     connect(m_usbWorker, &KpodPlusUsbWorker::deviceArrived, this, [this]() {
         m_polling = true;
-        qCInfo(hwKpodPlus) << "KPOD+ arrived - polling, and it now owns CW keying";
+        qCInfo(lcKpodPlus) << "KPOD+ arrived - polling, and it now owns CW keying";
         emit deviceConnected();
     });
     connect(m_usbWorker, &KpodPlusUsbWorker::deviceRemoved, this, [this]() {
         m_polling = false;
-        qCInfo(hwKpodPlus) << "KPOD+ removed - CW keying returns to QK4's own keyer";
+        qCInfo(lcKpodPlus) << "KPOD+ removed - CW keying returns to QK4's own keyer";
         emit deviceDisconnected();
     });
     connect(m_usbWorker, &KpodPlusUsbWorker::encoderRotated, this, &KpodPlusDevice::encoderRotated);
@@ -60,8 +67,10 @@ KpodPlusDevice::KpodPlusDevice(QObject *parent) : QObject(parent) {
     connect(m_usbWorker, &KpodPlusUsbWorker::pollError, this, &KpodPlusDevice::pollError);
 
     // Route the live libusb_device_handle from the USB worker into the EP02
-    // reader. setDeviceHandle is just an atomic store on m_ep02Worker.m_handle,
-    // safe to invoke from any thread, so DirectConnection is intentional.
+    // reader. setDeviceHandle stores m_ep02Worker.m_handle and wakes the reader if
+    // it is idle; safe to invoke from any thread, so DirectConnection is intentional.
+    // The handlers capture the EP02 worker, not this: a USB thread disowned at shutdown can still
+    // emit after this object is gone.
     //
     // WHY not QueuedConnection: m_ep02Worker::run() is a blocking sync-read
     // loop that never returns to its thread's event loop, so queued events to
@@ -70,8 +79,8 @@ KpodPlusDevice::KpodPlusDevice(QObject *parent) : QObject(parent) {
     connect(m_usbWorker, &KpodPlusUsbWorker::handleOpened, m_ep02Worker, &KpodPlusEp02Worker::setDeviceHandle,
             Qt::DirectConnection);
     connect(
-        m_usbWorker, &KpodPlusUsbWorker::handleClosing, m_ep02Worker, [this]() { m_ep02Worker->setDeviceHandle(0); },
-        Qt::DirectConnection);
+        m_usbWorker, &KpodPlusUsbWorker::handleClosing, m_ep02Worker,
+        [ep02 = m_ep02Worker]() { ep02->setDeviceHandle(0); }, Qt::DirectConnection);
 
     // EP02 read errors (NO_DEVICE / IO) on the EP02 thread propagate to the
     // USB worker so the device is closed and re-detected. Without this, an
@@ -96,24 +105,29 @@ KpodPlusDevice::~KpodPlusDevice() {
     //
     // Draining libusb first is also correct on its own terms: it clears EP02's handle
     // synchronously via handleClosing, so the reader sees null and skips its next transfer.
-    if (m_usbWorker) {
-        QMetaObject::invokeMethod(m_usbWorker, "shutdown", Qt::BlockingQueuedConnection);
+    const QDeadlineTimer usbDeadline(kUsbStopTimeout);
+    if (KpodPlusUsbWorker *usb = m_usbWorker) {
+        ThreadShutdown::callBlocking(usb, [usb]() { usb->shutdown(); }, usbDeadline);
+    }
+    const bool usbStopped =
+        ThreadShutdown::retire(m_usbThread, usbDeadline, lcKpodPlus()) == ThreadShutdown::Outcome::Joined;
+    m_usbWorker = nullptr;
+
+    // WHY the EP02 worker is kept alive when the USB thread was not stopped: that thread still holds
+    // a pointer to the EP02 worker's transfer mutex and may yet lock it in releaseHandle(). Freeing
+    // the worker would be the same use-after-free the order above exists to prevent, so it is
+    // leaked with the disowned thread instead of being deleted when its own thread finishes.
+    if (!usbStopped) {
+        disconnect(m_ep02DeleteConnection);
     }
 
-    // Then stop the EP02 reader. requestStop is an atomic the blocking read loop checks, so this
-    // returns within one EP02 timeout (100 ms).
+    // Then stop the EP02 reader. requestStop sets the flag the read loop checks and wakes it if it
+    // is idle, so this returns at once without a device and within one EP02 timeout (100 ms) with.
     if (m_ep02Worker) {
         m_ep02Worker->requestStop();
     }
-    if (m_ep02Thread) {
-        m_ep02Thread->quit();
-        m_ep02Thread->wait(2000);
-    }
-
-    if (m_usbThread) {
-        m_usbThread->quit();
-        m_usbThread->wait(2000);
-    }
+    ThreadShutdown::retire(m_ep02Thread, QDeadlineTimer(kEp02StopTimeout), lcKpodPlus());
+    m_ep02Worker = nullptr;
 }
 
 bool KpodPlusDevice::isDetected() const {
@@ -135,14 +149,14 @@ KpodPlusDevice::RockerPosition KpodPlusDevice::rockerPosition() const {
 bool KpodPlusDevice::startPolling() {
     if (m_polling)
         return true;
-    qCDebug(hwKpodPlus) << "KPOD+ startPolling requested (detected=" << m_info.detected << ")";
+    qCDebug(lcKpodPlus) << "KPOD+ startPolling requested (detected=" << m_info.detected << ")";
     QMetaObject::invokeMethod(m_usbWorker, "openDevice", Qt::QueuedConnection);
     // Result is asynchronous; isPolling() becomes true on deviceArrived.
     return m_info.detected;
 }
 
 void KpodPlusDevice::stopPolling() {
-    qCDebug(hwKpodPlus) << "KPOD+ stopPolling requested";
+    qCDebug(lcKpodPlus) << "KPOD+ stopPolling requested";
     QMetaObject::invokeMethod(m_usbWorker, "closeDevice", Qt::QueuedConnection);
 }
 
@@ -165,4 +179,8 @@ void KpodPlusDevice::setEncodeMode(int mode) {
 
 void KpodPlusDevice::setStuckTimeout(int seconds) {
     QMetaObject::invokeMethod(m_usbWorker, "setStuckTimeout", Qt::QueuedConnection, Q_ARG(int, seconds));
+}
+
+void KpodPlusDevice::setKeyerLink(CwKeying::Link *link) {
+    m_ep02Worker->setKeyerLink(link);
 }

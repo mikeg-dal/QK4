@@ -1,6 +1,8 @@
 #ifndef MODELS_RADIOSTATE_AUDIOEFFECTSSTATE_H
 #define MODELS_RADIOSTATE_AUDIOEFFECTSSTATE_H
 
+#include "reportedflag.h"
+
 #include <QString>
 #include <QVector>
 
@@ -19,20 +21,25 @@ class RadioState;
 // These fields all relate to the audio signal path — the chain from
 // DDS out → speaker/line out, or mic/line in → modulator — so they
 // cluster naturally.
+//
+// Every field is unknown until the radio reports it, so its first report always emits: -1 for the
+// ints (Unknown), EqBandUnknown for the EQ bands, ReportedFlag for on/off (see reportedflag.h).
 struct AudioEffectsState {
+    static constexpr int Unknown = -1;
+
     // FX — Audio Effects: 0=off, 1=delay, 2=pitch-map
-    int afxMode = 0;
+    int afxMode = Unknown;
 
     // AP / AP$ — Audio Peak Filter (CW only); bandwidth 0=30Hz, 1=50Hz, 2=150Hz
-    bool apfEnabled = false;
-    int apfBandwidth = 0;
-    bool apfEnabledB = false;
-    int apfBandwidthB = 0;
+    ReportedFlag apfEnabled;
+    int apfBandwidth = Unknown;
+    ReportedFlag apfEnabledB;
+    int apfBandwidthB = Unknown;
 
     // VX — VOX enable flags per mode class
-    bool voxCW = false;
-    bool voxVoice = false;
-    bool voxData = false;
+    ReportedFlag voxCW;
+    ReportedFlag voxVoice;
+    ReportedFlag voxData;
 
     // VG — VOX gain per mode class (0-60)
     int voxGainVoice = -1;
@@ -41,14 +48,24 @@ struct AudioEffectsState {
     // VI — Anti-VOX (0-60)
     int antiVox = -1;
 
-    // ES — ESSB enable + TX bandwidth (30-45, i.e. 3.0-4.5 kHz in 100Hz units)
-    bool essbEnabled = false;
+    // ES — ESSB enable + TX bandwidth in 100 Hz units: SSB 24-28 (2.4-2.8 kHz), ESSB 30-45 (3.0-4.5 kHz).
+    // Programmer's Reference D12 (ES) gives only "30-45 (3.0-4.5 kHz)" for both; the SSB range is not
+    // in it. 24-28 is the K4's own SSB range, owner-confirmed on the radio (2026-11-02); ESSB is the
+    // wider transmit bandwidth.
+    static constexpr int SsbTxBwMin = 24;
+    static constexpr int SsbTxBwMax = 28;
+    static constexpr int EssbTxBwMin = 30;
+    static constexpr int EssbTxBwMax = 45;
+    ReportedFlag essbEnabled;
     int ssbTxBw = -1;
 
     // RE / TE — graphic EQ: 8 bands (100, 200, 400, 800, 1200, 1600, 2400,
     // 3200 Hz), range -16..+16 dB. Main RX and Sub RX share RE bands.
-    int rxEqBands[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-    int txEqBands[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    static constexpr int EqBandUnknown = -99;
+    int rxEqBands[8] = {EqBandUnknown, EqBandUnknown, EqBandUnknown, EqBandUnknown,
+                        EqBandUnknown, EqBandUnknown, EqBandUnknown, EqBandUnknown};
+    int txEqBands[8] = {EqBandUnknown, EqBandUnknown, EqBandUnknown, EqBandUnknown,
+                        EqBandUnknown, EqBandUnknown, EqBandUnknown, EqBandUnknown};
 
     // LO — Line Out (0-50 per channel). rightEqualsLeft is the "mode" flag.
     // WHY: 50, not the 40 in resources/k4_cat_commands.json. Measured on a K4D at R38: the front
@@ -56,7 +73,7 @@ struct AudioEffectsState {
     static constexpr int LineOutMax = 50;
     int lineOutLeft = -1;
     int lineOutRight = -1;
-    bool lineOutRightEqualsLeft = false;
+    ReportedFlag lineOutRightEqualsLeft;
 
     // LI — Line In (0-250 per source). lineInSource: 0=soundcard, 1=jack.
     int lineInSoundCard = -1;
@@ -117,9 +134,7 @@ void setRxEqBand(AudioEffectsState &state, RadioState &owner, int index, int dB)
 void setRxEqBands(AudioEffectsState &state, RadioState &owner, const QVector<int> &bands);
 void setTxEqBand(AudioEffectsState &state, RadioState &owner, int index, int dB);
 void setTxEqBands(AudioEffectsState &state, RadioState &owner, const QVector<int> &bands);
-void setLineOutLeft(AudioEffectsState &state, RadioState &owner, int level);
-void setLineOutRight(AudioEffectsState &state, RadioState &owner, int level);
-void setLineOutRightEqualsLeft(AudioEffectsState &state, RadioState &owner, bool enabled);
+void setLineOut(AudioEffectsState &state, RadioState &owner, int left, int right, bool rightEqualsLeft);
 void setLineInSoundCard(AudioEffectsState &state, RadioState &owner, int level);
 void setLineInJack(AudioEffectsState &state, RadioState &owner, int level);
 void setLineInSource(AudioEffectsState &state, RadioState &owner, int source);

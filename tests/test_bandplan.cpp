@@ -142,6 +142,52 @@ private slots:
         QVERIFY(hasFt8);
     }
     void iaru_noMarkers() { QVERIFY(BandPlan::markersForBand(2, 14074000).isEmpty()); }
+
+    // The panadapter caches the plan on planBandIndex. Region 1 40 m ends at 7200 kHz while the K4's
+    // 40 m band button runs to 7300 kHz, so 7250 and 7100 kHz share a K4 band but not a plan: a cache
+    // keyed on the K4 band kept the strip empty after tuning from one to the other.
+    void r1_40m_planKeySeparatesOutsideFromInside() {
+        QCOMPARE(BandPlan::planBandIndex(1, 7250000), -1);
+        QVERIFY(BandPlan::planBandIndex(1, 7100000) >= 0);
+        QVERIFY(BandPlan::segmentsForBand(1, 7250000).isEmpty());
+        QVERIFY(!BandPlan::segmentsForBand(1, 7100000).isEmpty());
+    }
+    void planKeyOutOfRangeRegion() {
+        QCOMPARE(BandPlan::planBandIndex(0, 14100000), -1);
+        QCOMPARE(BandPlan::planBandIndex(5, 14100000), -1);
+    }
+    // Sweep: wherever two frequencies share a plan key, everything the overlay shows is the same, so
+    // skipping the push on an unchanged key can never leave a stale strip.
+    void planKeyDeterminesTheOverlay() {
+        for (int region : {1, 2, 3, BandPlan::RegionUS}) {
+            int lastKey = -2;
+            QVector<BandPlan::BandSegment> lastSegments;
+            QVector<BandPlan::BandMarker> lastMarkers;
+            QString lastName;
+            for (qint64 f = 1700000; f <= 30000000; f += 500) {
+                const int key = BandPlan::planBandIndex(region, f);
+                const auto segments = BandPlan::segmentsForBand(region, f);
+                const auto markers = BandPlan::markersForBand(region, f);
+                const QString name = BandPlan::bandName(f);
+                QCOMPARE(key < 0, segments.isEmpty());
+                if (key == lastKey) {
+                    QCOMPARE(segments.size(), lastSegments.size());
+                    for (int i = 0; i < segments.size(); ++i) {
+                        QCOMPARE(segments[i].startHz, lastSegments[i].startHz);
+                        QCOMPARE(segments[i].endHz, lastSegments[i].endHz);
+                    }
+                    QCOMPARE(markers.size(), lastMarkers.size());
+                    // The band name only shows with segments, so it need only agree inside a plan.
+                    if (key >= 0)
+                        QCOMPARE(name, lastName);
+                }
+                lastKey = key;
+                lastSegments = segments;
+                lastMarkers = markers;
+                lastName = name;
+            }
+        }
+    }
 };
 
 // GUILESS: the test links Qt6::Gui for QColor but needs no GUI app — using

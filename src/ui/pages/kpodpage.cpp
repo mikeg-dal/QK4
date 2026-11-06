@@ -3,115 +3,58 @@
 #include "hardware/kpoddevice.h"
 #include "hardware/kpodplusdevice.h"
 #include "settings/radiosettings.h"
+#include "ui/pages/optionspagelayout.h"
+#include <QFormLayout>
 #include <QVBoxLayout>
-#include <QGridLayout>
-#include <QFrame>
 #include <QStringList>
 #include <QVector>
 
 KpodPage::KpodPage(KpodDevice *kpodDevice, KpodPlusDevice *kpodPlusDevice, QWidget *parent)
     : QWidget(parent), m_kpodDevice(kpodDevice), m_kpodPlusDevice(kpodPlusDevice) {
-    setStyleSheet(K4Styles::Dialog::pageBackground());
-
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
-                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
-    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
-
-    // Status indicator
-    auto *statusLayout = new QHBoxLayout();
-    auto *statusLabel = new QLabel("Status:", this);
-    statusLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    statusLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+    auto *layout = OptionsPageLayout::createPage(this);
+    OptionsPageLayout::addTitle(layout, this, "K-Pod");
+    m_form = OptionsPageLayout::addForm(layout);
 
     m_kpodStatusLabel = new QLabel("Not Detected", this);
-    statusLayout->addWidget(statusLabel);
-    statusLayout->addWidget(m_kpodStatusLabel);
-    statusLayout->addStretch();
-    layout->addLayout(statusLayout);
+    m_kpodStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
+    OptionsPageLayout::addRow(m_form, this, "Status", m_kpodStatusLabel);
 
-    // Separator line
-    auto *line = new QFrame(this);
-    line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet(K4Styles::Dialog::separator());
-    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line);
-
-    // Device Summary title
-    auto *titleLabel = new QLabel("Device Summary", this);
-    titleLabel->setStyleSheet(K4Styles::Dialog::titleLabel());
-    layout->addWidget(titleLabel);
-
-    // Device info table using grid layout
-    auto *tableWidget = new QWidget(this);
-    auto *tableLayout = new QGridLayout(tableWidget);
-    tableLayout->setContentsMargins(0, K4Styles::Dimensions::PaddingMedium, 0, K4Styles::Dimensions::PaddingMedium);
-    tableLayout->setHorizontalSpacing(K4Styles::Dimensions::DialogMargin);
-    tableLayout->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
-
-    // Table styling
-    QString headerStyle = QString("color: %1; font-size: %2px; font-weight: bold; padding: 5px;")
-                              .arg(K4Styles::Colors::TextGray)
-                              .arg(K4Styles::Dimensions::FontSizeButton);
-
-    // Create labels with property names
-    QStringList properties = {"Product Name", "Manufacturer",     "Vendor ID", "Product ID",
-                              "Device Type",  "Firmware Version", "Device ID"};
-    QVector<QLabel **> valueLabels = {&m_kpodProductLabel,   &m_kpodManufacturerLabel, &m_kpodVendorIdLabel,
-                                      &m_kpodProductIdLabel, &m_kpodDeviceTypeLabel,   &m_kpodFirmwareLabel,
-                                      &m_kpodDeviceIdLabel};
-
-    for (int row = 0; row < properties.size(); ++row) {
-        auto *propLabel = new QLabel(properties[row], tableWidget);
-        propLabel->setStyleSheet(headerStyle);
-
-        *valueLabels[row] = new QLabel("N/A", tableWidget);
-
-        tableLayout->addWidget(propLabel, row, 0, Qt::AlignLeft);
-        tableLayout->addWidget(*valueLabels[row], row, 1, Qt::AlignLeft);
-    }
-
-    tableLayout->setColumnStretch(1, 1);
-    layout->addWidget(tableWidget);
-
-    // Another separator
-    auto *line2 = new QFrame(this);
-    line2->setFrameShape(QFrame::HLine);
-    line2->setStyleSheet(K4Styles::Dialog::separator());
-    line2->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line2);
-
-    // Enable checkbox
     m_kpodEnableCheckbox = new QCheckBox("Enable K-Pod", this);
+    // The checkbox is a PREFERENCE and stays settable whether or not a device is plugged in.
+    // Switching off a misbehaving device must not require plugging it in.
+    m_kpodEnableCheckbox->setStyleSheet(K4Styles::Dialog::checkBox());
     m_kpodEnableCheckbox->setChecked(RadioSettings::instance()->kpodEnabled());
-
     connect(m_kpodEnableCheckbox, &QCheckBox::toggled, this,
             [](bool checked) { RadioSettings::instance()->setKpodEnabled(checked); });
 
-    // Follow the setting, not just write it. setChecked ran once at construction and nothing ever
-    // re-synced it, so the page was only correct because it happened to be the single writer. A
-    // second writer - anything at all - would have left the box showing a stale value with no
-    // symptom until someone toggled it. setChecked does not re-emit toggled for an unchanged value,
-    // so this cannot loop.
+    // Follow the setting so another writer cannot leave the box stale; setChecked does not re-emit
+    // toggled for an unchanged value, so this cannot loop.
     connect(RadioSettings::instance(), &RadioSettings::kpodEnabledChanged, this, [this](bool enabled) {
         m_kpodEnableCheckbox->setChecked(enabled);
         updateKpodStatus();
     });
 
-    layout->addWidget(m_kpodEnableCheckbox);
+    m_form->addRow(QString(), m_kpodEnableCheckbox);
+
+    m_kpodHelpLabel = OptionsPageLayout::addFieldHelp(m_form, this, "Connect a K-Pod device to enable this feature.");
+
+    OptionsPageLayout::addSection(m_form, this, "Device Summary");
+    const QStringList properties = {"Product Name", "Manufacturer",     "Vendor ID", "Product ID",
+                                    "Device Type",  "Firmware Version", "Device ID"};
+    const QVector<QLabel **> valueLabels = {&m_kpodProductLabel,   &m_kpodManufacturerLabel, &m_kpodVendorIdLabel,
+                                            &m_kpodProductIdLabel, &m_kpodDeviceTypeLabel,   &m_kpodFirmwareLabel,
+                                            &m_kpodDeviceIdLabel};
+    for (int row = 0; row < properties.size(); ++row) {
+        *valueLabels[row] = new QLabel("N/A", this);
+        (*valueLabels[row])->setStyleSheet(K4Styles::Dialog::valueLabelByState());
+        OptionsPageLayout::addRow(m_form, this, properties[row], *valueLabels[row]);
+    }
 
     // KPOD+ keyer configuration section (hidden until KPOD+ detected)
-    setupKeyerConfigSection(layout);
-
-    // Help text
-    m_kpodHelpLabel = new QLabel("Connect a K-Pod device to enable this feature.", this);
-    m_kpodHelpLabel->setStyleSheet(K4Styles::Dialog::helpText());
-    m_kpodHelpLabel->setWordWrap(true);
-    layout->addWidget(m_kpodHelpLabel);
+    setupKeyerConfigSection(m_form);
 
     layout->addStretch();
 
-    // Connect to device signals for real-time status updates
     if (m_kpodDevice) {
         connect(m_kpodDevice, &KpodDevice::deviceConnected, this, &KpodPage::updateKpodStatus);
         connect(m_kpodDevice, &KpodDevice::deviceDisconnected, this, &KpodPage::updateKpodStatus);
@@ -121,51 +64,20 @@ KpodPage::KpodPage(KpodDevice *kpodDevice, KpodPlusDevice *kpodPlusDevice, QWidg
         connect(m_kpodPlusDevice, &KpodPlusDevice::deviceDisconnected, this, &KpodPage::updateKpodStatus);
     }
 
-    // Initialize with current status
     updateKpodStatus();
 }
 
-void KpodPage::setupKeyerConfigSection(QVBoxLayout *parentLayout) {
-    m_keyerConfigWidget = new QWidget(this);
-    auto *keyerLayout = new QVBoxLayout(m_keyerConfigWidget);
-    keyerLayout->setContentsMargins(0, 0, 0, 0);
-    keyerLayout->setSpacing(K4Styles::Dimensions::PaddingMedium);
+void KpodPage::setupKeyerConfigSection(QFormLayout *form) {
+    m_keyerTitle = OptionsPageLayout::addSection(form, this, "KPOD+ Configuration");
 
-    // Section title
-    auto *keyerTitle = new QLabel("KPOD+ Configuration", m_keyerConfigWidget);
-    keyerTitle->setStyleSheet(K4Styles::Dialog::titleLabel());
-    keyerLayout->addWidget(keyerTitle);
-
-    // Grid for the keyer controls
-    auto *gridWidget = new QWidget(m_keyerConfigWidget);
-    auto *grid = new QGridLayout(gridWidget);
-    grid->setContentsMargins(0, 0, 0, 0);
-    grid->setHorizontalSpacing(K4Styles::Dimensions::DialogMargin);
-    grid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
-
-    QString labelStyle = QString("color: %1; font-size: %2px; font-weight: bold; padding: 5px;")
-                             .arg(K4Styles::Colors::TextGray)
-                             .arg(K4Styles::Dimensions::FontSizeButton);
-
-    auto *settings = RadioSettings::instance();
-
-    // Encode Mode: Element (KZ) / ASCII (KX). This is the only KPOD+ keyer
-    // setting still configured here — keyer speed, CW pitch, iambic mode and
-    // paddle orientation now mirror the connected K4 (see CwController) and
-    // have no manual control. Encode mode has no K4 equivalent.
-    auto *encodeLabel = new QLabel("Encode Mode", gridWidget);
-    encodeLabel->setStyleSheet(labelStyle);
-    m_encodeModeCombo = new QComboBox(gridWidget);
+    // Encode Mode: Element (KZ) / ASCII (KX). It has no K4 equivalent; the other keyer settings
+    // mirror the K4.
+    m_encodeModeCombo = new QComboBox(this);
     m_encodeModeCombo->setStyleSheet(K4Styles::Dialog::comboBox());
     m_encodeModeCombo->addItem("Element (KZ)", 0);
     m_encodeModeCombo->addItem("ASCII (KX)", 1);
-    m_encodeModeCombo->setCurrentIndex(settings->kpodPlusEncodeMode());
-    grid->addWidget(encodeLabel, 0, 0, Qt::AlignLeft);
-    grid->addWidget(m_encodeModeCombo, 0, 1, Qt::AlignLeft);
-
-    grid->setColumnStretch(1, 1);
-    keyerLayout->addWidget(gridWidget);
-
+    m_encodeModeCombo->setCurrentIndex(RadioSettings::instance()->kpodPlusEncodeMode());
+    OptionsPageLayout::addRow(form, this, "Encode Mode", m_encodeModeCombo);
     connect(m_encodeModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         RadioSettings::instance()->setKpodPlusEncodeMode(index);
         if (m_kpodPlusDevice && m_kpodPlusDevice->isPolling()) {
@@ -173,17 +85,8 @@ void KpodPage::setupKeyerConfigSection(QVBoxLayout *parentLayout) {
         }
     });
 
-    // Separator before keyer section
-    auto *line3 = new QFrame(this);
-    line3->setFrameShape(QFrame::HLine);
-    line3->setStyleSheet(K4Styles::Dialog::separator());
-    line3->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    parentLayout->addWidget(line3);
-    parentLayout->addWidget(m_keyerConfigWidget);
-
-    // Initially hidden
-    line3->setVisible(false);
-    m_keyerConfigWidget->setVisible(false);
+    form->setRowVisible(m_keyerTitle, false);
+    form->setRowVisible(m_encodeModeCombo, false);
 }
 
 void KpodPage::refresh() {
@@ -199,14 +102,6 @@ void KpodPage::updateKpodStatus() {
     bool kpodPlusDetected = m_kpodPlusDevice && m_kpodPlusDevice->isDetected();
     bool anyDetected = kpodDetected || kpodPlusDetected;
 
-    // Styling
-    QString valueStyle = QString("color: %1; font-size: %2px; padding: 5px;")
-                             .arg(K4Styles::Colors::TextWhite)
-                             .arg(K4Styles::Dimensions::FontSizeButton);
-    QString notDetectedStyle = QString("color: %1; font-size: %2px; font-style: italic; padding: 5px;")
-                                   .arg(K4Styles::Colors::TextGray)
-                                   .arg(K4Styles::Dimensions::FontSizeButton);
-
     // Update status label — show which device is detected
     QString statusText;
     if (kpodPlusDetected && kpodDetected) {
@@ -218,15 +113,15 @@ void KpodPage::updateKpodStatus() {
     } else {
         statusText = "Not Detected";
     }
-    QString statusColor = anyDetected ? K4Styles::Colors::StatusGreen : K4Styles::Colors::ErrorRed;
     m_kpodStatusLabel->setText(statusText);
-    m_kpodStatusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(statusColor));
+    K4Styles::setStyleState(m_kpodStatusLabel, K4Styles::StateProperty,
+                            anyDetected ? QString(K4Styles::Dialog::StatusOk) : QString());
 
     // Prefer KPOD+ info if both are detected, otherwise show KPOD
     auto setLabel = [&](QLabel *label, const QString &value) {
         QString displayValue = value.isEmpty() ? "N/A" : value;
         label->setText(displayValue);
-        label->setStyleSheet(displayValue == "N/A" ? notDetectedStyle : valueStyle);
+        K4Styles::setStyleFlag(label, K4Styles::DimmedProperty, displayValue == "N/A");
     };
 
     if (kpodPlusDetected) {
@@ -261,38 +156,13 @@ void KpodPage::updateKpodStatus() {
         setLabel(m_kpodDeviceIdLabel, "");
     }
 
-    // The checkbox is a PREFERENCE and stays settable whether or not a device is plugged in.
-    //
-    // It used to be greyed out on !anyDetected, which meant the only way to arrive with K-Pod
-    // switched off was to plug a device in, uncheck it, and unplug again. The setting persists
-    // across restarts but could only be CHANGED while the hardware was present - and if you wanted
-    // it off because the device misbehaves, you had to attach the misbehaving device to say so.
-    // The status row above already says whether anything is connected, so disabling the control
-    // added nothing and removed capability.
-    m_kpodEnableCheckbox->setStyleSheet(K4Styles::Dialog::checkBox());
-
-    // Show/hide keyer configuration section based on KPOD+ detection
-    if (m_keyerConfigWidget) {
-        m_keyerConfigWidget->setVisible(kpodPlusDetected);
-        // Also show the separator above it
-        QWidget *sep = m_keyerConfigWidget->parentWidget();
-        if (sep) {
-            // Find the separator line just before keyer config
-            int idx = static_cast<QVBoxLayout *>(layout())->indexOf(m_keyerConfigWidget);
-            if (idx > 0) {
-                QLayoutItem *item = layout()->itemAt(idx - 1);
-                if (item && item->widget()) {
-                    item->widget()->setVisible(kpodPlusDetected);
-                }
-            }
-        }
+    if (m_form) {
+        m_form->setRowVisible(m_keyerTitle, kpodPlusDetected);
+        m_form->setRowVisible(m_encodeModeCombo, kpodPlusDetected);
     }
 
-    // Help text. DETECTED, ENABLED and RUNNING are three different things, and this used to conflate
-    // them: "KPOD+ keyer is active" was shown whenever a KPOD+ was merely plugged in, including
-    // with the box unchecked and the device never opened. That is the same conflation as USB-003,
-    // in the UI rather than the CW gate, and it is what told an operator the keyer had taken over
-    // when it had not.
+    // Help text: detected, enabled and running are distinct; never report the KPOD+ keyer active
+    // unless it is enabled.
     const bool enabled = RadioSettings::instance()->kpodEnabled();
     if (!anyDetected) {
         m_kpodHelpLabel->setText(enabled ? "No K-Pod connected. It will be used as soon as one is plugged in."

@@ -4,8 +4,6 @@
 #include <QPainter>
 
 namespace {
-const int ContentHeight = 52;
-const int ContentMargin = 12;
 const int TitleWidth = 140; // Wider title for "MIC INPUT"
 } // namespace
 
@@ -17,7 +15,7 @@ MicInputPopupWidget::MicInputPopupWidget(QWidget *parent) : K4PopupBase(parent) 
 void MicInputPopupWidget::setupUi() {
     int sm = K4Styles::Dimensions::ShadowMargin;
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(sm + ContentMargin, sm + 8, sm + ContentMargin, sm + 8);
+    layout->setContentsMargins(sm + CompactRowContentMargin, sm + 8, sm + CompactRowContentMargin, sm + 8);
     layout->setSpacing(6);
 
     m_titleLabel = new QPushButton("MIC INPUT", this);
@@ -29,26 +27,31 @@ void MicInputPopupWidget::setupUi() {
     m_frontBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_frontBtn->setCheckable(true);
     m_frontBtn->setCursor(Qt::PointingHandCursor);
+    m_frontBtn->setStyleSheet(K4Styles::popupButton());
 
     m_rearBtn = new QPushButton("REAR", this);
     m_rearBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_rearBtn->setCheckable(true);
     m_rearBtn->setCursor(Qt::PointingHandCursor);
+    m_rearBtn->setStyleSheet(K4Styles::popupButton());
 
     m_lineInBtn = new QPushButton("LINE IN", this);
     m_lineInBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_lineInBtn->setCheckable(true);
     m_lineInBtn->setCursor(Qt::PointingHandCursor);
+    m_lineInBtn->setStyleSheet(K4Styles::popupButton());
 
     m_frontLineBtn = new QPushButton("FRONT +\nLINE IN", this);
     m_frontLineBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_frontLineBtn->setCheckable(true);
     m_frontLineBtn->setCursor(Qt::PointingHandCursor);
+    m_frontLineBtn->setStyleSheet(K4Styles::popupButton());
 
     m_rearLineBtn = new QPushButton("REAR +\nLINE IN", this);
     m_rearLineBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_rearLineBtn->setCheckable(true);
     m_rearLineBtn->setCursor(Qt::PointingHandCursor);
+    m_rearLineBtn->setStyleSheet(K4Styles::popupButton());
 
     m_closeBtn = new QPushButton("↩", this); // U+21A9
     m_closeBtn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
@@ -104,11 +107,11 @@ void MicInputPopupWidget::setupUi() {
 }
 
 QSize MicInputPopupWidget::contentSize() const {
-    const int contentWidth = ContentMargin + TitleWidth + 6 + K4Styles::Dimensions::PopupButtonWidth + 6 +
+    const int contentWidth = CompactRowContentMargin + TitleWidth + 6 + K4Styles::Dimensions::PopupButtonWidth + 6 +
                              K4Styles::Dimensions::PopupButtonWidth + 6 + K4Styles::Dimensions::PopupButtonWidth + 6 +
                              K4Styles::Dimensions::PopupButtonWidth + 6 + K4Styles::Dimensions::PopupButtonWidth + 6 +
-                             K4Styles::Dimensions::NavButtonWidth + ContentMargin;
-    return QSize(contentWidth, ContentHeight);
+                             K4Styles::Dimensions::NavButtonWidth + CompactRowContentMargin;
+    return QSize(contentWidth, CompactRowContentHeight);
 }
 
 void MicInputPopupWidget::updateButtonStyles() {
@@ -118,15 +121,13 @@ void MicInputPopupWidget::updateButtonStyles() {
     m_frontLineBtn->setChecked(m_currentInput == 3);
     m_rearLineBtn->setChecked(m_currentInput == 4);
 
-    m_frontBtn->setStyleSheet(m_frontBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                      : K4Styles::popupButtonNormal());
-    m_rearBtn->setStyleSheet(m_rearBtn->isChecked() ? K4Styles::popupButtonSelected() : K4Styles::popupButtonNormal());
-    m_lineInBtn->setStyleSheet(m_lineInBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                        : K4Styles::popupButtonNormal());
-    m_frontLineBtn->setStyleSheet(m_frontLineBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                              : K4Styles::popupButtonNormal());
-    m_rearLineBtn->setStyleSheet(m_rearLineBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                            : K4Styles::popupButtonNormal());
+    // WHY: the selected look follows m_currentInput, not isChecked(): clicking the current input flips it
+    // unchecked without changing the input, and that key must keep its selected look.
+    K4Styles::setSelected(m_frontBtn, m_currentInput == 0);
+    K4Styles::setSelected(m_rearBtn, m_currentInput == 1);
+    K4Styles::setSelected(m_lineInBtn, m_currentInput == 2);
+    K4Styles::setSelected(m_frontLineBtn, m_currentInput == 3);
+    K4Styles::setSelected(m_rearLineBtn, m_currentInput == 4);
 }
 
 void MicInputPopupWidget::setCurrentInput(int input) {
@@ -137,23 +138,5 @@ void MicInputPopupWidget::setCurrentInput(int input) {
 }
 
 void MicInputPopupWidget::paintContent(QPainter &painter, const QRect &contentRect) {
-    QLinearGradient grad = K4Styles::buttonGradient(contentRect.top(), contentRect.bottom());
-    painter.setBrush(grad);
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    painter.drawRoundedRect(contentRect, K4Styles::Dimensions::BorderRadiusLarge,
-                            K4Styles::Dimensions::BorderRadiusLarge);
-
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    int lineTop = contentRect.top() + 7;
-    int lineBottom = contentRect.bottom() - 7;
-
-    auto drawDelimiter = [&](QWidget *widget) {
-        if (widget && widget->isVisible()) {
-            int x = widget->geometry().right() + 3;
-            painter.drawLine(x, lineTop, x, lineBottom);
-        }
-    };
-
-    drawDelimiter(m_titleLabel);
-    drawDelimiter(m_rearLineBtn);
+    paintCompactRowFrame(painter, contentRect, {m_titleLabel, m_rearLineBtn});
 }

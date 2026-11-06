@@ -1,14 +1,19 @@
 #ifndef PANADAPTER_RHI_H
 #define PANADAPTER_RHI_H
 
+#include "dsp/poweraverager.h"
+#include "ui/styling/k4styles.h"
 #include <QRhiWidget>
 #include <rhi/qrhi.h>
 #include <QColor>
 #include <QElapsedTimer>
+#include <QRect>
 #include <QSize>
-#include <QTimer>
 #include <QVector>
+#include <array>
 #include <memory>
+#include "dsp/spectrumgeometry.h"
+#include "models/radiostate/spectrumdisplaystate.h"
 #include "utils/bandplan.h"
 #include "utils/wheelaccumulator.h"
 
@@ -16,6 +21,7 @@
 class DbmScaleOverlay;
 class FrequencyScaleOverlay;
 class BandPlanOverlay;
+class QScreen;
 
 // Modern GPU-accelerated panadapter using Qt RHI
 // Supports Metal (macOS), DirectX (Windows), Vulkan (Linux)
@@ -26,6 +32,10 @@ public:
     explicit PanadapterRhiWidget(QWidget *parent = nullptr);
     ~PanadapterRhiWidget();
 
+    // Width of the dBm / S-unit label column on the left of the spectrum, measured from the label
+    // font. Overlays that draw text over the spectrum (DX spots) keep out of it.
+    int amplitudeAxisWidthPx() const;
+
     // Update spectrum data from K4 PAN packet (payload + offset avoids deep copy)
     void updateSpectrum(const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq, qint32 sampleRate,
                         float noiseFloor);
@@ -33,11 +43,8 @@ public:
     // Configuration
     qint64 centerFreq() const { return m_centerFreq; }
     int ifShift() const { return m_ifShift; }
-    QString mode() const { return m_mode; }
     float spectrumRatio() const { return m_spectrumRatio; }
 
-    void setDbRange(float minDb, float maxDb);
-    void setSpectrumRatio(float ratio);
     void setTunedFrequency(qint64 freq);
     void setFilterBandwidth(int bwHz);
     void setMode(const QString &mode);
@@ -51,6 +58,12 @@ public:
     void setGridEnabled(bool enabled);
     void setRefLevel(int level);
     void setScale(int scale); // 10-150, affects display gain/range
+    // #WBS, 5-30 dB: the waterfall's brightness (WaterfallGeometry::colorWindowFor). -1 = unknown.
+    void setWaterfallColorRange(int db);
+    // SPEED: seconds of history on screen, 0 = Fill (WaterfallGeometry::speedPlanFor). Never changes
+    // the frame rate. Rows folded at a slower speed keep the time they hold; at a faster speed the
+    // whole visible history is redrawn at the new row height.
+    void setWaterfallSpeedSeconds(int seconds);
     void setSpan(int spanHz);
     void setWaterfallHeight(int percent); // 0-100: percentage of display for waterfall
     int span() const { return m_spanHz; }
@@ -86,6 +99,9 @@ signals:
     // Right-click signals (for tuning opposite VFO)
     void frequencyRightClicked(qint64 freq);
     void frequencyRightDragged(qint64 freq);
+    // A right-drag held past the left (-1) or right (+1) edge, every 100 ms: steps the right-drag
+    // VFO. Separate from frequencyScrolled so the mouse-QSY mode can gate it like right-drag.
+    void frequencyRightEdgeScrolled(int steps);
     // Scale/RefLevel scroll signals (Shift+Wheel, Ctrl+Wheel)
     void scaleScrolled(int steps);
     void refLevelScrolled(int steps);
@@ -93,6 +109,15 @@ signals:
 protected:
     // QRhiWidget overrides
     void initialize(QRhiCommandBuffer *cb) override;
+    // Drops every QRhi resource; QRhiWidget calls it before the QRhi they belong to goes away.
+    void releaseResources() override;
+    // The QRhi the GPU resources were created from; null while there are none, or once that QRhi
+    // is gone. Equals rhi() whenever render() draws.
+    QRhi *resourcesRhi() const;
+    // initialize() for a given QRhi: drops the resources when it is not the one they came from, then
+    // creates whatever is missing. initialize() passes rhi(); the lifecycle test passes a Null QRhi
+    // of its own, because the offscreen platform has no QRhiWidget support to swap one for real.
+    void initializeResources(QRhi *current, QRhiCommandBuffer *cb);
     void render(QRhiCommandBuffer *cb) override;
     void resizeEvent(QResizeEvent *event) override;
 
@@ -117,73 +142,77 @@ private:
     void createPipelines();
 
     // Data processing
-    void decompressBins(const QByteArray &bins, QVector<float> &out);
+    static void decompressBins(const QByteArray &bins, QVector<float> &out);
     void updateWaterfallData();
 
-    // Diagnostics — no rendering effect. Gated on the qk4.pan.diag category being debug-enabled.
+    // Diagnostics — no rendering effect. Gated on the qk4.spectrum.diag category being debug-enabled.
     void logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz);
     void logRenderGeometry(const QSize &outputSize);
+    // Row commit vs. render timing, logged every CadenceReportRows rows: how many display refreshes
+    // each row stayed on screen and how many PAN frames arrived too close together to get a row.
+    void noteRenderCadence(bool rowCommitted);
+
+    // Re-derives m_devicePxPerRow when the widget's screen, its geometry or its scale changes.
+    void updateDevicePxPerRow();
 
     // Coordinate helpers
-    float normalizeDb(float db);
-    float freqToNormalized(qint64 freq);
-    qint64 xToFreq(int x, int w);
+    qint64 displayCenterHz() const;
+    float freqToNormalized(qint64 freq) const;
+    qint64 xToFreq(int x, int w) const;
     int calculateGridInterval(int spanHz) const;
-    // RHI resources
+    void rebuildGridIfNeeded(float w, float spectrumHeight, float dpr);
+    // RHI resources. Every object created from m_rhi lives in m_gpu, so a QRhi change drops all of
+    // them at once (releaseResources()) and a new resource cannot be missed there.
     QRhi *m_rhi = nullptr;
-    std::unique_ptr<QRhiBuffer> m_waterfallVbo;
-    std::unique_ptr<QRhiBuffer> m_waterfallUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_overlayVbo;
-    std::unique_ptr<QRhiBuffer> m_overlayUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_passbandVbo;
-    std::unique_ptr<QRhiBuffer> m_passbandUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_markerVbo;
-    std::unique_ptr<QRhiBuffer> m_markerUniformBuffer;
-    std::unique_ptr<QRhiBuffer> m_notchVbo;
-    std::unique_ptr<QRhiBuffer> m_notchUniformBuffer;
-    std::unique_ptr<QRhiTexture> m_waterfallTexture;
-    std::unique_ptr<QRhiTexture> m_colorLutTexture;
-    std::unique_ptr<QRhiTexture> m_spectrumDataTexture; // 1D texture for spectrum values
-    std::unique_ptr<QRhiSampler> m_sampler;
-    std::unique_ptr<QRhiGraphicsPipeline> m_waterfallPipeline;
-    std::unique_ptr<QRhiGraphicsPipeline> m_overlayLinePipeline;
-    std::unique_ptr<QRhiGraphicsPipeline> m_overlayTrianglePipeline;
-    std::unique_ptr<QRhiBuffer> m_fullscreenQuadVbo; // Shared fullscreen quad for fragment-shader styles
-    // Spectrum fill resources (LUT-based colors)
-    std::unique_ptr<QRhiGraphicsPipeline> m_spectrumFillPipeline;
-    std::unique_ptr<QRhiShaderResourceBindings> m_spectrumFillSrb;
-    std::unique_ptr<QRhiBuffer> m_spectrumFillUniformBuffer;
-    std::unique_ptr<QRhiTexture> m_spectrumFillLutTexture; // 256-entry color LUT for spectrum fill
-    std::unique_ptr<QRhiShaderResourceBindings> m_waterfallSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_overlaySrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_passbandSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_markerSrb;
-    std::unique_ptr<QRhiShaderResourceBindings> m_notchSrb;
-    // Secondary passband buffers (for other VFO's overlay)
-    std::unique_ptr<QRhiBuffer> m_secondaryPassbandVbo;
-    std::unique_ptr<QRhiBuffer> m_secondaryPassbandUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_secondaryPassbandSrb;
-    std::unique_ptr<QRhiBuffer> m_secondaryMarkerVbo;
-    std::unique_ptr<QRhiBuffer> m_secondaryMarkerUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_secondaryMarkerSrb;
-    // TX marker buffers (shows TX position when RIT/XIT active)
-    std::unique_ptr<QRhiBuffer> m_txMarkerVbo;
-    std::unique_ptr<QRhiBuffer> m_txMarkerUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_txMarkerSrb;
-    // RTTY mark/space tone line buffers (primary VFO)
-    std::unique_ptr<QRhiBuffer> m_rttyMarkVbo;
-    std::unique_ptr<QRhiBuffer> m_rttyMarkUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_rttyMarkSrb;
-    std::unique_ptr<QRhiBuffer> m_rttySpaceVbo;
-    std::unique_ptr<QRhiBuffer> m_rttySpaceUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_rttySpaceSrb;
-    // RTTY mark/space tone line buffers (secondary VFO)
-    std::unique_ptr<QRhiBuffer> m_secRttyMarkVbo;
-    std::unique_ptr<QRhiBuffer> m_secRttyMarkUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_secRttyMarkSrb;
-    std::unique_ptr<QRhiBuffer> m_secRttySpaceVbo;
-    std::unique_ptr<QRhiBuffer> m_secRttySpaceUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_secRttySpaceSrb;
+    struct GpuResources {
+        std::unique_ptr<QRhiBuffer> waterfallVbo;
+        std::unique_ptr<QRhiBuffer> waterfallUniformBuffer;
+        std::unique_ptr<QRhiBuffer> overlayVbo;
+        std::unique_ptr<QRhiBuffer> overlayUniformBuffer;
+        std::unique_ptr<QRhiBuffer> passbandVbo;
+        std::unique_ptr<QRhiBuffer> passbandUniformBuffer;
+        std::unique_ptr<QRhiBuffer> markerVbo;
+        std::unique_ptr<QRhiBuffer> markerUniformBuffer;
+        std::unique_ptr<QRhiBuffer> notchVbo;
+        std::unique_ptr<QRhiBuffer> notchUniformBuffer;
+        std::unique_ptr<QRhiTexture> waterfallTexture;
+        std::unique_ptr<QRhiTexture> colorLutTexture;
+        std::unique_ptr<QRhiTexture> spectrumDataTexture; // 1D texture for spectrum values
+        std::unique_ptr<QRhiSampler> sampler;
+        std::unique_ptr<QRhiGraphicsPipeline> waterfallPipeline;
+        std::unique_ptr<QRhiGraphicsPipeline> overlayLinePipeline;
+        std::unique_ptr<QRhiGraphicsPipeline> overlayTrianglePipeline;
+        std::unique_ptr<QRhiBuffer> fullscreenQuadVbo; // Shared fullscreen quad for fragment-shader styles
+        // Spectrum fill resources (LUT-based colors)
+        std::unique_ptr<QRhiGraphicsPipeline> spectrumFillPipeline;
+        std::unique_ptr<QRhiShaderResourceBindings> spectrumFillSrb;
+        std::unique_ptr<QRhiBuffer> spectrumFillUniformBuffer;
+        std::unique_ptr<QRhiTexture> spectrumFillLutTexture; // 256-entry color LUT for spectrum fill
+        std::unique_ptr<QRhiShaderResourceBindings> waterfallSrb;
+        std::unique_ptr<QRhiShaderResourceBindings> overlaySrb;
+        std::unique_ptr<QRhiShaderResourceBindings> passbandSrb;
+        std::unique_ptr<QRhiShaderResourceBindings> markerSrb;
+        std::unique_ptr<QRhiShaderResourceBindings> notchSrb;
+        // Secondary passband buffers (for other VFO's overlay)
+        std::unique_ptr<QRhiBuffer> secondaryPassbandVbo;
+        std::unique_ptr<QRhiBuffer> secondaryPassbandUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> secondaryPassbandSrb;
+        std::unique_ptr<QRhiBuffer> secondaryMarkerVbo;
+        std::unique_ptr<QRhiBuffer> secondaryMarkerUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> secondaryMarkerSrb;
+        // TX marker buffers (shows TX position when RIT/XIT active)
+        std::unique_ptr<QRhiBuffer> txMarkerVbo;
+        std::unique_ptr<QRhiBuffer> txMarkerUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> txMarkerSrb;
+        // RTTY space tone line buffers (the mark tone coincides with the VFO marker)
+        std::unique_ptr<QRhiBuffer> rttySpaceVbo;
+        std::unique_ptr<QRhiBuffer> rttySpaceUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> rttySpaceSrb;
+        std::unique_ptr<QRhiBuffer> secRttySpaceVbo;
+        std::unique_ptr<QRhiBuffer> secRttySpaceUniformBuffer;
+        std::unique_ptr<QRhiShaderResourceBindings> secRttySpaceSrb;
+    };
+    GpuResources m_gpu;
     QRhiRenderPassDescriptor *m_rpDesc = nullptr;
 
     bool m_rhiInitialized = false;
@@ -196,10 +225,19 @@ private:
     QShader m_overlayVert;
     QShader m_overlayFrag;
 
-    // Spectrum data (cropped to display span for live trace)
+    // The drawn trace: the full tier's bins, averaged and eased; spectrum_fill.frag windows them to the span
     QVector<float> m_currentSpectrum;
-    QVector<float> m_rawSpectrum;
     QVector<float> m_normalizedSpectrum; // Reused per-frame to avoid allocation in render()
+    // Per-frame scratch for the dashed overlay lines; cleared, not reallocated, each frame.
+    QVector<float> m_notchDashVerts;
+    QVector<float> m_rttyDashVerts;
+    QVector<float> m_secRttyDashVerts;
+    // Grid lines depend only on the spectrum area's size and the device pixel ratio, so they are
+    // rebuilt when one of those changes rather than every frame.
+    QVector<float> m_gridVerts;
+    float m_gridWidth = -1.0f;
+    float m_gridHeight = -1.0f;
+    float m_gridDpr = -1.0f;
     // Full-tier spectrum data (all 1024 bins for waterfall storage)
     QVector<float> m_tierSpectrum;
     QVector<float> m_tierRawSpectrum;
@@ -227,8 +265,35 @@ private:
     int m_waterfallHistory = MAX_WATERFALL_HISTORY; // rows stored (ring size)
     int m_visibleRows = MAX_WATERFALL_HISTORY;      // rows drawn; follows waterfall pixel height
     int m_waterfallWriteRow = 0;
+    // Device pixels per row: one row per physical pixel of the panel, which is two device pixels
+    // when macOS halves a HiDPI framebuffer onto a panel of half its size. See
+    // WaterfallGeometry::devicePxPerRowFor for why a half-pixel scroll step twinkles.
+    int m_devicePxPerRow = 1;
+    qreal m_framebufferPerPanel = 1.0;
+    // V shift that puts row edges on the panel's pixel grid (WaterfallGeometry::rowShiftFor).
+    float m_waterfallRowShift = 0.0f;
+    float m_lastLoggedRowShift = 0.0f;
+    // What m_devicePxPerRow was derived from. Querying the OS enumerates display modes, so it runs
+    // only when one of these changes, not per frame. The pointer is compared, never dereferenced.
+    const QScreen *m_panelScaleScreen = nullptr;
+    QRect m_panelScaleGeometry;
+    qreal m_panelScaleDpr = 0.0;
     QVector<quint8> m_waterfallData;
     bool m_waterfallNeedsUpdate = false;
+    // SPEED (WaterfallGeometry::speedPlanFor). The row being built takes m_framesPerRow frames,
+    // each bin's peak; m_framesInRow have been folded in so far.
+    int m_waterfallSpeedSeconds = 0;
+    int m_framesPerRow = 1;
+    int m_framesInRow = 0;
+    int m_rowSpecSize = 0; // bins of the frames folded into the row being built
+    // How often frames become rows, measured: the K4 may send fewer frames than #FPS asked for.
+    // m_lineRateHz is smoothed; m_planLineRateHz only follows it past a 10 % dead band, so the plan
+    // (and the row height) does not hop with every late frame.
+    QElapsedTimer m_lineClock;
+    double m_lineRateHz = 0.0;
+    double m_planLineRateHz = 0.0;
+    int m_lineSamples = 0;
+    void noteLineCommitted();
     bool m_waterfallNeedsFullClear = false;
     // Tier span each stored row was captured at. Diagnostic only: the waterfall is cleared on a
     // tier change, so every stored row shares the current tier and the renderer needs no per-row
@@ -240,6 +305,17 @@ private:
     bool m_geometryLoggedWithBins = false;
     // Last logged gap between the radio's reported noise floor and our own minimum bin, so the
     // calibration check reports on change rather than every frame.
+    // Render cadence diagnostic (noteRenderCadence); only touched while qk4.spectrum.diag is on.
+    static constexpr int CadenceReportRows = 150;
+    QElapsedTimer m_cadenceClock;
+    qint64 m_cadenceLastRowNs = -1;
+    qint64 m_cadenceMinRowNs = 0;
+    qint64 m_cadenceMaxRowNs = 0;
+    qint64 m_cadenceSumRowNs = 0;
+    int m_cadenceRows = 0;
+    int m_cadenceRenders = 0;
+    int m_cadenceCoalesced = 0;
+    std::array<int, 8> m_cadenceRefreshesPerRow{}; // index = refreshes the row was shown for; 7 = 7+
     float m_lastLoggedCalibDelta = 0.0f;
     float m_calibDelta = 0.0f;
     int m_calibSamples = 0;
@@ -255,20 +331,25 @@ private:
     float m_noiseFloor = -130.0f;
     qint64 m_tunedFreq = 0;
     int m_filterBw = 2400;
-    QString m_mode = "USB";
-    int m_dataSubMode = 0;
+    SpectrumGeometry::Mode m_mode = SpectrumGeometry::Mode::Usb;
+    SpectrumGeometry::DataSubMode m_dataSubMode = SpectrumGeometry::DataSubMode::DataA;
     int m_ifShift = 50;
-    int m_cwPitch = 500;
+    int m_cwPitch = SpectrumGeometry::DefaultCwPitchHz;
     int m_fskMarkTone = 915; // FSK Mark-Tone (user-configurable from K4 front panel)
     int m_rttyShift = 170;   // Fixed 170 Hz shift between Mark and Space
 
-    // Display settings
-    float m_minDb = -138.0f;
-    float m_maxDb = -58.0f;
+    // Display settings. The dB window is always [m_refLevel, m_refLevel + m_scale]
+    // (updateDbRangeFromRefAndScale); these are the values before the radio's first #REF / #SCL,
+    // and clear() returns to them so a reconnect never inherits the last session's window.
+    int m_refLevel = SpectrumDisplayLimits::RefLevelDefault;
+    int m_scale = SpectrumDisplayLimits::ScaleDefault; // 10-150
+    float m_minDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault);
+    float m_maxDb = static_cast<float>(SpectrumDisplayLimits::RefLevelDefault + SpectrumDisplayLimits::ScaleDefault);
+    int m_waterfallColorRange = -1; // #WBS dB; -1 until the radio reports it
+    // WHY a fixed value: layout only, until the radio's #WFH arrives (setWaterfallHeight); the
+    // radio's height replaces it on every connect, as the RadioState sentinel guarantees an emit.
     float m_spectrumRatio = 0.30f;
     bool m_gridEnabled = true;
-    int m_refLevel = -110;
-    int m_scale = 75; // 10-150, default 75 (neutral)
     int m_spanHz = 10000;
     bool m_notchEnabled = false;
     int m_notchPitchHz = 0;
@@ -282,32 +363,36 @@ private:
     // Secondary VFO (other receiver's passband)
     qint64 m_secondaryTunedFreq = 0;
     int m_secondaryFilterBw = 0;
-    QString m_secondaryMode = "";
-    int m_secondaryDataSubMode = 0;
+    SpectrumGeometry::Mode m_secondaryMode = SpectrumGeometry::Mode::Unknown;
+    SpectrumGeometry::DataSubMode m_secondaryDataSubMode = SpectrumGeometry::DataSubMode::DataA;
     int m_secondaryIfShift = 50;
     bool m_secondaryVisible = false;
-    QColor m_secondaryPassbandColor{0, 255, 0, 64}; // Green 25% alpha
-    QColor m_secondaryMarkerColor{0, 255, 0, 255};  // Green 100% alpha
+    QColor m_secondaryPassbandColor{
+        K4Styles::withAlpha(K4Styles::Colors::VfoBGreen, K4Styles::Colors::Alpha::PassbandFill)};
+    QColor m_secondaryMarkerColor{K4Styles::Colors::VfoBGreen};
 
     // Colors
-    QColor m_gridColor{160, 160, 160, 77};      // Light gray with 30% alpha
-    QColor m_passbandColor{0, 191, 255, 64};    // Cyan with 25% alpha (VFO A default)
-    QColor m_frequencyMarkerColor{0, 140, 200}; // Darker cyan (VFO A default)
-    QColor m_notchColor{255, 0, 0};             // Red
+    QColor m_gridColor{K4Styles::withAlpha(K4Styles::Colors::SpectrumGrid, K4Styles::Colors::Alpha::SpectrumGrid)};
+    QColor m_passbandColor{K4Styles::withAlpha(K4Styles::Colors::VfoACyan, K4Styles::Colors::Alpha::PassbandFill)};
+    QColor m_frequencyMarkerColor{K4Styles::Colors::VfoACyan}; // as SpectrumController sets it
+    QColor m_notchColor{K4Styles::Colors::TxRed};
 
-    // RTTY tone overlay colors
-    QColor m_rttyToneColor{255, 200, 0, 200};        // Yellow-orange for primary VFO
-    QColor m_secondaryRttyToneColor{0, 255, 0, 160}; // Green for secondary VFO
+    // RTTY tone overlay colors: primary VFO, then the other receiver's
+    QColor m_rttyToneColor{K4Styles::withAlpha(K4Styles::Colors::RttyToneMarker, K4Styles::Colors::Alpha::RttyTone)};
+    QColor m_secondaryRttyToneColor{
+        K4Styles::withAlpha(K4Styles::Colors::VfoBGreen, K4Styles::Colors::Alpha::SecondaryRttyTone)};
 
     // TX marker state
     qint64 m_txFreq = 0;
     bool m_txMarkerVisible = false;
-    QColor m_txMarkerColor{255, 60, 60, 160}; // Translucent red
+    QColor m_txMarkerColor{K4Styles::withAlpha(K4Styles::Colors::TxMarker, K4Styles::Colors::Alpha::TxMarker)};
 
     // Display averaging (K4 #AVG control, 1-20)
-    int m_averagingLevel = 1;
-    float m_attackAlpha = 0.52f;
-    float m_decayAlpha = 0.34f;
+    // -1 until the radio reports #AVG, so its first report always applies (a legal default here
+    // swallowed #AVG1 and left the old smoothing on). Unsmoothed until then.
+    int m_averagingLevel = -1;
+    PowerAverager m_tierAverager;  // full-tier bins -> waterfall
+    PowerAverager m_traceAverager; // cropped bins -> trace
 
     WheelAccumulator m_wheelAccumulator;
 

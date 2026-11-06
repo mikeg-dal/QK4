@@ -131,11 +131,40 @@ private slots:
         // REGRESSION, found on a live K4. PCX is the extended QUERY; the radio ignores it as a
         // set, so drive silently did nothing. The set form is PCnnnr, which is what QK4's own UI
         // sends and what the radio echoes back (PC045H).
-        QCOMPARE(CatFrames::setRfPower(45, false), QByteArray("PC045H;"));
-        QCOMPARE(CatFrames::setRfPower(100, false), QByteArray("PC100H;"));
+        QCOMPARE(CatFrames::setRfPower(45, LevelsState::PowerRange::Qro), QByteArray("PC045H;"));
+        QCOMPARE(CatFrames::setRfPower(100, LevelsState::PowerRange::Qro), QByteArray("PC100H;"));
         // QRP is reported in tenths of a watt, so a request in watts is scaled: 5 W is PC050L.
-        QCOMPARE(CatFrames::setRfPower(5, true), QByteArray("PC050L;"));
-        QCOMPARE(CatFrames::setRfPower(10, true), QByteArray("PC100L;"));
+        QCOMPARE(CatFrames::setRfPower(5, LevelsState::PowerRange::Qrp), QByteArray("PC050L;"));
+        QCOMPARE(CatFrames::setRfPower(10, LevelsState::PowerRange::Qrp), QByteArray("PC100L;"));
+        // Fractional QRP and the XVTR range (tenths of a mW, letter X) go out as the radio reports them.
+        QCOMPARE(CatFrames::setRfPower(2.5, LevelsState::PowerRange::Qrp), QByteArray("PC025L;"));
+        QCOMPARE(CatFrames::setRfPower(1.5, LevelsState::PowerRange::Xvtr), QByteArray("PC015X;"));
+    }
+
+    void sMeterReplyIsTheInverseOfTheRadioReport() {
+        // SM0028 is S9+30 dB. Above S9 each bar is 3 dB, so the reply must read back unchanged -
+        // it used to answer SM0021 (about S9+9).
+        for (int bars = 0; bars <= 40; ++bars) {
+            RadioState rs;
+            const QByteArray wire = QStringLiteral("SM%1;").arg(bars, 4, 10, QChar('0')).toUtf8();
+            rs.parseCATCommand(QString::fromLatin1(wire));
+            QCOMPARE(CatFrames::sMeterMain(rs.sMeter()), wire);
+        }
+        QCOMPARE(CatFrames::sMeterMain(12.0), QByteArray("SM0028;"));
+    }
+
+    void signalLevelReplyIsTheInverseOfTheRadioReport() {
+        for (int dbm = -150; dbm <= 20; ++dbm) {
+            for (const bool sub : {false, true}) {
+                RadioState rs;
+                const QByteArray wire = CatFrames::signalLevelDbm(dbm, sub);
+                rs.parseCATCommand(QString::fromLatin1(wire));
+                QCOMPARE(sub ? rs.sMeterDbmB() : rs.sMeterDbm(), std::optional<int>(dbm));
+            }
+        }
+        QCOMPARE(CatFrames::signalLevelDbm(-110, false), QByteArray("SMH-110;"));
+        QCOMPARE(CatFrames::signalLevelDbm(-73, false), QByteArray("SMH-073;"));
+        QCOMPARE(CatFrames::signalLevelDbm(5, true), QByteArray("SMH$+005;"));
     }
 
     void setMenuValueUsesTheAbsoluteMeForm() {
@@ -144,6 +173,19 @@ private slots:
         QCOMPARE(CatFrames::setMenuValue(69, 20), QByteArray("ME0069.0020;"));
         QCOMPARE(CatFrames::setMenuValue(69, 5), QByteArray("ME0069.0005;"));
         QCOMPARE(CatFrames::setMenuValue(7, 200), QByteArray("ME0007.0200;"));
+        QCOMPARE(CatFrames::setMenuValue(79, -5), QByteArray("ME0079.-0005;")); // sign before the zeros
+    }
+
+    // Transverter setup (D12, XVN/XVM/XVR/XVI/XVO/XVP): XVN selects the band, then the field, at the
+    // documented widths - R.F. five digits in MHz, so a 10 GHz band start fits.
+    void xvtrSetupFramesFollowTheReference() {
+        QCOMPARE(CatFrames::setXvtrRfMhz(5, 10368), QByteArray("XVN5;XVR10368;"));
+        QCOMPARE(CatFrames::setXvtrRfMhz(1, 144), QByteArray("XVN1;XVR00144;"));
+        QCOMPARE(CatFrames::setXvtrIfMhz(12, 28), QByteArray("XVN12;XVI28;"));
+        QCOMPARE(CatFrames::setXvtrOffsetHz(3, -1234), QByteArray("XVN3;XVO-01234;"));
+        QCOMPARE(CatFrames::setXvtrOffsetHz(3, 500), QByteArray("XVN3;XVO+00500;"));
+        QCOMPARE(CatFrames::setXvtrMode(2, 1), QByteArray("XVN2;XVM1;"));
+        QCOMPARE(CatFrames::setXvtrPowerTenthsMw(4, 10), QByteArray("XVN4;XVP010;"));
     }
 
     void setBuildersClampRatherThanEmitNonsense() {
@@ -152,13 +194,27 @@ private slots:
         QCOMPARE(CatFrames::setNoiseBlanker(99, true), QByteArray("NB151;"));
         QCOMPARE(CatFrames::setNoiseBlanker(-3, true), QByteArray("NB001;"));
         QCOMPARE(CatFrames::setFilterBandwidth(-100), QByteArray("BW0000;"));
-        QCOMPARE(CatFrames::setRfPower(999, false), QByteArray("PC110H;"));
-        QCOMPARE(CatFrames::setRfPower(99, true), QByteArray("PC100L;"));
+        QCOMPARE(CatFrames::setRfPower(999, LevelsState::PowerRange::Qro), QByteArray("PC110H;"));
+        QCOMPARE(CatFrames::setRfPower(99, LevelsState::PowerRange::Qrp), QByteArray("PC100L;"));
+        // The K4's own limits (rev. D12): SQ "000-040", RG "00 to 60".
+        QCOMPARE(CatFrames::squelch(41), QByteArray("SQ040;"));
+        QCOMPARE(CatFrames::rfGain(99), QByteArray("RG-60;"));
     }
 
     // =========================================================================
     // GET command responses (answered from RadioState cache)
     // =========================================================================
+
+    void startedReportsTheBoundPort() {
+        // Port 0 asks the OS for one; listeners need the port actually bound, not the request.
+        RadioState rs;
+        CatServer server(&rs);
+        QSignalSpy started(&server, &CatServer::started);
+        QVERIFY(server.start(0));
+        QCOMPARE(started.count(), 1);
+        QVERIFY(server.port() != 0);
+        QCOMPARE(started.at(0).at(0).value<quint16>(), server.port());
+    }
 
     void testFrequencyA() {
         RadioState rs;
@@ -225,7 +281,7 @@ private slots:
 
     void testSplitOff() {
         RadioState rs;
-        // Default: split off
+        rs.parseCATCommand("FT0;");
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
@@ -350,7 +406,7 @@ private slots:
 
     void testRitOffset() {
         RadioState rs;
-        // Default RIT offset = 0
+        rs.parseCATCommand("RO+0000;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -359,6 +415,7 @@ private slots:
 
     void testRitOff() {
         RadioState rs;
+        rs.parseCATCommand("RT0;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -367,6 +424,7 @@ private slots:
 
     void testXitOff() {
         RadioState rs;
+        rs.parseCATCommand("XT0;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -375,6 +433,7 @@ private slots:
 
     void testNoiseBlankerOff() {
         RadioState rs;
+        rs.parseCATCommand("NB0000;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -383,6 +442,7 @@ private slots:
 
     void testNoiseReductionOff() {
         RadioState rs;
+        rs.parseCATCommand("NR000;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -394,7 +454,10 @@ private slots:
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
-        QCOMPARE(sendCommand(server, "VX;"), QString("VXV0;")); // no mode yet: the voice group
+        QCOMPARE(sendCommand(server, "VX;"), QString()); // no mode yet: which group VX means is unknown
+        rs.parseCATCommand("MD2;");
+        rs.parseCATCommand("VXV0;");
+        QCOMPARE(sendCommand(server, "VX;"), QString("VXV0;"));
     }
 
     // =========================================================================
@@ -407,6 +470,8 @@ private slots:
         RadioState rs;
         rs.parseCATCommand("FA00007031740;");
         rs.parseCATCommand("MD3;");
+        for (const char *idle : {"RT0;", "XT0;", "RO+0000;", "FT0;"})
+            rs.parseCATCommand(idle);
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
@@ -419,6 +484,8 @@ private slots:
         RadioState rs;
         rs.parseCATCommand("FA00014250000;");
         rs.parseCATCommand("MD1;");
+        for (const char *idle : {"RT0;", "XT0;", "RO+0000;", "FT0;"})
+            rs.parseCATCommand(idle);
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
@@ -435,6 +502,7 @@ private slots:
         rs.parseCATCommand("RT1;");
         rs.parseCATCommand("RO+0050;");
         rs.parseCATCommand("FT1;");
+        rs.parseCATCommand("XT0;");
         rs.parseCATCommand("TX;");
 
         CatServer server(&rs);
@@ -463,7 +531,7 @@ private slots:
 
     void testDiversityOff() {
         RadioState rs;
-        // Default: diversity off
+        rs.parseCATCommand("DV0;");
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
@@ -494,6 +562,7 @@ private slots:
         QVERIFY(server.start(0));
 
         // Mirror MainWindow's catCommandReceived handler: optimistic local parse.
+        server.setRadioLinkUp(true);
         QObject::connect(&server, &CatServer::catCommandReceived, &rs,
                          [&rs](const QString &cmd) { rs.parseCATCommand(cmd); });
 
@@ -523,6 +592,7 @@ private slots:
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
+        server.setRadioLinkUp(true);
         QSignalSpy spy(&server, &CatServer::catCommandReceived);
 
         QTcpSocket client;
@@ -534,6 +604,39 @@ private slots:
         // Give event loop time to process
         QTest::qWait(100);
 
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("FA00014074000;"));
+        client.disconnectFromHost();
+    }
+
+    // A locked VFO's frequency is not changed by a client: LK guards VFO A, LK$ guards VFO B, each on
+    // its own. Nothing is forwarded for the locked one; the other still is.
+    void testFrequencySetRefusedForLockedVfo() {
+        RadioState rs;
+        rs.parseCATCommand("LK1;"); // VFO A locked, B free
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        server.setRadioLinkUp(true);
+        QSignalSpy spy(&server, &CatServer::catCommandReceived);
+
+        QTcpSocket client;
+        client.connectToHost("127.0.0.1", server.port());
+        QVERIFY(client.waitForConnected(1000));
+        client.write("FA00014074000;UP;AB1;FB00007100000;UPB;AB0;");
+        client.flush();
+        QTest::qWait(100);
+
+        QStringList forwarded;
+        for (const auto &args : spy)
+            forwarded << args.at(0).toString();
+        QCOMPARE(forwarded, QStringList({"FB00007100000;", "UPB;", "AB0;"}));
+
+        rs.parseCATCommand("LK0;");
+        rs.parseCATCommand("LK$1;"); // now only VFO B locked
+        spy.clear();
+        client.write("FA00014074000;FB00007100000;AB2;");
+        client.flush();
+        QTest::qWait(100);
         QCOMPARE(spy.count(), 1);
         QCOMPARE(spy.at(0).at(0).toString(), QString("FA00014074000;"));
         client.disconnectFromHost();
@@ -722,7 +825,7 @@ private slots:
 
     void testPcxHighPower() {
         RadioState rs;
-        rs.setRfPower(100.0); // High power mode (>10W)
+        rs.setRfPower(100.0, LevelsState::PowerRange::Qro);
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
@@ -854,23 +957,29 @@ private slots:
     // answered VX; with VXD0. QK4 answered VX1 - VOX on - because it reported on if ANY mode had it.
     void testVxReplyIsForTheCurrentMode_data() {
         QTest::addColumn<QString>("mode");
+        QTest::addColumn<QString>("subMode");
         QTest::addColumn<QString>("expected");
-        QTest::newRow("DATA") << "MD6;" << "VXD0;";
-        QTest::newRow("DATA-R") << "MD9;" << "VXD0;";
-        QTest::newRow("CW") << "MD3;" << "VXC1;";
-        QTest::newRow("CW-R") << "MD7;" << "VXC1;";
-        QTest::newRow("USB") << "MD2;" << "VXV0;";
-        QTest::newRow("AM") << "MD5;" << "VXV0;";
+        QTest::newRow("DATA") << "MD6;" << "DT0;" << "VXD0;";
+        QTest::newRow("DATA-R") << "MD9;" << "DT1;" << "VXD0;";
+        // Direct data is in the C group - VX "m = mode (C = CW/direct data, ...)" (APP-007).
+        QTest::newRow("FSK D") << "MD6;" << "DT2;" << "VXC1;";
+        QTest::newRow("PSK D (DATA-R)") << "MD9;" << "DT3;" << "VXC1;";
+        QTest::newRow("CW") << "MD3;" << "DT2;" << "VXC1;";
+        QTest::newRow("CW-R") << "MD7;" << "DT0;" << "VXC1;";
+        QTest::newRow("USB") << "MD2;" << "DT2;" << "VXV0;";
+        QTest::newRow("AM") << "MD5;" << "DT0;" << "VXV0;";
     }
 
     void testVxReplyIsForTheCurrentMode() {
         QFETCH(QString, mode);
+        QFETCH(QString, subMode);
         QFETCH(QString, expected);
         RadioState rs;
         rs.parseCATCommand("VXC1;");
         rs.parseCATCommand("VXV0;");
         rs.parseCATCommand("VXD0;");
         rs.parseCATCommand(mode);
+        rs.parseCATCommand(subMode);
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
@@ -920,6 +1029,106 @@ private slots:
 
         QCOMPARE(sendCommand(server, "SQ;"), QString());
         QCOMPARE(sendCommand(server, "SQ$;"), QString());
+    }
+
+    // CAT-011. Before the radio has reported a value its getter reads as off, 0 or Slow, and the
+    // server used to answer that as a setting (FW-0000001;, KS008;, PC000H;). Every query here
+    // must go unanswered. ID; follows as the one query with a fixed answer, so getting exactly its
+    // reply proves the rest stayed silent without waiting out a timeout per query.
+    void testQueriesAreSilentUntilTheRadioReports() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        const QString unreported = "FA;FB;MD;MD$;FT;RT;RT$;XT;RO;RO$;PC;PCX;GT;GT$;KS;NB;NB$;NR;NR$;"
+                                   "DV;VX;FW;IF;";
+        QCOMPARE(sendCommand(server, unreported + "ID;"), QString("ID017;"));
+
+        // After a disconnect reset() makes every field unknown again, so the silence returns.
+        rs.parseCATCommand("FA00014074000;");
+        rs.parseCATCommand("KS020;");
+        QCOMPARE(sendCommand(server, "FA;"), QString("FA00014074000;"));
+        rs.reset();
+        QCOMPARE(sendCommand(server, "FA;KS;ID;"), QString("ID017;"));
+    }
+
+    // TX state is the one exception: the radio sends it only when it changes, so it is never known
+    // on an idle link, and WSJT-X polls TQ.
+    void testTqAnswersBeforeAnyTransmitReport() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QCOMPARE(sendCommand(server, "TQ;"), QString("TQ0;"));
+    }
+
+    // APP-006. With no radio a client's SET has nothing to change: it is neither forwarded nor
+    // applied, and forwarding resumes once the link is up.
+    void testSetsAreDroppedWhileTheRadioLinkIsDown() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy spy(&server, &CatServer::catCommandReceived);
+
+        QTcpSocket client;
+        client.connectToHost("127.0.0.1", server.port());
+        QVERIFY(client.waitForConnected(1000));
+        client.write("FA14;MD3;");
+        client.flush();
+        QTest::qWait(100);
+        QCOMPARE(spy.count(), 0);
+
+        server.setRadioLinkUp(true);
+        client.write("FA14;");
+        client.flush();
+        QVERIFY(QTest::qWaitFor([&] { return spy.count() == 1; }, kReplyTimeoutMs));
+        QCOMPARE(spy.at(0).at(0).toString(), QString("FA14;"));
+
+        server.setRadioLinkUp(false);
+        client.write("MD3;");
+        client.flush();
+        QTest::qWait(100);
+        QCOMPARE(spy.count(), 1);
+        client.disconnectFromHost();
+    }
+
+    // CAT-004. MainWindow applies a forwarded SET to RadioState as the radio will read it: FA14; is
+    // 14 MHz, not 14 Hz, and an undefined mode leaves the mode alone.
+    void testForwardedShortFormsApplyAsTheRadioReadsThem() {
+        RadioState rs;
+        rs.parseCATCommand("MD3;");
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        server.setRadioLinkUp(true);
+        QObject::connect(&server, &CatServer::catCommandReceived, &rs,
+                         [&rs](const QString &cmd) { rs.parseCATCommand(cmd); });
+
+        QTcpSocket client;
+        client.connectToHost("127.0.0.1", server.port());
+        QVERIFY(client.waitForConnected(1000));
+        client.write("FA14;FB7100;MD8;");
+        client.flush();
+        QVERIFY(QTest::qWaitFor([&] { return rs.vfoB() == 7'100'000; }, kReplyTimeoutMs));
+        QCOMPARE(rs.frequency(), quint64(14'000'000));
+        QCOMPARE(rs.mode(), RadioState::CW);
+        client.disconnectFromHost();
+    }
+
+    // SMH / SMH$ answer the radio's own dBm reading in its own form (SMH-110, SMH$-122 from a K4D,
+    // 2026-10-30), and nothing before the radio has reported one.
+    void testSmhAnswersTheRadiosSignalLevel() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QCOMPARE(sendCommand(server, "SMH;"), QString());
+        QCOMPARE(sendCommand(server, "SMH$;"), QString());
+
+        rs.parseCATCommand("SMH-110;");
+        rs.parseCATCommand("SMH$-122;");
+        QCOMPARE(sendCommand(server, "SMH;"), QString("SMH-110;"));
+        QCOMPARE(sendCommand(server, "SMH$;"), QString("SMH$-122;"));
+        // SM stays the bar reading, not a dBm figure.
+        rs.parseCATCommand("SM04;");
+        QCOMPARE(sendCommand(server, "SM;"), QString("SM0004;"));
     }
 
     // #134. RG and RG$ went unanswered although QK4 stores both. Captured from a K4D at R40: RG-00.

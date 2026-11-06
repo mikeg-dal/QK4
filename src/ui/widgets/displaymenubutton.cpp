@@ -48,17 +48,17 @@ void DisplayMenuButton::paintEvent(QPaintEvent *event) {
 
     // Primary text (white) - top
     QFont primaryFont = font();
-    primaryFont.setPixelSize(K4Styles::Dimensions::FontSizeButton);
+    primaryFont.setPixelSize(K4Styles::Dimensions::FontSizeReadout);
     primaryFont.setBold(m_selected);
     painter.setFont(primaryFont);
-    painter.setPen(Qt::white);
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
 
     QRect primaryRect(0, 4, width(), height() / 2 - 2);
     painter.drawText(primaryRect, Qt::AlignCenter, m_primaryText);
 
     // Alternate text (orange) - bottom
     QFont altFont = font();
-    altFont.setPixelSize(K4Styles::Dimensions::FontSizeMedium);
+    altFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
     altFont.setBold(false);
     painter.setFont(altFont);
     painter.setPen(QColor(K4Styles::Colors::AccentAmber));

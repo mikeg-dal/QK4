@@ -8,8 +8,7 @@ class QPushButton;
 
 // Reusable yes/no confirmation popup styled in the K4 popup language.
 //
-// First instance: the K4 remote power-off confirm. Built generic so future
-// destructive / sensitive actions can reuse it. Emits exactly one of
+// Used by the K4 remote power-off confirm. Emits exactly one of
 // confirmed() / cancelled() per show: Escape, click-away, and the cancel
 // button all map to cancelled(). The confirm button maps to confirmed().
 class ConfirmPopup : public K4PopupBase {

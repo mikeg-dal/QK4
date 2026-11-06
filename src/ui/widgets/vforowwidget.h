@@ -2,8 +2,6 @@
 #define VFOROWWIDGET_H
 
 #include <QLabel>
-#include <QPainter>
-#include <QVBoxLayout>
 #include <QWidget>
 
 /**
@@ -33,7 +31,7 @@ private:
 /**
  * VfoRowWidget - First row of center section with absolute positioning
  *
- * Contains: A square, TX indicator, B square, SUB/DIV indicators
+ * Contains: A/B squares with mode labels, TEST, TX indicator, SUB/DIV, SPLIT / B SET, MSG bank
  * Uses absolute positioning to perfectly center TX regardless of
  * asymmetric SUB/DIV on B side.
  */

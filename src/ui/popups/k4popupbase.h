@@ -1,8 +1,10 @@
 #ifndef K4POPUPBASE_H
 #define K4POPUPBASE_H
 
-#include <QElapsedTimer>
+#include <initializer_list>
 #include <QWidget>
+
+class PopupDismissal;
 
 /**
  * @brief Base class for QK4 popup widgets.
@@ -37,23 +39,41 @@ class K4PopupBase : public QWidget {
 
 public:
     explicit K4PopupBase(QWidget *parent = nullptr);
+    ~K4PopupBase() override;
 
     /**
-     * @brief Position and show the popup above the trigger button.
+     * @brief Show the popup directly above @p anchor, its card centred horizontally on it.
      *
-     * Centers the popup above the trigger button's parent widget (typically
-     * the menu bar).
+     * The card (the visible box inside the shadow margin) is centred on the anchor and its bottom
+     * edge sits one ShadowMargin above the anchor's top edge, so only the shadow lies between them.
+     * When the anchor is itself a K4PopupBase its card is the reference, not its transparent
+     * window. Pass the widget the popup belongs over: the bottom menu bar for the bar's family, the
+     * open button row for a row's sub-popup, the key itself for a lone key. Nothing but the screen's
+     * available geometry moves the popup off that spot (see placeCard()).
      *
-     * @param triggerButton The button that triggered the popup
+     * While shown the popup closes itself on: a mouse press outside it, Escape, the anchor being
+     * hidden or destroyed, the anchor's window moving, resizing or changing state (minimise,
+     * fullscreen) — the PopupDismissal rule, shared with the side overlays — and the application
+     * going inactive.
      */
-    void showAboveButton(QWidget *triggerButton);
+    void showAboveWidget(QWidget *anchor);
 
     /**
-     * @brief Position and show the popup above a reference widget.
+     * @brief Where the card goes: centred on @p anchor and directly above it.
      *
-     * @param referenceWidget Widget to position the popup above
+     * Pure geometry in global logical pixels, shared by every popup. Clamped to @p available only
+     * where it would leave it: shifted sideways at a left/right screen edge, and put below the
+     * anchor (same gap) when there is no room above, then kept on screen.
+     *
+     * @return the card's top-left corner; the window goes ShadowMargin up and left of it.
      */
-    void showAboveWidget(QWidget *referenceWidget);
+    static QPoint placeCard(const QRect &anchor, const QSize &card, const QRect &available);
+
+    /** @brief The visible card in global coordinates (excludes the transparent shadow margin). */
+    QRect cardGlobalRect() const;
+
+    /** @brief The widget the popup was last shown above, or null once it is destroyed. */
+    QWidget *anchor() const;
 
     /**
      * @brief Hide the popup and emit closed() signal.
@@ -65,11 +85,17 @@ public:
      *
      * Toggle handlers (e.g. PopupManager::toggleFn) must use this instead of
      * isVisible(): a click on the trigger button dismisses the popup via
-     * click-away (window deactivation on mouse-down) before the button's
+     * click-away (PopupDismissal's app-wide mouse-press filter) before the button's
      * clicked() fires on mouse-up. Plain isVisible() would then read false
      * and the toggle would immediately reopen the popup.
      */
     bool isVisibleOrJustHidden() const;
+
+    /**
+     * @brief For a toggle key: close the popup and return true when it is open, or was just
+     *        closed by this same press (click-away); return false when the key should open it.
+     */
+    bool closeIfOpenForToggle();
 
 signals:
     /**
@@ -90,6 +116,9 @@ protected:
      */
     virtual QSize contentSize() const = 0;
 
+    // The rectangle a popup is placed against: an anchor popup's card, any other widget's rect.
+    static QRect anchorGlobalRect(const QWidget *anchor);
+
     /**
      * @brief Get the margins to use for the main layout.
      *
@@ -105,7 +134,7 @@ protected:
      *
      * Must be called at the end of the subclass constructor after
      * setting up the layout and child widgets. This calculates and
-     * sets the final widget size.
+     * sets the final widget size. Call again whenever contentSize() changes, before the next show.
      */
     void initPopup();
 
@@ -129,17 +158,30 @@ protected:
      */
     virtual void paintContent(QPainter &painter, const QRect &contentRect);
 
+    // Single-row popups (title | controls | value | -/+ | close) share one content height and margin.
+    static constexpr int CompactRowContentHeight = 52;
+    static constexpr int CompactRowContentMargin = 12;
+
+    /**
+     * @brief Paint a single-row popup's frame: button gradient, border, and a vertical
+     *        delimiter after each visible widget in @p delimitedWidgets.
+     *
+     * For use from paintContent(). @p rowSpacing is the row layout's spacing, so each
+     * delimiter falls in the middle of the gap to the right of its widget.
+     */
+    void paintCompactRowFrame(QPainter &painter, const QRect &contentRect,
+                              std::initializer_list<const QWidget *> delimitedWidgets, int rowSpacing = 6) const;
+
     // Standard Qt event handlers
     void paintEvent(QPaintEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
-    // Application-wide filter: a mouse press outside the popup dismisses it
-    // (click-away). Installed on qApp while shown, removed on hide.
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
-    // Restarted on every hide; powers isVisibleOrJustHidden().
-    QElapsedTimer m_hiddenTimer;
+    bool pressIsInAChildPopup(const QPoint &globalPos) const;
+    // Watches application-wide while shown (from showAboveWidget() to hide): closes the popup on a
+    // press outside it, Escape, and the anchor or its window going away. Owns the reopen guard.
+    PopupDismissal *m_dismissal;
 };
 
 #endif // K4POPUPBASE_H

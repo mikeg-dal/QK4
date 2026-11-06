@@ -27,10 +27,6 @@ MemoryButtonsController::MemoryButtonsController(ConnectionController *connectio
     rcl->installEventFilter(this);
 }
 
-MemoryButtonsController::~MemoryButtonsController() {
-    disconnect(this);
-}
-
 bool MemoryButtonsController::eventFilter(QObject *watched, QEvent *event) {
     if (event->type() == QEvent::MouseButtonPress) {
         auto *mouseEvent = static_cast<QMouseEvent *>(event);

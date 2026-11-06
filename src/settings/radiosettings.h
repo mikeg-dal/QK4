@@ -1,24 +1,21 @@
 #ifndef RADIOSETTINGS_H
 #define RADIOSETTINGS_H
 
+#include "logging/logrules.h"
+#include "models/radiostate/spectrumdisplaystate.h"
 #include <QMap>
 #include <QObject>
 #include <QSettings>
 #include <QString>
 #include <QVector>
 
+#include "network/protocol.h"
+
 // Macro entry for programmable function keys
 struct MacroEntry {
     QString functionId; // "PF1", "Fn.F1", "K-pod.1T", etc.
     QString label;      // Custom label or empty
     QString command;    // CAT command or empty
-
-    bool isEmpty() const { return command.isEmpty(); }
-    QString displayLabel() const {
-        if (command.isEmpty())
-            return "Unused";
-        return label.isEmpty() ? "Mapped" : label;
-    }
 };
 
 // RX EQ preset entry (8-band graphic equalizer)
@@ -27,13 +24,14 @@ struct EqPreset {
     QVector<int> bands; // 8 values, -16 to +16 dB
 
     bool isEmpty() const { return bands.isEmpty() || name.isEmpty(); }
-    QString displayName() const { return isEmpty() ? "---" : name; }
 };
+
+inline constexpr quint16 kDefaultDxClusterPort = 7000;
+inline constexpr quint16 kDefaultKpa1500Port = 1500;
 
 struct DxClusterEntry {
     QString host;
-    quint16 port = 7000;
-    QString callsign;
+    quint16 port = kDefaultDxClusterPort;
     bool autoConnect = false;
 };
 
@@ -41,14 +39,28 @@ struct RadioEntry {
     QString name;
     QString host;
     QString password; // Password (used as PSK when TLS enabled)
-    quint16 port;
+    quint16 port = K4Protocol::DEFAULT_PORT;
     bool useTls = false; // Use TLS/PSK encryption (port 9204)
     QString identity;    // TLS-PSK identity (optional, empty = default)
-    // Audio encode mode. See docs/k4-protocol-quirks.md -> "Audio encode modes EM0-EM3".
-    int encodeMode =
-        3; // 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode); EM3 default
-    int streamingLatency = 3; // Remote streaming audio latency: 0-7 (default 3)
-    int displayFps = 15;      // Display FPS: 12-30 (default 15, good balance for large monitors)
+    // Ranges are the K4 Programmer's Reference D12; RadioSettings clamps every entry to them when it
+    // is saved or loaded.
+    // EM: 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode). The
+    // radio's default is EM3. See docs/k4-protocol-quirks.md -> "Audio encode modes EM0-EM3".
+    static constexpr int EncodeModeMin = 0;
+    static constexpr int EncodeModeMax = 3;
+    static constexpr int EncodeModeDefault = 3;
+    // SL: remote streaming audio latency, 0-7; the radio's default is 3.
+    static constexpr int StreamingLatencyMin = 0;
+    static constexpr int StreamingLatencyMax = 7;
+    static constexpr int StreamingLatencyDefault = 3;
+    // #FPS: desired panadapter frame rate. QK4 asks for 15 unless the operator chose another.
+    static constexpr int DisplayFpsMin = SpectrumDisplayLimits::FpsMin;
+    static constexpr int DisplayFpsMax = SpectrumDisplayLimits::FpsMax;
+    static constexpr int DisplayFpsDefault = 15;
+
+    int encodeMode = EncodeModeDefault;
+    int streamingLatency = StreamingLatencyDefault;
+    int displayFps = DisplayFpsDefault;
 
     // Connect to this radio automatically when QK4 starts.
     //
@@ -154,12 +166,20 @@ public:
     // HaliKey CW Keyer settings
     QString halikeyPortName() const;
     void setHalikeyPortName(const QString &portName);
-    bool halikeyEnabled() const;
-    void setHalikeyEnabled(bool enabled);
     int halikeyDeviceType() const;
     void setHalikeyDeviceType(int type); // 0=V14, 1=MiDi
     int sidetoneVolume() const;
     void setSidetoneVolume(int value); // 0-100, default 30
+    // HaliKey keyer (PaddleKeyer). Mode: 0 = follow the K4's Iambic A/B (KP), 1 = Plain Iambic,
+    // 2 = Ultimatic.
+    int halikeyKeyerMode() const;
+    void setHalikeyKeyerMode(int mode);
+    bool halikeyStraightKey() const; // a straight key or external keyer on the dit line
+    void setHalikeyStraightKey(bool straight);
+    int halikeyDitMemoryDelay() const; // Iambic B dit memory delay, percent 0-100, default 33
+    void setHalikeyDitMemoryDelay(int percent);
+    bool halikeyMuteRadioMonitor() const; // mute the K4's CW monitor during each burst
+    void setHalikeyMuteRadioMonitor(bool mute);
 
     // DX Cluster settings
     QVector<DxClusterEntry> dxClusters() const;
@@ -192,6 +212,11 @@ public:
     int textDecodeFontSize(bool subRx) const;
     void setTextDecodeFontSize(bool subRx, int sizePx);
 
+    // Waterfall SPEED: seconds of history on screen, 0 = Fill (WaterfallGeometry::SpeedStepsSeconds).
+    // A QK4 display setting, the same for every radio; a value that is not a step reads as Fill.
+    int waterfallSpeedSeconds() const;
+    void setWaterfallSpeedSeconds(int seconds);
+
     // Station / operator info
     int iaruRegion() const; // 1, 2, or 3 — drives the panadapter band-plan overlay
     void setIaruRegion(int region);
@@ -215,51 +240,66 @@ public:
     // screen. Qt reads the scale once, before QApplication exists, so a change applies at the next
     // launch — see startupInterfaceScale() and settings/interfacescale.h.
     static constexpr int kInterfaceScaleAuto = 0;
-    static constexpr int kInterfaceScales[] = {75, 80, 90, 100, 110, 125};
+    static constexpr int kInterfaceScales[] = {75, 80, 90, 100, 110, 125, 150};
     int interfaceScale() const;
     void setInterfaceScale(int percent);
-    // The factor Auto last fitted to the screen, 0.5 to 1.0.
+    // The factor Auto last fitted to the screen, 0.5 to 1.25.
     double autoScaleFactor() const;
     void setAutoScaleFactor(double factor);
     // The factor to start with, read before QApplication exists and so without this singleton —
     // from the same store, spelled the same way.
     static double startupInterfaceScale(bool *isAuto = nullptr);
 
+    // Diagnostics logging (Options -> Diagnostics). The log file is off until the operator turns
+    // it on. Level is a Logging::levelId ("warnings", "normal", "everything"); groups are
+    // Logging::groups() ids. Bench items are deliberately not saved: they are high-volume, so they
+    // switch themselves off at the next launch.
+    bool logFileEnabled() const;
+    void setLogFileEnabled(bool enabled);
+    QString logLevel() const;
+    void setLogLevel(const QString &level);
+    QStringList logGroups() const;
+    void setLogGroups(const QStringList &groups);
+    QStringList logBench() const;
+    void setLogBench(const QStringList &bench);
+    // The four above as one value, ready for Logging::apply().
+    Logging::LogConfig logConfig() const;
+
 signals:
     void radiosChanged();
+    void waterfallSpeedChanged(int seconds);
     void kpodEnabledChanged(bool enabled);
     void kpa1500EnabledChanged(bool enabled);
     void kpa1500SettingsChanged();
     void kpa1500PollIntervalChanged(int intervalMs);
     void micGainChanged(int value);
-    void micDeviceChanged(const QString &deviceId);
     void speakerDeviceChanged(const QString &deviceId);
     void catServerEnabledChanged(bool enabled);
     void catServerPortChanged(quint16 port);
     void tciServerEnabledChanged(bool enabled);
     void tciServerPortChanged(quint16 port);
     void tciAudioEnabledChanged(bool enabled);
-    void tciTxGainChanged(int value);
-    void rxAudioBoostDbChanged(int db);
     void macrosChanged();
-    void halikeyEnabledChanged(bool enabled);
-    void halikeyPortNameChanged(const QString &portName);
     void halikeyDeviceTypeChanged(int type);
     void sidetoneVolumeChanged(int value);
-    void rxEqPresetsChanged();
-    void txEqPresetsChanged();
+    void halikeyKeyerModeChanged(int mode);
+    void halikeyStraightKeyChanged(bool straight);
+    void halikeyDitMemoryDelayChanged(int percent);
+    void halikeyMuteRadioMonitorChanged(bool mute);
     void dxClusterSettingsChanged();
-    void kpodPlusSettingsChanged();
     void iaruRegionChanged(int region);
     void bandPlanOverlayEnabledChanged(bool enabled);
-    void temperatureInFahrenheitChanged(bool fahrenheit);
     void interfaceScaleChanged(int percent);
+    void loggingChanged();
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);
     void load();
     void save();
     void sortRadios();
+    static quint16 defaultRadioPort(bool useTls);
+    static RadioEntry sanitized(RadioEntry radio);
+    static DxClusterEntry sanitized(DxClusterEntry entry);
 
     QVector<RadioEntry> m_radios;
     int m_lastSelectedIndex;
@@ -267,7 +307,7 @@ private:
 
     // KPA1500 settings
     QString m_kpa1500Host;
-    quint16 m_kpa1500Port = 1500;
+    quint16 m_kpa1500Port = kDefaultKpa1500Port;
     bool m_kpa1500Enabled = false;
     int m_kpa1500PollInterval = 300; // Default: 300ms for responsive meters
 
@@ -282,9 +322,12 @@ private:
 
     // HaliKey settings
     QString m_halikeyPortName;
-    bool m_halikeyEnabled = false;
     int m_halikeyDeviceType = 0; // 0=V14, 1=MiDi
     int m_sidetoneVolume = 30;   // Default 30%
+    int m_halikeyKeyerMode = 0;
+    bool m_halikeyStraightKey = false;
+    int m_halikeyDitMemoryDelay = 33;
+    bool m_halikeyMuteRadioMonitor = false;
 
     // Macro settings
     QMap<QString, MacroEntry> m_macros;
@@ -299,11 +342,13 @@ private:
     QVector<DxClusterEntry> m_dxClusters;
     int m_dxClusterSpotAge = 600; // Default 10 minutes
     QString m_dxClusterCallsign;
-    int m_dxClusterSpotFontSize = 11; // K4Styles::Dimensions::FontSizeSpot default; clamped to [8, 16]
+    int m_dxClusterSpotFontSize = 11; // K4Styles::Dimensions::FontSizeSpot default; clamped to FontSizeSpot{Min,Max}
 
     // KPOD+ encode mode (0=KZ, 1=KX). Keyer speed / CW pitch / iambic mode /
     // paddle orientation are not stored — the KPOD+ mirrors the K4.
     int m_kpodPlusEncodeMode = 0;
+
+    QStringList m_logBench; // session only, see logBench()
 
     QSettings m_settings;
 };

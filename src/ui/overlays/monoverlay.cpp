@@ -13,34 +13,30 @@ void MonOverlay::setupUi() {
     layout->setContentsMargins(IndicatorBarWidth + 8, 8, 8, 8);
     layout->setSpacing(0);
 
-    // Title "MON"
     m_titleLabel = new QLabel("MON", this);
     QFont titleFont = m_titleLabel->font();
-    titleFont.setPixelSize(K4Styles::Dimensions::FontSizeButton);
+    titleFont.setPixelSize(K4Styles::Dimensions::FontSizeReadout);
     titleFont.setBold(false);
     m_titleLabel->setFont(titleFont);
-    m_titleLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextWhite));
+    m_titleLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextPrimary));
     layout->addWidget(m_titleLabel);
 
-    // Subtitle "LEVEL"
     m_subtitleLabel = new QLabel("LEVEL", this);
     QFont subtitleFont = m_subtitleLabel->font();
-    subtitleFont.setPixelSize(K4Styles::Dimensions::FontSizeButton);
+    subtitleFont.setPixelSize(K4Styles::Dimensions::FontSizeReadout);
     subtitleFont.setBold(false);
     m_subtitleLabel->setFont(subtitleFont);
-    m_subtitleLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextWhite));
+    m_subtitleLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextPrimary));
     layout->addWidget(m_subtitleLabel);
 
-    // Spacer
     layout->addStretch();
 
-    // Value display
     m_valueLabel = new QLabel("0", this);
     QFont valueFont = m_valueLabel->font();
-    valueFont.setPixelSize(K4Styles::Dimensions::FontSizeButton);
+    valueFont.setPixelSize(K4Styles::Dimensions::FontSizeReadout);
     valueFont.setBold(false);
     m_valueLabel->setFont(valueFont);
-    m_valueLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextWhite));
+    m_valueLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextPrimary));
     layout->addWidget(m_valueLabel);
 }
 
@@ -71,7 +67,6 @@ void MonOverlay::wheelEvent(QWheelEvent *event) {
 }
 
 void MonOverlay::mousePressEvent(QMouseEvent *event) {
-    // Don't close on click - allow adjustment via wheel
-    // Click does nothing, user must click the MON button again to close
+    // WHY: overrides the base close-on-click; a click inside is ignored so the wheel can adjust.
     Q_UNUSED(event)
 }

@@ -1,6 +1,11 @@
 #include "halikeyv14worker.h"
+#include "logging/logcategories.h"
 #include "halikeyworkerbase.h"
+#include "hardware/keyerruntime.h"
+#include "hardware/seriallinepoller.h"
+#include "utils/rtscheduling.h"
 #include <QDebug>
+#include <cstring>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -12,18 +17,6 @@
 #include <unistd.h>
 #endif
 
-#ifdef Q_OS_LINUX
-#include <pthread.h>
-#include <signal.h>
-
-namespace {
-// No-op signal handler. SIGUSR1 is used solely to interrupt a TIOCMIWAIT ioctl
-// blocked in the kernel — the handler doesn't need to do anything; the side
-// effect of receiving the signal is that the ioctl returns with EINTR.
-void halikeyV14SigUsr1Handler(int) {}
-} // namespace
-#endif
-
 HaliKeyV14Worker::HaliKeyV14Worker(const QString &portName, QObject *parent) : HaliKeyWorkerBase(portName, parent) {}
 
 HaliKeyV14Worker::~HaliKeyV14Worker() {
@@ -31,54 +24,19 @@ HaliKeyV14Worker::~HaliKeyV14Worker() {
 }
 
 void HaliKeyV14Worker::prepareShutdown() {
-#ifdef Q_OS_LINUX
-    // Wake the TIOCMIWAIT ioctl with SIGUSR1 — close(fd) alone is unreliable on
-    // Linux because the kernel can hold the wait for hundreds of ms. Signal the
-    // captured pthread directly so other threads in the process aren't disturbed.
-    // The no-op handler returns EINTR from the ioctl; the loop then sees
-    // m_running=false and exits within a few ms.
-    if (m_linuxThreadHandle != 0) {
-        ::pthread_kill(static_cast<pthread_t>(m_linuxThreadHandle), SIGUSR1);
-    }
-    // Close fd as a belt-and-suspenders backup: if SIGUSR1 was masked or didn't
-    // arrive, close(fd) is the documented (if unreliable) wakeup mechanism.
-    if (m_fd >= 0) {
-        ::close(m_fd);
-        m_fd = -1;
-    }
-#endif
+    // Nothing to unblock: the monitor loop polls every 1 ms and sees the stop request within a
+    // poll. The port is closed by the worker thread itself as the loop exits, never from here.
 }
 
 void HaliKeyV14Worker::start() {
-    if (!openNativePort()) {
+    if (stopRequested() || !openNativePort()) {
         return;
     }
-
-#ifdef Q_OS_LINUX
-    // Install a no-op SIGUSR1 handler and make sure this thread won't block the
-    // signal — so prepareShutdown() can interrupt a TIOCMIWAIT ioctl by sending
-    // SIGUSR1 to this exact thread.
-    struct sigaction sa = {};
-    sa.sa_handler = &halikeyV14SigUsr1Handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    ::sigaction(SIGUSR1, &sa, nullptr);
-
-    sigset_t unblock;
-    sigemptyset(&unblock);
-    sigaddset(&unblock, SIGUSR1);
-    ::pthread_sigmask(SIG_UNBLOCK, &unblock, nullptr);
-
-    m_linuxThreadHandle = static_cast<unsigned long>(::pthread_self());
-#endif
-
+    // Promoted here, not when the thread starts: the same thread runs the MIDI worker's presence
+    // poll, which needs nothing of the sort.
+    RtScheduling::promoteCurrentThread(RtScheduling::Threads::kHaliKey);
     emit portOpened();
-    m_running = true;
     monitorLoop();
-
-#ifdef Q_OS_LINUX
-    m_linuxThreadHandle = 0;
-#endif
 }
 
 bool HaliKeyV14Worker::openNativePort() {
@@ -89,7 +47,7 @@ bool HaliKeyV14Worker::openNativePort() {
     if (m_handle == INVALID_HANDLE_VALUE) {
         m_handle = nullptr;
         QString error = "Failed to open port " + m_portName;
-        qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
+        qCWarning(lcCwHalikey) << "HaliKeyV14Worker:" << error;
         emit errorOccurred(error);
         return false;
     }
@@ -99,7 +57,7 @@ bool HaliKeyV14Worker::openNativePort() {
     dcb.DCBlength = sizeof(DCB);
     if (!GetCommState(m_handle, &dcb)) {
         QString error = "Failed to get port state for " + m_portName;
-        qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
+        qCWarning(lcCwHalikey) << "HaliKeyV14Worker:" << error;
         closeNativePort();
         emit errorOccurred(error);
         return false;
@@ -112,7 +70,7 @@ bool HaliKeyV14Worker::openNativePort() {
     dcb.fRtsControl = RTS_CONTROL_ENABLE;
     if (!SetCommState(m_handle, &dcb)) {
         QString error = "Failed to configure port " + m_portName;
-        qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
+        qCWarning(lcCwHalikey) << "HaliKeyV14Worker:" << error;
         closeNativePort();
         emit errorOccurred(error);
         return false;
@@ -143,7 +101,7 @@ bool HaliKeyV14Worker::openNativePort() {
     m_fd = ::open(devPath.constData(), O_RDONLY | O_NOCTTY | O_NONBLOCK);
     if (m_fd < 0) {
         QString error = QString("Failed to open port %1: %2").arg(m_portName, QString::fromLocal8Bit(strerror(errno)));
-        qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
+        qCWarning(lcCwHalikey) << "HaliKeyV14Worker:" << error;
         emit errorOccurred(error);
         return false;
     }
@@ -152,7 +110,7 @@ bool HaliKeyV14Worker::openNativePort() {
     struct termios tio = {};
     if (tcgetattr(m_fd, &tio) < 0) {
         QString error = QString("Failed to get port attributes for %1").arg(m_portName);
-        qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
+        qCWarning(lcCwHalikey) << "HaliKeyV14Worker:" << error;
         closeNativePort();
         emit errorOccurred(error);
         return false;
@@ -186,28 +144,14 @@ void HaliKeyV14Worker::closeNativePort() {
 #endif
 }
 
-bool HaliKeyV14Worker::readPinState(bool &ditState, bool &dahState, bool &pttState) {
-    // WHY: HaliKey V1.4 firmware exposes raw modem-status pin states. Empirically (verified via
-    // qk4.hardware.debug logs in this user's setup, NORMAL paddle wiring):
+bool HaliKeyV14Worker::readPinState(bool &ditState, bool &dahState) {
+    // WHY this mapping: HaliKey V1.4 firmware exposes raw modem-status pins. Bench-verified (NORMAL
+    // paddle wiring):
     //
-    //   physical dah lever  → DCD AND DSR transition together (always paired)
-    //   physical dit lever  → CTS only
-    //   foot pedal          → CTS only (indistinguishable from dit lever on the wire)
-    //
-    // We map the three logical signals as follows:
-    //
-    //   ditState = false                (V1.4 cannot report the dit lever on its own line — see
-    //                                    pttState below, which carries it.)
-    //   dahState = DCD || DSR           (paddle dah lever — both pins fire together; OR collapses
-    //                                    them into one stable edge.)
-    //   pttState = CTS                  (the dit lever, in CW. CwController maps it.)
-    //
-    // WHY the dit lever arrives on a field named pttState: a footswitch wired inline with the
-    // paddles also drives CTS, so on this firmware the two are the same signal and the name kept
-    // both readings open. Footswitch PTT is now withdrawn from both transports (see
-    // cwcontroller.h), so CTS means the dit lever and nothing else; the field name is left alone
-    // because it is the transport-level line name shared with the MIDI worker, not a claim about
-    // what QK4 does with it.
+    //   dah lever  → DCD and DSR, always together, so DCD || DSR is one stable edge
+    //   dit lever  → CTS
+    //   foot pedal → CTS too, indistinguishable from the dit lever — which is why footswitch PTT
+    //                is withdrawn (see cwcontroller.h)
 #ifdef Q_OS_WIN
     DWORD modemStatus = 0;
     if (!GetCommModemStatus(m_handle, &modemStatus)) {
@@ -216,20 +160,8 @@ bool HaliKeyV14Worker::readPinState(bool &ditState, bool &dahState, bool &pttSta
     bool cts = (modemStatus & MS_CTS_ON) != 0;
     bool dsr = (modemStatus & MS_DSR_ON) != 0;
     bool dcd = (modemStatus & MS_RLSD_ON) != 0;
-    // Diagnostic: log each raw modem-line transition so we can see whether DCD and DSR
-    // (which together form the dah lever via `dcd || dsr`) actually rise/fall as a pair.
-    // A lingering DSR after DCD drops would latch dahState true → stuck dah. Chatty by
-    // design; gated behind hw.halikey.debug. Compares against last-logged raw bits.
-    if (cts != m_lastRawCts || dsr != m_lastRawDsr || dcd != m_lastRawDcd) {
-        qCDebug(hwHalikey) << "HaliKeyV14Worker: raw pins  CTS:" << cts << " DCD:" << dcd << " DSR:" << dsr
-                           << " => dah(dcd||dsr):" << (dcd || dsr);
-        m_lastRawCts = cts;
-        m_lastRawDsr = dsr;
-        m_lastRawDcd = dcd;
-    }
-    ditState = false;
+    ditState = cts;
     dahState = dcd || dsr;
-    pttState = cts;
     return true;
 #else
     int status = 0;
@@ -239,151 +171,60 @@ bool HaliKeyV14Worker::readPinState(bool &ditState, bool &dahState, bool &pttSta
     bool cts = (status & TIOCM_CTS) != 0;
     bool dsr = (status & TIOCM_DSR) != 0;
     bool dcd = (status & TIOCM_CD) != 0;
-    ditState = false;
+    ditState = cts;
     dahState = dcd || dsr;
-    pttState = cts;
     return true;
 #endif
 }
 
 void HaliKeyV14Worker::monitorLoop() {
-    // WHY: This count-based confirmation (DEBOUNCE_COUNT=2 across ≥500 µs read intervals) is
-    // the ONLY contact-bounce defense in the serial path. HalikeyDevice no longer runs a
-    // time-window debounce — see docs/halikey-midi-windows-debounce-bug.md for why that was
-    // removed. Do not relax this filter without first restoring an alternative bounce gate.
-    bool lastDitState = false;
-    bool lastDahState = false;
-    bool lastPttState = false;
-
-    // Raw states and debounce counters
-    bool rawDitState = false;
-    bool rawDahState = false;
-    bool rawPttState = false;
-    int ditDebounceCounter = 0;
-    int dahDebounceCounter = 0;
-    int pttDebounceCounter = 0;
-
-    // Read initial state
-    readPinState(lastDitState, lastDahState, lastPttState);
-    rawDitState = lastDitState;
-    rawDahState = lastDahState;
-    rawPttState = lastPttState;
-    ditDebounceCounter = DEBOUNCE_COUNT;
-    dahDebounceCounter = DEBOUNCE_COUNT;
-    pttDebounceCounter = DEBOUNCE_COUNT;
-
-#ifdef Q_OS_LINUX
-    // Linux: use TIOCMIWAIT for kernel-level interrupt-driven monitoring
-    while (m_running) {
-        // Wait for CTS, DSR, or DCD change — blocks in kernel until edge detected.
-        // DCD added so a dah-lever edge wakes the loop the same way a CTS edge does.
-        if (ioctl(m_fd, TIOCMIWAIT, TIOCM_CTS | TIOCM_DSR | TIOCM_CD) < 0) {
-            if (!m_running)
-                break;
-            if (errno == EINTR)
-                continue;
-            QString error = QString("HaliKey monitor error: %1").arg(QString::fromLocal8Bit(strerror(errno)));
-            qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
-            emit errorOccurred(error);
-            return;
-        }
-
-        if (!m_running)
-            break;
-
-        // Read until the lines settle, rather than going back to TIOCMIWAIT when they disagree.
-        //
-        // WHY: TIOCMIWAIT snapshots the kernel's interrupt counters when it is ENTERED, so any
-        // change arriving before re-entry is never reported. Giving up on an unstable pair and
-        // waiting again therefore threw away the settled state: a squeeze release whose second
-        // lever drops a millisecond later (which is what the recommended 1 ms FTDI latency timer
-        // produces) left both levers reading down with no further edge to correct them, and the
-        // keyer sent dit-dah forever. The macOS and Windows branches cannot hit this because they
-        // poll — every tick re-reads. This loop now re-reads too.
-        bool ditState = false, dahState = false, pttState = false;
-        bool settled = false;
-        for (int attempt = 0; attempt < kSettleAttempts && m_running; ++attempt) {
-            if (!readPinState(ditState, dahState, pttState)) {
-                if (!m_running)
-                    break;
-                QString error = "Failed to read pin state";
-                qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
-                emit errorOccurred(error);
-                return;
-            }
-
-            // Confirm across DEBOUNCE_COUNT reads ≥500 µs apart — the only contact-bounce defense
-            // on this path, unchanged in substance from the original count-based filter.
-            bool stable = true;
-            for (int i = 1; i < DEBOUNCE_COUNT && m_running; ++i) {
-                usleep(500);
-                bool d = false, h = false, p = false;
-                if (!readPinState(d, h, p)) {
-                    stable = false;
-                    break;
-                }
-                if (d != ditState || h != dahState || p != pttState) {
-                    stable = false;
-                    break;
-                }
-            }
-            if (stable) {
-                settled = true;
-                break;
-            }
-        }
-        if (!m_running)
-            break;
-        if (!settled) {
-            // Still bouncing after kSettleAttempts. Fall back to the last read rather than
-            // dropping it: an unsettled line is still closer to the truth than a stale one, and
-            // the next edge will correct it.
-            qCDebug(hwHalikey) << "HaliKeyV14Worker: lines did not settle, using last read";
-        }
-
-        // One emit for the whole sample. These lines were read together and must stay together:
-        // see the lineStateChanged comment in halikeyworkerbase.h.
-        if (ditState != lastDitState || dahState != lastDahState || pttState != lastPttState) {
-            qCDebug(hwHalikey) << "HaliKeyV14Worker: lines dit:" << ditState << " dah:" << dahState
-                               << " ptt:" << pttState;
-            lastDitState = ditState;
-            lastDahState = dahState;
-            lastPttState = pttState;
-            emit lineStateChanged(ditState, dahState, pttState);
-        }
-
-        // Re-read once more before blocking again, and emit if anything moved while we were
-        // confirming. Without this the change that lands between the confirm read and re-entry
-        // into TIOCMIWAIT is lost for good — the same hole as above, at the other end of the loop.
-        bool reDit = false, reDah = false, rePtt = false;
-        if (m_running && readPinState(reDit, reDah, rePtt)) {
-            if (reDit != lastDitState || reDah != lastDahState || rePtt != lastPttState) {
-                qCDebug(hwHalikey) << "HaliKeyV14Worker: lines moved while confirming, dit:" << reDit
-                                   << " dah:" << reDah << " ptt:" << rePtt;
-                lastDitState = reDit;
-                lastDahState = reDah;
-                lastPttState = rePtt;
-                emit lineStateChanged(reDit, reDah, rePtt);
-            }
-        }
-    }
-
-#elif defined(Q_OS_WIN)
-    // Windows: POLL the modem-status lines on a fixed ~1 ms cadence — same model as the
-    // macOS branch below. WHY NOT WaitCommEvent (the previous approach): USB-serial (FTDI)
-    // VCP drivers do NOT reliably deliver EV_CTS / EV_DSR / EV_RLSD modem-status events.
-    // A paddle line transition with no other line activity frequently fails to wake
-    // WaitCommEvent at all, so a release was missed and the key stuck "on" until some
-    // unrelated line changed and belatedly woke the wait. This was confirmed in hw.halikey
-    // traces: a dah whose release was never signalled showed a bogus hold of ~2.5 s and only
-    // "released" when the next CTS press woke the loop. macOS (pure poll) and Linux
-    // (TIOCMIWAIT, kernel-level) were unaffected because neither depends on WaitCommEvent.
-    // GetCommModemStatus is a cheap local call, so polling catches every transition within
-    // one poll period. Debounce is the macOS count-based filter (DEBOUNCE_COUNT reads).
+    // WHY one 1 ms poll on every platform, through SerialLinePoller: this is K4-Companion's serial
+    // path (SerialInput.signal_loop), which its keyer was bench-tuned against. Three things it does
+    // that the per-platform loops here did not:
+    //   - the lines' state at open is rest, never an edge, so an adapter idling with a line asserted
+    //     cannot look like a paddle held down;
+    //   - a straight key waits for 20 ms without a change, so contact bounce never keys a short
+    //     element;
+    //   - each edge carries the time since that line's previous change, which is what a straight
+    //     key's KZD/KZU are built from.
+    // Paddles are reported on the first poll that sees them. The keyer reads its paddles from
+    // time-stamped history, so a bounce inside an element changes nothing on the air. A blocking
+    // edge wait would not do: it cannot time the 20 ms quiet a straight key needs.
     //
-    // Cadence: a high-resolution waitable timer (Win10 1803+) gives a true ~1 ms tick without
-    // raising the process-global timer resolution via timeBeginPeriod. Falls back to Sleep(1)
-    // if the high-res timer can't be created.
+    // Line map (see readPinState): dit lever = CTS, dah lever = DCD || DSR.
+    using Signal = PaddleKeyer::Signal;
+    bool ditLine = false;
+    bool dahLine = false;
+    auto sample = [&]() { return readPinState(ditLine, dahLine); };
+    // One read per poll, shared by both lines, so the pair is always a joint sample.
+    const SerialLinePoller::ReadLine read = [&](Signal s) { return s == Signal::CTS ? ditLine : dahLine; };
+
+    auto fail = [this]() {
+        if (stopRequested())
+            return;
+#ifdef Q_OS_WIN
+        const QString error = QStringLiteral("Failed to read pin state");
+#else
+        const QString error = QString("HaliKey monitor error: %1").arg(QString::fromLocal8Bit(strerror(errno)));
+#endif
+        qCWarning(lcCwHalikey) << "HaliKeyV14Worker:" << error;
+        emit errorOccurred(error);
+    };
+
+    SteadyKeyerClock clock;
+    bool straight = m_straightKey.load(std::memory_order_acquire);
+    if (!sample()) {
+        fail();
+        closeNativePort();
+        return;
+    }
+    SerialLinePoller poller(Signal::CTS, Signal::DCD, straight);
+    poller.start(read);
+
+#ifdef Q_OS_WIN
+    // WHY a high-resolution waitable timer: GetCommModemStatus polled with Sleep(1) runs at the
+    // 15.6 ms system tick, and raising it with timeBeginPeriod is process-global. Falls back to
+    // Sleep(1) if the high-resolution timer can't be created.
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
 #endif
@@ -394,141 +235,50 @@ void HaliKeyV14Worker::monitorLoop() {
         due.QuadPart = -10000LL; // first fire in 1 ms (100 ns units, negative = relative)
         SetWaitableTimer(pollTimer, &due, 1 /* ms period */, nullptr, nullptr, FALSE);
     }
-
-    while (m_running) {
-        if (pollTimer)
-            WaitForSingleObject(pollTimer, 5); // ~1 ms tick; 5 ms cap bounds m_running latency
-        else
-            Sleep(1);
-
-        bool ditState = false, dahState = false, pttState = false;
-        if (!readPinState(ditState, dahState, pttState)) {
-            if (!m_running)
-                break;
-            emit errorOccurred("Failed to read pin state");
-            if (pollTimer)
-                CloseHandle(pollTimer);
-            return;
-        }
-
-        // One emit per loop iteration covering every line that settled on this pass — the lines
-        // were sampled together by readPinState() and must reach the keyer together.
-        bool linesChanged = false;
-
-        // Debounce dit (count-based; identical to the macOS branch)
-        if (ditState == rawDitState) {
-            if (ditDebounceCounter < DEBOUNCE_COUNT)
-                ditDebounceCounter++;
-            if (ditDebounceCounter >= DEBOUNCE_COUNT && ditState != lastDitState) {
-                lastDitState = ditState;
-                linesChanged = true;
-            }
-        } else {
-            rawDitState = ditState;
-            ditDebounceCounter = 1;
-        }
-
-        // Debounce dah
-        if (dahState == rawDahState) {
-            if (dahDebounceCounter < DEBOUNCE_COUNT)
-                dahDebounceCounter++;
-            if (dahDebounceCounter >= DEBOUNCE_COUNT && dahState != lastDahState) {
-                lastDahState = dahState;
-                linesChanged = true;
-            }
-        } else {
-            rawDahState = dahState;
-            dahDebounceCounter = 1;
-        }
-
-        // Debounce ptt
-        if (pttState == rawPttState) {
-            if (pttDebounceCounter < DEBOUNCE_COUNT)
-                pttDebounceCounter++;
-            if (pttDebounceCounter >= DEBOUNCE_COUNT && pttState != lastPttState) {
-                lastPttState = pttState;
-                linesChanged = true;
-            }
-        } else {
-            rawPttState = pttState;
-            pttDebounceCounter = 1;
-        }
-
-        if (linesChanged) {
-            qCDebug(hwHalikey) << "HaliKeyV14Worker: lines dit:" << lastDitState << " dah:" << lastDahState
-                               << " ptt:" << lastPttState;
-            emit lineStateChanged(lastDitState, lastDahState, lastPttState);
-        }
-    }
-
-    if (pollTimer)
-        CloseHandle(pollTimer);
-
 #else
-    // macOS (and other POSIX): tight usleep poll loop at 500us (2kHz)
-    while (m_running) {
-        usleep(500); // 500 microseconds
-
-        bool ditState = false, dahState = false, pttState = false;
-        if (!readPinState(ditState, dahState, pttState)) {
-            if (!m_running)
-                break;
-            QString error = QString("HaliKey monitor error: %1").arg(QString::fromLocal8Bit(strerror(errno)));
-            qCWarning(hwHalikey) << "HaliKeyV14Worker:" << error;
-            emit errorOccurred(error);
-            return;
-        }
-
-        // One emit per loop iteration covering every line that settled on this pass — the lines
-        // were sampled together by readPinState() and must reach the keyer together.
-        bool linesChanged = false;
-
-        // Debounce dit
-        if (ditState == rawDitState) {
-            if (ditDebounceCounter < DEBOUNCE_COUNT)
-                ditDebounceCounter++;
-            if (ditDebounceCounter >= DEBOUNCE_COUNT && ditState != lastDitState) {
-                lastDitState = ditState;
-                linesChanged = true;
-            }
-        } else {
-            rawDitState = ditState;
-            ditDebounceCounter = 1;
-        }
-
-        // Debounce dah
-        if (dahState == rawDahState) {
-            if (dahDebounceCounter < DEBOUNCE_COUNT)
-                dahDebounceCounter++;
-            if (dahDebounceCounter >= DEBOUNCE_COUNT && dahState != lastDahState) {
-                lastDahState = dahState;
-                linesChanged = true;
-            }
-        } else {
-            rawDahState = dahState;
-            dahDebounceCounter = 1;
-        }
-
-        // Debounce ptt
-        if (pttState == rawPttState) {
-            if (pttDebounceCounter < DEBOUNCE_COUNT)
-                pttDebounceCounter++;
-            if (pttDebounceCounter >= DEBOUNCE_COUNT && pttState != lastPttState) {
-                lastPttState = pttState;
-                linesChanged = true;
-            }
-        } else {
-            rawPttState = pttState;
-            pttDebounceCounter = 1;
-        }
-
-        if (linesChanged) {
-            qCDebug(hwHalikey) << "HaliKeyV14Worker: lines dit:" << lastDitState << " dah:" << lastDahState
-                               << " ptt:" << lastPttState;
-            emit lineStateChanged(lastDitState, lastDahState, lastPttState);
-        }
-    }
+    // WHY absolute deadlines on a 1 ms grid: usleep(1000) sleeps at least 1 ms after whatever the
+    // poll itself took, so every period ran long and the error accumulated. After a stall of more
+    // than a few periods the grid restarts from now rather than polling back-to-back to catch up.
+    constexpr double kPollSeconds = 0.001;
+    constexpr double kMaxBehindSeconds = 0.005;
+    double nextPoll = clock.now();
 #endif
 
+    while (!stopRequested()) {
+#ifdef Q_OS_WIN
+        // The periodic timer keeps its own 1 ms grid, so it does not drift either.
+        if (pollTimer)
+            WaitForSingleObject(pollTimer, 5); // ~1 ms tick; 5 ms cap bounds stop latency
+        else
+            Sleep(1);
+#else
+        nextPoll += kPollSeconds;
+        if (clock.now() - nextPoll > kMaxBehindSeconds)
+            nextPoll = clock.now() + kPollSeconds;
+        clock.sleepUntil(nextPoll);
+#endif
+        if (!sample()) {
+            fail();
+            break;
+        }
+        // Switching between paddles and a straight key changes the debounce and which lines are
+        // watched; the lines as they stand now are the new rest state.
+        const bool nowStraight = m_straightKey.load(std::memory_order_acquire);
+        if (nowStraight != straight) {
+            straight = nowStraight;
+            poller = SerialLinePoller(Signal::CTS, Signal::DCD, straight);
+            poller.start(read);
+            continue;
+        }
+        // No log line per edge: this is a real-time thread (CONVENTIONS Rule 16). What the keyer
+        // made of the edges is in the CAT traffic bench item.
+        for (const auto &change : poller.poll(read, clock.now()))
+            emit paddleChanged(change.signal != Signal::CTS, change.asserted, change.deltaTime);
+    }
+
+#ifdef Q_OS_WIN
+    if (pollTimer)
+        CloseHandle(pollTimer);
+#endif
     closeNativePort();
 }

@@ -6,8 +6,6 @@
 #include <QWheelEvent>
 
 namespace {
-const int ContentHeight = 52;
-const int ContentMargin = 12;
 const int MaxLevel = 250;
 } // namespace
 
@@ -19,7 +17,7 @@ LineInPopupWidget::LineInPopupWidget(QWidget *parent) : K4PopupBase(parent) {
 void LineInPopupWidget::setupUi() {
     int sm = K4Styles::Dimensions::ShadowMargin;
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(sm + ContentMargin, sm + 8, sm + ContentMargin, sm + 8);
+    layout->setContentsMargins(sm + CompactRowContentMargin, sm + 8, sm + CompactRowContentMargin, sm + 8);
     layout->setSpacing(6);
 
     m_titleLabel = new QPushButton("LINE IN", this);
@@ -32,28 +30,19 @@ void LineInPopupWidget::setupUi() {
     m_soundCardBtn->setCheckable(true);
     m_soundCardBtn->setChecked(true); // Default source = 0
     m_soundCardBtn->setCursor(Qt::PointingHandCursor);
+    m_soundCardBtn->setStyleSheet(K4Styles::popupButton());
 
     m_lineInJackBtn = new QPushButton("LINE IN\nJACK", this);
     m_lineInJackBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_lineInJackBtn->setCheckable(true);
     m_lineInJackBtn->setChecked(false);
     m_lineInJackBtn->setCursor(Qt::PointingHandCursor);
+    m_lineInJackBtn->setStyleSheet(K4Styles::popupButton());
 
     m_valueLabel = new QPushButton(QString::number(m_soundCardLevel), this);
     m_valueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_valueLabel->setFocusPolicy(Qt::NoFocus);
-    m_valueLabel->setStyleSheet(QString("QPushButton {"
-                                        "  color: %1;"
-                                        "  font-size: %2px;"
-                                        "  font-weight: 600;"
-                                        "  background: transparent;"
-                                        "  border: %3px solid transparent;"
-                                        "  border-radius: %4px;"
-                                        "}")
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::PopupValueSize)
-                                    .arg(K4Styles::Dimensions::BorderWidth)
-                                    .arg(K4Styles::Dimensions::BorderRadius));
+    m_valueLabel->setStyleSheet(K4Styles::popupValueLabel(K4Styles::Colors::TextPrimary));
 
     m_decrementBtn = new QPushButton("-", this);
     m_decrementBtn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
@@ -112,19 +101,19 @@ void LineInPopupWidget::setupUi() {
 }
 
 QSize LineInPopupWidget::contentSize() const {
-    const int contentWidth = ContentMargin + K4Styles::Dimensions::InputFieldWidthMedium + 6 +
+    const int contentWidth = CompactRowContentMargin + K4Styles::Dimensions::InputFieldWidthMedium + 6 +
                              K4Styles::Dimensions::PopupButtonWidth + 6 + K4Styles::Dimensions::PopupButtonWidth + 6 +
                              K4Styles::Dimensions::NavButtonWidth + 6 + K4Styles::Dimensions::NavButtonWidth + 6 +
                              K4Styles::Dimensions::NavButtonWidth + 6 + K4Styles::Dimensions::NavButtonWidth +
-                             ContentMargin;
-    return QSize(contentWidth, ContentHeight);
+                             CompactRowContentMargin;
+    return QSize(contentWidth, CompactRowContentHeight);
 }
 
 void LineInPopupWidget::updateButtonStyles() {
-    m_soundCardBtn->setStyleSheet(m_soundCardBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                              : K4Styles::popupButtonNormal());
-    m_lineInJackBtn->setStyleSheet(m_lineInJackBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                                : K4Styles::popupButtonNormal());
+    // WHY: the selected look follows m_source, not isChecked(): clicking the current source flips it
+    // unchecked without changing the source, and that key must keep its selected look.
+    K4Styles::setSelected(m_soundCardBtn, m_source == 0);
+    K4Styles::setSelected(m_lineInJackBtn, m_source == 1);
 }
 
 void LineInPopupWidget::updateValueDisplay() {
@@ -182,24 +171,5 @@ void LineInPopupWidget::wheelEvent(QWheelEvent *event) {
 }
 
 void LineInPopupWidget::paintContent(QPainter &painter, const QRect &contentRect) {
-    QLinearGradient grad = K4Styles::buttonGradient(contentRect.top(), contentRect.bottom());
-    painter.setBrush(grad);
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    painter.drawRoundedRect(contentRect, K4Styles::Dimensions::BorderRadiusLarge,
-                            K4Styles::Dimensions::BorderRadiusLarge);
-
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    int lineTop = contentRect.top() + 7;
-    int lineBottom = contentRect.bottom() - 7;
-
-    auto drawDelimiter = [&](QWidget *widget) {
-        if (widget && widget->isVisible()) {
-            int x = widget->geometry().right() + 3;
-            painter.drawLine(x, lineTop, x, lineBottom);
-        }
-    };
-
-    drawDelimiter(m_titleLabel);
-    drawDelimiter(m_lineInJackBtn);
-    drawDelimiter(m_incrementBtn);
+    paintCompactRowFrame(painter, contentRect, {m_titleLabel, m_lineInJackBtn, m_incrementBtn});
 }

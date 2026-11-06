@@ -1,6 +1,11 @@
+#include "dsp/waterfallcolorlut.h"
 #include "dsp/waterfallgeometry.h"
+#include "dsp/spectrumscale.h"
 #include <QSet>
+#include <QHash>
 #include <QtTest>
+#include <algorithm>
+#include <utility>
 
 // The shaders cannot be unit tested, so these assert the arithmetic that feeds them via the mirror
 // in WaterfallGeometry::rowForPixel. The property that matters is that the visible pixels map onto
@@ -22,7 +27,58 @@ private slots:
     void inFlightRowIsNeverSampled();
     void mappingIsOntoAndOrdered();
     void mappingHoldsAcrossTheRingWrap();
+
+    // One row per physical pixel when the OS downscales the framebuffer onto the panel.
+    void devicePxPerRowHonoursOnlyWholeDownscales();
+    void visibleRowsCountsPhysicalPixels();
+    void fractionalViewportStaysOneToOne();
+    void oneDevicePxRowsShareAPhysicalPixelUnderDownscale();
+    void twoDevicePxRowsScrollByWholePhysicalPixels();
+    void rowShiftFollowsTheFramebufferParity();
+    void shiftedRowsLandOnPhysicalPixelsAtDpr3();
+
+    // SPEED: seconds of history on screen.
+    void speedFillIsTodaysOneRowPerPixel();
+    void speedShowsTheSecondsAskedForAtAnyHeight();
+    void speedStepsAndLabels();
+    void foldKeepsEachBinsPeak();
+    void fasterRowsAreWholePixelsTall();
+
+    // Colour window (WaterfallGeometry::colorWindowFor and the shader mirror).
+    void noiseAtRefIsMidBlueNotBlack();
+    void oldRefScaleWindowDrewNoiseBlack();
+    void higherColorRangeIsBrighter();
+    void unknownColorRangeUsesDefault();
+    void noDataDrawsAtPaletteBottom();
+    void capturedRowsKeepTheirColourWhenRefSteps();
+    void smallerScaleIsBrighterLikeTheK4();
 };
+
+namespace {
+struct Rgb {
+    int r, g, b;
+};
+
+// The real table the waterfall draws with, at the position the shader would sample (nearest entry).
+Rgb lutAt(float fraction) {
+    QVector<quint8> lut;
+    RhiUtils::generateWaterfallColorLUT(lut);
+    const int i = qBound(0, static_cast<int>(std::lround(fraction * (RhiUtils::COLOR_LUT_SIZE - 1))),
+                         RhiUtils::COLOR_LUT_SIZE - 1);
+    return Rgb{lut[i * 4 + 0], lut[i * 4 + 1], lut[i * 4 + 2]};
+}
+
+bool isBlue(const Rgb &c) {
+    return c.b >= 100 && c.r == 0 && c.g < c.b;
+}
+
+// Through the GPU path: the byte a row captures for a level, then the shader's pass-through uniforms.
+float drawnFraction(float dbm, float refDbm, int colorRangeDb, int scaleDb = 80) {
+    const auto window = WaterfallGeometry::colorWindowFor(refDbm, scaleDb, colorRangeDb);
+    return WaterfallGeometry::shaderFractionFor(WaterfallGeometry::capturedByteFor(dbm, window),
+                                                WaterfallGeometry::ColorUniforms{});
+}
+} // namespace
 
 void TestWaterfallGeometry::visibleRowsFollowsPixelHeight() {
     QCOMPARE(WaterfallGeometry::visibleRowsFor(770.0f, 2048, 64), 770);
@@ -126,6 +182,347 @@ void TestWaterfallGeometry::mappingHoldsAcrossTheRingWrap() {
         QVERIFY(!seen.contains(writeRow));
         QCOMPARE(WaterfallGeometry::rowForPixel(visible - 1, visible, writeRow, visible, stored),
                  (writeRow - 1 + stored) % stored);
+    }
+}
+
+void TestWaterfallGeometry::devicePxPerRowHonoursOnlyWholeDownscales() {
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(1.0), 1);   // framebuffer is the panel (5K at 2560x1440)
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(2.0), 2);   // 7680x4320 halved onto a 4K panel
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(2.015), 2); // within 1%
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(3.0), 3);
+    // Fractional macOS "scaled" modes land on no whole row height: unchanged.
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(1.125), 1); // 5K panel as "looks like 2880x1620"
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(1.75), 1);
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(2.2), 1);
+    // Upscaled framebuffer (fewer pixels than the panel) and nonsense.
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(0.5), 1);
+    QCOMPARE(WaterfallGeometry::devicePxPerRowFor(0.0), 1);
+}
+
+void TestWaterfallGeometry::visibleRowsCountsPhysicalPixels() {
+    // Mike's panadapter, 2026-10-30: output 2092x924 px, spectrumRatio 0.4, on a 4K panel driven
+    // with a 7680x4320 framebuffer.
+    QCOMPARE(WaterfallGeometry::visibleRowsFor(554.4f, 2048, 64, 1), 554);
+    QCOMPARE(WaterfallGeometry::visibleRowsFor(554.4f, 2048, 64, 2), 277);
+    // The stored-rows clamp still applies to rows, not pixels.
+    QCOMPARE(WaterfallGeometry::visibleRowsFor(8000.0f, 2048, 64, 2), 2047);
+}
+
+// The viewport is 554.4 px for 554 rows (pxPerRow 1.0007). That ratio is not a seam: with the V snap
+// every whole pixel inside the viewport still resolves to exactly one row, in order, at every
+// scroll position — so the fractional height is not what twinkles.
+void TestWaterfallGeometry::fractionalViewportStaysOneToOne() {
+    const int stored = 2048;
+    // DPR 2: 554.4 px for 554 rows. DPR 3 at Mike's 150% interface scale: 831.6 px for 832 rows
+    // (pxPerRow 0.9995) — 832 pixel centres lie inside 831.6, so that is still one row per pixel.
+    for (const auto &[viewport, visible] : {std::pair{554.4f, 554}, std::pair{831.6f, 832}}) {
+        QCOMPARE(WaterfallGeometry::visibleRowsFor(viewport, stored, 64), visible);
+        for (int writeRow : {0, 1, 300, 1493, 2047}) {
+            const int oldest = WaterfallGeometry::oldestVisibleRow(writeRow, visible, stored);
+            for (int px = 0; px < visible; ++px)
+                QCOMPARE(WaterfallGeometry::rowForPixel(px, viewport, writeRow, visible, stored),
+                         (oldest + px) % stored);
+        }
+    }
+}
+
+// The defect: at one device pixel per row under a 2:1 downscale, each physical pixel is two rows
+// that the display's scaler blends, and which two changes with every scroll step.
+void TestWaterfallGeometry::oneDevicePxRowsShareAPhysicalPixelUnderDownscale() {
+    const int stored = 2048, visible = 554, writeRow = 700;
+    for (int physical = 0; physical < visible / 2; ++physical) {
+        const int lower = WaterfallGeometry::rowForPixel(2 * physical, 554.4f, writeRow, visible, stored);
+        const int upper = WaterfallGeometry::rowForPixel(2 * physical + 1, 554.4f, writeRow, visible, stored);
+        QVERIFY(lower != upper);
+    }
+}
+
+// The fix: rows two device pixels tall. Each physical pixel (device pixels 2j, 2j+1 from the bottom,
+// which is also the top-aligned pairing because the widget's device height is even at DPR 2) holds
+// one row, and one step later every physical pixel holds what the one above it held: a rigid scroll
+// by exactly one physical pixel, which the display's downscale leaves untouched.
+void TestWaterfallGeometry::twoDevicePxRowsScrollByWholePhysicalPixels() {
+    const int stored = 2048;
+    const float viewport = 554.4f;
+    const int visible = WaterfallGeometry::visibleRowsFor(viewport, stored, 64, 2);
+    const int physicalPixels = visible; // 277 whole physical pixels, 554 device pixels
+
+    for (int writeRow : {0, 1, 1000, 2046, 2047}) {
+        const int next = (writeRow + 1) % stored;
+        for (int physical = 0; physical < physicalPixels; ++physical) {
+            const int lower = WaterfallGeometry::rowForPixel(2 * physical, viewport, writeRow, visible, stored);
+            const int upper = WaterfallGeometry::rowForPixel(2 * physical + 1, viewport, writeRow, visible, stored);
+            QCOMPARE(lower, upper);
+            QVERIFY(lower != writeRow);
+            if (physical > 0) {
+                const int below = WaterfallGeometry::rowForPixel(2 * (physical - 1), viewport, next, visible, stored);
+                QCOMPARE(below, lower);
+            }
+        }
+        // Newest complete row on the top physical pixel.
+        QCOMPARE(WaterfallGeometry::rowForPixel(2 * physicalPixels - 1, viewport, writeRow, visible, stored),
+                 (writeRow - 1 + stored) % stored);
+    }
+}
+
+void TestWaterfallGeometry::rowShiftFollowsTheFramebufferParity() {
+    QCOMPARE(WaterfallGeometry::rowShiftFor(1386, 2), 0.0f);
+    QCOMPARE(WaterfallGeometry::rowShiftFor(1131, 2), -0.5f);
+    QCOMPARE(WaterfallGeometry::rowShiftFor(1131, 1), 0.0f);
+    QCOMPARE(WaterfallGeometry::rowShiftFor(10, 3), -1.0f / 3.0f);
+}
+
+// Mike's session, 2026-10-30: DPR 3, waterfall 831.6 px, 7680x4320 framebuffer on a 4K panel (two
+// framebuffer rows per physical pixel). For a widget whose bottom edge is at an even and at an odd
+// framebuffer row, every physical pixel the waterfall covers completely shows one row, the newest
+// complete row is at the top, the write head is never drawn, and one step later every physical
+// pixel holds what the one above it held.
+void TestWaterfallGeometry::shiftedRowsLandOnPhysicalPixelsAtDpr3() {
+    const int stored = 2048, k = 2;
+    const float viewport = 831.6f;
+    const int pixels = 832; // pixel centres inside the viewport
+    for (qint64 bottomRow : {qint64{1386}, qint64{1131}}) {
+        const float shift = WaterfallGeometry::rowShiftFor(bottomRow, k);
+        int visible = WaterfallGeometry::visibleRowsFor(viewport, stored, 64, k);
+        if (shift != 0.0f)
+            visible = (std::min)(visible, stored - 2);
+        // Physical pixel of device pixel i (0 = bottom): framebuffer row bottomRow - 1 - i, halved.
+        auto physicalOf = [&](int i) { return (bottomRow - 1 - i) / k; };
+
+        for (int writeRow : {0, 1, 900, 2047}) {
+            const int next = (writeRow + 1) % stored;
+            auto row = [&](int i, int w) {
+                return WaterfallGeometry::rowForPixel(i, viewport, w, visible, stored, shift);
+            };
+            for (int i = 0; i < pixels; ++i) {
+                QVERIFY(row(i, writeRow) != writeRow);
+                if (i + 1 < pixels && physicalOf(i + 1) == physicalOf(i))
+                    QCOMPARE(row(i + 1, writeRow), row(i, writeRow));
+                // Rigid scroll: the pixel k below now shows this pixel's row.
+                if (i >= k)
+                    QCOMPARE(row(i - k, next), row(i, writeRow));
+            }
+            QCOMPARE(row(pixels - 1, writeRow), (writeRow - 1 + stored) % stored);
+        }
+    }
+}
+
+// The K4 shows band noise as mid-blue speckle at its #WBS14 with AutoRef parking REF on the noise.
+// Noise a few dB above REF, and its usual +-6 dB excursions, must land in the palette's blue band —
+// never in the black dead zone below 0.10 that used to swallow it.
+void TestWaterfallGeometry::noiseAtRefIsMidBlueNotBlack() {
+    for (float ref : {-129.0f, -110.0f, -95.0f}) {
+        const float noise = ref + 3.0f;
+        const float f = drawnFraction(noise, ref, 14);
+        QVERIFY2(f > 0.10f, qPrintable(QString("noise at %1 is in the black zone (%2)").arg(noise).arg(f)));
+        const Rgb mid = lutAt(f);
+        QVERIFY2(isBlue(mid), qPrintable(QString("noise drawn %1,%2,%3").arg(mid.r).arg(mid.g).arg(mid.b)));
+        // A noise peak stays blue-ish (no green/yellow), a noise trough is darker but the peak is not.
+        const Rgb peak = lutAt(drawnFraction(noise + 6.0f, ref, 14));
+        QVERIFY(peak.r == 0 && peak.b >= mid.b);
+        QVERIFY(lutAt(drawnFraction(noise - 6.0f, ref, 14)).b < mid.b);
+    }
+    // The fit to Mike's K4 photo of WWV (2026-10-30, REF -106, #WBS 14): the sidebands (~-75 dBm)
+    // are green / yellow-green, not red, and only the carrier (~-55 dBm) reaches red.
+    const Rgb sideband = lutAt(drawnFraction(-75.0f, -106.0f, 14));
+    QVERIFY2(sideband.g == 255 && sideband.r < 128,
+             qPrintable(QString("sideband %1,%2,%3").arg(sideband.r).arg(sideband.g).arg(sideband.b)));
+    const Rgb carrier = lutAt(drawnFraction(-55.0f, -106.0f, 14));
+    QVERIFY2(carrier.r == 255, qPrintable(QString("carrier %1,%2,%3").arg(carrier.r).arg(carrier.g).arg(carrier.b)));
+}
+
+// The regression this fixes: palette = REF..REF+SCALE (80 dB) put the same noise at ~0.04.
+void TestWaterfallGeometry::oldRefScaleWindowDrewNoiseBlack() {
+    const float ref = -110.0f;
+    const float oldFraction = SpectrumScale::normalizedForDb(ref + 3.0f, ref, ref + 80.0f);
+    const Rgb old = lutAt(oldFraction);
+    QCOMPARE(old.r + old.g + old.b, 0);
+    QVERIFY(drawnFraction(ref + 3.0f, ref, 14) > oldFraction + 0.25f);
+}
+
+// K4 manual rev D6, WTR CLRS: "A higher number will use brighter colors for a given amount of
+// waterfall signal intensity."
+void TestWaterfallGeometry::higherColorRangeIsBrighter() {
+    const float ref = -110.0f;
+    for (float dbm = ref - 20.0f; dbm <= ref + 40.0f; dbm += 1.0f) {
+        for (int wbs = 5; wbs < 30; ++wbs) {
+            const float lo =
+                WaterfallGeometry::paletteFractionFor(dbm, WaterfallGeometry::colorWindowFor(ref, 80, wbs));
+            const float hi =
+                WaterfallGeometry::paletteFractionFor(dbm, WaterfallGeometry::colorWindowFor(ref, 80, wbs + 1));
+            QVERIFY(hi >= lo);
+        }
+    }
+    QVERIFY(drawnFraction(ref, ref, 30) > drawnFraction(ref, ref, 5));
+}
+
+void TestWaterfallGeometry::unknownColorRangeUsesDefault() {
+    const auto def = WaterfallGeometry::colorWindowFor(-110.0f, 80, WaterfallGeometry::DefaultColorRangeDb);
+    for (int bad : {-1, 0, 4, 31, 100}) {
+        const auto w = WaterfallGeometry::colorWindowFor(-110.0f, 80, bad);
+        QCOMPARE(w.lowDbm, def.lowDbm);
+        QCOMPARE(w.spanDb, def.spanDb);
+    }
+    // The hypothesis, stated as numbers so a change to it is a deliberate test edit.
+    const auto w = WaterfallGeometry::colorWindowFor(-110.0f, 80, 14);
+    QCOMPARE(w.lowDbm, -138.0f); // REF - 2 x #WBS
+    QCOMPARE(w.spanDb, 80.0f);   // span = SCALE
+}
+
+void TestWaterfallGeometry::noDataDrawsAtPaletteBottom() {
+    // The pass-through uniforms both widgets send leave a stored palette position unchanged, and
+    // "no data" draws at the bottom of the palette.
+    const WaterfallGeometry::ColorUniforms passThrough;
+    QCOMPARE(WaterfallGeometry::shaderFractionFor(WaterfallGeometry::NoDataByte, passThrough), 0.0f);
+    QCOMPARE(WaterfallGeometry::shaderFractionFor(255, passThrough), 1.0f);
+    QVERIFY(std::abs(WaterfallGeometry::shaderFractionFor(128, passThrough) - 128.0f / 255.0f) < 1e-6f);
+}
+
+// A row's colour is fixed when it is captured. Through pass-through uniforms the stored byte draws
+// at the palette position it was captured with (within one byte), and a later 1 dB AutoRef REF step
+// leaves rows already drawn alone - the whole-history flicker seen on the bench.
+void TestWaterfallGeometry::capturedRowsKeepTheirColourWhenRefSteps() {
+    using namespace WaterfallGeometry;
+    const ColorUniforms passThrough{};
+    for (float ref : {-130.0f, -110.0f, -106.0f}) {
+        const ColorWindow window = colorWindowFor(ref, 80, 14);
+        for (float dbm = ref - 20.0f; dbm <= ref + 40.0f; dbm += 0.5f) {
+            const quint8 byte = capturedByteFor(dbm, window);
+            QVERIFY(byte != NoDataByte);
+            QVERIFY(std::abs(shaderFractionFor(byte, passThrough) - paletteFractionFor(dbm, window)) <= 1.0f / 255.0f);
+        }
+    }
+    // The same noise level captured before and after a 1 dB REF step stores different bytes: only the
+    // new row changes colour, because the uniforms no longer follow REF.
+    const float noise = -104.0f;
+    QVERIFY(capturedByteFor(noise, colorWindowFor(-106.0f, 80, 14)) !=
+            capturedByteFor(noise, colorWindowFor(-107.0f, 80, 14)));
+}
+
+// Mike's K4 photos of WWV at #WBS 14 (2026-10-30): the K4's waterfall is brighter at a smaller
+// SCALE - 25: blue with green speckle; 50: royal blue; 80: blue, sidebands green, carrier red.
+// Noise a few dB above REF climbs the palette as SCALE shrinks, and its +6 dB peaks reach green
+// only at SCALE 25.
+void TestWaterfallGeometry::smallerScaleIsBrighterLikeTheK4() {
+    const float ref = -108.0f, noise = ref + 3.0f;
+    const float at25 = drawnFraction(noise, ref, 14, 25);
+    const float at50 = drawnFraction(noise, ref, 14, 50);
+    const float at80 = drawnFraction(noise, ref, 14, 80);
+    QVERIFY(at25 > at50 && at50 > at80);
+    QVERIFY(isBlue(lutAt(at50)) && isBlue(lutAt(at80)));
+    const Rgb peak25 = lutAt(drawnFraction(noise + 6.0f, ref, 14, 25));
+    QVERIFY2(peak25.g >= 128,
+             qPrintable(QString("SCALE 25 noise peak %1,%2,%3").arg(peak25.r).arg(peak25.g).arg(peak25.b)));
+    const Rgb peak80 = lutAt(drawnFraction(noise + 6.0f, ref, 14, 80));
+    QVERIFY(peak80.g < 128);
+    QCOMPARE(WaterfallGeometry::colorWindowFor(ref, 25, 14).spanDb, 25.0f);
+}
+
+// Fill (the default) is exactly the waterfall before SPEED existed: one row per pixel row, one frame per
+// row, whatever the line rate; and before the rate is measured every setting plans Fill.
+void TestWaterfallGeometry::speedFillIsTodaysOneRowPerPixel() {
+    using namespace WaterfallGeometry;
+    for (int rows : {64, 300, 607, 2047}) {
+        for (double hz : {0.0, 5.0, 15.0, 30.0}) {
+            const SpeedPlan fill = speedPlanFor(rows, hz, SpeedFill);
+            QCOMPARE(fill.visibleRows, rows);
+            QCOMPARE(fill.framesPerRow, 1);
+        }
+        const SpeedPlan unmeasured = speedPlanFor(rows, 0.0, 60);
+        QCOMPARE(unmeasured.visibleRows, rows);
+        QCOMPARE(unmeasured.framesPerRow, 1);
+    }
+}
+
+// The history on screen is the seconds asked for, at any window height: faster than Fill shows fewer,
+// taller rows of one frame each; slower folds frames so the same pixel rows hold more time. Mike's
+// FT8 case: 607 px at 15 fps holds 40 s at Fill; 30 s (two cycles) and 120 s must both be reachable.
+void TestWaterfallGeometry::speedShowsTheSecondsAskedForAtAnyHeight() {
+    using namespace WaterfallGeometry;
+    const SpeedPlan faster = speedPlanFor(607, 15.0, 15);
+    QCOMPARE(faster.framesPerRow, 1);
+    QCOMPARE(faster.pixelRowsPerRow, 3); // 225 frames over 607 px: rows a whole 3 px tall
+    QCOMPARE(faster.visibleRows, 202);
+    // 30 s is 450 frames over 607 px, 1.35 px each: the closest whole height is 1, so Fill (40 s).
+    const SpeedPlan nearFill = speedPlanFor(607, 15.0, 30);
+    QCOMPARE(nearFill.visibleRows, 607);
+    QCOMPARE(nearFill.pixelRowsPerRow, 1);
+    const SpeedPlan slower = speedPlanFor(607, 15.0, 120);
+    QCOMPARE(slower.visibleRows, 607);
+    QCOMPARE(slower.framesPerRow, 3); // 1800 frames over 607 rows
+    for (int seconds : SpeedStepsSeconds) {
+        if (seconds == SpeedFill)
+            continue;
+        for (int rows : {200, 607, 1100}) {
+            for (double hz : {5.0, 10.0, 15.0, 30.0}) {
+                const SpeedPlan plan = speedPlanFor(rows, hz, seconds);
+                QVERIFY(plan.visibleRows >= 2 && plan.visibleRows <= rows);
+                QVERIFY(plan.framesPerRow >= 1 && plan.framesPerRow <= MaxFramesPerRow);
+                const double shown = plan.visibleRows * plan.framesPerRow / hz;
+                // Whole frames per row cannot land every value exactly: within a third either way.
+                QVERIFY2(shown > seconds * 0.66 && shown <= seconds * 1.5,
+                         qPrintable(QStringLiteral("%1 s asked, %2 s shown (%3 rows, %4 Hz)")
+                                        .arg(seconds)
+                                        .arg(shown)
+                                        .arg(rows)
+                                        .arg(hz)));
+            }
+        }
+    }
+}
+
+void TestWaterfallGeometry::speedStepsAndLabels() {
+    using namespace WaterfallGeometry;
+    QCOMPARE(stepSpeed(SpeedFill, +1), 15);
+    QCOMPARE(stepSpeed(15, +1), 30);
+    QCOMPARE(stepSpeed(240, +1), 240); // held at the ends
+    QCOMPARE(stepSpeed(SpeedFill, -1), SpeedFill);
+    QCOMPARE(stepSpeed(30, -1), 15);
+    QCOMPARE(stepSpeed(45, +1), 15); // not a step: counts as Fill
+    QVERIFY(isSpeedStep(60));
+    QVERIFY(!isSpeedStep(45));
+    QCOMPARE(speedLabel(SpeedFill), QStringLiteral("Fill"));
+    QCOMPARE(speedLabel(240), QStringLiteral("240s"));
+}
+
+// Folding frames into one row keeps each bin's brightest moment: a one-frame FT8 or CW burst is not
+// averaged away when SPEED folds several frames together.
+void TestWaterfallGeometry::foldKeepsEachBinsPeak() {
+    quint8 row[4] = {10, 200, 30, 0};
+    const quint8 burst[4] = {250, 20, 30, 7};
+    WaterfallGeometry::foldPeak(row, burst, 4);
+    QCOMPARE(row[0], quint8(250));
+    QCOMPARE(row[1], quint8(200));
+    QCOMPARE(row[2], quint8(30));
+    QCOMPARE(row[3], quint8(7));
+}
+
+// The spectrum expert's review, 2026-11-02: rows of 1 and 2 px in a pattern fixed on screen made a
+// trace change thickness as it scrolled. Faster than Fill, every row covers k pixel rows, or k + 1
+// for at most k - 1 of them where the height does not divide (never 1 and 2 alternating).
+void TestWaterfallGeometry::fasterRowsAreWholePixelsTall() {
+    using namespace WaterfallGeometry;
+    constexpr int kStored = 2048;
+    for (int height : {200, 450, 607, 1100}) {
+        for (int seconds : {15, 30, 60}) {
+            for (double hz : {10.0, 15.0, 30.0}) {
+                const SpeedPlan plan = speedPlanFor(height, hz, seconds);
+                if (plan.pixelRowsPerRow == 1)
+                    continue; // Fill or folding: one row per pixel row, covered elsewhere
+                const int k = plan.pixelRowsPerRow;
+                QHash<int, int> pixelsPerRow;
+                for (int pixel = 0; pixel < height; ++pixel)
+                    ++pixelsPerRow[rowForPixel(pixel, float(height), 900, plan.visibleRows, kStored)];
+                QCOMPARE(pixelsPerRow.size(), plan.visibleRows);
+                int taller = 0;
+                for (const int count : pixelsPerRow) {
+                    QVERIFY2(count == k || count == k + 1,
+                             qPrintable(QStringLiteral("a row of %1 px with k = %2").arg(count).arg(k)));
+                    taller += count == k + 1;
+                }
+                QVERIFY(taller <= k - 1);
+            }
+        }
     }
 }
 

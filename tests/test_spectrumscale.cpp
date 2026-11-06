@@ -1,5 +1,7 @@
 #include <QtTest>
 
+#include <algorithm>
+
 #include "dsp/spectrumscale.h"
 
 // Amplitude-axis arithmetic. The bug that prompted these tests — "S1" printed at two different
@@ -9,6 +11,47 @@ class TestSpectrumScale : public QObject {
     Q_OBJECT
 
 private slots:
+    // K4_DBM_OFFSET pinned to the bench pairs it was measured from (2026-10-30, WWV 10 MHz carrier,
+    // peak PAN byte vs the radio's own SMH dBm at the same moment, 48 and 96 kHz tiers). Every pair
+    // must come out within 1.5 dB of the radio's reading; 146 missed them all by about 16 dB.
+    void panByteOffsetMatchesTheRadiosDbmMeter() {
+        struct Pair {
+            int peakByte;
+            int smhDbm;
+        };
+        const Pair pairs[] = {{95, -66},  {107, -54}, {95, -67},  {106, -55}, {106, -56},  // 48 kHz tier
+                              {113, -50}, {111, -52}, {113, -50}, {111, -52}, {103, -59}}; // 96 kHz tier
+        for (const Pair &p : pairs) {
+            const float dbm = static_cast<float>(p.peakByte) - SpectrumScale::K4_DBM_OFFSET;
+            QVERIFY2(std::abs(dbm - static_cast<float>(p.smhDbm)) <= 1.5f,
+                     qPrintable(QStringLiteral("byte %1 -> %2 dBm, radio %3").arg(p.peakByte).arg(dbm).arg(p.smhDbm)));
+        }
+    }
+
+    // K4_MINIPAN_DBM_OFFSET pinned to its bench pairs (2026-10-30, WWV 10 MHz in CW, 3 kHz mini-pan,
+    // peak MiniPAN byte vs SMH within 30 ms). WWV was fading, so single pairs scatter over 13 dB: the
+    // median must sit within 2 dB of the radio and every pair within 8 dB. byte / 10, the old reading,
+    // misses every pair by over 50 dB.
+    void miniPanByteOffsetMatchesTheRadiosDbmMeter() {
+        struct Pair {
+            int peakByte;
+            int smhDbm;
+        };
+        const Pair pairs[] = {{53, -66}, {65, -54}, {55, -67}, {65, -55}, {64, -56},  // capture 1
+                              {60, -50}, {70, -52}, {64, -50}, {71, -52}, {63, -59}}; // capture 2
+        QVector<float> errors;
+        for (const Pair &p : pairs) {
+            const float dbm = static_cast<float>(p.peakByte) - SpectrumScale::K4_MINIPAN_DBM_OFFSET;
+            const float error = dbm - static_cast<float>(p.smhDbm);
+            QVERIFY2(std::abs(error) <= 8.0f,
+                     qPrintable(QStringLiteral("byte %1 -> %2 dBm, radio %3").arg(p.peakByte).arg(dbm).arg(p.smhDbm)));
+            errors.append(error);
+        }
+        std::sort(errors.begin(), errors.end());
+        const float median = (errors[4] + errors[5]) / 2.0f;
+        QVERIFY2(std::abs(median) <= 2.0f, qPrintable(QStringLiteral("median error %1 dB").arg(median)));
+    }
+
     void convertsSMeterReadingsToDbm() {
         // RadioState encodes the K4's SM bars as S0..S9 directly, and anything stronger as
         // 9.0 + dBoverS9/10 - so S9+20 arrives as 11.0. Treating that as an S-unit would clamp it
@@ -30,6 +73,19 @@ private slots:
             QVERIFY2(dbm >= previous, qPrintable(QString::number(tenths / 10.0)));
             previous = dbm;
         }
+    }
+
+    // The radio's own SMH reading wins whenever it has sent one; the bar estimate only fills the gap
+    // before the first SMH. On a K4D the bars (SM04) gave -115 dBm where SMH said -110.
+    void rxLevelPrefersTheRadiosDbm() {
+        QCOMPARE(SpectrumScale::rxLevelDbm(-110, 2.0), -110.0f);
+        QCOMPARE(SpectrumScale::rxLevelDbm(5, 0.0), 5.0f);
+        QCOMPARE(SpectrumScale::rxLevelDbm(-127, 13.0), -127.0f); // never blended with the bars
+    }
+
+    void rxLevelFallsBackToTheBarsUntilSmhArrives() {
+        QCOMPARE(SpectrumScale::rxLevelDbm(std::nullopt, 9.0), SpectrumScale::dbmForSMeterReading(9.0));
+        QCOMPARE(SpectrumScale::rxLevelDbm(std::nullopt, 2.0), -115.0f); // SM04
     }
 
     // ---- anchors -------------------------------------------------------------------------
@@ -165,6 +221,107 @@ private slots:
     void anEmptyOrInvertedWindowYieldsNothing() {
         QVERIFY(SpectrumScale::labelsFor(-60.0f, -120.0f, true, 600, 14).isEmpty());
         QVERIFY(SpectrumScale::labelsFor(-60.0f, -60.0f, true, 600, 14).isEmpty());
+    }
+
+    // ---- readable spacing ----------------------------------------------------------------
+
+    void aShortPaneLabelsEveryTenDbNotEveryFive() {
+        // The reported case: a ~300 px spectrum area at SCALE 75 printed -55, -60 … -130 dBm,
+        // sixteen labels touching each other. Line spacing 11 px is the 9 px Inter label font.
+        const auto labels = SpectrumScale::labelsFor(-130.0f, -55.0f, false, 300, 11.0f);
+        QVERIFY(labels.size() >= 2);
+        QVERIFY(labels.size() <= 9);
+        QCOMPARE(labels[0].dbm - labels[1].dbm, 10.0f);
+
+        // Giving most of the pane to the waterfall leaves ~180 px: the step widens again.
+        const auto shorter = SpectrumScale::labelsFor(-130.0f, -55.0f, false, 180, 11.0f);
+        QVERIFY(shorter.size() >= 2);
+        QCOMPARE(shorter[0].dbm - shorter[1].dbm, 20.0f);
+    }
+
+    void everySettingKeepsLabelsAReadableDistanceApart() {
+        // REF and SCALE over the radio's whole range, every chart height from a near-hidden
+        // spectrum to a tall one, and label fonts from the smallest to a large interface scale.
+        static constexpr int kNiceSteps[] = {1, 2, 5, 10, 20, 25, 50, 100};
+        for (int ref = -200; ref <= 50; ref += 5) {
+            for (int scale = 10; scale <= 150; scale += 5) {
+                const float lo = static_cast<float>(ref);
+                const float hi = static_cast<float>(ref + scale);
+                for (int px : {60, 120, 180, 240, 300, 400, 600, 900, 1400}) {
+                    for (float line : {9.0f, 11.0f, 14.0f, 18.0f}) {
+                        const float minPitch = SpectrumScale::kLabelPitchLines * line - 0.5f;
+                        for (bool sUnits : {true, false}) {
+                            const auto labels = SpectrumScale::labelsFor(lo, hi, sUnits, px, line);
+                            for (int i = 1; i < labels.size(); ++i) {
+                                const float pitch = (labels[i - 1].dbm - labels[i].dbm) / (hi - lo) * px;
+                                QVERIFY2(pitch >= minPitch,
+                                         qPrintable(QString("%1/%2 %3 px apart (min %4) ref %5 scale %6 px %7 line %8")
+                                                        .arg(labels[i - 1].text, labels[i].text)
+                                                        .arg(pitch)
+                                                        .arg(minPitch)
+                                                        .arg(ref)
+                                                        .arg(scale)
+                                                        .arg(px)
+                                                        .arg(line)));
+                            }
+                            if (sUnits || labels.size() < 2)
+                                continue;
+                            const int step = static_cast<int>(labels[0].dbm - labels[1].dbm);
+                            QVERIFY2(std::find(std::begin(kNiceSteps), std::end(kNiceSteps), step) !=
+                                             std::end(kNiceSteps) ||
+                                         step % 100 == 0,
+                                     qPrintable(QString("step %1 dB is not a round value").arg(step)));
+                            for (const auto &l : labels)
+                                QCOMPARE(static_cast<int>(l.dbm) % step, 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    void theStepIsTheSmallestThatStaysReadable() {
+        // Not just "far enough apart": one notch finer would have been too close. Pins that the
+        // axis thins only as much as it must.
+        static constexpr int kNiceSteps[] = {1, 2, 5, 10, 20, 25, 50, 100};
+        for (int scale = 10; scale <= 150; scale += 5) {
+            for (int px : {120, 300, 600, 1400}) {
+                const float lo = -140.0f, hi = lo + static_cast<float>(scale);
+                const auto labels = SpectrumScale::labelsFor(lo, hi, false, px, 11.0f);
+                if (labels.size() < 2)
+                    continue;
+                const int step = static_cast<int>(labels[0].dbm - labels[1].dbm);
+                const auto it = std::find(std::begin(kNiceSteps), std::end(kNiceSteps), step);
+                if (it == std::end(kNiceSteps) || it == std::begin(kNiceSteps))
+                    continue;
+                const float finerPitch = static_cast<float>(*(it - 1)) / static_cast<float>(scale) * px;
+                QVERIFY2(finerPitch < SpectrumScale::kLabelPitchLines * 11.0f,
+                         qPrintable(QString("scale %1 px %2 chose %3 dB but %4 dB was already readable")
+                                        .arg(scale)
+                                        .arg(px)
+                                        .arg(step)
+                                        .arg(*(it - 1))));
+            }
+        }
+    }
+
+    void aTallerPaneNeverShowsFewerLabels() {
+        for (int scale = 10; scale <= 150; scale += 10) {
+            for (bool sUnits : {true, false}) {
+                int previous = 0;
+                for (int px = 60; px <= 1400; px += 20) {
+                    const int count =
+                        SpectrumScale::labelsFor(-140.0f, -140.0f + static_cast<float>(scale), sUnits, px, 11.0f)
+                            .size();
+                    QVERIFY2(count >= previous, qPrintable(QString("scale %1: %2 labels at %3 px after %4")
+                                                               .arg(scale)
+                                                               .arg(count)
+                                                               .arg(px)
+                                                               .arg(previous)));
+                    previous = count;
+                }
+            }
+        }
     }
 };
 

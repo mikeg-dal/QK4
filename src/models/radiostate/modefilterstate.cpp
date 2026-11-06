@@ -1,6 +1,7 @@
 #include "modefilterstate.h"
 
 #include "models/radiostate.h"
+#include "utils/radioutils.h"
 
 #include <QtGlobal>
 
@@ -15,6 +16,7 @@ void ModeFilterState::reset() {
     ifShiftB = -1;
     cwPitch = -1;
     keyerSpeed = -1;
+    keyDownInitialDelayMs = -1;
     iambicMode = QChar();
     paddleOrientation = QChar();
     keyingWeight = -1;
@@ -30,6 +32,8 @@ void handleMD(ModeFilterState &state, RadioState &owner, const QString &cmd) {
     if (!ok)
         return;
     const int newMode = RadioState::modeFromCode(modeCode);
+    if (newMode == RadioState::Unknown)
+        return;
     if (state.mode != newMode) {
         state.mode = newMode;
         emit owner.modeChanged(static_cast<RadioState::Mode>(newMode));
@@ -49,6 +53,8 @@ void handleMDSub(ModeFilterState &state, RadioState &owner, const QString &cmd) 
     if (!ok)
         return;
     const int newMode = RadioState::modeFromCode(modeCode);
+    if (newMode == RadioState::Unknown)
+        return;
     if (state.modeB != newMode) {
         state.modeB = newMode;
         emit owner.modeBChanged(static_cast<RadioState::Mode>(newMode));
@@ -60,9 +66,8 @@ void handleCW(ModeFilterState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 4 || cmd.startsWith("CW-"))
         return;
     bool ok;
-    const int pitchCode = cmd.mid(2).toInt(&ok);
-    if (ok && pitchCode >= 25 && pitchCode <= 95) {
-        const int pitchHz = pitchCode * 10;
+    const int pitchHz = cmd.mid(2).toInt(&ok) * RadioUtils::CW_PITCH_STEP_HZ;
+    if (ok && pitchHz >= RadioUtils::CW_PITCH_MIN_HZ && pitchHz <= RadioUtils::CW_PITCH_MAX_HZ) {
         if (pitchHz != state.cwPitch) {
             state.cwPitch = pitchHz;
             emit owner.cwPitchChanged(state.cwPitch);
@@ -78,6 +83,21 @@ void handleKS(ModeFilterState &state, RadioState &owner, const QString &cmd) {
     if (ok && state.keyerSpeed != wpm) {
         state.keyerSpeed = wpm;
         emit owner.keyerSpeedChanged(state.keyerSpeed);
+    }
+}
+
+void handleKZL(ModeFilterState &state, RadioState &owner, const QString &cmd) {
+    // KZLnnnn; nnnn = 0-1000 ms. WHY any width: the RDY dump has been seen sending it unpadded
+    // ("KZL60;", tests/golden capture 2026-04-20), so the digits are taken as they come.
+    if (cmd.length() <= 3)
+        return;
+    bool ok;
+    const int ms = cmd.mid(3).toInt(&ok);
+    if (!ok || ms < 0 || ms > 1000)
+        return;
+    if (state.keyDownInitialDelayMs != ms) {
+        state.keyDownInitialDelayMs = ms;
+        emit owner.keyDownInitialDelayChanged(ms);
     }
 }
 
@@ -195,7 +215,7 @@ void setPaddleOrientation(ModeFilterState &state, RadioState &owner, QChar orien
 }
 
 void setKeyingWeight(ModeFilterState &state, RadioState &owner, int weight) {
-    weight = qBound(90, weight, 125);
+    weight = std::clamp(weight, RadioUtils::KEYING_WEIGHT_MIN, RadioUtils::KEYING_WEIGHT_MAX);
     if (state.keyingWeight != weight) {
         state.keyingWeight = weight;
         emit owner.keyerPaddleChanged(state.iambicMode, state.paddleOrientation, state.keyingWeight);

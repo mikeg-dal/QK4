@@ -1,0 +1,172 @@
+[
+ {
+  "tap_ms": 4,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ },
+ {
+  "tap_ms": 8,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ },
+ {
+  "tap_ms": 12,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ },
+ {
+  "tap_ms": 16,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ },
+ {
+  "tap_ms": 20,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ },
+ {
+  "tap_ms": 24,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ },
+ {
+  "tap_ms": 28,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ },
+ {
+  "tap_ms": 32,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ },
+ {
+  "tap_ms": 36,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ },
+ {
+  "tap_ms": 40,
+  "elements": "dah dit dah dit",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0040;"
+  ],
+  "edges": 8,
+  "met": true
+ }
+]

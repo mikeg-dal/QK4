@@ -1,5 +1,11 @@
 #include <QTest>
+#include <QMetaMethod>
 #include <QSignalSpy>
+
+#include <algorithm>
+#include <memory>
+#include <utility>
+#include <vector>
 #include "models/radiostate.h"
 
 class TestRadioState : public QObject {
@@ -89,6 +95,80 @@ private slots:
         QCOMPARE(rs.isQrpMode(), true);
     }
 
+    // The optimistic setter keeps the range it is given. It used to infer the range from the value
+    // (<= 10 meant QRP), which relabelled a reported XVTR 5.0 mW as 5.0 W QRP, and a QRO 5 W as QRP
+    // (CAT-003).
+    // Each XVTR band's full setup (D12: XVN selects the band, then XVM/XVR/XVI/XVO/XVP set it), as the
+    // RDY dump and later front-panel edits send it.
+    void testXvtrBandSetupPerBand() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::xvtrBandsChanged);
+        const auto feed = [&rs](const QString &commands) {
+            for (const QString &c : commands.split(';', Qt::SkipEmptyParts))
+                rs.parseCATCommand(c + ';');
+        };
+        rs.parseCATCommand("XVI28;"); // before any XVN: no band to write to
+        QCOMPARE(spy.count(), 0);
+        feed("XVN3;XVM1;XVR00144;XVI28;XVO-01234;XVP010;");
+        const XvtrBandConfig &b3 = rs.xvtrBands().at(2);
+        QCOMPARE(b3.mode, 1);
+        QCOMPARE(b3.rfMhz, 144);
+        QCOMPARE(b3.ifMhz, 28);
+        QCOMPARE(b3.offsetHz, -1234);
+        QCOMPARE(b3.powerOutTenthsMw, 10); // 1.0 mW
+        QCOMPARE(spy.count(), 5);
+        feed("XVN4;XVO+00500;");
+        QCOMPARE(rs.xvtrBands().at(3).offsetHz, 500);
+        QCOMPARE(rs.xvtrBands().at(2).offsetHz, -1234); // band 3 untouched
+        spy.clear();
+        feed("XVN3;XVI28;XVP010;"); // unchanged: no signal
+        QCOMPARE(spy.count(), 0);
+        feed("XVN3;XVO01234;XVIxx;XVP;"); // unsigned offset, garbage: refused
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(rs.xvtrBands().at(2).offsetHz, -1234);
+        rs.reset();
+        QCOMPARE(rs.xvtrBands().at(2).ifMhz, XvtrBandConfig::Unknown);
+        QCOMPARE(rs.xvtrBands().at(2).offsetHz, XvtrBandConfig::OffsetUnknown);
+        QCOMPARE(rs.xvtrBands().at(2).powerOutTenthsMw, XvtrBandConfig::Unknown);
+    }
+
+    void testSetRfPowerKeepsXvtrRange() {
+        RadioState rs;
+        rs.parseCATCommand("PC050X;");
+        QSignalSpy spy(&rs, &RadioState::rfPowerChanged);
+        rs.setRfPower(5.1, LevelsState::PowerRange::Xvtr);
+        QCOMPARE(rs.rfPower(), 5.1);
+        QCOMPARE(rs.powerRange(), LevelsState::PowerRange::Xvtr);
+        QVERIFY(rs.isXvtrPowerMode());
+        QCOMPARE(spy.size(), 1);
+    }
+
+    void testSetRfPowerKeepsLowQroRange() {
+        RadioState rs;
+        rs.parseCATCommand("PC006H;");
+        rs.setRfPower(5.0, LevelsState::PowerRange::Qro);
+        QCOMPARE(rs.powerRange(), LevelsState::PowerRange::Qro);
+        QVERIFY(!rs.isQrpMode());
+    }
+
+    // With B SET on, the filter knobs adjust VFO B, so their limits must come from VFO B's mode and
+    // DATA sub-mode - they came from VFO A's (APP-004).
+    void testFilterTargetFollowsBSet() {
+        RadioState rs;
+        rs.parseCATCommand("MD2;"); // A: USB
+        rs.parseCATCommand("DT0;");
+        rs.parseCATCommand("MD$6;"); // B: DATA
+        rs.parseCATCommand("DT$2;"); // FSK D
+        QCOMPARE(rs.filterTargetMode(), RadioState::USB);
+        QCOMPARE(rs.filterTargetDataSubMode(), 0);
+        rs.parseCATCommand("BS1;");
+        QVERIFY(rs.bSetEnabled());
+        QCOMPARE(rs.filterTargetMode(), RadioState::DATA);
+        QCOMPARE(rs.filterTargetDataSubMode(), 2);
+        rs.parseCATCommand("BS0;");
+        QCOMPARE(rs.filterTargetMode(), RadioState::USB);
+    }
+
     // Filter position (FP/FP$ — uses handleIntPair helper)
     void testFilterPositionA() {
         RadioState rs;
@@ -155,7 +235,7 @@ private slots:
         QCOMPARE(rs.autoNotchEnabledB(), true);
     }
 
-    // VFO Lock (LK/LK$ — uses handleBoolPairVal helper)
+    // VFO Lock (LK/LK$)
     void testLockA() {
         RadioState rs;
         rs.parseCATCommand("LK1;");
@@ -222,6 +302,30 @@ private slots:
         RadioState rs;
         rs.parseCATCommand("KS020;");
         QCOMPARE(rs.keyerSpeed(), 20);
+    }
+
+    // KZL: remote paddle key-down initial delay, KZLnnnn; 0-1000 ms. Read, never written.
+    void testKeyDownInitialDelay() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::keyDownInitialDelayChanged);
+        QCOMPARE(rs.keyDownInitialDelayMs(), -1);
+        rs.parseCATCommand("KZL0080;");
+        QCOMPARE(rs.keyDownInitialDelayMs(), 80);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 80);
+        rs.parseCATCommand("KZL0080;"); // unchanged: no emit
+        QCOMPARE(spy.count(), 1);
+        // The RDY dump has been seen sending it unpadded.
+        rs.parseCATCommand("KZL60;");
+        QCOMPARE(rs.keyDownInitialDelayMs(), 60);
+        rs.parseCATCommand("KZL1000;");
+        QCOMPARE(rs.keyDownInitialDelayMs(), 1000);
+        // Out of range or malformed: ignored.
+        rs.parseCATCommand("KZL1001;");
+        rs.parseCATCommand("KZLabc;");
+        rs.parseCATCommand("KZL;");
+        QCOMPARE(rs.keyDownInitialDelayMs(), 1000);
+        QCOMPARE(spy.count(), 3);
     }
 
     // Streaming Latency (SL command)
@@ -652,6 +756,34 @@ private slots:
         QCOMPARE(spy.count(), 1);
     }
 
+    void testNrsReportsTheFullSsnrRange() {
+        // Programmer's Reference D12, NRS$: "nn = SSNR level (0-25)". Levels above 20 were clamped
+        // once by a setter that took the range from somewhere else.
+        RadioState rs;
+        rs.parseCATCommand("NRS251;");
+        QCOMPARE(rs.ssnrLevel(), 25);
+        rs.parseCATCommand("NRS$221;");
+        QCOMPARE(rs.ssnrLevelB(), 22);
+    }
+
+    void testNoiseLevelSettersClampToTheK4Ranges() {
+        // One range per level (ProcessingLimits, from D12): NB 0-15, NR 0-10, SSNR 0-25.
+        RadioState rs;
+        rs.setSsnrLevel(25);
+        QCOMPARE(rs.ssnrLevel(), 25);
+        rs.setSsnrLevelB(40);
+        QCOMPARE(rs.ssnrLevelB(), ProcessingLimits::SsnrLevelMax);
+        rs.setNoiseReductionLevel(15);
+        QCOMPARE(rs.noiseReductionLevel(), ProcessingLimits::NrLevelMax);
+        rs.setNoiseBlankerLevelB(99);
+        QCOMPARE(rs.noiseBlankerLevelB(), ProcessingLimits::NbLevelMax);
+
+        // A request past the limit while already at it changes nothing, so it must not emit.
+        QSignalSpy spy(&rs, &RadioState::processingChanged);
+        rs.setNoiseReductionLevel(15);
+        QCOMPARE(spy.size(), 0);
+    }
+
     void testNrsDoesNotShadowNr() {
         // NRS061; must dispatch to handleNRS, NOT handleNR — verify by checking
         // the ssnr fields populate while the nr fields remain at defaults.
@@ -1068,6 +1200,22 @@ private slots:
     }
 
     // --- ACM / ACS / ACT (antenna config bitmasks) ---
+    void testSetAntConfigAppliesTheSetOnce() {
+        RadioState rs;
+        QSignalSpy mainSpy(&rs, &RadioState::mainRxAntCfgChanged);
+        QSignalSpy txSpy(&rs, &RadioState::txAntCfgChanged);
+        const QVector<bool> mask{true, false, true, false, false, false, true};
+        rs.setMainRxAntConfig(false, mask);
+        QCOMPARE(rs.mainRxDisplayAll(), false);
+        QCOMPARE(rs.mainRxAntMask(), mask);
+        QCOMPARE(mainSpy.count(), 1);
+        rs.setMainRxAntConfig(false, mask);
+        QCOMPARE(mainSpy.count(), 1);
+        rs.setTxAntConfig(true, {false, true, true, true}); // TX carries 3 antennas; the 4th is ignored
+        QCOMPARE(rs.txAntMask(), (QVector<bool>{false, true, true}));
+        QCOMPARE(txSpy.count(), 1);
+    }
+
     // Format: ACM<displayAll><7 mask bits>; ACT has 3 mask bits.
     void testAcmParsesMask() {
         RadioState rs;
@@ -1191,6 +1339,28 @@ private slots:
         QCOMPARE(rs.textDecodeLines(), 2);
     }
 
+    void testTextDecodeMalformedFieldsIgnored() {
+        RadioState rs;
+        rs.parseCATCommand("TD132;");
+        QSignalSpy spy(&rs, &RadioState::textDecodeChanged);
+        rs.parseCATCommand("TDx;2;"); // mode and threshold not digits, lines unchanged
+        QCOMPARE(rs.textDecodeMode(), 1);
+        QCOMPARE(rs.textDecodeThreshold(), 3);
+        QCOMPARE(spy.count(), 0);
+        rs.parseCATCommand("TD5x2;"); // mode 5 is beyond 8-90 WPM
+        QCOMPARE(rs.textDecodeMode(), 1);
+        QCOMPARE(spy.count(), 0);
+        rs.parseCATCommand("TD$x;2;");
+        QCOMPARE(rs.textDecodeModeB(), -1);
+        QCOMPARE(rs.textDecodeThresholdB(), -1);
+    }
+
+    void testTextDecodeLinesRangeMatchesWire() {
+        RadioState rs;
+        rs.parseCATCommand("TD109;");
+        QCOMPARE(rs.textDecodeLines(), 9);
+    }
+
     void testTextDecodeNoChangeNoSignal() {
         RadioState rs;
         rs.parseCATCommand("TD132;");
@@ -1207,6 +1377,30 @@ private slots:
         QCOMPARE(rs.textDecodeThresholdB(), 3);
         QCOMPARE(rs.textDecodeLinesB(), 2);
         QCOMPARE(spy.count(), 1);
+    }
+
+    // The K4 does not echo a client's own TD SET at AI4, so TextDecodeController applies it here.
+    void testSetTextDecodeAppliesWholeSetOnce() {
+        RadioState rs;
+        QSignalSpy mainSpy(&rs, &RadioState::textDecodeChanged);
+        QSignalSpy subSpy(&rs, &RadioState::textDecodeBChanged);
+        rs.setTextDecode(3, 5, 4);
+        QCOMPARE(rs.textDecodeMode(), 3);
+        QCOMPARE(rs.textDecodeThreshold(), 5);
+        QCOMPARE(rs.textDecodeLines(), 4);
+        QCOMPARE(mainSpy.count(), 1); // one SET, one signal - not one per field
+        QCOMPARE(subSpy.count(), 0);
+        rs.setTextDecode(3, 5, 4);
+        QCOMPARE(mainSpy.count(), 1); // unchanged, no signal
+        rs.setTextDecodeB(1, 0, 2);
+        QCOMPARE(rs.textDecodeModeB(), 1);
+        QCOMPARE(rs.textDecodeLinesB(), 2);
+        QCOMPARE(subSpy.count(), 1);
+        QCOMPARE(rs.textDecodeMode(), 3); // Main untouched
+        rs.setTextDecode(9, 12, 10);
+        QCOMPARE(rs.textDecodeMode(), 4); // clamped to what TD can carry
+        QCOMPARE(rs.textDecodeThreshold(), 9);
+        QCOMPARE(rs.textDecodeLines(), 9);
     }
 
     // --- TB (text buffer stream — emits every non-empty decoded buffer) ---
@@ -1429,7 +1623,7 @@ private slots:
         QCOMPARE(rs.displayModeExt(), 1);
     }
 
-    // --- #FPS (display FPS, 12-30) ---
+    // --- #FPS (display FPS, 1-30 — Programmer's Reference D12) ---
     void testDisplayFpsParses() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::displayFpsChanged);
@@ -1441,8 +1635,30 @@ private slots:
     void testDisplayFpsBelowRangeIgnored() {
         RadioState rs;
         rs.parseCATCommand("#FPS24;");
-        rs.parseCATCommand("#FPS08;"); // below 12
+        rs.parseCATCommand("#FPS00;");
+        rs.parseCATCommand("#FPS31;");
         QCOMPARE(rs.displayFps(), 24);
+        // QK4 once refused everything under 12; the radio accepts 1-30.
+        rs.parseCATCommand("#FPS01;");
+        QCOMPARE(rs.displayFps(), 1);
+        rs.parseCATCommand("#FPS08;");
+        QCOMPARE(rs.displayFps(), 8);
+    }
+
+    // --- #WFH range (Programmer's Reference D12: 000 to 100) ---
+    void testWaterfallHeightTakesTheFullRange() {
+        RadioState rs;
+        rs.parseCATCommand("#WFH000;");
+        QCOMPARE(rs.waterfallHeight(), 0);
+        rs.parseCATCommand("#WFH100;");
+        QCOMPARE(rs.waterfallHeight(), 100);
+        rs.parseCATCommand("#WFH101;");
+        QCOMPARE(rs.waterfallHeight(), 100);
+        // The optimistic setter used by the DISPLAY popup follows the same range, no longer 10-90.
+        rs.setWaterfallHeight(5);
+        QCOMPARE(rs.waterfallHeight(), 5);
+        rs.setWaterfallHeightExt(95);
+        QCOMPARE(rs.waterfallHeightExt(), 95);
     }
 
     // --- #WFC (waterfall color, 0-4) ---
@@ -1462,7 +1678,6 @@ private slots:
     }
 
     // --- #WFH / #HWFH (waterfall height, 0-100) ---
-    // WHY value=60 not 50: default m_waterfallHeight = 50, so 50 is no-change.
     void testWaterfallHeightParses() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::waterfallHeightChanged);
@@ -1473,8 +1688,83 @@ private slots:
 
     void testWaterfallHeightExtParses() {
         RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::waterfallHeightExtChanged);
         rs.parseCATCommand("#HWFH075;");
         QCOMPARE(rs.waterfallHeightExt(), 75);
+        QCOMPARE(spy.count(), 1);
+        // #HWFH is the external display's height; the LCD's is untouched.
+        QCOMPARE(rs.waterfallHeight(), -1);
+    }
+
+    // The RDY dump forms from a K4D capture (2026-10-30), the range edges, and rejections.
+    void testWaterfallHeightRangeAndMalformed() {
+        RadioState rs;
+        rs.parseCATCommand("#WFH60;");
+        rs.parseCATCommand("#HWFH65;");
+        QCOMPARE(rs.waterfallHeight(), 60);
+        QCOMPARE(rs.waterfallHeightExt(), 65);
+        rs.parseCATCommand("#WFH0;");
+        QCOMPARE(rs.waterfallHeight(), 0);
+        rs.parseCATCommand("#WFH100;");
+        QCOMPARE(rs.waterfallHeight(), 100);
+
+        QSignalSpy spy(&rs, &RadioState::waterfallHeightChanged);
+        QSignalSpy extSpy(&rs, &RadioState::waterfallHeightExtChanged);
+        rs.parseCATCommand("#WFH101;");
+        rs.parseCATCommand("#WFH-1;");
+        rs.parseCATCommand("#WFH;");
+        rs.parseCATCommand("#HWFH101;");
+        rs.parseCATCommand("#HWFH;");
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(extSpy.count(), 0);
+        QCOMPARE(rs.waterfallHeight(), 100);
+        QCOMPARE(rs.waterfallHeightExt(), 65);
+    }
+
+    // --- #WBS / #HWBS (waterfall colour range, 5-30 dB) ---
+    // The RDY dump forms from a K4D capture (2026-10-30), the range edges, and rejections.
+    void testWaterfallColorRangeParses() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::waterfallColorRangeChanged);
+        QSignalSpy extSpy(&rs, &RadioState::waterfallColorRangeExtChanged);
+        rs.parseCATCommand("#WBS14;");
+        QCOMPARE(rs.waterfallColorRange(), 14);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 14);
+        // #HWBS is the external monitor's range; the LCD's is untouched, and vice versa.
+        QCOMPARE(rs.waterfallColorRangeExt(), -1);
+        QCOMPARE(extSpy.count(), 0);
+        rs.parseCATCommand("#HWBS20;");
+        QCOMPARE(rs.waterfallColorRangeExt(), 20);
+        QCOMPARE(rs.waterfallColorRange(), 14);
+        QCOMPARE(extSpy.count(), 1);
+
+        rs.parseCATCommand("#WBS14;"); // unchanged: no emit
+        QCOMPARE(spy.count(), 1);
+        rs.parseCATCommand("#WBS5;");
+        QCOMPARE(rs.waterfallColorRange(), 5);
+        rs.parseCATCommand("#WBS30;");
+        QCOMPARE(rs.waterfallColorRange(), 30);
+    }
+
+    void testWaterfallColorRangeRejected() {
+        RadioState rs;
+        rs.parseCATCommand("#WBS14;");
+        rs.parseCATCommand("#HWBS14;");
+        QSignalSpy spy(&rs, &RadioState::waterfallColorRangeChanged);
+        QSignalSpy extSpy(&rs, &RadioState::waterfallColorRangeExtChanged);
+        rs.parseCATCommand("#WBS4;");
+        rs.parseCATCommand("#WBS31;");
+        rs.parseCATCommand("#WBS-1;");
+        rs.parseCATCommand("#WBS;");
+        rs.parseCATCommand("#WBSx;");
+        rs.parseCATCommand("#HWBS4;");
+        rs.parseCATCommand("#HWBS31;");
+        rs.parseCATCommand("#HWBS;");
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(extSpy.count(), 0);
+        QCOMPARE(rs.waterfallColorRange(), 14);
+        QCOMPARE(rs.waterfallColorRangeExt(), 14);
     }
 
     // --- #AVG (averaging, 1-20) ---
@@ -1558,11 +1848,13 @@ private slots:
         QCOMPARE(rs.vfoACursor(), 2);
     }
 
-    // --- #AR (auto ref level — checks last char for 'A' = auto) ---
+    // --- #AR (AutoRef: #ARaadd±oom, last char 1 = auto, 0 = manual) ---
+    // The well-formed strings here were sent by a K4D on 2026-10-19. The old tests used an
+    // invented 'A'/'M' ending, so QK4 read every real message as manual and the tests still passed.
     void testAutoRefLevelAuto() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::autoRefLevelChanged);
-        rs.parseCATCommand("#AR-200+050A;"); // ends with 'A' → auto
+        rs.parseCATCommand("#AR1201+041;");
         QCOMPARE(rs.autoRefLevel(), true);
         QCOMPARE(spy.count(), 1);
         QCOMPARE(spy.at(0).at(0).toBool(), true);
@@ -1570,11 +1862,40 @@ private slots:
 
     void testAutoRefLevelManual() {
         RadioState rs;
-        rs.parseCATCommand("#AR-200+050A;"); // auto
+        rs.parseCATCommand("#AR1201+041;");
         QSignalSpy spy(&rs, &RadioState::autoRefLevelChanged);
-        rs.parseCATCommand("#AR-200+050M;"); // manual
+        rs.parseCATCommand("#AR1201+040;");
         QCOMPARE(rs.autoRefLevel(), false);
         QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), false);
+    }
+
+    void testAutoRefOffsetChangeIsNotAModeChange() {
+        // The radio resends #AR whenever the AutoRef Offset menu moves. Same mode, so no signal.
+        RadioState rs;
+        rs.parseCATCommand("#AR1201+041;");
+        QSignalSpy spy(&rs, &RadioState::autoRefLevelChanged);
+        rs.parseCATCommand("#AR1201+081;");
+        rs.parseCATCommand("#AR1201+031;");
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(rs.autoRefLevel(), true);
+    }
+
+    void testAutoRefNegativeOffsetParses() {
+        RadioState rs;
+        rs.parseCATCommand("#AR1201-081;");
+        QCOMPARE(rs.autoRefLevel(), true);
+    }
+
+    void testAutoRefMalformedIgnored() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::autoRefLevelChanged);
+        rs.parseCATCommand("#AR-200+050A;"); // the old invented format
+        rs.parseCATCommand("#AR1201+04X;");  // mode is neither 1 nor 0
+        rs.parseCATCommand("#AR1201*041;");  // no offset sign
+        rs.parseCATCommand("#AR12a1+041;");  // non-digit field
+        rs.parseCATCommand("#AR1201+0410;"); // too long
+        QCOMPARE(spy.count(), 0);
     }
 
     void testAutoRefLevelTooShort() {
@@ -1629,8 +1950,98 @@ private slots:
 
     void testRefLevelBParses() {
         RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::refLevelBChanged);
         rs.parseCATCommand("#REF$-100;");
         QCOMPARE(rs.refLevelB(), -100);
+        QCOMPARE(spy.count(), 1);
+        // #REF$ belongs to the Sub pan only.
+        QCOMPARE(rs.refLevel(), SpectrumDisplayLimits::RefLevelUnknown);
+    }
+
+    // The RDY dump form from a K4D capture (2026-10-30), the range edges, and rejections.
+    void testRefLevelRangeAndMalformed() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-129;");
+        QCOMPARE(rs.refLevel(), -129);
+        rs.parseCATCommand("#REF-200;");
+        QCOMPARE(rs.refLevel(), -200);
+        rs.parseCATCommand("#REF60;"); // "-200 to 60" (Programmer's Reference D12); 50 was QK4's old cap
+        QCOMPARE(rs.refLevel(), 60);
+
+        QSignalSpy spy(&rs, &RadioState::refLevelChanged);
+        rs.parseCATCommand("#REF-201;"); // below range
+        rs.parseCATCommand("#REF61;");   // above range
+        rs.parseCATCommand("#REF;");     // GET form, no value
+        rs.parseCATCommand("#REFxx;");   // not a number
+        rs.parseCATCommand("#REF60;");   // unchanged
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(rs.refLevel(), 60);
+    }
+
+    // --- REF +/- (Ctrl+Wheel and the Display popup, SPEC-003) ---
+    // Ctrl+Wheel used to send #REF and move only the panadapter, so every step started again from
+    // the stale RadioState::refLevel(): two steps of +1 sent the same level twice.
+    void testStepRefLevelAccumulates() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-129;");
+        QSignalSpy spy(&rs, &RadioState::refLevelChanged);
+        QCOMPARE(rs.stepRefLevel(false, +1), std::optional<int>(-128));
+        QCOMPARE(rs.stepRefLevel(false, +1), std::optional<int>(-127));
+        QCOMPARE(rs.stepRefLevel(false, -3), std::optional<int>(-130));
+        QCOMPARE(rs.refLevel(), -130);
+        QCOMPARE(spy.count(), 3);
+        QCOMPARE(spy.at(2).at(0).toInt(), -130);
+    }
+
+    void testStepRefLevelSubIsSeparate() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-129;");
+        rs.parseCATCommand("#REF$-120;");
+        QSignalSpy mainSpy(&rs, &RadioState::refLevelChanged);
+        QSignalSpy subSpy(&rs, &RadioState::refLevelBChanged);
+        QCOMPARE(rs.stepRefLevel(true, +2), std::optional<int>(-118));
+        QCOMPARE(rs.refLevelB(), -118);
+        QCOMPARE(rs.refLevel(), -129);
+        QCOMPARE(mainSpy.count(), 0);
+        QCOMPARE(subSpy.count(), 1);
+    }
+
+    // A client #REF during AutoRef freezes the radio's tracking (docs/k4-protocol-quirks.md §13).
+    void testStepRefLevelRefusedInAutoRef() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-129;");
+        rs.parseCATCommand("#AR1201+041;");
+        QSignalSpy spy(&rs, &RadioState::refLevelChanged);
+        QCOMPARE(rs.stepRefLevel(false, +1), std::nullopt);
+        QCOMPARE(rs.stepRefLevel(true, +1), std::nullopt);
+        QCOMPARE(rs.refLevel(), -129);
+        QCOMPARE(spy.count(), 0);
+        rs.parseCATCommand("#AR1201+040;"); // manual again
+        QCOMPARE(rs.stepRefLevel(false, +1), std::optional<int>(-128));
+    }
+
+    // Before the radio reports a REF there is nothing to step from; a guess would be sent as a real
+    // REF.
+    void testStepRefLevelRefusedBeforeFirstRef() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::refLevelChanged);
+        QCOMPARE(rs.stepRefLevel(false, +1), std::nullopt);
+        QCOMPARE(rs.stepRefLevel(true, -1), std::nullopt);
+        QCOMPARE(rs.refLevel(), SpectrumDisplayLimits::RefLevelUnknown);
+        QCOMPARE(spy.count(), 0);
+        rs.parseCATCommand("#REF-110;");
+        rs.reset();
+        QCOMPARE(rs.stepRefLevel(false, +1), std::nullopt);
+    }
+
+    void testStepRefLevelClampsAndStopsAtLimits() {
+        RadioState rs;
+        rs.parseCATCommand("#REF-198;");
+        QCOMPARE(rs.stepRefLevel(false, -5), std::optional<int>(SpectrumDisplayLimits::RefLevelMin));
+        QCOMPARE(rs.stepRefLevel(false, -1), std::nullopt); // already at the floor — nothing to send
+        rs.parseCATCommand("#REF58;");
+        QCOMPARE(rs.stepRefLevel(false, +5), std::optional<int>(SpectrumDisplayLimits::RefLevelMax));
+        QCOMPARE(rs.stepRefLevel(false, +1), std::nullopt);
     }
 
     // --- #SPN / #SPN$ (span Hz, 1..999999, via handleIntPair) ---
@@ -1668,6 +2079,9 @@ private slots:
     // signals, so each receiver must emit exactly once per real change and never for the other.
     void testMiniPanFrontPanelToggleSequence() {
         RadioState rs;
+        // Both receivers known, as after the connection dump: the replay then counts real changes only.
+        rs.parseCATCommand("#MP0;");
+        rs.parseCATCommand("#MP$0;");
         QSignalSpy spyA(&rs, &RadioState::miniPanAEnabledChanged);
         QSignalSpy spyB(&rs, &RadioState::miniPanBEnabledChanged);
 
@@ -1901,13 +2315,58 @@ private slots:
         QCOMPARE(spy.count(), 1);
     }
 
+    // --- BN / BN$ (band number; Programmer's Reference D12: "BN$nn; ... 00 = 160 m ...10 = 6 m") ---
+    void testBandNumberUnknownUntilReported() {
+        RadioState rs;
+        QCOMPARE(rs.bandNumber(), -1);
+        QCOMPARE(rs.bandNumberB(), -1);
+    }
+
+    void testBandNumberParsesAndEmitsOnChange() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::bandNumberChanged);
+        rs.parseCATCommand("BN05;"); // 20 m
+        QCOMPARE(rs.bandNumber(), 5);
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 5);
+        rs.parseCATCommand("BN05;");
+        QCOMPARE(spy.size(), 1);     // unchanged, no emit
+        rs.parseCATCommand("BN16;"); // XVTR6
+        QCOMPARE(rs.bandNumber(), 16);
+        QCOMPARE(spy.size(), 2);
+    }
+
+    void testBandNumberSubDoesNotShadowMain() {
+        // BN$ must reach its own handler, not BN with a '$' in the digits.
+        RadioState rs;
+        QSignalSpy mainSpy(&rs, &RadioState::bandNumberChanged);
+        QSignalSpy subSpy(&rs, &RadioState::bandNumberBChanged);
+        rs.parseCATCommand("BN$10;"); // 6 m
+        QCOMPARE(rs.bandNumberB(), 10);
+        QCOMPARE(rs.bandNumber(), -1);
+        QCOMPARE(subSpy.size(), 1);
+        QCOMPARE(mainSpy.size(), 0);
+    }
+
+    void testBandNumberIgnoresSetFormsAndBadValues() {
+        // INCR/DECR, TOGGLE and BAND STACK are client SETs with no band; a CAT-server client's SET
+        // goes through this parser too. Neither these nor malformed or unused numbers move the band.
+        RadioState rs;
+        rs.parseCATCommand("BN03;");
+        QSignalSpy spy(&rs, &RadioState::bandNumberChanged);
+        for (const char *cmd : {"BN+;", "BN-;", "BN/;", "BN^;", "BN>;", "BN;", "BN3;", "BN003;", "BN26;", "BN-1;"})
+            rs.parseCATCommand(QString::fromLatin1(cmd));
+        QCOMPARE(rs.bandNumber(), 3);
+        QCOMPARE(spy.size(), 0);
+        rs.parseCATCommand("BN$/;");
+        QCOMPARE(rs.bandNumberB(), -1);
+    }
+
     // --- LN (VFO Link) ---
     void testVfoLinkEnable() {
         RadioState rs;
-        QSignalSpy spy(&rs, &RadioState::vfoLinkChanged);
         rs.parseCATCommand("LN1;");
         QCOMPARE(rs.vfoLink(), true);
-        QCOMPARE(spy.count(), 1);
     }
 
     void testVfoLinkDisable() {
@@ -1980,14 +2439,6 @@ private slots:
         QCOMPARE(spy.count(), 1);
     }
 
-    void testLineOutSetterClampsToMax() {
-        RadioState rs;
-        rs.setLineOutLeft(60);
-        rs.setLineOutRight(50);
-        QCOMPARE(rs.lineOutLeft(), 50);
-        QCOMPARE(rs.lineOutRight(), 50);
-    }
-
     void testLineOutRightEqualsLeftFlag() {
         RadioState rs;
         rs.parseCATCommand("LO020020 ;"); // mode char not '1' → false
@@ -2046,6 +2497,25 @@ private slots:
         QSignalSpy spy(&rs, &RadioState::lineInChanged);
         rs.parseCATCommand("LI0501000;");
         QCOMPARE(spy.count(), 0);
+    }
+
+    // LO is not echoed at AI4: the popup's SET is applied whole, and the next SET builds on it.
+    void testSetLineOutAppliesWholeSetOnce() {
+        RadioState rs;
+        rs.parseCATCommand("LO0100200;");
+        QSignalSpy spy(&rs, &RadioState::lineOutChanged);
+        rs.setLineOut(30, 20, false);
+        QCOMPARE(rs.lineOutLeft(), 30);
+        QCOMPARE(rs.lineOutRight(), 20);
+        QCOMPARE(spy.count(), 1);
+        rs.setLineOut(30, 20, false);
+        QCOMPARE(spy.count(), 1);
+        rs.setLineOut(40, 40, true);
+        QVERIFY(rs.lineOutRightEqualsLeft());
+        QCOMPARE(spy.count(), 2);
+        rs.setLineOut(99, -5, false);
+        QCOMPARE(rs.lineOutLeft(), AudioEffectsState::LineOutMax);
+        QCOMPARE(rs.lineOutRight(), 0);
     }
 
     // --- MI (Mic Input select, 0-4) ---
@@ -2329,6 +2799,18 @@ private slots:
         QCOMPARE(rs.ssbTxBw(), 30);
     }
 
+    void testSsbTxBwSetterKeepsSsbRange() {
+        RadioState rs;
+        rs.setSsbTxBw(AudioEffectsState::SsbTxBwMin);
+        QCOMPARE(rs.ssbTxBw(), 24);
+        rs.setSsbTxBw(26);
+        QCOMPARE(rs.ssbTxBw(), 26);
+        rs.setSsbTxBw(99);
+        QCOMPARE(rs.ssbTxBw(), AudioEffectsState::EssbTxBwMax);
+        rs.setSsbTxBw(10);
+        QCOMPARE(rs.ssbTxBw(), AudioEffectsState::SsbTxBwMin);
+    }
+
     void testEssbInvalidModeRejected() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::essbChanged);
@@ -2347,9 +2829,9 @@ private slots:
     // =========================================================================
     // Phase 0.1 Backfill — RxTxMeter subsystem
     // Handlers: TX/RX (transmit state), SM/SM$ (S-meter — always emits),
-    // TM (TX meter telemetry — always emits), PO (unused),
+    // TM (TX meter telemetry — always emits), PO (not registered; TM carries forward power),
     // SIFP (supply voltage/current), ID/OM/RV. (radio identity — no signals),
-    // MN (message bank), SB/DV/TS/BS (control state flags).
+    // MB (message bank), SB/DV/TS/BS (control state flags).
     // =========================================================================
 
     // --- TX / RX (transmit state: signals fire only on transition) ---
@@ -2382,9 +2864,113 @@ private slots:
 
     void testRxWhileReceivingNoDuplicateSignal() {
         RadioState rs;
+        rs.parseCATCommand("RX;");
         QSignalSpy spy(&rs, &RadioState::transmitStateChanged);
-        rs.parseCATCommand("RX;"); // already RX by default
+        rs.parseCATCommand("RX;");
         QCOMPARE(spy.count(), 0);
+    }
+
+    // The radio's first RX; is applied and announced, not assumed: until it arrives QK4 does not know
+    // whether the radio is transmitting.
+    void testFirstRxIsReported() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::transmitStateChanged);
+        rs.parseCATCommand("RX;");
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), false);
+    }
+
+    // --- SMH / SMH$ (the radio's signal level in dBm) ---
+    // Wire forms from a K4D, 2026-10-30: SMH-110 while SM read 04 (QK4's bar estimate: -115 dBm).
+    void testSignalLevelDbmParses() {
+        RadioState rs;
+        QSignalSpy spy(&rs, &RadioState::sMeterDbmChanged);
+        QSignalSpy subSpy(&rs, &RadioState::sMeterDbmBChanged);
+        rs.parseCATCommand("SMH-110;");
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(-110));
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), -110);
+        QCOMPARE(subSpy.count(), 0);
+        QCOMPARE(rs.sMeterDbmB(), std::nullopt);
+
+        rs.parseCATCommand("SMH$-122;");
+        QCOMPARE(rs.sMeterDbmB(), std::optional<int>(-122));
+        QCOMPARE(subSpy.count(), 1);
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(-110)); // Main untouched
+        QCOMPARE(spy.count(), 1);
+
+        rs.parseCATCommand("SMH+005;"); // a strong signal reads positive
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(5));
+        rs.parseCATCommand("SMH-073;");
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(-73));
+    }
+
+    void testSignalLevelDbmUnknownUntilReported() {
+        RadioState rs;
+        QCOMPARE(rs.sMeterDbm(), std::nullopt);
+        QCOMPARE(rs.sMeterDbmB(), std::nullopt);
+        // The bar stream does not invent a dBm reading.
+        rs.parseCATCommand("SM04;");
+        rs.parseCATCommand("SM$04;");
+        QCOMPARE(rs.sMeterDbm(), std::nullopt);
+        QCOMPARE(rs.sMeterDbmB(), std::nullopt);
+    }
+
+    // SMH must not reach the SM (bar graph) handler, nor SMH$ the SM$ one.
+    void testSignalLevelDbmLeavesTheBarsAlone() {
+        RadioState rs;
+        rs.parseCATCommand("SM04;");
+        rs.parseCATCommand("SM$06;");
+        QSignalSpy barSpy(&rs, &RadioState::sMeterChanged);
+        QSignalSpy barBSpy(&rs, &RadioState::sMeterBChanged);
+        rs.parseCATCommand("SMH-110;");
+        rs.parseCATCommand("SMH$-100;");
+        QCOMPARE(barSpy.count(), 0);
+        QCOMPARE(barBSpy.count(), 0);
+        QCOMPARE(rs.sMeter(), 2.0);
+        QCOMPARE(rs.sMeterB(), 3.0);
+    }
+
+    // SMH1 is the SET that turns on automatic delivery; read as a level it would be +1 dBm.
+    void testSignalLevelDbmRejectsSetAndMalformed() {
+        RadioState rs;
+        rs.parseCATCommand("SMH-110;");
+        rs.parseCATCommand("SMH$-122;");
+        QSignalSpy spy(&rs, &RadioState::sMeterDbmChanged);
+        QSignalSpy subSpy(&rs, &RadioState::sMeterDbmBChanged);
+        for (const char *bad :
+             {"SMH1;", "SMH;", "SMH$;", "SMH$1;", "SMH-;", "SMH+;", "SMH-1x0;", "SMH--10;", "SMH-1100;", "SMH 110;"}) {
+            rs.parseCATCommand(QString::fromLatin1(bad));
+        }
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(subSpy.count(), 0);
+        QCOMPARE(rs.sMeterDbm(), std::optional<int>(-110));
+        QCOMPARE(rs.sMeterDbmB(), std::optional<int>(-122));
+    }
+
+    void testSignalLevelDbmEmitsOnlyOnChange() {
+        RadioState rs;
+        rs.parseCATCommand("SMH-110;");
+        QSignalSpy spy(&rs, &RadioState::sMeterDbmChanged);
+        rs.parseCATCommand("SMH-110;");
+        QCOMPARE(spy.count(), 0);
+        rs.parseCATCommand("SMH-111;");
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void testSignalLevelDbmResetsAndEmitsAgain() {
+        RadioState rs;
+        rs.parseCATCommand("SMH-110;");
+        rs.parseCATCommand("SMH$-122;");
+        rs.reset();
+        QCOMPARE(rs.sMeterDbm(), std::nullopt);
+        QCOMPARE(rs.sMeterDbmB(), std::nullopt);
+        QSignalSpy spy(&rs, &RadioState::sMeterDbmChanged);
+        QSignalSpy subSpy(&rs, &RadioState::sMeterDbmBChanged);
+        rs.parseCATCommand("SMH-110;"); // same as before the reset - must still emit
+        rs.parseCATCommand("SMH$-122;");
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(subSpy.count(), 1);
     }
 
     // --- SM / SM$ (S-meter — emits on EVERY parse; streaming telemetry) ---
@@ -2457,10 +3043,11 @@ private slots:
         QCOMPARE(spy.count(), 0);
     }
 
-    // --- PO (raw power meter, intentionally unused) ---
+    // --- PO (raw power meter): not registered, TM already carries forward power ---
     void testPowerMeterDoesNotCrash() {
         RadioState rs;
-        rs.parseCATCommand("PO050;"); // handler ignores payload
+        QVERIFY(!rs.registeredCommandPrefixes().contains(QStringLiteral("PO")));
+        rs.parseCATCommand("PO050;"); // falls through the dispatcher unhandled
         // No signal, no state change; just must not crash.
     }
 
@@ -2538,20 +3125,36 @@ private slots:
         QCOMPARE(rs.firmwareVersions().value("DDC0"), QString("00.65 (0:35)"));
     }
 
-    // --- MN (message bank 1-4) ---
+    // --- MB (message bank: 0 = bank I, 1 = bank II) ---
     void testMessageBankParses() {
         RadioState rs;
         QSignalSpy spy(&rs, &RadioState::messageBankChanged);
-        rs.parseCATCommand("MN2;");
-        QCOMPARE(rs.messageBank(), 2);
+        rs.parseCATCommand("MB1;");
+        QCOMPARE(rs.messageBank(), 1);
         QCOMPARE(spy.count(), 1);
+        rs.parseCATCommand("MB0;"); // BANK pressed: the K4 reports the other bank at AI4
+        QCOMPARE(rs.messageBank(), 0);
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.last().at(0).toInt(), 0);
+        rs.parseCATCommand("MB0;"); // unchanged: no signal
+        QCOMPARE(spy.count(), 2);
     }
 
     void testMessageBankOutOfRangeRejected() {
         RadioState rs;
-        rs.parseCATCommand("MN2;");
-        rs.parseCATCommand("MN5;"); // above 4
-        QCOMPARE(rs.messageBank(), 2);
+        rs.parseCATCommand("MB1;");
+        QSignalSpy spy(&rs, &RadioState::messageBankChanged);
+        for (const char *bad : {"MB2;", "MB-1;", "MB;", "MBX;", "MB10;"})
+            rs.parseCATCommand(bad);
+        QCOMPARE(rs.messageBank(), 1);
+        QCOMPARE(spy.count(), 0);
+    }
+
+    void testMnIsNotTheMessageBank() {
+        // The K4 reports the bank as MB; MN was a guess that never matched anything it sends.
+        RadioState rs;
+        rs.parseCATCommand("MN1;");
+        QCOMPARE(rs.messageBank(), -1);
     }
 
     // --- SB (sub receiver: SB0=off, SB1 or SB3=on) ---
@@ -2746,11 +3349,106 @@ private slots:
         QCOMPARE(rs.mode(), RadioState::DATA_R);
     }
 
-    void testModeUnknownCodeFallsBackToUsb() {
-        // modeFromCode defaults to USB on any code not in 1-9 (except 8).
+    void testModeUndefinedCodesIgnored() {
+        // 0 and 8 are N/A in the K4 reference. A CAT-server client's MD8; reaches the same handler,
+        // so it must leave the mode alone rather than read as USB.
         RadioState rs;
-        rs.parseCATCommand("MD8;"); // 8 is unassigned
-        QCOMPARE(rs.mode(), RadioState::USB);
+        rs.parseCATCommand("MD3;");
+        rs.parseCATCommand("MD$6;");
+        QSignalSpy spyA(&rs, &RadioState::modeChanged);
+        QSignalSpy spyB(&rs, &RadioState::modeBChanged);
+        for (const char *cmd : {"MD0;", "MD8;", "MD10;", "MD$0;", "MD$8;"})
+            rs.parseCATCommand(cmd);
+        QCOMPARE(rs.mode(), RadioState::CW);
+        QCOMPARE(rs.modeB(), RadioState::DATA);
+        QCOMPARE(spyA.count(), 0);
+        QCOMPARE(spyB.count(), 0);
+
+        RadioState fresh;
+        fresh.parseCATCommand("MD8;");
+        QVERIFY(!fresh.hasReported(RadioState::CatField::ModeA));
+    }
+
+    void testFrequencyShortFormsReadAsTheK4ReadsThem() {
+        // Programmer's Reference D12, FA: 1-2 digits MHz, 3-5 kHz, 6+ Hz. FB uses the same rules.
+        const QList<std::pair<QString, quint64>> cases = {
+            {"7", 7'000'000},      {"14", 14'000'000},  {"100", 100'000},           {"7100", 7'100'000},
+            {"14074", 14'074'000}, {"500000", 500'000}, {"144200000", 144'200'000}, {"00014074000", 14'074'000},
+        };
+        for (const auto &[digits, hz] : cases) {
+            RadioState rs;
+            rs.parseCATCommand("FA" + digits + ";");
+            rs.parseCATCommand("FB" + digits + ";");
+            QCOMPARE(rs.frequency(), hz);
+            QCOMPARE(rs.vfoB(), hz);
+        }
+    }
+
+    void testFrequencyMalformedArgumentsIgnored() {
+        RadioState rs;
+        rs.parseCATCommand("FA00014074000;");
+        QSignalSpy spy(&rs, &RadioState::frequencyChanged);
+        // Whitespace and signs would change the digit count that decides the unit; 12 digits is
+        // more than the radio accepts.
+        for (const char *cmd : {"FA 14;", "FA14 ;", "FA+14;", "FA-7;", "FA000140740000;", "FA7.1;"})
+            rs.parseCATCommand(cmd);
+        QCOMPARE(rs.frequency(), quint64(14'074'000));
+        QCOMPARE(spy.count(), 0);
+    }
+
+    void testHasReportedFollowsTheRadioAndReset_data() {
+        QTest::addColumn<int>("field");
+        QTest::addColumn<QStringList>("reports");
+        using F = RadioState::CatField;
+        auto row = [](const char *name, F f, QStringList reports) {
+            QTest::newRow(name) << static_cast<int>(f) << reports;
+        };
+        row("FA", F::FrequencyA, {"FA00014074000;"});
+        row("FB", F::FrequencyB, {"FB00007100000;"});
+        row("MD", F::ModeA, {"MD2;"});
+        row("MD$", F::ModeB, {"MD$3;"});
+        row("BW", F::FilterBandwidth, {"BW0240;"});
+        row("PC", F::RfPower, {"PC050H;"});
+        row("KS", F::KeyerSpeed, {"KS020;"});
+        row("FT", F::Split, {"FT0;"});
+        row("RT", F::RitA, {"RT0;"});
+        row("RT$", F::RitB, {"RT$0;"});
+        row("XT", F::Xit, {"XT0;"});
+        row("RO", F::RitXitOffsetA, {"RO+0000;"});
+        row("RO$", F::RitXitOffsetB, {"RO$+0000;"});
+        row("GT", F::AgcA, {"GT0;"});
+        row("GT$", F::AgcB, {"GT$0;"});
+        row("NB", F::NoiseBlankerA, {"NB0000;"});
+        row("NB$", F::NoiseBlankerB, {"NB$0000;"});
+        row("NR", F::NoiseReductionA, {"NR000;"});
+        row("NR$", F::NoiseReductionB, {"NR$000;"});
+        row("DV", F::Diversity, {"DV0;"});
+        row("VX voice", F::VoxCurrentMode, {"MD2;", "VXV0;"});
+        row("VX cw", F::VoxCurrentMode, {"MD3;", "VXC0;"});
+    }
+
+    void testHasReportedFollowsTheRadioAndReset() {
+        // Every first report here is the value the getters already show before a report (off, 0),
+        // so only hasReported() can tell the CAT server that the radio has really said it.
+        QFETCH(int, field);
+        QFETCH(QStringList, reports);
+        const auto f = static_cast<RadioState::CatField>(field);
+        RadioState rs;
+        QVERIFY(!rs.hasReported(f));
+        for (const QString &cmd : reports)
+            rs.parseCATCommand(cmd);
+        QVERIFY(rs.hasReported(f));
+        rs.reset();
+        QVERIFY(!rs.hasReported(f));
+    }
+
+    void testVoxReportedOnlyForTheCurrentModeGroup() {
+        RadioState rs;
+        rs.parseCATCommand("MD3;");
+        rs.parseCATCommand("VXV1;"); // voice flag known, but VX in CW reports the CW flag
+        QVERIFY(!rs.hasReported(RadioState::CatField::VoxCurrentMode));
+        rs.parseCATCommand("VXC0;");
+        QVERIFY(rs.hasReported(RadioState::CatField::VoxCurrentMode));
     }
 
     void testModeChangeEmitsQskDelayRefresh() {
@@ -2763,6 +3461,64 @@ private slots:
         rs.parseCATCommand("MD1;"); // LSB is voice → emit delay 100
         QCOMPARE(qskSpy.count(), 1);
         QCOMPARE(qskSpy.at(0).at(0).toInt(), 100);
+    }
+
+    // Direct data (DATA in FSK D or PSK D) uses the CW group of the per-mode settings - SD "C = CW &
+    // direct data", VX "C = CW/direct data", ML "CW/direct-data modes" - not AF data's (APP-007).
+    void testDirectDataUsesTheCwDelayAndVox() {
+        RadioState rs;
+        rs.parseCATCommand("SD0C050;");
+        rs.parseCATCommand("SD0D120;");
+        rs.parseCATCommand("VXC1;");
+        rs.parseCATCommand("VXD0;");
+        rs.parseCATCommand("MD6;");
+        rs.parseCATCommand("DT2;"); // FSK D
+        QCOMPARE(rs.delayForCurrentMode(), 50);
+        QVERIFY(rs.voxForCurrentMode());
+        QCOMPARE(rs.monitorModeCode(), 0);
+        rs.parseCATCommand("DT3;"); // PSK D
+        QCOMPARE(rs.delayForCurrentMode(), 50);
+        rs.parseCATCommand("DT0;"); // DATA A is AF data
+        QCOMPARE(rs.delayForCurrentMode(), 120);
+        QVERIFY(!rs.voxForCurrentMode());
+        QCOMPARE(rs.monitorModeCode(), 1);
+    }
+
+    void testDirectDataDelaySetterWritesTheCwSlot() {
+        RadioState rs;
+        rs.parseCATCommand("SD0C050;");
+        rs.parseCATCommand("SD0D120;");
+        rs.parseCATCommand("MD9;"); // DATA-R
+        rs.parseCATCommand("DT2;");
+        rs.setDelayForCurrentMode(60);
+        QCOMPARE(rs.qskDelayCW(), 60);
+        QCOMPARE(rs.qskDelayData(), 120);
+    }
+
+    void testDataSubModeClassChangeRefreshesDelay() {
+        RadioState rs;
+        rs.parseCATCommand("SD0C050;");
+        rs.parseCATCommand("SD0D120;");
+        rs.parseCATCommand("MD6;");
+        rs.parseCATCommand("DT0;");
+        QSignalSpy spy(&rs, &RadioState::qskDelayChanged);
+        rs.parseCATCommand("DT2;"); // AF data -> direct data
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 50);
+        rs.parseCATCommand("DT3;"); // still direct data: nothing to refresh
+        QCOMPARE(spy.size(), 1);
+    }
+
+    void testSdForTheCurrentClassEmitsInDirectData() {
+        RadioState rs;
+        rs.parseCATCommand("MD6;");
+        rs.parseCATCommand("DT3;");
+        QSignalSpy spy(&rs, &RadioState::qskDelayChanged);
+        rs.parseCATCommand("SD0D120;"); // AF data's slot: not the one in effect
+        QCOMPARE(spy.size(), 0);
+        rs.parseCATCommand("SD0C070;");
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 70);
     }
 
     // --- CW pitch bounds (CWnn; nn=pitch/10, range 25-95) ---
@@ -2878,12 +3634,13 @@ private slots:
         rs.parseCATCommand("RG-020;");
         rs.parseCATCommand("SQ010;");
         rs.parseCATCommand("KS020;");
+        rs.parseCATCommand("KZL0080;");
         rs.parseCATCommand("AN3;");
         rs.parseCATCommand("AT1;");
         rs.parseCATCommand("RO+0500;");
         rs.parseCATCommand("VT3;");
         rs.parseCATCommand("ML0050;");
-        rs.parseCATCommand("MN2;");
+        rs.parseCATCommand("MB1;");
         rs.parseCATCommand("SL3;");
         rs.parseCATCommand("MI3;");
         rs.parseCATCommand("VGV030;");
@@ -2891,15 +3648,21 @@ private slots:
         rs.parseCATCommand("#SCL080;");
         rs.parseCATCommand("#AVG05;");
         rs.parseCATCommand("#PKM1;");
+        rs.parseCATCommand("#WBS14;");
+        rs.parseCATCommand("#HWBS20;");
         rs.parseCATCommand("DT2;");
         rs.parseCATCommand("DR1;");
         rs.parseCATCommand("TD132;");
         rs.parseCATCommand("BL1+25;");
+        rs.parseCATCommand("BN05;");
+        rs.parseCATCommand("BN$11;");
 
         rs.reset();
 
         // Frequency/VFO sentinels (these zero, not -1)
         QCOMPARE(rs.frequency(), quint64(0));
+        QCOMPARE(rs.bandNumber(), -1);
+        QCOMPARE(rs.bandNumberB(), -1);
         QCOMPARE(rs.tuningStep(), -1);
         QCOMPARE(rs.tuningStepB(), -1);
         // Mode/filter
@@ -2916,6 +3679,7 @@ private slots:
         QCOMPARE(rs.rfGain(), -999);
         QCOMPARE(rs.squelchLevel(), -1);
         QCOMPARE(rs.keyerSpeed(), -1);
+        QCOMPARE(rs.keyDownInitialDelayMs(), -1);
         QCOMPARE(rs.keyingWeight(), -1);
         QCOMPARE(rs.monitorLevelCW(), -1);
         // Antenna / ATU
@@ -2935,8 +3699,12 @@ private slots:
         // Display
         QCOMPARE(rs.scale(), -1);
         QCOMPARE(rs.averaging(), -1);
-        QCOMPARE(rs.refLevel(), -110); // special sentinel (dBm)
-        QCOMPARE(rs.refLevelB(), -110);
+        QCOMPARE(rs.refLevel(), SpectrumDisplayLimits::RefLevelUnknown); // outside -200..50
+        QCOMPARE(rs.refLevelB(), SpectrumDisplayLimits::RefLevelUnknown);
+        QCOMPARE(rs.waterfallHeight(), -1);
+        QCOMPARE(rs.waterfallHeightExt(), -1);
+        QCOMPARE(rs.waterfallColorRange(), -1);
+        QCOMPARE(rs.waterfallColorRangeExt(), -1);
         // Balance uses -99 (outside valid -50..+50)
         QCOMPARE(rs.balanceMode(), -1);
         QCOMPARE(rs.balanceOffset(), -99);
@@ -2947,9 +3715,23 @@ private slots:
         QCOMPARE(rs.textDecodeMode(), -1);
         QCOMPARE(rs.textDecodeLines(), -1);
         // RIT/XIT
-        QCOMPARE(rs.ritXitOffset(), 0); // reset uses 0, not sentinel
+        // Fields whose unknown sentinel is hidden by the getter: they read as the legal default.
+        QCOMPARE(rs.ritXitOffset(), 0);
         QCOMPARE(rs.ritEnabled(), false);
         QCOMPARE(rs.xitEnabled(), false);
+        QCOMPARE(rs.splitEnabled(), false);
+        QCOMPARE(rs.bSetEnabled(), false);
+        QCOMPARE(rs.isTransmitting(), false);
+        QCOMPARE(rs.agcSpeed(), RadioState::AGC_Slow);
+        QCOMPARE(rs.agcSpeedB(), RadioState::AGC_Slow);
+        QCOMPARE(rs.noiseBlankerLevel(), 0);
+        QCOMPARE(rs.manualNotchPitch(), 1000);
+        QCOMPARE(rs.afxMode(), 0);
+        QCOMPARE(rs.apfBandwidth(), 0);
+        QCOMPARE(rs.rxEqBands(), QVector<int>(8, 0));
+        QCOMPARE(rs.txEqBands(), QVector<int>(8, 0));
+        QCOMPARE(rs.displayFps(), SpectrumDisplayLimits::FpsUnknown);
+        QCOMPARE(rs.mainRxDisplayAll(), true);
     }
 
     // Sentinel's functional contract: post-reset, the very next CAT packet
@@ -2964,7 +3746,8 @@ private slots:
         rs.parseCATCommand("MG050;");
         rs.parseCATCommand("AT1;");
         rs.parseCATCommand("#SCL080;");
-        rs.parseCATCommand("MN2;");
+        rs.parseCATCommand("#WBS14;");
+        rs.parseCATCommand("MB1;");
         rs.parseCATCommand("DT2;");
 
         rs.reset();
@@ -2995,14 +3778,154 @@ private slots:
             QCOMPARE(spy.count(), 1);
         }
         {
+            QSignalSpy spy(&rs, &RadioState::waterfallColorRangeChanged);
+            rs.parseCATCommand("#WBS14;"); // same input as before reset — must emit
+            QCOMPARE(spy.count(), 1);
+        }
+        {
             QSignalSpy spy(&rs, &RadioState::messageBankChanged);
-            rs.parseCATCommand("MN2;");
+            rs.parseCATCommand("MB1;");
             QCOMPARE(spy.count(), 1);
         }
         {
             QSignalSpy spy(&rs, &RadioState::dataSubModeChanged);
             rs.parseCATCommand("DT2;");
             QCOMPARE(spy.count(), 1);
+        }
+    }
+
+    // CAT-001 / CAT-002: the connection dump (RDY;) must always be applied. Each row is a report whose
+    // value equals what the field used to reset to (off, 0, AGC Slow, #FPS 30, XVTR 144 MHz…), so the
+    // change guard swallowed it after a reconnect and every consumer kept the previous session's value.
+    // A row may hold several commands (`;`-separated) when one selects what the next applies to (XVN).
+    void testFirstReportAfterResetEmits_data() {
+        QTest::addColumn<QString>("commands");
+        QTest::addColumn<QByteArray>("signal");
+
+        const auto row = [](const char *commands, const char *signal) {
+            QTest::newRow(commands) << QString::fromLatin1(commands) << QByteArray(signal);
+        };
+        row("FT0", SIGNAL(splitChanged(bool)));
+        row("BS0", SIGNAL(bSetChanged(bool)));
+        row("TS0", SIGNAL(testModeChanged(bool)));
+        row("SB0", SIGNAL(subRxEnabledChanged(bool)));
+        row("DV0", SIGNAL(diversityChanged(bool)));
+        row("RX", SIGNAL(transmitStateChanged(bool)));
+        row("RT0", SIGNAL(ritXitChanged(bool, bool, int)));
+        row("XT0", SIGNAL(ritXitChanged(bool, bool, int)));
+        row("RT$0", SIGNAL(ritXitBChanged(bool, int)));
+        row("RO+0000", SIGNAL(ritXitChanged(bool, bool, int)));
+        row("RO$+0000", SIGNAL(ritXitBChanged(bool, int)));
+        row("LK0", SIGNAL(lockAChanged(bool)));
+        row("LK$0", SIGNAL(lockBChanged(bool)));
+        row("BN00", SIGNAL(bandNumberChanged(int)));
+        row("BN$00", SIGNAL(bandNumberBChanged(int)));
+        row("NB000", SIGNAL(processingChanged()));
+        row("NB0000", SIGNAL(processingChanged()));
+        row("NB$000", SIGNAL(processingChangedB()));
+        row("NR000", SIGNAL(processingChanged()));
+        row("NR$000", SIGNAL(processingChangedB()));
+        row("NRS000", SIGNAL(processingChanged()));
+        row("NRS$000", SIGNAL(processingChangedB()));
+        row("NA0", SIGNAL(notchChanged()));
+        row("NA$0", SIGNAL(notchBChanged()));
+        row("NM0", SIGNAL(notchChanged()));
+        row("NM10000", SIGNAL(notchChanged()));
+        row("NM$0", SIGNAL(notchBChanged()));
+        row("NM$10000", SIGNAL(notchBChanged()));
+        row("PA00", SIGNAL(processingChanged()));
+        row("PA$00", SIGNAL(processingChangedB()));
+        row("RA000", SIGNAL(processingChanged()));
+        row("RA$000", SIGNAL(processingChangedB()));
+        row("GT1", SIGNAL(processingChanged()));
+        row("GT$1", SIGNAL(processingChangedB()));
+        row("FX0", SIGNAL(afxModeChanged(int)));
+        row("AP00", SIGNAL(apfChanged(bool, int)));
+        row("AP$00", SIGNAL(apfBChanged(bool, int)));
+        row("VXC0", SIGNAL(voxChanged(bool)));
+        row("VXV0", SIGNAL(voxChanged(bool)));
+        row("VXD0", SIGNAL(voxChanged(bool)));
+        row("SD0C005", SIGNAL(qskEnabledChanged(bool)));
+        row("RE+00+00+00+00+00+00+00+00", SIGNAL(rxEqChanged()));
+        row("TE+00+00+00+00+00+00+00+00", SIGNAL(txEqChanged()));
+        row("#FPS30", SIGNAL(displayFpsChanged(int)));
+        row("#MP0", SIGNAL(miniPanAEnabledChanged(bool)));
+        row("#MP$0", SIGNAL(miniPanBEnabledChanged(bool)));
+        row("ACM10000000", SIGNAL(mainRxAntCfgChanged()));
+        row("ACS10000000", SIGNAL(subRxAntCfgChanged()));
+        row("ACT1000", SIGNAL(txAntCfgChanged()));
+        row("XVN1;XVM0", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVR00144", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVI28", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVO+00000", SIGNAL(xvtrBandsChanged()));
+        row("XVN1;XVP010", SIGNAL(xvtrBandsChanged()));
+    }
+
+    void testFirstReportAfterResetEmits() {
+        QFETCH(QString, commands);
+        QFETCH(QByteArray, signal);
+        const QStringList parts = commands.split(u';', Qt::SkipEmptyParts);
+
+        RadioState rs;
+        // Every row must reach a registered handler, or the row would pass by never being parsed.
+        const QStringList prefixes = rs.registeredCommandPrefixes();
+        for (const QString &part : parts) {
+            QVERIFY2(std::any_of(prefixes.cbegin(), prefixes.cend(),
+                                 [&part](const QString &prefix) { return part.startsWith(prefix); }),
+                     qPrintable(part));
+        }
+
+        for (const QString &part : parts)
+            rs.parseCATCommand(part + u';');
+        rs.reset();
+
+        QSignalSpy spy(&rs, signal.constData());
+        QVERIFY(spy.isValid());
+        for (const QString &part : parts)
+            rs.parseCATCommand(part + u';');
+        QCOMPARE(spy.size(), 1);
+
+        // And only the first: the change guard still holds once the value is known.
+        for (const QString &part : parts)
+            rs.parseCATCommand(part + u';');
+        QCOMPARE(spy.size(), 1);
+    }
+
+    // APP-008: a link lost mid-transmission never delivers RX;. reset() must say the transmission is
+    // over, once, or every TX indicator stays red until the next session.
+    void testResetWhileTransmittingEmitsRx() {
+        RadioState rs;
+        rs.parseCATCommand("TX;");
+        QSignalSpy spy(&rs, &RadioState::transmitStateChanged);
+        rs.reset();
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toBool(), false);
+        QCOMPARE(rs.isTransmitting(), false);
+    }
+
+    // reset() emits nothing else — not while receiving, and no other signal while transmitting.
+    void testResetEmitsOnlyTheTransmitEdge() {
+        for (const bool transmitting : {false, true}) {
+            RadioState rs;
+            rs.parseCATCommand("FT1;");
+            rs.parseCATCommand("NB051;");
+            rs.parseCATCommand(transmitting ? "TX;" : "RX;");
+
+            const QMetaObject *meta = rs.metaObject();
+            std::vector<std::unique_ptr<QSignalSpy>> spies;
+            for (int i = meta->methodOffset(); i < meta->methodCount(); ++i) {
+                const QMetaMethod method = meta->method(i);
+                if (method.methodType() == QMetaMethod::Signal)
+                    spies.push_back(std::make_unique<QSignalSpy>(&rs, method));
+            }
+            QVERIFY(!spies.empty());
+
+            rs.reset();
+
+            for (const auto &spy : spies) {
+                const bool isTransmitEdge = spy->signal() == QByteArray("transmitStateChanged(bool)");
+                QCOMPARE(spy->size(), transmitting && isTransmitEdge ? 1 : 0);
+            }
         }
     }
 
@@ -3128,19 +4051,45 @@ private slots:
         QCOMPARE(rs.lpaTemperatureC(), -1);
     }
 
-    // Defaults-with-special-values check: a handful of fields use non-negative
-    // sentinels (default 50, 30, 1000, etc.) that could collide with legal
-    // values. Lock in the exact default so a regression changes it visibly.
-    void testNonNegativeSentinelDefaults() {
+    // SPEC-002: REF and the waterfall height used to reset to real values (-110 dBm, 50 %), so a
+    // radio reporting exactly those after a reconnect was swallowed by the change guard and the
+    // panadapter kept the previous session's REF or QK4's own split. Each must now emit after
+    // reset(), including when the value equals the one held before the reset.
+    void testRefAndWaterfallHeightEmitAfterReset() {
         RadioState rs;
-        // waterfallHeight default = 50 (mid-range, legal value 0-100).
-        // Any CAT update with WFH050; is no-op.
-        QSignalSpy spy(&rs, &RadioState::waterfallHeightChanged);
-        rs.parseCATCommand("#WFH050;"); // same as default
-        QCOMPARE(spy.count(), 0);
-        // displayFps default = 30, waterfallHeightExt default = 50 —
-        // these are documented in reset() and protected by testWaterfallHeightParses
-        // using a value ≠ 50.
+        rs.parseCATCommand("#REF-110;");
+        rs.parseCATCommand("#REF$-110;");
+        rs.parseCATCommand("#WFH50;");
+        rs.parseCATCommand("#HWFH50;");
+        rs.reset();
+
+        QSignalSpy refSpy(&rs, &RadioState::refLevelChanged);
+        QSignalSpy refBSpy(&rs, &RadioState::refLevelBChanged);
+        QSignalSpy wfhSpy(&rs, &RadioState::waterfallHeightChanged);
+        QSignalSpy hwfhSpy(&rs, &RadioState::waterfallHeightExtChanged);
+        rs.parseCATCommand("#REF-110;");
+        rs.parseCATCommand("#REF$-110;");
+        rs.parseCATCommand("#WFH50;");
+        rs.parseCATCommand("#HWFH50;");
+        QCOMPARE(refSpy.count(), 1);
+        QCOMPARE(refSpy.at(0).at(0).toInt(), -110);
+        QCOMPARE(refBSpy.count(), 1);
+        QCOMPARE(refBSpy.at(0).at(0).toInt(), -110);
+        QCOMPARE(wfhSpy.count(), 1);
+        QCOMPARE(wfhSpy.at(0).at(0).toInt(), 50);
+        QCOMPARE(hwfhSpy.count(), 1);
+        QCOMPARE(hwfhSpy.at(0).at(0).toInt(), 50);
+    }
+
+    // The same on a fresh instance: the very first report emits whatever its value.
+    void testRefAndWaterfallHeightFirstReportEmits() {
+        RadioState rs;
+        QSignalSpy refSpy(&rs, &RadioState::refLevelChanged);
+        QSignalSpy wfhSpy(&rs, &RadioState::waterfallHeightChanged);
+        rs.parseCATCommand("#REF-110;");
+        rs.parseCATCommand("#WFH50;");
+        QCOMPARE(refSpy.count(), 1);
+        QCOMPARE(wfhSpy.count(), 1);
     }
 };
 

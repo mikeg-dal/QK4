@@ -363,6 +363,40 @@ private slots:
         server.stop();
     }
 
+    void aClientDroppedWhileKeyingIsNeverLeftKeyed() {
+        // The keying client stops reading, so the replies to its own trx commands fill its send
+        // queue until the server drops it - synchronously, inside the reply. Whether the drop lands
+        // in the PTT broadcast or mid-frame, nothing may key the radio after it: the last request
+        // the transmitter sees must be an unkey.
+        QLoggingCategory::setFilterRules(QStringLiteral("qk4.tci.info=false\nqk4.tci.ws.info=false"));
+        TciServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy ptt(&server, &TciServer::pttRequested);
+
+        TciTestClient client;
+        QVERIFY(client.connectTo(server.port()));
+        client.collectUntil("ready;");
+        client.socket().setReadBufferSize(1);
+
+        QByteArray frame;
+        while (frame.size() + 11 < WebSocketDecoder::DEFAULT_MAX_MESSAGE_BYTES) {
+            frame.append("trx:0,true;");
+        }
+        for (int i = 0; i < 2000 && server.clientCount() > 0; ++i) {
+            client.send(frame);
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(server.clientCount(), 0, 3000);
+        QCoreApplication::processEvents();
+
+        QVERIFY(!ptt.isEmpty());
+        QCOMPARE(ptt.last().at(0).toBool(), false);
+        QVERIFY(!server.snapshot().transmitting);
+
+        client.close();
+        server.stop();
+        QLoggingCategory::setFilterRules(QString());
+    }
+
     void stoppingTheServerUnkeys() {
         TciServer server;
         QVERIFY(server.start(0));

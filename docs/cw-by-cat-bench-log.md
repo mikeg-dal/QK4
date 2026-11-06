@@ -20,6 +20,9 @@ is labelled as such — the log cannot hear.
 
 ## 1. Through QK4 — plain text
 
+> Sections 1–3 show the padded 22-character frames QK4 sent at the time. That build was superseded
+> the same day by unpadded 60-character chunks; see §7.
+
 TCI in:
 
 ```

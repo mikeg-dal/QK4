@@ -8,7 +8,9 @@ namespace {
 const int ButtonWidth = K4Styles::Dimensions::PopupButtonWidth;
 const int ButtonHeight = K4Styles::Dimensions::PopupButtonHeight;
 const int ButtonSpacing = K4Styles::Dimensions::PopupButtonSpacing;
-const int RowSpacing = 2;
+// WHY the column gap: one gutter on both axes reads as one grid of keys. At 2 px the rows nearly
+// touched and read as two separate strips (most noticeable at 150 % interface scale).
+const int RowSpacing = ButtonSpacing;
 
 // Mode codes (from K4 protocol)
 const int MODE_LSB = 1;
@@ -49,122 +51,89 @@ void ModePopupWidget::setupUi() {
     gridLayout->setSpacing(ButtonSpacing);
 
     // Row 1: CW, SSB, DATA, AFSK
-    m_cwBtn = createModeButton("CW");
-    m_cwBtn->setProperty("modeType", "CW");
-    gridLayout->addWidget(m_cwBtn, 0, 0);
-
-    m_ssbBtn = createModeButton("USB"); // Will show LSB or USB based on current mode
-    m_ssbBtn->setProperty("modeType", "SSB");
-    gridLayout->addWidget(m_ssbBtn, 0, 1);
-
-    m_dataBtn = createModeButton("DATA");
-    m_dataBtn->setProperty("modeType", "DATA");
-    gridLayout->addWidget(m_dataBtn, 0, 2);
-
-    m_afskBtn = createModeButton("AFSK");
-    m_afskBtn->setProperty("modeType", "AFSK");
-    gridLayout->addWidget(m_afskBtn, 0, 3);
+    gridLayout->addWidget(createModeButton(ModeButton::Cw, "CW"), 0, 0);
+    gridLayout->addWidget(createModeButton(ModeButton::Ssb, "USB"), 0, 1); // Shows LSB or USB
+    gridLayout->addWidget(createModeButton(ModeButton::Data, "DATA"), 0, 2);
+    gridLayout->addWidget(createModeButton(ModeButton::Afsk, "AFSK"), 0, 3);
 
     // Row 2: AM, FM, PSK, FSK
-    m_amBtn = createModeButton("AM");
-    m_amBtn->setProperty("modeType", "AM");
-    gridLayout->addWidget(m_amBtn, 1, 0);
-
-    m_fmBtn = createModeButton("FM");
-    m_fmBtn->setProperty("modeType", "FM");
-    gridLayout->addWidget(m_fmBtn, 1, 1);
-
-    m_pskBtn = createModeButton("PSK");
-    m_pskBtn->setProperty("modeType", "PSK");
-    gridLayout->addWidget(m_pskBtn, 1, 2);
-
-    m_fskBtn = createModeButton("FSK");
-    m_fskBtn->setProperty("modeType", "FSK");
-    gridLayout->addWidget(m_fskBtn, 1, 3);
+    gridLayout->addWidget(createModeButton(ModeButton::Am, "AM"), 1, 0);
+    gridLayout->addWidget(createModeButton(ModeButton::Fm, "FM"), 1, 1);
+    gridLayout->addWidget(createModeButton(ModeButton::Psk, "PSK"), 1, 2);
+    gridLayout->addWidget(createModeButton(ModeButton::Fsk, "FSK"), 1, 3);
 
     mainLayout->addLayout(gridLayout);
 
-    // Store button references
-    m_buttonMap["CW"] = m_cwBtn;
-    m_buttonMap["SSB"] = m_ssbBtn;
-    m_buttonMap["DATA"] = m_dataBtn;
-    m_buttonMap["AFSK"] = m_afskBtn;
-    m_buttonMap["AM"] = m_amBtn;
-    m_buttonMap["FM"] = m_fmBtn;
-    m_buttonMap["PSK"] = m_pskBtn;
-    m_buttonMap["FSK"] = m_fskBtn;
-
     updateButtonStyles();
 
-    // Initialize popup size from base class
     initPopup();
 }
 
-QPushButton *ModePopupWidget::createModeButton(const QString &text) {
+QPushButton *ModePopupWidget::createModeButton(ModeButton mode, const QString &text) {
     auto *btn = new QPushButton(text, this);
     btn->setFixedSize(ButtonWidth, ButtonHeight);
     btn->setFocusPolicy(Qt::NoFocus);
     btn->setCursor(Qt::PointingHandCursor);
+    btn->setStyleSheet(K4Styles::popupButton());
 
-    connect(btn, &QPushButton::clicked, this, &ModePopupWidget::onModeButtonClicked);
+    connect(btn, &QPushButton::clicked, this, [this, mode]() { onModeButtonClicked(mode); });
 
+    m_buttons[static_cast<std::size_t>(mode)] = btn;
     return btn;
 }
 
 void ModePopupWidget::updateButtonStyles() {
     // Update SSB button text based on current mode or band default
     if (m_currentMode == MODE_LSB) {
-        m_ssbBtn->setText("LSB");
+        button(ModeButton::Ssb)->setText("LSB");
     } else if (m_currentMode == MODE_USB) {
-        m_ssbBtn->setText("USB");
+        button(ModeButton::Ssb)->setText("USB");
     } else {
         // Not in SSB mode - show band-appropriate default
-        m_ssbBtn->setText(bandDefaultSideband() == MODE_LSB ? "LSB" : "USB");
+        button(ModeButton::Ssb)->setText(bandDefaultSideband() == MODE_LSB ? "LSB" : "USB");
     }
 
     // Update CW button text based on current mode
-    m_cwBtn->setText(m_currentMode == MODE_CW_R ? "CW-R" : "CW");
-
-    // Reset all buttons to normal style
-    for (auto it = m_buttonMap.begin(); it != m_buttonMap.end(); ++it) {
-        it.value()->setStyleSheet(K4Styles::popupButtonNormal());
-    }
+    button(ModeButton::Cw)->setText(m_currentMode == MODE_CW_R ? "CW-R" : "CW");
 
     // Highlight the current mode button
+    QPushButton *selected = nullptr;
     switch (m_currentMode) {
     case MODE_CW:
     case MODE_CW_R:
-        m_cwBtn->setStyleSheet(K4Styles::popupButtonSelected());
+        selected = button(ModeButton::Cw);
         break;
     case MODE_LSB:
     case MODE_USB:
-        m_ssbBtn->setStyleSheet(K4Styles::popupButtonSelected());
+        selected = button(ModeButton::Ssb);
         break;
     case MODE_AM:
-        m_amBtn->setStyleSheet(K4Styles::popupButtonSelected());
+        selected = button(ModeButton::Am);
         break;
     case MODE_FM:
-        m_fmBtn->setStyleSheet(K4Styles::popupButtonSelected());
+        selected = button(ModeButton::Fm);
         break;
     case MODE_DATA:
     case MODE_DATA_R:
         // Highlight based on data sub-mode
         switch (m_currentDataSubMode) {
         case DT_DATA_A:
-            m_dataBtn->setStyleSheet(K4Styles::popupButtonSelected());
+            selected = button(ModeButton::Data);
             break;
         case DT_AFSK_A:
-            m_afskBtn->setStyleSheet(K4Styles::popupButtonSelected());
+            selected = button(ModeButton::Afsk);
             break;
         case DT_FSK_D:
-            m_fskBtn->setStyleSheet(K4Styles::popupButtonSelected());
+            selected = button(ModeButton::Fsk);
             break;
         case DT_PSK_D:
-            m_pskBtn->setStyleSheet(K4Styles::popupButtonSelected());
+            selected = button(ModeButton::Psk);
             break;
         }
         break;
     }
+    for (QPushButton *btn : m_buttons)
+        K4Styles::setSelected(btn, btn == selected);
 }
 
 void ModePopupWidget::setCurrentMode(int modeCode) {
@@ -193,53 +162,49 @@ int ModePopupWidget::bandDefaultSideband() const {
     return (m_frequency < 10000000) ? MODE_LSB : MODE_USB;
 }
 
-void ModePopupWidget::onModeButtonClicked() {
-    auto *btn = qobject_cast<QPushButton *>(sender());
-    if (!btn)
-        return;
-
-    QString modeType = btn->property("modeType").toString();
+void ModePopupWidget::onModeButtonClicked(ModeButton mode) {
+    const QString prefix = m_bSetEnabled ? "MD$" : "MD";
+    const QString dtPrefix = m_bSetEnabled ? "DT$" : "DT";
     QString cmd;
-    QString prefix = m_bSetEnabled ? "MD$" : "MD";
-    QString dtPrefix = m_bSetEnabled ? "DT$" : "DT";
 
-    if (modeType == "CW") {
-        // If already in CW mode, toggle between CW and CW-R
-        // Otherwise, switch to CW
-        if (m_currentMode == MODE_CW) {
-            cmd = prefix + "7;"; // Toggle to CW-R
-        } else if (m_currentMode == MODE_CW_R) {
-            cmd = prefix + "3;"; // Toggle to CW
-        } else {
-            cmd = prefix + "3;"; // Default to CW
-        }
-    } else if (modeType == "SSB") {
-        // If already in SSB mode, toggle between LSB and USB
-        // Otherwise, switch to band-appropriate sideband (LSB <10MHz, USB >=10MHz)
+    switch (mode) {
+    case ModeButton::Cw:
+        // Already in CW: toggle CW <-> CW-R. Otherwise switch to CW.
+        cmd = prefix + (m_currentMode == MODE_CW ? "7;" : "3;");
+        break;
+    case ModeButton::Ssb:
+        // Already in SSB: toggle LSB <-> USB. Otherwise the band-appropriate sideband (LSB <10MHz, USB >=10MHz).
         if (m_currentMode == MODE_LSB) {
-            cmd = prefix + "2;"; // Toggle to USB
+            cmd = prefix + "2;";
         } else if (m_currentMode == MODE_USB) {
-            cmd = prefix + "1;"; // Toggle to LSB
+            cmd = prefix + "1;";
         } else {
-            // Not in SSB - use band-appropriate default
             cmd = prefix + QString::number(bandDefaultSideband()) + ";";
         }
-    } else if (modeType == "DATA") {
+        break;
+    case ModeButton::Data:
         cmd = prefix + "6;" + dtPrefix + "0;"; // DATA mode + DATA-A sub-mode
-    } else if (modeType == "AFSK") {
+        break;
+    case ModeButton::Afsk:
         cmd = prefix + "6;" + dtPrefix + "1;"; // DATA mode + AFSK-A sub-mode
-    } else if (modeType == "AM") {
+        break;
+    case ModeButton::Am:
         cmd = prefix + "5;";
-    } else if (modeType == "FM") {
+        break;
+    case ModeButton::Fm:
         cmd = prefix + "4;";
-    } else if (modeType == "PSK") {
+        break;
+    case ModeButton::Psk:
         cmd = prefix + "6;" + dtPrefix + "3;"; // DATA mode + PSK-D sub-mode
-    } else if (modeType == "FSK") {
+        break;
+    case ModeButton::Fsk:
         cmd = prefix + "6;" + dtPrefix + "2;"; // DATA mode + FSK-D sub-mode
+        break;
+    case ModeButton::Count:
+        break;
     }
 
-    if (!cmd.isEmpty()) {
+    if (!cmd.isEmpty())
         emit modeSelected(cmd);
-    }
     hidePopup();
 }

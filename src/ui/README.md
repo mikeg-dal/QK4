@@ -6,12 +6,12 @@ UI widgets, popups, overlays, dialogs, and styling infrastructure. Files are gro
 
 | Directory | Owns |
 |---|---|
-| `styling/` | Infrastructure used by every UI file: `K4Styles` (colors, dimensions, fonts, stylesheet helpers) and `K4PopupBase` (popup base class). |
+| `styling/` | Infrastructure used by every UI file: tokens in `k4constants.h` (colors, dimensions, type roles), `K4Styles` helpers (fonts, stylesheets) and `K4Glyphs` (drawn status-bar glyphs). |
 | `dialogs/` | Modal-ish full windows: `OptionsDialog`, `RadioManagerDialog`, `MacroDialog`, `TextDecodeWindow`. |
-| `pages/` | 8 `OptionsDialog` tab pages: about, rig control, audio input/output, CW keyer, DX cluster, KPOD, KPA1500. |
-| `popups/` | 14 popup widgets, all inherit from `K4PopupBase` — band, mode, Fn, display, button row, RX EQ, antenna config, line in/out, mic input/config, VOX, SSB BW, keying weight. |
-| `overlays/` | 6 overlays: menu (full-screen), mon/bal (side-control), cursor follow, DX spots (panadapter), side-control base. |
-| `widgets/` | The everything-else bucket — VFO widgets, meters, menu bars, side panels, KPA1500 mini-panel, notification, etc. |
+| `pages/` | `OptionsDialog` tab pages: about, station, display, audio input/output, rig control, TCI server, HaliKey (CW keyer), K-Pod, KPA1500, DX cluster, diagnostics. Plus `OptionsPageLayout`, the layout standard every page uses. |
+| `popups/` | `K4PopupBase` and the popups built on it — band, mode, Fn, display, button row, RX EQ, antenna config, line in/out, mic input/config, VOX, SSB BW, keying weight, confirm, software list. |
+| `overlays/` | Overlays: menu (covers the spectrum area), mon/bal (side-control) and their base, mouse VFO indicator and DX spots (panadapter). |
+| `widgets/` | The everything-else bucket — VFO widgets, meters, menu bars, side panels and their buttons, memory key row, KPA1500 mini-panel, status bar, notification. |
 
 ## Include convention
 
@@ -19,10 +19,11 @@ Explicit paths everywhere: `#include "ui/popups/bandpopupwidget.h"` — never `#
 
 ## Source of truth for styling
 
-`ui/styling/k4styles.h`. Reference tables in `docs/K4STYLES_REFERENCE.md`. Never inline hex colors / pixel font sizes; always use `K4Styles::Colors::*` and `K4Styles::Dimensions::*`.
+Values live in `ui/styling/k4constants.h` (tokens). Helpers live in `ui/styling/k4styles.h`. `docs/styling.md` is the styling guide: style-sheet cascade and precedence, the contrast policy, the type roles. Never inline hex colors or pixel font sizes; always use `K4Styles::Colors::*` and `K4Styles::Dimensions::*`.
 
 ## See also
 
 - `PATTERNS.md` → "Adding a Popup Menu" (K4PopupBase recipe).
-- `docs/K4STYLES_REFERENCE.md` — full color / font / helper reference.
+- `docs/styling.md` — styling guide.
+- `ui/styling/k4constants.h` — every token value.
 - `CONVENTIONS.md` → "Styling" section.

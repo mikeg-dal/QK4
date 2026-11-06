@@ -2,6 +2,7 @@
 #define DASHGEOMETRY_H
 
 #include <QVector>
+#include "logging/logcategories.h"
 #include <QtGlobal>
 
 #include "dsp/panadapter_constants.h"
@@ -35,9 +36,10 @@ inline void appendDashedVerticalLine(QVector<float> &verts, float x, float width
             static bool warned = false;
             if (!warned) {
                 warned = true;
-                qWarning("DashGeometry: dashed line clipped at %d floats — display taller than "
-                         "PanadapterConstants::MaxDisplayHeightPx (%.0f px); raise it",
-                         maxFloats, double(PanadapterConstants::MaxDisplayHeightPx));
+                qCWarning(lcSpectrumRender,
+                          "DashGeometry: dashed line clipped at %d floats — display taller than "
+                          "PanadapterConstants::MaxDisplayHeightPx (%.0f px); raise it",
+                          maxFloats, double(PanadapterConstants::MaxDisplayHeightPx));
             }
             return;
         }

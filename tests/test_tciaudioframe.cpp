@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <cstring>
 #include <vector>
 
 #include "network/tciaudioframe.h"
@@ -445,6 +446,40 @@ private slots:
         std::vector<float> got;
         QVERIFY(decodeTxAudioToMono(frame, &got));
         QVERIFY(got.size() <= 64);
+    }
+
+    void decodesIdenticallyAtEveryAlignment() {
+        // The payload arrives in a buffer the WebSocket layer built, and nothing promises its
+        // floats are 4-byte aligned. Reading them through a float pointer was undefined behaviour;
+        // place the same frame at every start offset and require the same samples, from either
+        // window. Under the sanitizer build this fails on the pointer-cast code.
+        const std::vector<float> wanted = tone(1000.0, 48000.0, 256);
+        QByteArray firstWindow = wsjtxTxFrame(wanted, 2, /*dirtyTail=*/true);
+        QByteArray secondWindow = wsjtxTxFrame(wanted, 2, /*dirtyTail=*/false);
+        {
+            const int declared = static_cast<int>(wanted.size()) * 2;
+            std::vector<float> body(static_cast<size_t>(declared * 2), 0.0f);
+            std::memcpy(body.data(), secondWindow.constData() + HEADER_BYTES, body.size() * sizeof(float));
+            for (int i = 0; i < declared; ++i) {
+                body[static_cast<size_t>(declared + i)] = body[static_cast<size_t>(i)];
+                body[static_cast<size_t>(i)] = 0.0f;
+            }
+            std::memcpy(secondWindow.data() + HEADER_BYTES, body.data(), body.size() * sizeof(float));
+        }
+
+        for (const QByteArray &frame : {firstWindow, secondWindow}) {
+            QByteArray storage(frame.size() + 8, '\0');
+            for (int offset = 0; offset < 4; ++offset) {
+                std::memcpy(storage.data() + offset, frame.constData(), static_cast<size_t>(frame.size()));
+                const QByteArray view = QByteArray::fromRawData(storage.constData() + offset, frame.size());
+                std::vector<float> got;
+                QVERIFY(decodeTxAudioToMono(view, &got));
+                QCOMPARE(got.size(), wanted.size());
+                for (size_t i = 0; i < wanted.size(); ++i) {
+                    QCOMPARE(got[i], wanted[i]);
+                }
+            }
+        }
     }
 };
 

@@ -5,11 +5,6 @@
 #include <QPainter>
 #include <QWheelEvent>
 
-namespace {
-const int ContentHeight = 52;
-const int ContentMargin = 12;
-} // namespace
-
 LineOutPopupWidget::LineOutPopupWidget(QWidget *parent) : K4PopupBase(parent) {
     setupUi();
     initPopup();
@@ -18,7 +13,7 @@ LineOutPopupWidget::LineOutPopupWidget(QWidget *parent) : K4PopupBase(parent) {
 void LineOutPopupWidget::setupUi() {
     int sm = K4Styles::Dimensions::ShadowMargin;
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(sm + ContentMargin, sm + 8, sm + ContentMargin, sm + 8);
+    layout->setContentsMargins(sm + CompactRowContentMargin, sm + 8, sm + CompactRowContentMargin, sm + 8);
     layout->setSpacing(6);
 
     m_titleLabel = new QPushButton("LINE OUT", this);
@@ -29,53 +24,31 @@ void LineOutPopupWidget::setupUi() {
     m_leftBtn = new QPushButton("LEFT", this);
     m_leftBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_leftBtn->setCheckable(true);
-    m_leftBtn->setChecked(true);
     m_leftBtn->setCursor(Qt::PointingHandCursor);
+    m_leftBtn->setStyleSheet(K4Styles::popupButton());
 
     m_leftValueLabel = new QPushButton(QString::number(m_leftLevel), this);
     m_leftValueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_leftValueLabel->setFocusPolicy(Qt::NoFocus);
-    m_leftValueLabel->setStyleSheet(QString("QPushButton {"
-                                            "  color: %1;"
-                                            "  font-size: %2px;"
-                                            "  font-weight: 600;"
-                                            "  background: transparent;"
-                                            "  border: %3px solid transparent;"
-                                            "  border-radius: %4px;"
-                                            "}")
-                                        .arg(K4Styles::Colors::TextWhite)
-                                        .arg(K4Styles::Dimensions::PopupValueSize)
-                                        .arg(K4Styles::Dimensions::BorderWidth)
-                                        .arg(K4Styles::Dimensions::BorderRadius));
+    m_leftValueLabel->setStyleSheet(K4Styles::popupValueLabel(K4Styles::Colors::TextPrimary));
 
     m_rightBtn = new QPushButton("RIGHT", this);
     m_rightBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_rightBtn->setCheckable(true);
-    m_rightBtn->setChecked(false);
     m_rightBtn->setCursor(Qt::PointingHandCursor);
+    m_rightBtn->setStyleSheet(K4Styles::popupButtonDimmable());
 
     m_rightValueLabel = new QPushButton(QString::number(m_rightLevel), this);
     m_rightValueLabel->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     m_rightValueLabel->setFocusPolicy(Qt::NoFocus);
-    m_rightValueLabel->setStyleSheet(QString("QPushButton {"
-                                             "  color: %1;"
-                                             "  font-size: %2px;"
-                                             "  font-weight: 600;"
-                                             "  background: transparent;"
-                                             "  border: %3px solid transparent;"
-                                             "  border-radius: %4px;"
-                                             "}")
-                                         .arg(K4Styles::Colors::TextWhite)
-                                         .arg(K4Styles::Dimensions::PopupValueSize)
-                                         .arg(K4Styles::Dimensions::BorderWidth)
-                                         .arg(K4Styles::Dimensions::BorderRadius));
+    m_rightValueLabel->setStyleSheet(K4Styles::popupValueLabelDimmable());
 
     m_rightEqualsLeftBtn = new QPushButton("RIGHT\n=LEFT", this);
     m_rightEqualsLeftBtn->setFixedSize(K4Styles::Dimensions::PopupButtonWidth,
                                        K4Styles::Dimensions::ButtonHeightMedium);
     m_rightEqualsLeftBtn->setCheckable(true);
-    m_rightEqualsLeftBtn->setChecked(false);
     m_rightEqualsLeftBtn->setCursor(Qt::PointingHandCursor);
+    m_rightEqualsLeftBtn->setStyleSheet(K4Styles::popupButton());
 
     m_closeBtn = new QPushButton("↩", this); // U+21A9
     m_closeBtn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
@@ -94,25 +67,17 @@ void LineOutPopupWidget::setupUi() {
 
     connect(m_leftBtn, &QPushButton::clicked, this, [this]() {
         m_leftSelected = true;
-        m_leftBtn->setChecked(true);
-        m_rightBtn->setChecked(false);
         updateButtonStyles();
     });
     connect(m_rightBtn, &QPushButton::clicked, this, [this]() {
-        if (!m_rightEqualsLeft) {
+        if (!m_rightEqualsLeft)
             m_leftSelected = false;
-            m_leftBtn->setChecked(false);
-            m_rightBtn->setChecked(true);
-            updateButtonStyles();
-        }
+        updateButtonStyles();
     });
     connect(m_rightEqualsLeftBtn, &QPushButton::clicked, this, [this]() {
         m_rightEqualsLeft = !m_rightEqualsLeft;
-        m_rightEqualsLeftBtn->setChecked(m_rightEqualsLeft);
         if (m_rightEqualsLeft) {
             m_leftSelected = true;
-            m_leftBtn->setChecked(true);
-            m_rightBtn->setChecked(false);
             m_rightLevel = m_leftLevel;
             updateValueLabels();
         }
@@ -123,41 +88,24 @@ void LineOutPopupWidget::setupUi() {
 }
 
 QSize LineOutPopupWidget::contentSize() const {
-    const int contentWidth = ContentMargin + K4Styles::Dimensions::InputFieldWidthMedium + 6 +
+    const int contentWidth = CompactRowContentMargin + K4Styles::Dimensions::InputFieldWidthMedium + 6 +
                              K4Styles::Dimensions::PopupButtonWidth + 6 + K4Styles::Dimensions::NavButtonWidth + 6 +
                              K4Styles::Dimensions::PopupButtonWidth + 6 + K4Styles::Dimensions::NavButtonWidth + 6 +
                              K4Styles::Dimensions::PopupButtonWidth + 6 + K4Styles::Dimensions::NavButtonWidth +
-                             ContentMargin;
-    return QSize(contentWidth, ContentHeight);
+                             CompactRowContentMargin;
+    return QSize(contentWidth, CompactRowContentHeight);
 }
 
 void LineOutPopupWidget::updateButtonStyles() {
-    m_leftBtn->setStyleSheet(m_leftBtn->isChecked() ? K4Styles::popupButtonSelected() : K4Styles::popupButtonNormal());
+    // WHY: the buttons are checkable, so a click flips their checked state on its own. Re-derive all three
+    // from the model so a refused click (RIGHT while R=L is on) leaves nothing behind.
+    m_leftBtn->setChecked(m_leftSelected);
+    m_rightBtn->setChecked(!m_leftSelected);
+    m_rightEqualsLeftBtn->setChecked(m_rightEqualsLeft);
 
-    if (m_rightEqualsLeft) {
-        m_rightBtn->setStyleSheet(K4Styles::popupButtonNormal() +
-                                  QString("QPushButton { color: %1; }").arg(K4Styles::Colors::TextGray));
-    } else {
-        m_rightBtn->setStyleSheet(m_rightBtn->isChecked() ? K4Styles::popupButtonSelected()
-                                                          : K4Styles::popupButtonNormal());
-    }
-
-    m_rightEqualsLeftBtn->setStyleSheet(m_rightEqualsLeft ? K4Styles::popupButtonSelected()
-                                                          : K4Styles::popupButtonNormal());
-
-    m_rightValueLabel->setStyleSheet(
-        QString("QPushButton {"
-                "  color: %1;"
-                "  font-size: %2px;"
-                "  font-weight: 600;"
-                "  background: transparent;"
-                "  border: %3px solid transparent;"
-                "  border-radius: %4px;"
-                "}")
-            .arg(m_rightEqualsLeft ? K4Styles::Colors::TextGray : K4Styles::Colors::TextWhite)
-            .arg(K4Styles::Dimensions::PopupValueSize)
-            .arg(K4Styles::Dimensions::BorderWidth)
-            .arg(K4Styles::Dimensions::BorderRadius));
+    // RIGHT is never checked while R=L is on (LEFT is forced), so it only ever greys unselected.
+    K4Styles::setStyleFlag(m_rightBtn, K4Styles::DimmedProperty, m_rightEqualsLeft);
+    K4Styles::setStyleFlag(m_rightValueLabel, K4Styles::DimmedProperty, m_rightEqualsLeft);
 }
 
 void LineOutPopupWidget::updateValueLabels() {
@@ -182,12 +130,8 @@ void LineOutPopupWidget::setRightLevel(int level) {
 void LineOutPopupWidget::setRightEqualsLeft(bool enabled) {
     if (m_rightEqualsLeft != enabled) {
         m_rightEqualsLeft = enabled;
-        m_rightEqualsLeftBtn->setChecked(enabled);
-        if (enabled) {
+        if (enabled)
             m_leftSelected = true;
-            m_leftBtn->setChecked(true);
-            m_rightBtn->setChecked(false);
-        }
         updateButtonStyles();
     }
 }
@@ -224,25 +168,6 @@ void LineOutPopupWidget::wheelEvent(QWheelEvent *event) {
 }
 
 void LineOutPopupWidget::paintContent(QPainter &painter, const QRect &contentRect) {
-    QLinearGradient grad = K4Styles::buttonGradient(contentRect.top(), contentRect.bottom());
-    painter.setBrush(grad);
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    painter.drawRoundedRect(contentRect, K4Styles::Dimensions::BorderRadiusLarge,
-                            K4Styles::Dimensions::BorderRadiusLarge);
-
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    int lineTop = contentRect.top() + 7;
-    int lineBottom = contentRect.bottom() - 7;
-
-    auto drawDelimiter = [&](QWidget *widget) {
-        if (widget && widget->isVisible()) {
-            int x = widget->geometry().right() + 3;
-            painter.drawLine(x, lineTop, x, lineBottom);
-        }
-    };
-
-    drawDelimiter(m_titleLabel);
-    drawDelimiter(m_leftValueLabel);
-    drawDelimiter(m_rightValueLabel);
-    drawDelimiter(m_rightEqualsLeftBtn);
+    paintCompactRowFrame(painter, contentRect,
+                         {m_titleLabel, m_leftValueLabel, m_rightValueLabel, m_rightEqualsLeftBtn});
 }

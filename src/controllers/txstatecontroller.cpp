@@ -3,7 +3,7 @@
 #include "controllers/statusbarcontroller.h"
 #include "controllers/vfofrequencycontroller.h"
 #include "models/radiostate.h"
-#include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include "ui/widgets/sidecontrolpanel.h"
 #include "ui/widgets/vfowidget.h"
 
@@ -18,7 +18,7 @@ TxStateController::TxStateController(RadioState *radioState, SideControlPanel *s
       m_txTriangle(txTriangle), m_txTriangleB(txTriangleB) {
     connect(m_radioState, &RadioState::transmitStateChanged, this, &TxStateController::onTransmitStateChanged);
     connect(m_radioState, &RadioState::txMeterChanged, this, &TxStateController::onTxMeterChanged);
-    // paDrainCurrentChanged now fires from BOTH paths in RxTxMeterState:
+    // paDrainCurrentChanged fires from BOTH paths in RxTxMeterState:
     //   - handleSIRF (every ~0.3 Hz) — ground truth from K4's PM field. Used to (re)calibrate
     //     the radio's actual efficiency at the current power/band.
     //   - handleTM   (every ~10 Hz)  — live derivation: fwdPower / (V × calibrated_efficiency).
@@ -34,10 +34,6 @@ TxStateController::TxStateController(RadioState *radioState, SideControlPanel *s
     });
 }
 
-TxStateController::~TxStateController() {
-    disconnect(this);
-}
-
 void TxStateController::onTransmitStateChanged(bool transmitting) {
     // Only the active TX VFO flips its meter to TX mode; the other VFO
     // stays on S-meter so you can see incoming signal on the non-TX side.
@@ -49,15 +45,9 @@ void TxStateController::onTransmitStateChanged(bool transmitting) {
         m_vfoB->setTransmitting(false);
     }
 
-    const QString color = transmitting ? K4Styles::Colors::TxRed : K4Styles::Colors::AccentAmber;
-    const QString indicatorStyle = QString("color: %1; font-size: %2px; font-weight: bold;")
-                                       .arg(color)
-                                       .arg(K4Styles::Dimensions::FontSizeIndicator);
-    const QString triangleStyle =
-        QString("color: %1; font-size: %2px;").arg(color).arg(K4Styles::Dimensions::FontSizeIndicator);
-    m_txIndicator->setStyleSheet(indicatorStyle);
-    m_txTriangle->setStyleSheet(triangleStyle);
-    m_txTriangleB->setStyleSheet(triangleStyle);
+    K4Styles::setSelected(m_txIndicator, transmitting);
+    K4Styles::setSelected(m_txTriangle, transmitting);
+    K4Styles::setSelected(m_txTriangleB, transmitting);
 
     // When XIT is on, rendered VFO frequency = dial + XIT offset; force a
     // refresh on the TX VFO so the display matches the actual TX freq
@@ -73,9 +63,6 @@ void TxStateController::onTransmitStateChanged(bool transmitting) {
 void TxStateController::onTxMeterChanged(int alc, int comp, double fwdPower, double swr) {
     m_sideControlPanel->setPowerReading(fwdPower);
 
-    // PA drain current comes straight from the K4's SIRF stream (LM field, parsed in
-    // RxTxMeterState). No more efficiency-based estimation — paDrainCurrent() tracks
-    // the value the K4's own front-panel "Id" meter shows.
     const double paCurrent = m_radioState->paDrainCurrent();
 
     // Route meter tuple + current to the active TX VFO only.

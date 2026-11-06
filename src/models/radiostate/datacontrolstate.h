@@ -1,8 +1,8 @@
 #ifndef MODELS_RADIOSTATE_DATACONTROLSTATE_H
 #define MODELS_RADIOSTATE_DATACONTROLSTATE_H
 
+#include <QDeadlineTimer>
 #include <QString>
-#include <QtGlobal>
 
 class RadioState;
 
@@ -11,10 +11,9 @@ class RadioState;
 // settings that don't fit in the mode/filter subsystem because they're
 // conceptually "modifiers" on the mode rather than the mode itself.
 //
-// Timestamps for the DT / DR optimistic update cooldown are captured
-// here too — the K4 doesn't echo DT SET commands, so after we mutate
-// the field locally we stamp the time and ignore echoed DT responses
-// for 500 ms to avoid race conditions.
+// The DT / DR optimistic-update holds live here too — the K4 doesn't echo
+// DT SET commands, so after we mutate the field locally we ignore DT / DR
+// responses for EchoHoldMs to avoid race conditions.
 //
 // Text decode (TD / TB) lives in TextDecodeState (extracted earlier).
 struct DataControlState {
@@ -26,11 +25,13 @@ struct DataControlState {
     int tuningStepB = -1;      // VT$
     int streamingLatency = -1; // SL: 0-7 frame bundling tier
 
-    // Optimistic update cooldown timestamps (milliseconds since epoch).
-    qint64 dataSubModeOptimisticTime = 0;
-    qint64 dataSubModeBOptimisticTime = 0;
-    qint64 dataRateOptimisticTime = 0;
-    qint64 dataRateBOptimisticTime = 0;
+    // WHY: monotonic deadlines, not wall-clock stamps — an NTP or DST step
+    // would otherwise stretch or cancel the hold. Default-constructed = expired.
+    static constexpr int EchoHoldMs = 500;
+    QDeadlineTimer dataSubModeEchoHold;
+    QDeadlineTimer dataSubModeBEchoHold;
+    QDeadlineTimer dataRateEchoHold;
+    QDeadlineTimer dataRateBEchoHold;
 
     void reset();
 };

@@ -8,6 +8,7 @@
 #include <QNetworkInterface>
 #include <QTimer>
 #include <QList>
+#include <optional>
 
 struct K4RadioInfo {
     QString rigType;      // "k4" or "k4z"
@@ -31,13 +32,17 @@ public:
     ~K4Discovery() override;
 
     void startDiscovery();
-    QList<K4RadioInfo> discoveredRadios() const { return m_discoveredRadios; }
+
+    // Reads a discovery reply, "<rig type>:<index>:<IPv4 address>:<serial>" (e.g.
+    // "k4:0:192.168.1.100:278"). The address becomes the host QK4 connects to, so the reply is
+    // refused unless every field is well formed: a strict dotted IPv4 address (the K4 listens on
+    // IPv4 only), a numeric index and a numeric serial. Surrounding whitespace and NULs are ignored.
+    static std::optional<K4RadioInfo> parseResponse(const QByteArray &data);
     static constexpr int TIMEOUT_MS = 5000;
 
 signals:
     void radioFound(const K4RadioInfo &radio);
     void discoveryFinished(int count);
-    void error(const QString &errorMessage);
 
 private slots:
     void onReadyRead();
@@ -45,7 +50,6 @@ private slots:
 
 private:
     void sendDiscoveryMessage(const QNetworkInterface &netInterface);
-    bool parseK4Response(const QByteArray &data, K4RadioInfo &radioInfo);
 
     static constexpr int UDP_PORT = 9100;
     static const char *DISCOVERY_MESSAGE;

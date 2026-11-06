@@ -11,8 +11,7 @@ void BottomMenuBar::setupUi() {
     setFixedHeight(K4Styles::Dimensions::MenuBarHeight);
 
     auto *layout = new QHBoxLayout(this);
-    // Left margin matches side panel width to align buttons with waterfall above
-    layout->setContentsMargins(K4Styles::Dimensions::LeftSidePanelWidth, 6, 10, 6);
+    layout->setContentsMargins(0, K4Styles::Dimensions::MenuBarMarginV, 10, K4Styles::Dimensions::MenuBarMarginV);
     layout->setSpacing(10); // Equal spacing between all buttons
 
     // Add stretch before buttons to center them
@@ -40,6 +39,8 @@ void BottomMenuBar::setupUi() {
 
     // PTT button at far right (separated from main buttons)
     m_pttBtn = createMenuButton("PTT");
+    // PTT has its own sheet: setPttActive() marks it selected for the red transmit look.
+    m_pttBtn->setStyleSheet(K4Styles::menuBarButtonPtt());
     layout->addWidget(m_pttBtn);
 
     // ===== Connect Signals =====
@@ -72,75 +73,45 @@ QPushButton *BottomMenuBar::createMenuButton(const QString &text) {
     auto *btn = new QPushButton(text, this);
     btn->setFixedSize(K4Styles::Dimensions::MenuBarButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     btn->setCursor(Qt::PointingHandCursor);
-    btn->setStyleSheet(K4Styles::menuBarButton());
+    btn->setStyleSheet(K4Styles::menuBarButtonSelectable());
     return btn;
 }
 
 void BottomMenuBar::setMenuActive(bool active) {
-    if (active) {
-        m_menuBtn->setStyleSheet(K4Styles::menuBarButtonActive());
-    } else {
-        m_menuBtn->setStyleSheet(K4Styles::menuBarButton());
-    }
+    K4Styles::setSelected(m_menuBtn, active);
 }
 
 void BottomMenuBar::setDisplayActive(bool active) {
-    if (active) {
-        m_displayBtn->setStyleSheet(K4Styles::menuBarButtonActive());
-    } else {
-        m_displayBtn->setStyleSheet(K4Styles::menuBarButton());
-    }
+    K4Styles::setSelected(m_displayBtn, active);
 }
 
 void BottomMenuBar::setBandActive(bool active) {
-    if (active) {
-        m_bandBtn->setStyleSheet(K4Styles::menuBarButtonActive());
-    } else {
-        m_bandBtn->setStyleSheet(K4Styles::menuBarButton());
-    }
+    K4Styles::setSelected(m_bandBtn, active);
 }
 
 void BottomMenuBar::setFnActive(bool active) {
-    if (active) {
-        m_fnBtn->setStyleSheet(K4Styles::menuBarButtonActive());
-    } else {
-        m_fnBtn->setStyleSheet(K4Styles::menuBarButton());
-    }
+    K4Styles::setSelected(m_fnBtn, active);
 }
 
 void BottomMenuBar::setMainRxActive(bool active) {
-    if (active) {
-        m_mainRxBtn->setStyleSheet(K4Styles::menuBarButtonActive());
-    } else {
-        m_mainRxBtn->setStyleSheet(K4Styles::menuBarButton());
-    }
+    K4Styles::setSelected(m_mainRxBtn, active);
 }
 
 void BottomMenuBar::setSubRxActive(bool active) {
-    if (active) {
-        m_subRxBtn->setStyleSheet(K4Styles::menuBarButtonActive());
-    } else {
-        m_subRxBtn->setStyleSheet(K4Styles::menuBarButton());
-    }
+    K4Styles::setSelected(m_subRxBtn, active);
 }
 
 void BottomMenuBar::setTxActive(bool active) {
-    if (active) {
-        m_txBtn->setStyleSheet(K4Styles::menuBarButtonActive());
-    } else {
-        m_txBtn->setStyleSheet(K4Styles::menuBarButton());
-    }
+    K4Styles::setSelected(m_txBtn, active);
 }
 
 void BottomMenuBar::setPttActive(bool active) {
-    if (active) {
-        m_pttBtn->setStyleSheet(K4Styles::menuBarButtonPttPressed());
-    } else {
+    K4Styles::setSelected(m_pttBtn, active);
+    if (!active) {
         // Transmission ended for whatever reason - our release, someone else's, the radio's, a
         // disconnect. A latch cannot outlive it.
         m_pttLocked = false;
         m_pttLockTimer->stop();
-        m_pttBtn->setStyleSheet(K4Styles::menuBarButton());
     }
 }
 
@@ -157,14 +128,9 @@ bool BottomMenuBar::eventFilter(QObject *watched, QEvent *event) {
         if (event->type() == QEvent::MouseButtonPress) {
             auto *me = static_cast<QMouseEvent *>(event);
             if (me->button() == Qt::RightButton) {
-                // REQUEST ONLY. This used to set m_pttLocked and repaint the button itself, which
-                // made the widget lie in both directions when something else held the
-                // transmitter: right-clicking during an XMIT transmission latched and lit a button
-                // whose engage() was refused, and clicking again greyed it out while XMIT was
-                // still keyed and still streaming. Observed on the bench 2026-09-18.
-                //
-                // The colour now comes from transmittingChanged and the latch from
-                // setPttLatched(), both of which follow what actually happened.
+                // WHY request only: another owner may hold the transmitter and engage() can be
+                // refused. The colour comes from setPttActive() (transmittingChanged) and the latch
+                // from setPttLatched().
                 emit pttLatchRequested(!m_pttLocked);
                 return true;
             }

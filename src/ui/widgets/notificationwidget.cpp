@@ -5,13 +5,12 @@
 #include <QEvent>
 
 namespace {
-// Notification theme — pulled from K4Styles so color/dimension changes propagate globally.
-const QString BackgroundColor = K4Styles::Colors::GradientBottom; // #2a2a2a
-const QString BorderColor = K4Styles::Colors::AccentAmber;        // #FFB000
-const QString TextColor = K4Styles::Colors::TextWhite;            // #FFFFFF
+const QString BackgroundColor = K4Styles::Colors::GradientBottom;
+const QString BorderColor = K4Styles::Colors::AccentAmber;
+const QString TextColor = K4Styles::Colors::TextPrimary;
 constexpr int Padding = 20;
-constexpr int BorderRadius = K4Styles::Dimensions::BorderRadiusLarge; // 8
-constexpr int BorderWidth = K4Styles::Dimensions::BorderWidth;        // 2
+constexpr int BorderRadius = K4Styles::Dimensions::BorderRadiusLarge;
+constexpr int BorderWidth = K4Styles::Dimensions::BorderWidth;
 constexpr int kMaxWidth = 560;  // beyond this the banner reads as a wall rather than a message
 constexpr int kMinWidth = 200;  // keeps a one-word message from collapsing
 constexpr int kSideMargin = 24; // clear of the window edge even when the window is narrow
@@ -24,7 +23,7 @@ NotificationWidget::NotificationWidget(QWidget *parent) : QWidget(parent), m_tim
     m_label->setStyleSheet(QString("QLabel { color: %1; background: transparent; }").arg(TextColor));
 
     QFont font = m_label->font();
-    font.setPixelSize(K4Styles::Dimensions::FontSizePopup);
+    font.setPixelSize(K4Styles::Dimensions::FontSizeHeading);
     font.setBold(true);
     m_label->setFont(font);
 

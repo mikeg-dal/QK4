@@ -1,11 +1,13 @@
 #ifndef KPODPLUSDEVICE_H
 #define KPODPLUSDEVICE_H
 
-#include <QByteArray>
 #include <QObject>
 #include <QString>
 
 class QThread;
+namespace CwKeying {
+class Link;
+}
 class KpodPlusUsbWorker;
 class KpodPlusEp02Worker;
 
@@ -23,7 +25,7 @@ struct KpodPlusDeviceInfo {
 
 // Thin Qt façade over the libusb worker. All libusb work happens on
 // KpodPlusUsbWorker (its own thread) and EP02 reads happen on
-// KpodPlusEp02Worker (HighPriority thread). The façade lives on the main
+// KpodPlusEp02Worker (real-time thread). The façade lives on the main
 // thread; every setter is dispatched via QueuedConnection so the main thread
 // never touches libusb.
 class KpodPlusDevice : public QObject {
@@ -51,6 +53,10 @@ public:
     void setEncodeMode(int mode);
     void setStuckTimeout(int seconds);
 
+    // Where the KPOD+'s own KZ strings go, straight from the EP02 reader thread; nullptr drops
+    // them. Any thread. The link must outlive the EP02 reader's use of it.
+    void setKeyerLink(CwKeying::Link *link);
+
 signals:
     void deviceConnected();
     void deviceDisconnected();
@@ -59,7 +65,6 @@ signals:
     void rockerPositionChanged(RockerPosition position);
     void buttonTapped(int buttonNumber);
     void buttonHeld(int buttonNumber);
-    void keyerDataReceived(const QByteArray &data);
     void pollError(const QString &error);
 
 private:
@@ -72,6 +77,8 @@ private:
 
     KpodPlusEp02Worker *m_ep02Worker = nullptr;
     QThread *m_ep02Thread = nullptr;
+    // EP02 worker's finished -> deleteLater, cut if the USB thread is disowned (see the destructor).
+    QMetaObject::Connection m_ep02DeleteConnection;
 };
 
 #endif // KPODPLUSDEVICE_H

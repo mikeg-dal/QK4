@@ -24,10 +24,10 @@ __pycache__/
 # build dirs. Anything that is evidence for a bug belongs attached to its GitHub issue.
 bench-logs/
 
-# Build artifacts
-/build/
-/build-san/
-/build-asan/
+# Build artifacts. One glob, not a line per tree: the four names listed here one by one let a
+# fifth (build-preview/, 86 MB) sit untracked in `git status` for days. Nothing tracked in the
+# repo starts with "build", so name a throwaway tree build-<purpose>/ and it is covered.
+/build*/
 *.o
 *.d
 *.a

@@ -4,59 +4,28 @@
 #include "audio/rxoutputstage.h"
 #include "controllers/audiocontroller.h"
 #include "settings/radiosettings.h"
-#include <QFrame>
-#include <QLabel>
+#include "ui/pages/optionspagelayout.h"
+#include <QFormLayout>
 #include <QVBoxLayout>
 
 AudioOutputPage::AudioOutputPage(AudioController *audioController, QWidget *parent)
     : QWidget(parent), m_audioController(audioController) {
-    setStyleSheet(K4Styles::Dialog::pageBackground());
-
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
-                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
-    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
-
-    // Title
-    auto *titleLabel = new QLabel("Audio Output", this);
-    titleLabel->setStyleSheet(K4Styles::Dialog::titleLabel());
-    layout->addWidget(titleLabel);
-
-    // Separator line
-    auto *line = new QFrame(this);
-    line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet(K4Styles::Dialog::separator());
-    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line);
-
-    // === Speaker Device Selection ===
-    auto *deviceLabel = new QLabel("Speaker:", this);
-    deviceLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    layout->addWidget(deviceLabel);
+    auto *layout = OptionsPageLayout::createPage(this);
+    OptionsPageLayout::addTitle(layout, this, "Audio Output");
+    auto *form = OptionsPageLayout::addForm(layout);
 
     m_speakerDeviceCombo = new QComboBox(this);
     m_speakerDeviceCombo->setStyleSheet(K4Styles::Dialog::comboBox());
+    OptionsPageLayout::fitDeviceCombo(m_speakerDeviceCombo);
     populateSpeakerDevices();
-    connect(m_speakerDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            &AudioOutputPage::onSpeakerDeviceChanged);
-    layout->addWidget(m_speakerDeviceCombo);
-
-    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
-
-    // Help text
-    auto *helpLabel = new QLabel("Select the audio output device for radio receive audio. "
-                                 "Volume is controlled by the MAIN and SUB sliders on the side panel.",
-                                 this);
-    helpLabel->setStyleSheet(K4Styles::Dialog::helpText());
-    helpLabel->setWordWrap(true);
-    layout->addWidget(helpLabel);
-
-    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
-
-    // === RX audio boost ===
-    auto *boostLabel = new QLabel("RX audio boost:", this);
-    boostLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    layout->addWidget(boostLabel);
+    // WHY activated, not currentIndexChanged: repopulating the list changes the current index (and
+    // falls back to System Default while a pinned device is absent). Only an operator's pick may
+    // move the saved device or the stream.
+    connect(m_speakerDeviceCombo, &QComboBox::activated, this, &AudioOutputPage::onSpeakerDeviceChanged);
+    OptionsPageLayout::addRow(form, this, "Speaker", m_speakerDeviceCombo);
+    OptionsPageLayout::addFieldHelp(form, this,
+                                    "Select the audio output device for radio receive audio. Volume is controlled by "
+                                    "the MAIN and SUB sliders on the side panel.");
 
     m_rxBoostCombo = new QComboBox(this);
     m_rxBoostCombo->setStyleSheet(K4Styles::Dialog::comboBox());
@@ -66,12 +35,9 @@ AudioOutputPage::AudioOutputPage(AudioController *audioController, QWidget *pare
     m_rxBoostCombo->setCurrentIndex(m_rxBoostCombo->findData(RadioSettings::instance()->rxAudioBoostDb()));
     connect(m_rxBoostCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &AudioOutputPage::onRxBoostChanged);
-    layout->addWidget(m_rxBoostCombo);
-
-    auto *boostHelp = new QLabel("Raises receive audio above what the MAIN and SUB sliders reach at 100%.", this);
-    boostHelp->setStyleSheet(K4Styles::Dialog::helpText());
-    boostHelp->setWordWrap(true);
-    layout->addWidget(boostHelp);
+    OptionsPageLayout::addRow(form, this, "RX Audio Boost", m_rxBoostCombo);
+    OptionsPageLayout::addFieldHelp(form, this,
+                                    "Raises receive audio above what the MAIN and SUB sliders reach at 100%.");
 
     layout->addStretch();
 }

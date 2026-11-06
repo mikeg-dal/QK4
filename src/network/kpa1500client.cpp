@@ -1,8 +1,7 @@
 #include "kpa1500client.h"
+#include "logging/logcategories.h"
 #include "kpa1500antennas.h"
 #include <QLoggingCategory>
-
-Q_LOGGING_CATEGORY(netKpa, "net.kpa")
 
 // KPA1500 band number to label (same numbering as K4 BN command)
 static QString bandNumberToLabel(const QString &bn) {
@@ -19,12 +18,9 @@ static QString bandNumberToLabel(const QString &bn) {
 
 // Poll commands - based on KPA1500 Programming Reference
 // ^AI = ATU Inline state, ^AN = Antenna selection
-// Note: ^FS is Fan Speed (not fault status), removed from polling.
-// ^VM1 (PA voltage) and ^VM2 (PA current) were removed — nothing in QK4
-// displays them today; if/when a UI consumer is added, restore them here
-// alongside the parser branches and re-introduce paVoltage/paCurrent state.
+// Note: ^FS is Fan Speed and ^FC is Fan Minimum Speed (neither is a fault); the fault code is ^FL.
 const QString KPA1500Client::POLL_COMMANDS =
-    "^BN;^WS;^TM;^RVM;^FC;^OS;^FL;^AI;^AM;^AN;^IP;^SN;^PC;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
+    "^BN;^WS;^TM;^RVM;^OS;^FL;^AI;^AM;^AN;^IP;^SN;^PC;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
 
 KPA1500Client::KPA1500Client(QObject *parent)
     : QObject(parent), m_socket(new QTcpSocket(this)), m_pollTimer(new QTimer(this)), m_port(1500),
@@ -53,7 +49,7 @@ void KPA1500Client::connectToHost(const QString &host, quint16 port) {
     m_host = host;
     m_port = port;
     m_receiveBuffer.clear();
-    resetAntennaState();
+    resetCachedState();
 
     setState(Connecting);
     m_socket->connectToHost(host, port);
@@ -74,13 +70,9 @@ bool KPA1500Client::isConnected() const {
     return m_state == Connected;
 }
 
-KPA1500Client::ConnectionState KPA1500Client::connectionState() const {
-    return m_state;
-}
-
 void KPA1500Client::sendCommand(const QString &command) {
     if (m_state != Connected) {
-        qWarning() << "KPA1500Client: Cannot send command, not connected";
+        qCWarning(lcKpa1500) << "KPA1500Client: Cannot send command, not connected";
         return;
     }
 
@@ -108,9 +100,19 @@ void KPA1500Client::requestEnableMap() {
         sendCommand(QStringLiteral("^AE%1ALL;").arg(m_bandNumber, 2, 10, QLatin1Char('0')));
 }
 
-void KPA1500Client::resetAntennaState() {
+void KPA1500Client::resetCachedState() {
     m_bandNumber = -1;
     m_enableMap.clear();
+    m_forwardPower = kUnknownReading;
+    m_reflectedPower = kUnknownReading;
+    m_drivePower = kUnknownReading;
+    m_swr = kUnknownReading;
+    m_paTemperature = kUnknownReading;
+    m_operatingState = StateUnknown;
+    m_faultStatus = FaultNone;
+    m_faultCode.clear();
+    m_serialNumber.clear();
+    m_firmwareVersion.clear();
 }
 
 void KPA1500Client::startPolling(int intervalMs) {
@@ -137,14 +139,15 @@ void KPA1500Client::onSocketConnected() {
     // 40 ms Nagle/delayed-ACK windows. KeepAlive handles NAT timeout on long-running sessions.
     m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
     m_socket->setSocketOption(QAbstractSocket::KeepAliveOption, 1);
-    qCDebug(netKpa) << "KPA1500Client: Connected to" << m_host << ":" << m_port;
+    qCInfo(lcKpa1500) << "KPA1500Client: Connected to" << m_host << ":" << m_port;
     setState(Connected);
     emit connected();
 }
 
 void KPA1500Client::onSocketDisconnected() {
-    qCDebug(netKpa) << "KPA1500Client: Disconnected";
+    qCInfo(lcKpa1500) << "KPA1500Client: Disconnected";
     stopPolling();
+    resetCachedState();
     setState(Disconnected);
     emit disconnected();
 }
@@ -157,7 +160,7 @@ void KPA1500Client::onReadyRead() {
     QByteArray data = m_socket->readAll();
     m_receiveBuffer.append(QString::fromLatin1(data));
     if (m_receiveBuffer.size() > kMaxBufferSize) {
-        qCWarning(netKpa) << "Buffer overflow (" << m_receiveBuffer.size() << "bytes) — disconnecting";
+        qCWarning(lcKpa1500) << "Buffer overflow (" << m_receiveBuffer.size() << "bytes) — disconnecting";
         m_receiveBuffer.clear();
         disconnectFromHost();
         return;
@@ -170,7 +173,7 @@ void KPA1500Client::onReadyRead() {
 void KPA1500Client::onSocketError(QAbstractSocket::SocketError error) {
     Q_UNUSED(error)
     QString errorString = m_socket->errorString();
-    qCWarning(netKpa) << "KPA1500Client: Socket error:" << errorString;
+    qCWarning(lcKpa1500) << "KPA1500Client: Socket error:" << errorString;
     emit errorOccurred(errorString);
 
     stopPolling();
@@ -241,11 +244,19 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
     }
     // ^SN - Serial Number
     else if (cmd.startsWith("SN")) {
-        m_serialNumber = cmd.mid(2);
+        const QString serial = cmd.mid(2);
+        if (serial != m_serialNumber) {
+            m_serialNumber = serial;
+            emit deviceInfoChanged();
+        }
     }
     // ^RVM - Firmware Revision (format: ^RVMnn.nn;)
     else if (cmd.startsWith("RVM")) {
-        m_firmwareVersion = cmd.mid(3);
+        const QString version = cmd.mid(3);
+        if (version != m_firmwareVersion) {
+            m_firmwareVersion = version;
+            emit deviceInfoChanged();
+        }
     }
     // ^OS - Operate/Standby Mode (0=Standby, 1=Operate)
     else if (cmd.startsWith("OS")) {
@@ -258,16 +269,21 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
     }
     // ^FS - Fan Speed (0-5), NOT fault status
     else if (cmd.startsWith("FS")) {
-        // Fan speed - ignore for now (could add m_fanSpeed if needed)
+        // Fan speed: not displayed.
     }
-    // ^FC - Fault Code
-    else if (cmd.startsWith("FC")) {
-        m_faultCode = cmd.mid(2);
-        emit faultStatusChanged(m_faultStatus, m_faultCode);
-    }
-    // ^FL - Fault List (detailed fault info)
+    // ^FLhh - current fault, two hex digits; 00 is "no fault condition"
     else if (cmd.startsWith("FL")) {
-        // Parse fault list if needed
+        bool ok = false;
+        const QString code = cmd.mid(2);
+        const int value = code.toInt(&ok, 16);
+        if (ok) {
+            const FaultStatus status = (value == 0) ? FaultNone : FaultActive;
+            if (status != m_faultStatus || code != m_faultCode) {
+                m_faultStatus = status;
+                m_faultCode = code;
+                emit faultStatusChanged(m_faultStatus, m_faultCode);
+            }
+        }
     }
     // ^TM - Temperature (PA temperature in Celsius)
     else if (cmd.startsWith("TM")) {

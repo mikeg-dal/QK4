@@ -30,9 +30,14 @@ TR4W's own source carries that analysis for anyone who needs it.
 
 ## 2. Probing for a capability, and why it beats the banner
 
-A client can gate a capability on the handshake (`device:QK4 0.7.0;` — see the other document) or
+A client can gate a capability on the handshake (`device:QK4 0.7.0;` as captured — see the other
+document; CI builds also carry a prerelease suffix) or
 probe for it behaviourally. TR4W prefers the probe, correctly: it works against servers nobody has
 seen, needs no allow-list, and cannot be wrong about a version.
+
+What a `cw_macros_speed` SET does on QK4 is described in
+[tci-cw-for-client-authors.md](tci-cw-for-client-authors.md) §2.2a. This section is only about
+probing for it.
 
 **The rule that works against QK4:** send `cw_macros_speed:<n>;` and treat the capability as live
 only when a **`cw_keyer_speed:<n>;`** broadcast comes back carrying your number.
@@ -61,8 +66,8 @@ the operator's back, and the answer arrives before it is needed.
 
 ## 3. What QK4 should not break
 
-- **`protocol:` must stay `ExpertSDR3,1.5`.** WSJT-X matches on it; a different string makes it
-  halve transmit amplitude.
+- **`protocol:` must stay `ExpertSDR3,1.5`.** Reason: [tci-command-coverage.md](tci-command-coverage.md)
+  §6.5.
 - **`device:` should stay prefix-matchable.** It is `QK4 <version>` and clients are advised to match
   the `QK4` prefix. Appending is safe; reordering is not.
 - **The immediate reply to a set carries the model's value, not the request.** A client may be

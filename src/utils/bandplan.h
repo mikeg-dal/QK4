@@ -36,6 +36,12 @@ struct BandMarker {
 /// region is out of range.
 QVector<BandSegment> segmentsForBand(int region, qint64 freqHz);
 
+/// Identifies the plan band containing freqHz for the region: its index in that region's table, or
+/// -1 when freqHz is outside every modeled band (or region is out of range). segmentsForBand and
+/// markersForBand depend on (region, freqHz) only through this value, so it is the key to cache
+/// their results on.
+int planBandIndex(int region, qint64 freqHz);
+
 /// Digital calling-frequency markers for the band containing freqHz. Only the US
 /// region (4) defines markers; IARU regions return empty.
 QVector<BandMarker> markersForBand(int region, qint64 freqHz);

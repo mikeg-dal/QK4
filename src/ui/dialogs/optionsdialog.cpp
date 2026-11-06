@@ -9,18 +9,23 @@
 #include "ui/pages/cwkeyerpage.h"
 #include "ui/pages/kpodpage.h"
 #include "ui/pages/kpa1500page.h"
+#include "ui/pages/optionspagelayout.h"
 #include "ui/pages/dxclusterpage.h"
+#include "ui/pages/diagnosticspage.h"
 #include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include "controllers/audiocontroller.h"
 #include "controllers/hardwarecontroller.h"
 #include <QHBoxLayout>
+#include <QScrollArea>
 
 OptionsDialog::OptionsDialog(RadioState *radioState, AudioController *audioController,
                              HardwareController *hardwareController, CatServer *catServer, TciController *tciController,
-                             KPA1500Client *kpa1500Client, DxClusterController *dxClusterController, QWidget *parent)
+                             KPA1500Client *kpa1500Client, DxClusterController *dxClusterController,
+                             CwController *cwController, QWidget *parent)
     : QDialog(parent), m_radioState(radioState), m_audioController(audioController),
       m_hardwareController(hardwareController), m_catServer(catServer), m_tciController(tciController),
-      m_kpa1500Client(kpa1500Client), m_dxClusterController(dxClusterController) {
+      m_kpa1500Client(kpa1500Client), m_dxClusterController(dxClusterController), m_cwController(cwController) {
     setWindowModality(Qt::ApplicationModal);
     setupUi();
 }
@@ -29,30 +34,19 @@ OptionsDialog::~OptionsDialog() = default;
 
 void OptionsDialog::setupUi() {
     setWindowTitle("Options");
-    setMinimumSize(700, 550);
+    setMinimumSize(K4Styles::Dimensions::OptionsDialogMinWidth, K4Styles::Dimensions::OptionsDialogMinHeight);
     resize(800, 650);
 
-    // Dark theme styling
-    setStyleSheet(QString("QDialog { background-color: %1; }"
-                          "QLabel { color: %2; }"
-                          "QListWidget { background-color: %3; color: %2; border: 1px solid %4; "
-                          "             font-size: %6px; outline: none; }"
-                          "QListWidget::item { padding: 10px 15px; border-bottom: 1px solid %4; }"
-                          "QListWidget::item:selected { background-color: %5; color: %3; }"
-                          "QListWidget::item:hover { background-color: %7; }"
-                          "QListWidget::item:selected:hover { background-color: %5; color: %3; }")
-                      .arg(K4Styles::Colors::Background, K4Styles::Colors::TextWhite, K4Styles::Colors::DarkBackground,
-                           K4Styles::Colors::DialogBorder, K4Styles::Colors::AccentAmber)
-                      .arg(K4Styles::Dimensions::FontSizePopup)
-                      .arg(K4Styles::Colors::GradientBottom));
+    setStyleSheet(QString("QDialog { background-color: %1; } QLabel { color: %2; }")
+                      .arg(K4Styles::Colors::Background, K4Styles::Colors::TextPrimary));
 
     auto *mainLayout = new QHBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    // Left side: vertical tab list
     m_tabList = new QListWidget(this);
     m_tabList->setFixedWidth(K4Styles::Dimensions::TabListWidth);
+    OptionsPageLayout::configureNavList(m_tabList);
     m_tabList->addItem("About");
     m_tabList->addItem("Station");
     m_tabList->addItem("Display");
@@ -64,17 +58,17 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("K-Pod");
     m_tabList->addItem("KPA1500");
     m_tabList->addItem("DX Cluster");
+    m_tabList->addItem("Diagnostics");
     m_tabList->setCurrentRow(0);
 
     // Right side: stacked pages -- lazy creation (only About page created eagerly)
     m_pageStack = new QStackedWidget(this);
     m_aboutPage = new AboutPage(m_radioState, this);
-    m_pageStack->addWidget(m_aboutPage);
+    m_pageStack->addWidget(OptionsPageLayout::wrapInScrollArea(m_aboutPage, this));
     m_pageCreated[PageAbout] = true;
     for (int i = 1; i < PageCount; ++i)
         m_pageStack->addWidget(new QWidget(this)); // placeholders
 
-    // Connect tab selection to page switching
     connect(m_tabList, &QListWidget::currentRowChanged, this, [this](int index) {
         ensurePageCreated(index);
         m_pageStack->setCurrentIndex(index);
@@ -98,14 +92,9 @@ void OptionsDialog::setupUi() {
 
 void OptionsDialog::showEvent(QShowEvent *event) {
     QDialog::showEvent(event);
-    // Ensure current page is created (for first show)
     int current = m_tabList->currentRow();
     ensurePageCreated(current);
     refreshPage(current);
-}
-
-void OptionsDialog::hideEvent(QHideEvent *event) {
-    QDialog::hideEvent(event);
 }
 
 void OptionsDialog::ensurePageCreated(int index) {
@@ -139,7 +128,9 @@ void OptionsDialog::ensurePageCreated(int index) {
         page = m_tciServerPage;
         break;
     case PageCwKeyer:
-        m_cwKeyerPage = new CwKeyerPage(m_hardwareController->halikeyDevice(), this);
+        m_cwKeyerPage = new CwKeyerPage(m_hardwareController->halikeyDevice(), m_radioState, m_cwController, this);
+        connect(m_hardwareController, &HardwareController::midiDevicesChanged, m_cwKeyerPage,
+                &CwKeyerPage::rescanInBackground);
         page = m_cwKeyerPage;
         break;
     case PageKpod:
@@ -154,14 +145,20 @@ void OptionsDialog::ensurePageCreated(int index) {
         m_dxClusterPage = new DxClusterPage(m_dxClusterController, this);
         page = m_dxClusterPage;
         break;
+    case PageDiagnostics:
+        m_diagnosticsPage = new DiagnosticsPage(this);
+        page = m_diagnosticsPage;
+        break;
     default:
         return;
     }
 
+    QScrollArea *scroll = OptionsPageLayout::wrapInScrollArea(page, this);
+
     QWidget *placeholder = m_pageStack->widget(index);
     m_pageStack->removeWidget(placeholder);
     delete placeholder;
-    m_pageStack->insertWidget(index, page);
+    m_pageStack->insertWidget(index, scroll);
     m_pageCreated[index] = true;
 }
 
@@ -203,6 +200,10 @@ void OptionsDialog::refreshPage(int index) {
     case PageDxCluster:
         if (m_dxClusterPage)
             m_dxClusterPage->refresh();
+        break;
+    case PageDiagnostics:
+        if (m_diagnosticsPage)
+            m_diagnosticsPage->refresh();
         break;
     default:
         break;

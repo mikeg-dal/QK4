@@ -1,4 +1,5 @@
 #include "network/tciserver.h"
+#include "logging/logcategories.h"
 
 #include "network/tciserver_internal.h"
 
@@ -10,8 +11,6 @@
 
 #include "network/tciaudioframe.h"
 #include "network/websocketserver.h"
-
-Q_LOGGING_CATEGORY(netTci, "net.tci")
 
 using namespace TciServerInternal;
 
@@ -36,12 +35,13 @@ TciServer::TciServer(QObject *parent)
 }
 
 TciServer::~TciServer() {
-    disconnect(this);
     stop();
 }
 
 bool TciServer::start(quint16 port, bool loopbackOnly) {
-    return m_socketServer->start(port, loopbackOnly);
+    const bool ok = m_socketServer->start(port, loopbackOnly);
+    emit listeningChanged(ok, ok ? this->port() : quint16(0));
+    return ok;
 }
 
 void TciServer::stop() {
@@ -63,9 +63,9 @@ void TciServer::stop() {
     m_txSensorClients.clear();
     m_sensorTimer->stop();
 
-    // WebSocketServer::stop() closes the sockets without emitting clientDisconnected for each, so
-    // the roster has to be emptied here or the page would keep listing clients of a server that is
-    // no longer running.
+    // WebSocketServer::stop() raises clientDisconnected for every upgraded session, which empties
+    // the roster through onClientDisconnected. Cleared here as well so the page can never keep
+    // listing clients of a server that is no longer running.
     m_reportedUnhandled.clear();
 
     const bool hadClients = !m_clients.isEmpty();
@@ -73,6 +73,7 @@ void TciServer::stop() {
     if (hadClients) {
         announceClients(/*force=*/true);
     }
+    emit listeningChanged(false, 0);
 }
 
 QVector<TciClientInfo> TciServer::clients() const {
@@ -94,7 +95,7 @@ void TciServer::recordClientMessage(int clientId, const QString &message, bool o
     }
     it->lastMessage = message;
     it->lastMessageOutbound = outbound;
-    it->lastMessageTime = QDateTime::currentDateTime();
+    it->lastMessageTime = QDateTime::currentDateTimeUtc();
 }
 
 void TciServer::announceClients(bool force) {
@@ -121,17 +122,13 @@ void TciServer::broadcast(const QString &text) {
     // Recorded against every row, then announced ONCE. Routing this through the per-client path
     // would emit the roster once per client for a message they all got at the same instant.
     const QString shown = elideForDisplay(text.trimmed());
-    const QDateTime now = QDateTime::currentDateTime();
+    const QDateTime now = QDateTime::currentDateTimeUtc();
     for (auto it = m_clients.begin(); it != m_clients.end(); ++it) {
         it->lastMessage = shown;
         it->lastMessageOutbound = true;
         it->lastMessageTime = now;
     }
     announceClients(/*force=*/false);
-}
-
-bool TciServer::isListening() const {
-    return m_socketServer->isListening();
 }
 
 quint16 TciServer::port() const {
@@ -146,7 +143,7 @@ void TciServer::releaseLocalPtt() {
     if (m_pttOwner == -1) {
         return; // nobody was holding it; also the base case that stops a client unkey recursing
     }
-    qCInfo(netTci) << "local unkey - releasing PTT held by client" << m_pttOwner;
+    qCInfo(lcTci) << "local unkey - releasing PTT held by client" << m_pttOwner;
     stopChrono();
     m_pttOwner = -1;
     m_snapshot.transmitting = false;
@@ -163,10 +160,10 @@ void TciServer::onClientConnected(int clientId, const QString &peerEndpoint) {
     // Seeded so the cell is never blank, which would read as a bug. The init burst below overwrites
     // it within microseconds; this shows only if a burst were ever empty.
     info.lastMessage = QStringLiteral("(connected)");
-    info.lastMessageTime = QDateTime::currentDateTime();
+    info.lastMessageTime = QDateTime::currentDateTimeUtc();
     m_clients.insert(clientId, info);
 
-    qCInfo(netTci) << "client" << clientId << "connected from" << peerEndpoint << "- sending init burst";
+    qCInfo(lcTci) << "client" << clientId << "connected from" << peerEndpoint << "- sending init burst";
 
     // One command per frame, matching what the reference server puts on the wire.
     const QStringList burst = initBurst();
@@ -200,11 +197,9 @@ void TciServer::onClientDisconnected(int clientId) {
     m_txSensorClients.remove(clientId);
     updateSensorTimer();
 
-    const bool hadAudio = m_audioClients.remove(clientId);
-    // Fail closed: if the last audio consumer vanished, stop producing.
-    if (hadAudio && m_audioClients.isEmpty()) {
-        emit audioStopRequested();
-    }
+    // Fail closed: once the last audio consumer has vanished, audioClientCount() is 0 and the
+    // bridge stops producing.
+    m_audioClients.remove(clientId);
     emit clientCountChanged(clientCount());
 }
 
@@ -221,6 +216,11 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
 
     const QVector<Command> commands = it->feed(text);
     for (const Command &raw : commands) {
+        // WHY: any reply below can drop this client synchronously. A command executed after that
+        // acts for a client that no longer exists - trx:0,true would key the radio with no owner.
+        if (!m_parsers.contains(clientId)) {
+            break;
+        }
         const Command command = expandGlobalForm(raw);
         const QString &name = command.name;
 
@@ -231,18 +231,15 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             m_audioClients.insert(clientId);
             // Echo the request back, as the reference server does; WSJT-X waits for it.
             sendTo(clientId, message(name, QString::number(receiver)));
-            qCInfo(netTci) << "client" << clientId << "requested audio on receiver" << receiver;
+            qCInfo(lcTci) << "client" << clientId << "requested audio on receiver" << receiver;
             if (first) {
                 emit audioStartRequested(receiver);
             }
         } else if (name == QLatin1String("audio_stop")) {
             int receiver = MAIN_RECEIVER;
             command.argAsInt(0, &receiver);
-            const bool had = m_audioClients.remove(clientId);
+            m_audioClients.remove(clientId);
             sendTo(clientId, message(name, QString::number(receiver)));
-            if (had && m_audioClients.isEmpty()) {
-                emit audioStopRequested();
-            }
         } else if (name == QLatin1String("cw_keyer_speed") || name == QLatin1String("cw_macros_speed")) {
             // BEFORE answerReadOnly, which reports this pair and would otherwise answer the query
             // and swallow the set.
@@ -284,8 +281,8 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             updateSensorTimer();
             // Echo, as before - the client waits for it.
             sendTo(clientId, message(name, command.args));
-            qCInfo(netTci) << "client" << clientId << (isRx ? "RX" : "TX") << "sensors" << (wanted ? "on" : "off")
-                           << "every" << m_sensorIntervalMs << "ms";
+            qCInfo(lcTci) << "client" << clientId << (isRx ? "RX" : "TX") << "sensors" << (wanted ? "on" : "off")
+                          << "every" << m_sensorIntervalMs << "ms";
         } else if (name == QLatin1String("vfo") || name == QLatin1String("dds")) {
             // vfo:<trx>,<channel>,<hz> sets; vfo:<trx>,<channel> reads. dds is an alias for the
             // receive VFO and carries no channel.
@@ -432,15 +429,15 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             if (segments.isEmpty()) {
                 // Say so. A macro that carries nothing keyable used to be dropped in silence, which
                 // gives an operator hearing no CW nothing anywhere to look at.
-                qCInfo(netTci) << "client" << clientId << "sent cw_macros with nothing keyable in it:" << command.args;
+                qCInfo(lcTci) << "client" << clientId << "sent cw_macros with nothing keyable in it:" << command.args;
                 continue;
             }
-            qCInfo(netTci) << "client" << clientId << "CW:" << text << "in" << segments.size() << "speed segment(s)";
+            qCInfo(lcTci) << "client" << clientId << "CW:" << text << "in" << segments.size() << "speed segment(s)";
             emit cwMacroRequested(segments);
             // No echo. The spec defines no confirmation for CW_MACROS, and the radio's own keying
             // is the acknowledgement.
         } else if (name == QLatin1String("cw_macros_stop")) {
-            qCInfo(netTci) << "client" << clientId << "asked to stop CW";
+            qCInfo(lcTci) << "client" << clientId << "asked to stop CW";
             emit cwAbortRequested();
         } else if (name == QLatin1String("split_enable")) {
             int receiver = MAIN_RECEIVER;
@@ -471,11 +468,11 @@ void TciServer::onTextMessageReceived(int clientId, const QString &text) {
             // supposed to reveal.
             if (!m_reportedUnhandled.contains(name)) {
                 m_reportedUnhandled.insert(name);
-                qCInfo(netTci) << "client" << clientId << "sent" << name << "with args" << command.args
-                               << "- NOT PROCESSED (no QK4 implementation); further occurrences at debug level";
+                qCInfo(lcTci) << "client" << clientId << "sent" << name << "with args" << command.args
+                              << "- NOT PROCESSED (no QK4 implementation); further occurrences at debug level";
             } else {
-                qCDebug(netTci) << "client" << clientId << "sent" << name << "with args" << command.args
-                                << "- not processed";
+                qCDebug(lcTci) << "client" << clientId << "sent" << name << "with args" << command.args
+                               << "- not processed";
             }
         }
     }
@@ -595,7 +592,7 @@ void TciServer::setPtt(int clientId, bool active) {
         }
         m_pttOwner = clientId;
         m_snapshot.transmitting = true;
-        qCInfo(netTci) << "PTT ON from client" << clientId;
+        qCInfo(lcTci) << "PTT ON from client" << clientId;
         // BROADCAST, not a reply to the asker. The protocol makes the server a synchroniser: a
         // state change reaches every client, so a second program (a logger showing an ON
         // indicator, an amplifier controller) sees the transmitter key even though someone else
@@ -603,6 +600,11 @@ void TciServer::setPtt(int clientId, bool active) {
         // and WSJT-X drops the link if a PTT request is not reflected quickly, so it goes out
         // before the chrono clock starts.
         broadcast(message(QStringLiteral("trx"), QString::number(MAIN_RECEIVER), boolText(true)));
+        // WHY: the broadcast can drop the requester synchronously (send-queue overflow), and
+        // onClientDisconnected has then already released PTT. Keying now would key for nobody.
+        if (m_pttOwner != clientId) {
+            return;
+        }
         emit pttRequested(true);
         startChrono(clientId);
         return;
@@ -616,7 +618,7 @@ void TciServer::setPtt(int clientId, bool active) {
         return;
     }
 
-    qCInfo(netTci) << "PTT OFF from client" << clientId;
+    qCInfo(lcTci) << "PTT OFF from client" << clientId;
     stopChrono();
     m_pttOwner = -1;
     m_snapshot.transmitting = false;
@@ -629,8 +631,8 @@ void TciServer::startChrono(int clientId) {
     m_chronoClient = clientId;
     m_chronoAccumNs = 0;
     m_chronoClock.start();
-    qCInfo(netTci) << "TX_CHRONO started for client" << clientId << "- period" << (double(kChronoPeriodNs) / 1.0e6)
-                   << "ms, poll" << kChronoPollMs << "ms";
+    qCInfo(lcTci) << "TX_CHRONO started for client" << clientId << "- period" << (double(kChronoPeriodNs) / 1.0e6)
+                  << "ms, poll" << kChronoPollMs << "ms";
     m_chronoTimer->start();
     // Prime it: the client sends nothing at all until the first request arrives.
     m_socketServer->sendBinary(clientId, TciAudioFrame::encodeTxChrono(MAIN_RECEIVER, kAudioSampleRate));
@@ -638,7 +640,7 @@ void TciServer::startChrono(int clientId) {
 
 void TciServer::stopChrono() {
     if (m_chronoTimer->isActive()) {
-        qCInfo(netTci) << "TX_CHRONO stopped after" << m_chronoSent << "requests," << m_txBlocks << "blocks received";
+        qCInfo(lcTci) << "TX_CHRONO stopped after" << m_chronoSent << "requests," << m_txBlocks << "blocks received";
     }
     m_chronoTimer->stop();
     m_chronoClient = -1;
@@ -682,7 +684,7 @@ void TciServer::onBinaryMessageReceived(int clientId, const QByteArray &payload)
     }
     std::vector<float> mono;
     if (!TciAudioFrame::decodeTxAudioToMono(payload, &mono, nullptr, &m_txLayout) || mono.empty()) {
-        qCDebug(netTci) << "TX audio: dropped an undecodable binary frame of" << payload.size() << "bytes";
+        qCDebug(lcTci) << "TX audio: dropped an undecodable binary frame of" << payload.size() << "bytes";
         return;
     }
 
@@ -691,8 +693,8 @@ void TciServer::onBinaryMessageReceived(int clientId, const QByteArray &payload)
         for (float v : mono) {
             peak = std::max(peak, std::fabs(v));
         }
-        qCInfo(netTci) << "TX audio:" << m_txBlocks << "blocks from client" << clientId << "," << mono.size()
-                       << "samples, peak" << peak << "- chrono sent" << m_chronoSent;
+        qCInfo(lcTci) << "TX audio:" << m_txBlocks << "blocks from client" << clientId << "," << mono.size()
+                      << "samples, peak" << peak << "- chrono sent" << m_chronoSent;
     }
 
     emit txAudioReceived(
@@ -721,7 +723,7 @@ void TciServer::sendRxAudio(const std::vector<float> &interleavedStereo, int sam
         for (float v : interleavedStereo) {
             peak = std::max(peak, std::fabs(v));
         }
-        qCInfo(netTci) << "RX audio:" << m_rxBlocks << "blocks sent to" << m_audioClients.size() << "client(s),"
-                       << interleavedStereo.size() / 2 << "frames at" << sampleRate << "Hz, peak" << peak;
+        qCInfo(lcTci) << "RX audio:" << m_rxBlocks << "blocks sent to" << m_audioClients.size() << "client(s),"
+                      << interleavedStereo.size() / 2 << "frames at" << sampleRate << "Hz, peak" << peak;
     }
 }

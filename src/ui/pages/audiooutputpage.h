@@ -7,8 +7,8 @@
 class AudioController;
 
 /**
- * @brief OptionsDialog "Audio Output" tab. Selects the system speaker device; writes selection
- *        back to AudioEngine via AudioController's task-level API.
+ * @brief OptionsDialog "Audio Output" tab. Selects the speaker device and RX Audio Boost; applies
+ *        them through AudioController.
  */
 class AudioOutputPage : public QWidget {
     Q_OBJECT

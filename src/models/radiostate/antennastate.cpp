@@ -10,11 +10,11 @@ void AntennaState::reset() {
     receiveAntennaSub = -1;
     atuMode = -1;
     antennaNames.clear();
-    mainRxDisplayAll = true;
+    mainRxDisplayAll.reset();
     std::fill(std::begin(mainRxAntMask), std::end(mainRxAntMask), false);
-    subRxDisplayAll = true;
+    subRxDisplayAll.reset();
     std::fill(std::begin(subRxAntMask), std::end(subRxAntMask), false);
-    txDisplayAll = true;
+    txDisplayAll.reset();
     std::fill(std::begin(txAntMask), std::end(txAntMask), false);
 }
 
@@ -82,8 +82,7 @@ void handleACM(AntennaState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 11)
         return;
     const bool displayAll = (cmd.at(3) == '1');
-    bool changed = (displayAll != state.mainRxDisplayAll);
-    state.mainRxDisplayAll = displayAll;
+    bool changed = state.mainRxDisplayAll.set(displayAll);
     for (int i = 0; i < 7; i++) {
         const bool enabled = (cmd.at(4 + i) == '1');
         if (enabled != state.mainRxAntMask[i]) {
@@ -99,8 +98,7 @@ void handleACS(AntennaState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 11)
         return;
     const bool displayAll = (cmd.at(3) == '1');
-    bool changed = (displayAll != state.subRxDisplayAll);
-    state.subRxDisplayAll = displayAll;
+    bool changed = state.subRxDisplayAll.set(displayAll);
     for (int i = 0; i < 7; i++) {
         const bool enabled = (cmd.at(4 + i) == '1');
         if (enabled != state.subRxAntMask[i]) {
@@ -116,8 +114,7 @@ void handleACT(AntennaState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 7)
         return;
     const bool displayAll = (cmd.at(3) == '1');
-    bool changed = (displayAll != state.txDisplayAll);
-    state.txDisplayAll = displayAll;
+    bool changed = state.txDisplayAll.set(displayAll);
     for (int i = 0; i < 3; i++) {
         const bool enabled = (cmd.at(4 + i) == '1');
         if (enabled != state.txAntMask[i]) {
@@ -129,51 +126,33 @@ void handleACT(AntennaState &state, RadioState &owner, const QString &cmd) {
         emit owner.txAntCfgChanged();
 }
 
-void setMainRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
-    bool changed = false;
-    if (displayAll != state.mainRxDisplayAll) {
-        state.mainRxDisplayAll = displayAll;
-        changed = true;
-    }
-    for (int i = 0; i < qMin(mask.size(), 7); i++) {
-        if (mask[i] != state.mainRxAntMask[i]) {
-            state.mainRxAntMask[i] = mask[i];
+namespace {
+// True if anything changed. `count` is the number of antennas the command carries.
+bool applyAntConfig(ReportedFlag &displayAllFlag, bool *antMask, int count, bool displayAll,
+                    const QVector<bool> &mask) {
+    bool changed = displayAllFlag.set(displayAll);
+    for (int i = 0; i < qMin(static_cast<int>(mask.size()), count); i++) {
+        if (mask[i] != antMask[i]) {
+            antMask[i] = mask[i];
             changed = true;
         }
     }
-    if (changed)
+    return changed;
+}
+} // namespace
+
+void setMainRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
+    if (applyAntConfig(state.mainRxDisplayAll, state.mainRxAntMask, 7, displayAll, mask))
         emit owner.mainRxAntCfgChanged();
 }
 
 void setSubRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
-    bool changed = false;
-    if (displayAll != state.subRxDisplayAll) {
-        state.subRxDisplayAll = displayAll;
-        changed = true;
-    }
-    for (int i = 0; i < qMin(mask.size(), 7); i++) {
-        if (mask[i] != state.subRxAntMask[i]) {
-            state.subRxAntMask[i] = mask[i];
-            changed = true;
-        }
-    }
-    if (changed)
+    if (applyAntConfig(state.subRxDisplayAll, state.subRxAntMask, 7, displayAll, mask))
         emit owner.subRxAntCfgChanged();
 }
 
 void setTxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask) {
-    bool changed = false;
-    if (displayAll != state.txDisplayAll) {
-        state.txDisplayAll = displayAll;
-        changed = true;
-    }
-    for (int i = 0; i < qMin(mask.size(), 3); i++) {
-        if (mask[i] != state.txAntMask[i]) {
-            state.txAntMask[i] = mask[i];
-            changed = true;
-        }
-    }
-    if (changed)
+    if (applyAntConfig(state.txDisplayAll, state.txAntMask, 3, displayAll, mask))
         emit owner.txAntCfgChanged();
 }
 

@@ -1,4 +1,5 @@
 #include "networkmetrics.h"
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -7,12 +8,28 @@ namespace {
 // one RTT sample can land per interval (otherwise `m_stalePingCount` falsely trips Red).
 constexpr int kSummaryIntervalMs = 2000;
 
-// Buffer-fill thresholds for HealthTier, expressed in milliseconds of decoded audio (bytes / 96).
-// Normal steady-state is 1-3 packets (20-60 ms depending on SL). Over 500 ms means packets queued
-// during a network event and never flushed.
+// Buffer-fill thresholds for HealthTier, in milliseconds of decoded audio. Over 500 ms means packets
+// queued during a network event and never flushed.
+//
+// WHY they move with the packet above SL5: a healthy buffer holds one packet plus the jitter target,
+// device period and margins - about 120 ms at SL3's 60 ms packets, about 180 ms at SL6-7's 120 ms. A
+// flat 200 ms left SL6-7 at the yellow line on a good link. Packet + 140 ms keeps SL3's ~80 ms of
+// headroom at every tier, and never goes below the flat values, so SL0-5 are unchanged.
 constexpr double kBufferMsWarnYellow = 200.0;
 constexpr double kBufferMsWarnOrange = 500.0;
+constexpr double kBufferMsYellowOverPacket = 140.0;
+constexpr double kBufferMsOrangeOverPacket = 440.0;
 } // namespace
+
+NetworkMetrics::HealthTier NetworkMetrics::bufferTier(double bufferedMs, int packetMs) {
+    const double yellow = (std::max)(kBufferMsWarnYellow, packetMs + kBufferMsYellowOverPacket);
+    const double orange = (std::max)(kBufferMsWarnOrange, packetMs + kBufferMsOrangeOverPacket);
+    if (bufferedMs > orange)
+        return Orange;
+    if (bufferedMs > yellow)
+        return Yellow;
+    return Green;
+}
 
 NetworkMetrics::NetworkMetrics(QObject *parent) : QObject(parent) {
     m_summaryTimer = new QTimer(this);
@@ -60,30 +77,23 @@ void NetworkMetrics::updateRttStats() {
     m_rttJitter = std::sqrt(variance / m_rttSamples.size());
 }
 
-void NetworkMetrics::onAudioSequence(quint8 seq) {
-    m_totalPacketsInterval++;
-    m_totalPacketsTotal++;
+void NetworkMetrics::onAudioSequence() {
     m_audioActive = true;
-
-    if (m_lastAudioSeq >= 0) {
-        int expected = (m_lastAudioSeq + 1) & 0xFF;
-        if (seq != expected) {
-            int gap = (seq - expected) & 0xFF;
-            if (gap > 0 && gap < 128) {
-                m_lostPacketsInterval += gap;
-                m_lostPacketsTotal += gap;
-            }
-        }
-    }
-    m_lastAudioSeq = seq;
 }
 
-void NetworkMetrics::onBufferStatus(int queueBytes, int maxBytes, bool prebuffering) {
+void NetworkMetrics::onBufferStatus(int queueBytes) {
     m_bufferBytes = queueBytes;
-    m_bufferMaxBytes = maxBytes;
-    m_prebuffering = prebuffering;
-    // 96 bytes = 1 ms of decoded audio (12 kHz stereo Float32); trail buffer depth in ms.
-    pushHistory(m_bufferHistory, static_cast<float>(queueBytes) / 96.0f);
+    pushHistory(m_bufferHistory, static_cast<float>(bufferMs()));
+}
+
+void NetworkMetrics::onRxPlayoutCounters(quint32 underruns, quint32 droppedPackets) {
+    m_rxUnderruns = underruns;
+    m_rxDropped = droppedPackets;
+    if (!m_rxCountersBaselined) {
+        m_rxUnderrunsBase = underruns;
+        m_rxDroppedBase = droppedPackets;
+        m_rxCountersBaselined = true;
+    }
 }
 
 void NetworkMetrics::onConnectionStateChanged(bool connected) {
@@ -98,17 +108,12 @@ void NetworkMetrics::onConnectionStateChanged(bool connected) {
         m_rttCurrent = -1;
         m_rttAvg = 0.0;
         m_rttJitter = 0.0;
-        m_lastAudioSeq = -1;
-        m_lostPacketsInterval = 0;
-        m_totalPacketsInterval = 0;
-        m_lostPacketsTotal = 0;
-        m_totalPacketsTotal = 0;
-        m_underrunsInterval = 0;
-        m_underrunsTotal = 0;
-        m_prebuffering = true;
         m_audioActive = false;
         m_audioWasActive = false;
         m_stalePingCount = 0;
+        m_rxCountersBaselined = false;
+        m_rxUnderrunsBase = m_rxUnderruns;
+        m_rxDroppedBase = m_rxDropped;
         m_tier = Green;
         emit healthTierChanged(m_tier);
     } else {
@@ -147,11 +152,7 @@ void NetworkMetrics::computeHealthTier() {
 
     // Buffer depth: high buffer = playing stale audio (latency accumulation).
     // Thresholds live in the anonymous namespace at file top.
-    double bufferMs = m_bufferBytes / 96.0;
-    if (bufferMs > kBufferMsWarnOrange)
-        tier = std::max(tier, Orange);
-    else if (bufferMs > kBufferMsWarnYellow)
-        tier = std::max(tier, Yellow);
+    tier = (std::max)(tier, bufferTier(bufferMs(), m_packetMs));
 
     // Audio dropout: was receiving packets but stopped
     if (m_audioWasActive && !m_audioActive)
@@ -178,10 +179,6 @@ void NetworkMetrics::onSummaryTimer() {
     // Track stale ping (reset in onLatencyChanged when PONG arrives)
     m_stalePingCount++;
 
-    // Reset per-interval counters
-    m_lostPacketsInterval = 0;
-    m_totalPacketsInterval = 0;
-    m_underrunsInterval = 0;
     if (m_audioActive)
         m_audioWasActive = true;
     m_audioActive = false; // Will be set true again when next audio packet arrives

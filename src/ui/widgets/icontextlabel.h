@@ -3,7 +3,6 @@
 
 #include "ui/styling/k4glyphs.h"
 
-#include <QPixmap>
 #include <QWidget>
 
 class QMouseEvent;
@@ -22,14 +21,12 @@ class IconTextLabel : public QWidget {
 public:
     explicit IconTextLabel(QWidget *parent = nullptr);
 
-    void setIcon(const QPixmap &pixmap);
     // Bind a procedural glyph (see K4Glyphs). After binding, the glyph's
     // color is driven independently from the value text by setGlyphColor().
-    // Wins over setIcon().
     void setGlyph(K4Glyphs::Glyph glyph);
     // Re-render the bound glyph in the given color. No-op if no glyph is set.
     void setGlyphColor(const QColor &color);
-    // Optional prefix label ("LPA", "PA", "FAN", ...). Rendered between the
+    // Optional prefix label ("LPA", "PA"). Rendered between the
     // icon and the value, in a muted color. Persists across clear() so the
     // disconnected state reads as e.g. "LPA --" instead of just "--".
     void setLabel(const QString &label);
@@ -48,6 +45,7 @@ signals:
     void clicked();
 
 protected:
+    bool event(QEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
 
 private:
@@ -60,6 +58,7 @@ private:
     QLabel *m_unitLabel;
     QColor m_valueColor;
     QColor m_glyphColor;
+    QColor m_renderedGlyphColor;
     K4Glyphs::Glyph m_glyph;
     bool m_clickable = false;
 };

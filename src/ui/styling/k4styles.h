@@ -6,6 +6,8 @@
 #include <QPainter>
 #include <QString>
 
+class QWidget;
+
 #include "ui/styling/k4constants.h" // K4Styles::Colors and K4Styles::Dimensions
 
 /**
@@ -15,14 +17,14 @@
  * eliminating duplicate CSS definitions and ensuring visual consistency.
  *
  * Style Categories:
- * - Popup buttons: Used in BandPopup, ModePopup, ButtonRowPopup, DisplayPopup
- * - Menu bar buttons: Used in BottomMenuBar, FeatureMenuBar
+ * - Popup buttons: BandPopup, ModePopup and the compact control popups (VOX, MIC, LINE IN/OUT, RX EQ)
+ * - Menu bar buttons: BottomMenuBar, FeatureMenuBar, ConfirmPopup and the compact popups' +/- keys
  * - Selected/Active states: Inverted colors for selected items
  */
 namespace K4Styles {
 
 // =============================================================================
-// Popup Button Styles (BandPopup, ModePopup, ButtonRowPopup, DisplayPopup)
+// Popup Button Styles
 // =============================================================================
 
 /**
@@ -32,13 +34,45 @@ namespace K4Styles {
 QString popupButtonNormal();
 
 /**
- * @brief Light/white button for selected state in popups.
- * Used for currently selected band/mode.
+ * @brief One sheet for a popup choice key: popupButtonNormal() while unselected, the light selected
+ * look (currently selected band/mode) while the button is checked or marked with setSelected(). Set it
+ * once; never swap sheets.
  */
-QString popupButtonSelected();
+QString popupButton();
+
+// State-aware sheets: a widget keeps one sheet and its state picks the look through a dynamic
+// property. Change these properties only through setStyleFlag(), setStyleState() or setSelected(),
+// which re-apply the sheet as Qt requires after a property change.
+inline constexpr char SelectedProperty[] = "selected"; ///< lit: the state this key or label shows is on
+inline constexpr char DimmedProperty[] = "dimmed";     ///< greyed: nothing to show, or it cannot act now
+inline constexpr char ErrorProperty[] = "error";       ///< the value is invalid or the thing is missing
+inline constexpr char StateProperty[] = "state";       ///< one of several named looks: `[state="tx"]`
+
+/// Sets boolean `property` on `widget` and restyles it; does nothing when unchanged (unset reads false).
+void setStyleFlag(QWidget *widget, const char *property, bool on);
+
+/// Sets string `property` on `widget` and restyles it; does nothing when unchanged (unset reads "").
+void setStyleState(QWidget *widget, const char *property, const QString &value);
+
+/**
+ * @brief Marks a non-checkable button selected or not for the selectable sheets (popupButton(),
+ * menuBarButtonSelectable(), ...). A checkable button needs nothing: they also match `:checked`.
+ */
+void setSelected(QWidget *widget, bool selected);
+
+/// Selector for `type` while flag `property` is set, with an optional pseudo-state:
+/// whenFlag("QLabel", DimmedProperty, ":hover") is `QLabel[dimmed="true"]:hover`.
+QString whenFlag(const char *type, const char *property, const char *pseudo = "");
+
+/// Selector for `type` while `property` equals `value`: `QLabel[state="connected"]`.
+QString whenState(const char *type, const char *property, const char *value, const char *pseudo = "");
+
+/// Read-only value readout in a compact popup row: a QPushButton with no background or visible border
+/// (so its text lines up with the neighbouring buttons), FontSizeReadout semibold text in `color`.
+QString popupValueLabel(const QString &color);
 
 // =============================================================================
-// Menu Bar Button Styles (BottomMenuBar, FeatureMenuBar)
+// Menu Bar Button Styles (also the +/- and value keys of the compact popups)
 // =============================================================================
 
 /**
@@ -48,22 +82,22 @@ QString popupButtonSelected();
 QString menuBarButton();
 
 /**
+ * @brief One sheet for a menu bar key: menuBarButton() while inactive, menuBarButtonActive() while the
+ * button is checked or marked with setSelected(). Set it once; never swap sheets.
+ */
+QString menuBarButtonSelectable();
+
+/**
  * @brief Active/pressed state for menu bar buttons.
  * White background with dark text (inverted from normal).
  */
 QString menuBarButtonActive();
 
 /**
- * @brief Compact button for +/- controls in FeatureMenuBar.
+ * @brief Compact button for +/- controls in FeatureMenuBar and the compact popups.
  * Same gradient but no padding, larger font.
  */
 QString menuBarButtonSmall();
-
-/**
- * @brief PTT button pressed state.
- * Red background with white text for transmit indication.
- */
-QString menuBarButtonPttPressed();
 
 /**
  * @brief Standard horizontal slider stylesheet.
@@ -100,30 +134,34 @@ QString radioButton();
  */
 QString compactButton();
 
+// WHY: a QPushButton given any of the sidePanelButton*() sheets (or compactButton()) must also set
+// Qt::WA_LayoutUsesWidgetRect. These sheets draw the whole widget rect, but layouts still space the
+// button by the native style's smaller "layout item rect" (macOS insets push buttons for their
+// focus ring), so on macOS the sub-label below was laid over the button's bottom edge. Qt docs:
+// WA_LayoutUsesWidgetRect "Ignore the layout item rect from the style when laying out this widget".
+// The sheets carry colour, border, radius and font only — no padding and no size. Every geometry value
+// comes from the Dimensions::Side* tokens through SidePanelButton (src/ui/widgets/sidepanelbutton.h),
+// so light and dark buttons differ in colour alone. 28 px minus the 2 px borders leaves exactly the
+// 24 px two lines of 10 px text need (ATU TUNE, FREQ ENT).
+
 /**
- * @brief Dark gradient button for side panel icons (?, globe).
+ * @brief Dark gradient side-panel key (SidePanelButton::Shade::Dark): icons, memory, KPA1500 and dark PF keys.
  * Includes normal, hover, and pressed states.
  */
 QString sidePanelButton();
 
 /**
- * @brief Active/engaged state for a side-panel icon button (amber-accent highlight).
- * Swapped in via setStyleSheet while the button's target is open (e.g. the globe icon
- * while the Server Manager is showing), then swapped back to sidePanelButton().
+ * @brief One sheet for a side-panel icon key whose target can be open (the globe while the Radio
+ * Manager shows): sidePanelButton() normally, an amber-accent engaged look while the button is checked
+ * or marked with setSelected(). Set it once; never swap sheets.
  */
-QString sidePanelButtonActive();
+QString sidePanelButtonSelectable();
 
 /**
  * @brief Light gradient button for TX/PF function buttons.
  * Uses lighter grey gradient with hover border change only (no hover gradient).
  */
 QString sidePanelButtonLight();
-
-/**
- * @brief Panel button with disabled state support.
- * Used for KPA1500 panel buttons (STANDBY, ATU, ANT, TUNE).
- */
-QString panelButtonWithDisabled();
 
 // =============================================================================
 // Dialog Button Styles
@@ -140,11 +178,9 @@ QString dialogButton();
 // Control Button Styles
 // =============================================================================
 
-/**
- * @brief Control button for decode windows.
- * @param selected If true, uses light/selected gradient. If false, uses dark gradient with disabled state.
- */
-QString controlButton(bool selected = false);
+/// Control key for the decode windows: dark gradient, with a disabled look. A key that can be selected
+/// uses controlButtonSelectable() instead.
+QString controlButton();
 
 // =============================================================================
 // Common Style Constants
@@ -190,6 +226,13 @@ QFont dataFont(int pixelSize, QFont::Weight weight = QFont::Bold);
 // Utility Functions
 // =============================================================================
 
+/// A colour token at the given Colors::Alpha:: opacity (0-255), for QPainter.
+QColor withAlpha(const char *color, int alpha);
+
+/// The same, as a style-sheet `rgba(r, g, b, a)` value. Qt style sheets document `#rrggbb` and
+/// `rgba()` with 0-255 or percentage components; they do not document `#aarrggbb` or a 0-1 alpha.
+QString cssRgba(const char *color, int alpha);
+
 /**
  * @brief Draw a soft drop shadow behind popup content.
  *
@@ -201,6 +244,19 @@ QFont dataFont(int pixelSize, QFont::Weight weight = QFont::Bold);
  * @param cornerRadius Corner radius for the shadow rounded rect
  */
 void drawDropShadow(QPainter &painter, const QRect &contentRect, int cornerRadius = 8);
+
+/**
+ * @brief Draw text with a 1 px dark halo so it stays legible over a moving spectrum or waterfall.
+ *
+ * The halo is the text itself drawn at the eight 1 px offsets, then the text on top. Used by the
+ * DX spot labels and the panadapter's amplitude and frequency scales.
+ *
+ * @param painter Painter with the font already set
+ * @param baseline Left end of the text's baseline, as for QPainter::drawText(QPointF, QString)
+ * @param text The text
+ * @param color Text color
+ */
+void drawHaloText(QPainter &painter, const QPointF &baseline, const QString &text, const QColor &color);
 
 /**
  * @brief Create a standard button gradient for custom-painted widgets.
@@ -258,23 +314,20 @@ const QString &pageBackground();
 /// Horizontal/vertical separator line
 const QString &separator();
 
-/// Amber bold title label (AccentAmber, FontSizeTitle)
+/// Amber bold title label (AccentAmber, FontSizeIndicator)
 const QString &titleLabel();
 
-/// Gray form label (TextGray, FontSizePopup)
+/// Gray form label (TextSecondary, FontSizeHeading)
 const QString &formLabel();
 
-/// White bold value label (TextWhite, FontSizePopup)
+/// White bold value label (TextPrimary, FontSizeHeading)
 const QString &formValue();
 
-/// Gray italic help text (TextGray, FontSizeLarge)
+/// Gray italic help text (TextSecondary, FontSizeBody)
 const QString &helpText();
 
-/// White bold section header (TextWhite, FontSizePopup)
+/// White bold section header (TextPrimary, FontSizeHeading)
 const QString &sectionHeader();
-
-/// Dynamic-color status label (bold, FontSizePopup)
-const QString &statusLabel(const QString &color);
 
 /// Generic `color: <c>; font-size: <n>px;` label style. Builds a fresh QString each call (dynamic
 /// color/size, so not cached). Use this instead of inlining `QString("color: %1; font-size: %2px;")`
@@ -296,16 +349,126 @@ const QString &spinBox();
 /// Checkbox with indicator sizing (enabled)
 const QString &checkBox();
 
-/// Checkbox with indicator sizing (disabled/gray text)
-const QString &checkBoxDisabled();
-
-/// Dialog action button (dark bg, padding 10px 20px)
-const QString &actionButton();
-
 /// Small action button (padding 6px 12px)
 const QString &actionButtonSmall();
 
 } // namespace Dialog
+
+// =============================================================================
+// State sheets: indicators (VFO, status bar, RIT/XIT, TX, SUB/DIV, VFO row)
+// =============================================================================
+
+/// VFO feature-row label (AGC, PRE, ATT, NB, NR, NTCH, APF): FontSizeBody, TextSecondary while off,
+/// TextPrimary while setSelected().
+QString vfoFeatureLabel();
+
+/// VOX / ATU / QSK label in the VFO row: bold FontSizeBody, TextSecondary while off, `onColor` while
+/// setSelected().
+QString vfoRowIndicatorLabel(const char *onColor);
+
+/// VFO B mode label: bold FontSizeBody, TextPrimary; TextSecondary while the DimmedProperty flag is set
+/// (Sub RX off).
+QString vfoBModeLabel();
+
+/// SUB / DIV badge: bold FontSizeCaption on BadgeOffBackground while off, TextOnAccent on StatusGreen
+/// while setSelected().
+QString subDivBadge();
+
+/// "TX" label: bold FontSizeIndicator, AccentAmber while receiving, TextRed while setSelected().
+QString txIndicatorLabel();
+
+/// TX VFO triangle: FontSizeIndicator, AccentAmber while receiving, TextRed while setSelected().
+QString txTriangleLabel();
+
+/// RIT / XIT label: FontSizeCaption TextSecondary while off, bold TextPrimary while setSelected().
+QString ritXitLabel();
+
+/// RIT/XIT offset readout: bold FontSizeHeading, TextSecondary while both are off, TextPrimary while
+/// setSelected().
+QString ritXitValueLabel();
+
+/// Status-bar "K4" connection label: FontSizeReadout TextSecondary while disconnected; bold and coloured
+/// for StateProperty "connecting" (AccentAmber), "connected" (StatusGreen) and "error" (TextRed).
+QString connectionStatusLabel();
+
+/// Status-bar "KPA1500" label: FontSizeReadout TextSecondary while disconnected, bold StatusGreen while
+/// setSelected().
+QString kpa1500StatusLabel();
+
+// =============================================================================
+// State sheets: dialogs and Options pages
+// =============================================================================
+
+namespace Dialog {
+
+/// StateProperty values for statusLabelByState(). Unset is the resting TextRed look.
+inline constexpr char StatusOk[] = "ok";     ///< StatusGreen: running, connected, detected
+inline constexpr char StatusIdle[] = "idle"; ///< TextSecondary: nothing connected, nothing wrong
+
+/// Options page status label, bold FontSizeHeading: TextRed at rest, StatusGreen with state StatusOk,
+/// TextSecondary with state StatusIdle. Set once; change the state.
+const QString &statusLabelByState();
+
+/// Device-summary value: labelText(TextPrimary, FontSizeHeading); with DimmedProperty the TextSecondary
+/// italic look of a missing value ("N/A").
+const QString &valueLabelByState();
+
+/// Server Manager line edit (dark field, DialogBorder border, min-width 150 px, FontSizeBody); with
+/// ErrorProperty the border is TextRed.
+const QString &serverLineEdit();
+
+/// StateProperty values for macroLabelDisplay(). Unset is the TextSecondary look the row starts with.
+inline constexpr char MacroUnused[] = "unused";     ///< TextSecondary italic
+inline constexpr char MacroMapped[] = "mapped";     ///< AccentAmber
+inline constexpr char MacroNamed[] = "named";       ///< AccentAmber bold
+inline constexpr char MacroSelected[] = "selected"; ///< TextPrimary: the row is selected
+
+/// Macro row function column: TextSecondary; with SelectedProperty TextPrimary bold.
+const QString &macroFunctionLabel();
+
+/// Macro row label column, look picked by StateProperty (MacroUnused, ...).
+const QString &macroLabelDisplay();
+
+/// Macro row command column (Fonts::Data): TextSecondary; with SelectedProperty TextPrimary.
+const QString &macroCommandDisplay();
+
+} // namespace Dialog
+
+/// One sheet for a decode-window toggle key: controlButton() at rest, the light selected look while
+/// marked with setSelected(). Set it once; never swap sheets.
+QString controlButtonSelectable();
+
+// =============================================================================
+// State sheets: popups, menu bars and the menu overlay
+// =============================================================================
+
+/// One sheet for the PTT key: menuBarButton() at rest, the red transmit look while marked with
+/// setSelected() (transmitting).
+QString menuBarButtonPtt();
+
+/// popupButton() whose text greys to TextDisabled while DimmedProperty is set (RIGHT while R=L is on).
+QString popupButtonDimmable();
+
+/// popupValueLabel(TextPrimary) that reads TextSecondary while DimmedProperty is set.
+QString popupValueLabelDimmable();
+
+/// RX EQ preset load key: menuBarButtonSmall() at caption size; its "---" reads TextSecondaryOnRaised
+/// while DimmedProperty is set (no preset saved there).
+QString eqPresetLoadButton();
+
+/// Menu overlay NORM key: plain at rest, lit while SelectedProperty is set (the item is at its default),
+/// greyed with no press look while DimmedProperty is set (no item, or a read-only one).
+QString menuNormButton();
+
+/// StateProperty values of a menu overlay row's labels; "" is an unselected row.
+inline constexpr char MenuRowBrowse[] = "browse"; ///< selected row, browsing
+inline constexpr char MenuRowEdit[] = "edit";     ///< selected row, editing its value
+
+/// Menu overlay row name label; its colour follows StateProperty (MenuRowBrowse, MenuRowEdit).
+QString menuItemNameLabel();
+
+/// Menu overlay row value label; its colour follows StateProperty (MenuRowBrowse, MenuRowEdit).
+QString menuItemValueLabel();
 
 /// App-wide fallback for every form control, installed once in main(). A control that sets its own
 /// stylesheet still wins; one that forgets gets the K4 look instead of the operating system's theme.

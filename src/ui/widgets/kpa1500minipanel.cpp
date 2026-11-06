@@ -1,37 +1,85 @@
 #include "ui/widgets/kpa1500minipanel.h"
 #include "network/kpa1500antennas.h"
 #include "ui/styling/k4styles.h"
+#include "ui/widgets/sidepanelbutton.h"
+#include <QFontMetricsF>
 #include <QGridLayout>
 #include <QPainter>
 #include <QStringList>
 #include <QVBoxLayout>
+#include <QtMath>
 
-Kpa1500MiniPanel::Kpa1500MiniPanel(QWidget *parent) : QWidget(parent) {
-    // Main layout: top margin reserves space for painted meters + LCD, buttons below
-    // Side/bottom padding makes the panel background visible around button edges
-    int metersHeight = METER_START_Y + (METER_SPACING * 4) + LCD_HEIGHT;
+namespace {
+namespace D = K4Styles::Dimensions;
+
+// The card's inset on all four sides.
+constexpr int kPad = D::SidePanelMarginH;
+
+QFont headerFont() {
+    return K4Styles::Fonts::paintFont(D::FontSizeCaption, QFont::Bold);
+}
+QFont labelFont() {
+    return K4Styles::Fonts::paintFont(D::FontSizeCaption, QFont::Medium);
+}
+QFont valueFont() {
+    return K4Styles::Fonts::paintFont(D::FontSizeCaption, QFont::Bold);
+}
+QFont lcdFont() {
+    return K4Styles::Fonts::dataFont(D::FontSizeCaption, QFont::Medium);
+}
+
+const char *const kMeterLabels[] = {"FWD", "SWR", "REF", "TMP"};
+// The widest reading each meter can show: full-scale FWD, SWR past its range, full REF and TMP.
+const QString kWidestValues[] = {QStringLiteral("1500W"), QStringLiteral(">3.0"), QStringLiteral("100W"),
+                                 QString::fromUtf8("100\u00B0")};
+
+int lineHeight(const QFont &font, const QWidget *context) {
+    return qCeil(QFontMetricsF(font, context).height());
+}
+} // namespace
+
+Kpa1500MiniPanel::Geometry Kpa1500MiniPanel::measure(const QWidget *context) {
+    Geometry g;
+    g.headerY = kPad;
+    g.headerHeight = lineHeight(headerFont(), context);
+    g.ruleY = g.headerY + g.headerHeight;
+
+    g.meterLineHeight = qMax(lineHeight(labelFont(), context), lineHeight(valueFont(), context));
+    g.meterPitch = g.meterLineHeight + D::SidePanelInnerGap;
+    g.firstMeterLineY = g.ruleY + D::SidePanelInnerGap;
+
+    const QFontMetricsF labelMetrics(labelFont(), context);
+    qreal labelWidth = 0;
+    for (const char *label : kMeterLabels)
+        labelWidth = qMax(labelWidth, labelMetrics.horizontalAdvance(QLatin1String(label)));
+    g.labelWidth = qCeil(labelWidth);
+    const QFontMetricsF valueMetrics(valueFont(), context);
+    qreal valueWidth = 0;
+    for (const QString &value : kWidestValues)
+        valueWidth = qMax(valueWidth, valueMetrics.horizontalAdvance(value));
+    g.valueWidth = qCeil(valueWidth);
+
+    const int metersBottom = g.firstMeterLineY + 3 * g.meterPitch + g.meterLineHeight;
+    g.lcdY = metersBottom + D::SidePanelInnerGap;
+    g.lcdRowHeight = lineHeight(lcdFont(), context);
+    g.lcdHeight = 2 * g.lcdRowHeight + 2 * D::SidePanelInnerGap;
+    g.buttonsY = g.lcdY + g.lcdHeight + D::SideButtonRowGap;
+    return g;
+}
+
+Kpa1500MiniPanel::Kpa1500MiniPanel(QWidget *parent) : QWidget(parent), m_geom(measure(this)) {
+    // Meters and LCD are painted above the buttons; the layout's top margin reserves their height.
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(PANEL_PAD, metersHeight, PANEL_PAD, PANEL_PAD);
-    layout->setSpacing(4);
+    layout->setContentsMargins(kPad, m_geom.buttonsY, kPad, kPad);
+    layout->setSpacing(0);
 
-    // 2x2 button grid
-    auto *btnGrid = new QGridLayout();
-    btnGrid->setContentsMargins(0, 12, 0, 0);
-    btnGrid->setHorizontalSpacing(4);
-    btnGrid->setVerticalSpacing(8);
+    auto *btnGrid = SidePanelButton::createGrid();
 
-    // Helper to create button in container (matches createFunctionButton pattern)
-    auto makeBtn = [this](const QString &text, QPushButton *&btnOut) -> QWidget * {
-        auto *container = new QWidget(this);
-        auto *vbox = new QVBoxLayout(container);
-        vbox->setContentsMargins(0, 2, 0, 2);
-        vbox->setSpacing(0);
-        btnOut = new QPushButton(text, container);
-        btnOut->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
-        btnOut->setCursor(Qt::PointingHandCursor);
-        btnOut->setStyleSheet(K4Styles::sidePanelButton());
-        vbox->addWidget(btnOut);
-        return container;
+    // WHY no container per button: the app's background rule cascades to every plain QWidget, and
+    // a container painted that opaque square over this card's lighter tint around each button.
+    auto makeBtn = [this](const QString &text, QPushButton *&btnOut) -> QPushButton * {
+        btnOut = SidePanelButton::create(text, SidePanelButton::Shade::Dark, this);
+        return btnOut;
     };
 
     btnGrid->addWidget(makeBtn("MODE", m_modeBtn), 0, 0);
@@ -40,6 +88,7 @@ Kpa1500MiniPanel::Kpa1500MiniPanel(QWidget *parent) : QWidget(parent) {
     btnGrid->addWidget(makeBtn("TUNE", m_tuneBtn), 1, 1);
 
     layout->addLayout(btnGrid);
+    layout->setAlignment(btnGrid, Qt::AlignHCenter);
 
     // Button connections
     connect(m_modeBtn, &QPushButton::clicked, this, [this]() { emit modeToggled(!m_operate); });
@@ -90,13 +139,11 @@ void Kpa1500MiniPanel::setTemperature(float celsius) {
 
 void Kpa1500MiniPanel::setMode(bool operate) {
     m_operate = operate;
-    updateButtonLabels();
     update();
 }
 
 void Kpa1500MiniPanel::setAtuMode(bool modeInline) {
     m_atuModeInline = modeInline;
-    updateButtonLabels();
     update();
 }
 
@@ -137,12 +184,6 @@ void Kpa1500MiniPanel::setConnected(bool connected) {
         m_decayTimer->stop();
     }
     update();
-}
-
-void Kpa1500MiniPanel::updateButtonLabels() {
-    m_modeBtn->setText("MODE");
-    m_atuBtn->setText("ATU");
-    m_antBtn->setText("ANT");
 }
 
 void Kpa1500MiniPanel::onDecayTimer() {
@@ -201,31 +242,26 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
     if (m_connected) {
         // Alpha-channel overlays for the mini-panel connected-state look. Base color (white or
         // black) is semantic only — the alpha is the actual value. Not palette entries.
-        constexpr int kPanelTintAlpha = 18;   // Subtle light fill over dark theme
-        constexpr int kPanelBorderAlpha = 35; // Thin panel border
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(255, 255, 255, kPanelTintAlpha));
-        p.drawRoundedRect(0, 0, w, h, 6, 6);
+        p.setBrush(K4Styles::withAlpha(K4Styles::Colors::White, K4Styles::Colors::Alpha::CardTint));
+        p.drawRoundedRect(0, 0, w, h, D::BorderRadius, D::BorderRadius);
 
-        p.setPen(QColor(255, 255, 255, kPanelBorderAlpha));
+        p.setPen(K4Styles::withAlpha(K4Styles::Colors::White, K4Styles::Colors::Alpha::CardBorder));
         p.setBrush(Qt::NoBrush);
-        p.drawRoundedRect(0, 0, w - 1, h - 1, 6, 6);
+        p.drawRoundedRect(0, 0, w - 1, h - 1, D::BorderRadius, D::BorderRadius);
     }
 
     // --- Header: centered title ---
-    QFont headerFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeMedium, QFont::Bold);
-    p.setFont(headerFont);
+    p.setFont(headerFont());
 
-    int cx = PANEL_PAD;         // Consistent left inset for all content
-    int cw = w - PANEL_PAD * 2; // Content width
+    const int cx = kPad;         // Consistent left inset for all content
+    const int cw = w - kPad * 2; // Content width
 
     p.setPen(QColor(K4Styles::Colors::AccentAmber));
-    p.drawText(cx, TOP_PAD, cw, HEADER_HEIGHT, Qt::AlignCenter, "KPA1500");
+    p.drawText(cx, m_geom.headerY, cw, m_geom.headerHeight, Qt::AlignCenter, "KPA1500");
 
-    // Separator
-    int sepY = TOP_PAD + HEADER_HEIGHT + 1;
-    p.setPen(QColor(K4Styles::Colors::InactiveGray));
-    p.drawLine(cx, sepY, cx + cw, sepY);
+    p.setPen(QColor(K4Styles::Colors::MutedGraphic));
+    p.drawLine(cx, m_geom.ruleY, cx + cw, m_geom.ruleY);
 
     // --- Meters ---
     struct MeterDef {
@@ -240,26 +276,27 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
     float swrPeakRatio = (m_peakSwr - 1.0f) / 2.0f;
 
     MeterDef meters[] = {
-        {"FWD", m_displayForward, 1500.0f, m_peakForward, true},
-        {"SWR", swrRatio, 1.0f, swrPeakRatio, true},
-        {"REF", m_displayReflected, 100.0f, m_peakReflected, true},
-        {"TMP", m_displayTemp, 100.0f, 0.0f, false},
+        {kMeterLabels[0], m_displayForward, 1500.0f, m_peakForward, true},
+        {kMeterLabels[1], swrRatio, 1.0f, swrPeakRatio, true},
+        {kMeterLabels[2], m_displayReflected, 100.0f, m_peakReflected, true},
+        {kMeterLabels[3], m_displayTemp, 100.0f, 0.0f, false},
     };
 
-    QFont labelFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeSmall);
-    QFont valueFont = K4Styles::Fonts::paintFont(9, QFont::Bold);
-
-    int barX = cx + LABEL_WIDTH;
-    int barW = cw - LABEL_WIDTH - VALUE_WIDTH;
+    // Label column | gap | bar | gap | value column, the columns as wide as their widest text.
+    const int barX = cx + m_geom.labelWidth + D::SidePanelInnerGap;
+    const int valueX = cx + cw - m_geom.valueWidth;
+    const int barW = valueX - D::SidePanelInnerGap - barX;
 
     for (int i = 0; i < 4; ++i) {
-        int y = METER_START_Y + i * METER_SPACING;
+        const int lineY = m_geom.firstMeterLineY + i * m_geom.meterPitch;
+        const int y = lineY + (m_geom.meterLineHeight - BAR_HEIGHT) / 2;
         const auto &m = meters[i];
 
-        // Label
-        p.setFont(labelFont);
-        p.setPen(QColor(K4Styles::Colors::TextGray));
-        p.drawText(cx, y, LABEL_WIDTH, BAR_HEIGHT, Qt::AlignLeft | Qt::AlignVCenter, m.label);
+        // WHY TextSecondary: 5.0:1 on the card (Background under its white tint), over the 4.5:1 small
+        // text needs.
+        p.setFont(labelFont());
+        p.setPen(QColor(K4Styles::Colors::TextSecondary));
+        p.drawText(cx, lineY, m_geom.labelWidth, m_geom.meterLineHeight, Qt::AlignLeft | Qt::AlignVCenter, m.label);
 
         // Track background
         p.fillRect(barX, y, barW, BAR_HEIGHT, QColor(K4Styles::Colors::DarkBackground));
@@ -281,13 +318,13 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
         if (m.hasPeak && peakRatio > ratio + 0.01f) {
             int peakX = barX + 1 + static_cast<int>(peakRatio * (barW - 2));
             peakX = qBound(barX + 1, peakX, barX + barW - 2);
-            p.setPen(QColor(K4Styles::Colors::TextWhite));
+            p.setPen(QColor(K4Styles::Colors::TextPrimary));
             p.drawLine(peakX, y + 1, peakX, y + BAR_HEIGHT - 2);
         }
 
         // Value text (right-aligned within content area)
-        p.setFont(valueFont);
-        p.setPen(QColor(K4Styles::Colors::TextWhite));
+        p.setFont(valueFont());
+        p.setPen(QColor(K4Styles::Colors::TextPrimary));
         QString valStr;
         if (i == 0)
             valStr = QString("%1W").arg(qRound(m_displayForward));
@@ -298,34 +335,32 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
         else
             valStr = QString::fromUtf8("%1\u00B0").arg(qRound(m_displayTemp));
 
-        int valX = barX + barW + 1;
-        p.drawText(valX, y, VALUE_WIDTH - 1, BAR_HEIGHT, Qt::AlignRight | Qt::AlignVCenter, valStr);
+        p.drawText(valueX, lineY, m_geom.valueWidth, m_geom.meterLineHeight, Qt::AlignRight | Qt::AlignVCenter, valStr);
     }
 
     // --- LCD: operate/fault state, active antenna, band, ATU state ---
     if (m_connected) {
-        const int lcdY = METER_START_Y + (METER_SPACING * 4) + LCD_TOP_PAD;
-        const int lcdH = LCD_ROW_HEIGHT * 2 + 4;
+        const int lcdY = m_geom.lcdY;
+        const int lcdH = m_geom.lcdHeight;
+        const int rowH = m_geom.lcdRowHeight;
 
         // Alpha-channel overlays matching the panel's card style. Alpha, not palette.
-        constexpr int kLcdBorderAlpha = 20; // White border at low alpha
-        constexpr int kLcdShadeAlpha = 40;  // Black shade fill
-        p.setPen(QColor(255, 255, 255, kLcdBorderAlpha));
-        p.setBrush(QColor(0, 0, 0, kLcdShadeAlpha));
-        p.drawRoundedRect(cx, lcdY, cw, lcdH, 3, 3);
+        p.setPen(K4Styles::withAlpha(K4Styles::Colors::White, K4Styles::Colors::Alpha::LcdBorder));
+        p.setBrush(K4Styles::withAlpha(K4Styles::Colors::Black, K4Styles::Colors::Alpha::LcdShade));
+        p.drawRoundedRect(cx, lcdY, cw, lcdH, D::SideCompactBorderRadius, D::SideCompactBorderRadius);
 
-        p.setFont(K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeSmall, QFont::Bold));
-        const int textX = cx + LCD_TEXT_PAD;
-        const int textW = cw - LCD_TEXT_PAD * 2;
-        const int line1Y = lcdY + 2;
-        const int line2Y = line1Y + LCD_ROW_HEIGHT;
+        p.setFont(lcdFont());
+        const int textX = cx + D::SidePanelInnerGap;
+        const int textW = cw - D::SidePanelInnerGap * 2;
+        const int line1Y = lcdY + D::SidePanelInnerGap;
+        const int line2Y = line1Y + rowH;
 
         // Line 1: state (left), antenna (centre), band (right)
         QString state;
         QColor stateColor;
         if (m_fault) {
             state = QStringLiteral("FAULT");
-            stateColor = QColor(K4Styles::Colors::TxRed);
+            stateColor = QColor(K4Styles::Colors::TextRed);
         } else if (m_operate) {
             state = QStringLiteral("OPER");
             stateColor = QColor(K4Styles::Colors::StatusGreen);
@@ -334,21 +369,20 @@ void Kpa1500MiniPanel::paintEvent(QPaintEvent *) {
             stateColor = QColor(K4Styles::Colors::AccentAmber);
         }
         p.setPen(stateColor);
-        p.drawText(textX, line1Y, textW, LCD_ROW_HEIGHT, Qt::AlignLeft | Qt::AlignVCenter, state);
+        p.drawText(textX, line1Y, textW, rowH, Qt::AlignLeft | Qt::AlignVCenter, state);
 
-        p.setPen(QColor(K4Styles::Colors::TextWhite));
-        p.drawText(textX, line1Y, textW, LCD_ROW_HEIGHT, Qt::AlignHCenter | Qt::AlignVCenter,
+        p.setPen(QColor(K4Styles::Colors::TextPrimary));
+        p.drawText(textX, line1Y, textW, rowH, Qt::AlignHCenter | Qt::AlignVCenter,
                    Kpa1500Antennas::label(m_antenna, m_antennaConnector));
-        p.drawText(textX, line1Y, textW, LCD_ROW_HEIGHT, Qt::AlignRight | Qt::AlignVCenter, m_band);
+        p.drawText(textX, line1Y, textW, rowH, Qt::AlignRight | Qt::AlignVCenter, m_band);
 
         // Line 2: ATU. IN whenever the ATU mode is inline, BYP whenever the relays are bypassed, so
-        // "mode inline but relays bypassed" reads "ATU IN BYP" - the same two facts the IN and BYP
-        // indicators showed when both were lit.
+        // "mode inline but relays bypassed" reads "ATU IN BYP".
         QStringList atu{QStringLiteral("ATU")};
         if (m_atuModeInline)
             atu << QStringLiteral("IN");
         if (!m_atuRelayInline)
             atu << QStringLiteral("BYP");
-        p.drawText(textX, line2Y, textW, LCD_ROW_HEIGHT, Qt::AlignLeft | Qt::AlignVCenter, atu.join(QLatin1Char(' ')));
+        p.drawText(textX, line2Y, textW, rowH, Qt::AlignLeft | Qt::AlignVCenter, atu.join(QLatin1Char(' ')));
     }
 }

@@ -13,51 +13,42 @@ void TextDecodeState::reset() {
     textDecodeLinesB = -1;
 }
 
+namespace {
+
+int tdDigit(const QString &cmd, int pos, int min, int max) {
+    bool ok = false;
+    const int value = cmd.mid(pos, 1).toInt(&ok);
+    return (ok && value >= min && value <= max) ? value : -1;
+}
+
+bool applyTdField(int &field, int value) {
+    if (value < 0 || value == field)
+        return false;
+    field = value;
+    return true;
+}
+
+bool applyTd(const QString &cmd, int offset, int &mode, int &threshold, int &lines) {
+    if (cmd.length() < offset + 3)
+        return false;
+    using L = TextDecodeState;
+    bool changed = applyTdField(mode, tdDigit(cmd, offset, L::ModeMin, L::ModeMax));
+    changed |= applyTdField(threshold, tdDigit(cmd, offset + 1, L::ThresholdMin, L::ThresholdMax));
+    changed |= applyTdField(lines, tdDigit(cmd, offset + 2, L::LinesMin, L::LinesMax));
+    return changed;
+}
+
+} // namespace
+
 namespace TextDecodeHandlers {
 
 void handleTD(TextDecodeState &state, RadioState &owner, const QString &cmd) {
-    if (cmd.length() < 5)
-        return;
-    const int mode = cmd.mid(2, 1).toInt();
-    const int threshold = cmd.mid(3, 1).toInt();
-    const int lines = cmd.mid(4, 1).toInt();
-    bool changed = false;
-    if (mode != state.textDecodeMode) {
-        state.textDecodeMode = mode;
-        changed = true;
-    }
-    if (threshold != state.textDecodeThreshold) {
-        state.textDecodeThreshold = threshold;
-        changed = true;
-    }
-    if (lines != state.textDecodeLines && lines >= 1 && lines <= 9) {
-        state.textDecodeLines = lines;
-        changed = true;
-    }
-    if (changed)
+    if (applyTd(cmd, 2, state.textDecodeMode, state.textDecodeThreshold, state.textDecodeLines))
         emit owner.textDecodeChanged();
 }
 
 void handleTDSub(TextDecodeState &state, RadioState &owner, const QString &cmd) {
-    if (cmd.length() < 6)
-        return;
-    const int mode = cmd.mid(3, 1).toInt();
-    const int threshold = cmd.mid(4, 1).toInt();
-    const int lines = cmd.mid(5, 1).toInt();
-    bool changed = false;
-    if (mode != state.textDecodeModeB) {
-        state.textDecodeModeB = mode;
-        changed = true;
-    }
-    if (threshold != state.textDecodeThresholdB) {
-        state.textDecodeThresholdB = threshold;
-        changed = true;
-    }
-    if (lines != state.textDecodeLinesB && lines >= 1 && lines <= 9) {
-        state.textDecodeLinesB = lines;
-        changed = true;
-    }
-    if (changed)
+    if (applyTd(cmd, 3, state.textDecodeModeB, state.textDecodeThresholdB, state.textDecodeLinesB))
         emit owner.textDecodeBChanged();
 }
 
@@ -81,52 +72,22 @@ void handleTBSub(RadioState &owner, const QString &cmd) {
         emit owner.textBufferReceived(text, true);
 }
 
-void setMode(TextDecodeState &state, RadioState &owner, int mode) {
-    mode = qBound(0, mode, 4);
-    if (mode != state.textDecodeMode) {
-        state.textDecodeMode = mode;
-        emit owner.textDecodeChanged();
-    }
-}
-
-void setThreshold(TextDecodeState &state, RadioState &owner, int threshold) {
-    threshold = qBound(0, threshold, 9);
-    if (threshold != state.textDecodeThreshold) {
-        state.textDecodeThreshold = threshold;
-        emit owner.textDecodeChanged();
-    }
-}
-
-void setLines(TextDecodeState &state, RadioState &owner, int lines) {
-    lines = qBound(1, lines, 10);
-    if (lines != state.textDecodeLines) {
-        state.textDecodeLines = lines;
-        emit owner.textDecodeChanged();
-    }
-}
-
-void setModeB(TextDecodeState &state, RadioState &owner, int mode) {
-    mode = qBound(0, mode, 4);
-    if (mode != state.textDecodeModeB) {
-        state.textDecodeModeB = mode;
+void setConfig(TextDecodeState &state, RadioState &owner, bool subRx, int mode, int threshold, int lines) {
+    mode = qBound(TextDecodeState::ModeMin, mode, TextDecodeState::ModeMax);
+    threshold = qBound(TextDecodeState::ThresholdMin, threshold, TextDecodeState::ThresholdMax);
+    lines = qBound(TextDecodeState::LinesMin, lines, TextDecodeState::LinesMax);
+    int &m = subRx ? state.textDecodeModeB : state.textDecodeMode;
+    int &t = subRx ? state.textDecodeThresholdB : state.textDecodeThreshold;
+    int &l = subRx ? state.textDecodeLinesB : state.textDecodeLines;
+    if (m == mode && t == threshold && l == lines)
+        return;
+    m = mode;
+    t = threshold;
+    l = lines;
+    if (subRx)
         emit owner.textDecodeBChanged();
-    }
-}
-
-void setThresholdB(TextDecodeState &state, RadioState &owner, int threshold) {
-    threshold = qBound(0, threshold, 9);
-    if (threshold != state.textDecodeThresholdB) {
-        state.textDecodeThresholdB = threshold;
-        emit owner.textDecodeBChanged();
-    }
-}
-
-void setLinesB(TextDecodeState &state, RadioState &owner, int lines) {
-    lines = qBound(1, lines, 10);
-    if (lines != state.textDecodeLinesB) {
-        state.textDecodeLinesB = lines;
-        emit owner.textDecodeBChanged();
-    }
+    else
+        emit owner.textDecodeChanged();
 }
 
 } // namespace TextDecodeHandlers

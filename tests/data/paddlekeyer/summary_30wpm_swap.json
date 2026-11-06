@@ -1,0 +1,368 @@
+[
+ {
+  "tap_ms": 84,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 88,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 92,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 96,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 100,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 104,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 108,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 112,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 116,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 120,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 124,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 128,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 132,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 136,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 140,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 144,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 148,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 152,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 156,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 160,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 164,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0040;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;",
+   "KZD0040;",
+   "KZU0120;"
+  ],
+  "edges": 10
+ }
+]

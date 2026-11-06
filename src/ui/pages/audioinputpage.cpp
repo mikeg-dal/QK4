@@ -1,78 +1,42 @@
 #include "ui/pages/audioinputpage.h"
 #include "ui/styling/k4styles.h"
-#include "audio/audioengine.h"
+#include "audio/txaudiopipeline.h"
 #include "controllers/audiocontroller.h"
 #include "settings/radiosettings.h"
-#include <QFrame>
-#include <QHBoxLayout>
+#include "ui/pages/optionspagelayout.h"
+#include <QFormLayout>
 #include <QVBoxLayout>
 
 AudioInputPage::AudioInputPage(AudioController *audioController, QWidget *parent)
     : QWidget(parent), m_audioController(audioController) {
-    setStyleSheet(K4Styles::Dialog::pageBackground());
-
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
-                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
-    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
-
-    // Title
-    auto *titleLabel = new QLabel("Audio Input", this);
-    titleLabel->setStyleSheet(K4Styles::Dialog::titleLabel());
-    layout->addWidget(titleLabel);
-
-    // Separator line
-    auto *line = new QFrame(this);
-    line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet(K4Styles::Dialog::separator());
-    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line);
-
-    // === Microphone Device Selection ===
-    auto *deviceLabel = new QLabel("Microphone:", this);
-    deviceLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    layout->addWidget(deviceLabel);
+    auto *layout = OptionsPageLayout::createPage(this);
+    OptionsPageLayout::addTitle(layout, this, "Audio Input");
+    auto *form = OptionsPageLayout::addForm(layout);
 
     m_micDeviceCombo = new QComboBox(this);
     m_micDeviceCombo->setStyleSheet(K4Styles::Dialog::comboBox());
+    OptionsPageLayout::fitDeviceCombo(m_micDeviceCombo);
     populateMicDevices();
-    connect(m_micDeviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            &AudioInputPage::onMicDeviceChanged);
-    layout->addWidget(m_micDeviceCombo);
-
-    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
-
-    // === Microphone Gain ===
-    auto *gainLayout = new QHBoxLayout();
-    auto *gainLabel = new QLabel("Mic Gain:", this);
-    gainLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    gainLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
-    gainLayout->addWidget(gainLabel);
+    // WHY activated, not currentIndexChanged: repopulating the list changes the current index (and
+    // falls back to System Default while a pinned device is absent). Only an operator's pick may
+    // move the saved device or the stream.
+    connect(m_micDeviceCombo, &QComboBox::activated, this, &AudioInputPage::onMicDeviceChanged);
+    OptionsPageLayout::addRow(form, this, "Microphone", m_micDeviceCombo);
 
     m_micGainSlider = new QSlider(Qt::Horizontal, this);
     m_micGainSlider->setRange(0, 100);
     m_micGainSlider->setValue(RadioSettings::instance()->micGain());
     m_micGainSlider->setStyleSheet(
-        K4Styles::sliderHorizontal(K4Styles::Colors::TextDark, K4Styles::Colors::AccentAmber));
+        K4Styles::sliderHorizontal(K4Styles::Colors::DialogBorder, K4Styles::Colors::AccentAmber));
     connect(m_micGainSlider, &QSlider::valueChanged, this, &AudioInputPage::onMicGainChanged);
-    gainLayout->addWidget(m_micGainSlider, 1);
+    m_micGainValueLabel = OptionsPageLayout::sliderValue(QString("%1%").arg(m_micGainSlider->value()), this);
+    OptionsPageLayout::addRow(form, this, "Mic Gain",
+                              OptionsPageLayout::sliderField(m_micGainSlider, m_micGainValueLabel, this));
 
-    m_micGainValueLabel = new QLabel(QString("%1%").arg(m_micGainSlider->value()), this);
-    m_micGainValueLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                           .arg(K4Styles::Colors::TextWhite)
-                                           .arg(K4Styles::Dimensions::FontSizePopup));
-    m_micGainValueLabel->setFixedWidth(K4Styles::Dimensions::SliderValueLabelWidth);
-    m_micGainValueLabel->setAlignment(Qt::AlignRight);
-    gainLayout->addWidget(m_micGainValueLabel);
-
-    layout->addLayout(gainLayout);
-
-    auto *gainHelpLabel = new QLabel(
+    OptionsPageLayout::addHelp(
+        layout, this,
         "Adjust the microphone input level. Uses an exponential curve for fine control at low levels. "
-        "This affects the microphone only — audio from a TCI client has its own TX Level on the TCI Server page.",
-        this);
-    gainHelpLabel->setStyleSheet(K4Styles::Dialog::helpText());
-    layout->addWidget(gainHelpLabel);
+        "This affects the microphone only — audio from a TCI client has its own TX Level on the TCI Server page.");
 
     layout->addStretch();
 }
@@ -87,7 +51,7 @@ void AudioInputPage::populateMicDevices() {
 
     m_micDeviceCombo->clear();
 
-    auto devices = AudioEngine::availableInputDevices();
+    auto devices = TxAudioPipeline::availableInputDevices();
     QString savedDevice = RadioSettings::instance()->micDevice();
     int selectedIndex = 0;
 

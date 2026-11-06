@@ -78,9 +78,14 @@ inline const QStringList ForbiddenStartupPatterns = {
 
 // Returns the first forbidden pattern found in command, or empty string if clean
 inline QString checkForbiddenStartupCommand(const QString &command) {
-    QString upper = command.toUpper();
-    for (const QString &pattern : ForbiddenStartupPatterns) {
-        QRegularExpression re(pattern, QRegularExpression::CaseInsensitiveOption);
+    static const QList<QRegularExpression> compiled = [] {
+        QList<QRegularExpression> list;
+        for (const QString &pattern : ForbiddenStartupPatterns)
+            list.append(QRegularExpression(pattern, QRegularExpression::CaseInsensitiveOption));
+        return list;
+    }();
+    const QString upper = command.toUpper();
+    for (const QRegularExpression &re : compiled) {
         QRegularExpressionMatch match = re.match(upper);
         if (match.hasMatch()) {
             return match.captured(0);

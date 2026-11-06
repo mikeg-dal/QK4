@@ -3,30 +3,52 @@
 #include "models/radiostate.h"
 
 void FrequencyVfoState::reset() {
-    frequency = 0;
     vfoA = 0;
     vfoB = 0;
-    splitEnabled = false;
-    ritEnabled = false;
-    xitEnabled = false;
-    ritXitOffset = 0;
-    ritEnabledB = false;
-    ritXitOffsetB = 0;
-    vfoLink = false;
-    lockA = false;
-    lockB = false;
+    bandNumber = BandUnknown;
+    bandNumberB = BandUnknown;
+    splitEnabled.reset();
+    ritEnabled.reset();
+    xitEnabled.reset();
+    ritXitOffset = RitXitOffsetUnknown;
+    ritEnabledB.reset();
+    ritXitOffsetB = RitXitOffsetUnknown;
+    vfoLink.reset();
+    lockA.reset();
+    lockB.reset();
 }
 
 namespace FrequencyVfoHandlers {
 
+std::optional<quint64> frequencyFromCatDigits(QStringView digits) {
+    constexpr qsizetype MaxDigits = 11;
+    if (digits.isEmpty() || digits.size() > MaxDigits)
+        return std::nullopt;
+    quint64 value = 0;
+    for (const QChar c : digits) {
+        // WHY not toULongLong(): it skips surrounding whitespace, which would change the digit count
+        // that decides the unit.
+        if (c < u'0' || c > u'9')
+            return std::nullopt;
+        value = value * 10 + static_cast<quint64>(c.unicode() - u'0');
+    }
+    if (digits.size() <= 2)
+        return value * 1'000'000;
+    if (digits.size() <= 5)
+        return value * 1'000;
+    return value;
+}
+
 void handleFA(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() <= 2)
         return;
-    bool ok;
-    const quint64 freq = cmd.mid(2).toULongLong(&ok);
-    if (ok && state.vfoA != freq) {
+    // A CAT-server client's SET is applied here too, and the K4 reads short forms (FA14; = 14 MHz).
+    const auto parsed = frequencyFromCatDigits(QStringView(cmd).mid(2));
+    if (!parsed)
+        return;
+    const quint64 freq = *parsed;
+    if (state.vfoA != freq) {
         state.vfoA = freq;
-        state.frequency = freq;
         emit owner.frequencyChanged(freq);
     }
 }
@@ -34,11 +56,42 @@ void handleFA(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
 void handleFB(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() <= 2)
         return;
-    bool ok;
-    const quint64 freq = cmd.mid(2).toULongLong(&ok);
-    if (ok && state.vfoB != freq) {
+    const auto parsed = frequencyFromCatDigits(QStringView(cmd).mid(2));
+    if (!parsed)
+        return;
+    const quint64 freq = *parsed;
+    if (state.vfoB != freq) {
         state.vfoB = freq;
         emit owner.frequencyBChanged(freq);
+    }
+}
+
+namespace {
+// The band number in a BN / BN$ report: exactly two digits ("BN05", "BN$16"). The INCR/DECR,
+// TOGGLE and BAND STACK forms (BN+, BN$/, BN^ ...) are client SETs, not reports, and carry none.
+std::optional<int> bandNumberFromCat(QStringView digits) {
+    if (digits.size() != 2 || !digits.at(0).isDigit() || !digits.at(1).isDigit())
+        return std::nullopt;
+    const int band = (digits.at(0).unicode() - u'0') * 10 + (digits.at(1).unicode() - u'0');
+    if (band > FrequencyVfoState::BandNumberMax)
+        return std::nullopt;
+    return band;
+}
+} // namespace
+
+void handleBN(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
+    const auto band = bandNumberFromCat(QStringView(cmd).mid(2));
+    if (band && *band != state.bandNumber) {
+        state.bandNumber = *band;
+        emit owner.bandNumberChanged(*band);
+    }
+}
+
+void handleBNSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
+    const auto band = bandNumberFromCat(QStringView(cmd).mid(3));
+    if (band && *band != state.bandNumberB) {
+        state.bandNumberB = *band;
+        emit owner.bandNumberBChanged(*band);
     }
 }
 
@@ -46,40 +99,29 @@ void handleFT(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() <= 2)
         return;
     const bool newSplit = (cmd.mid(2) == "1");
-    if (newSplit != state.splitEnabled) {
-        state.splitEnabled = newSplit;
-        emit owner.splitChanged(state.splitEnabled);
-    }
+    if (state.splitEnabled.set(newSplit))
+        emit owner.splitChanged(newSplit);
 }
 
 void handleRT(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3 || (cmd.at(2) != '0' && cmd.at(2) != '1'))
         return;
-    const bool enabled = (cmd.at(2) == '1');
-    if (enabled != state.ritEnabled) {
-        state.ritEnabled = enabled;
-        emit owner.ritXitChanged(state.ritEnabled, state.xitEnabled, state.ritXitOffset);
-    }
+    if (state.ritEnabled.set(cmd.at(2) == '1'))
+        emit owner.ritXitChanged(owner.ritEnabled(), owner.xitEnabled(), owner.ritXitOffset());
 }
 
 void handleRTSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 4 || (cmd.at(3) != '0' && cmd.at(3) != '1'))
         return;
-    const bool enabled = (cmd.at(3) == '1');
-    if (enabled != state.ritEnabledB) {
-        state.ritEnabledB = enabled;
-        emit owner.ritXitBChanged(state.ritEnabledB, state.ritXitOffsetB);
-    }
+    if (state.ritEnabledB.set(cmd.at(3) == '1'))
+        emit owner.ritXitBChanged(owner.ritEnabledB(), owner.ritXitOffsetB());
 }
 
 void handleXT(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3 || (cmd.at(2) != '0' && cmd.at(2) != '1'))
         return;
-    const bool enabled = (cmd.at(2) == '1');
-    if (enabled != state.xitEnabled) {
-        state.xitEnabled = enabled;
-        emit owner.ritXitChanged(state.ritEnabled, state.xitEnabled, state.ritXitOffset);
-    }
+    if (state.xitEnabled.set(cmd.at(2) == '1'))
+        emit owner.ritXitChanged(owner.ritEnabled(), owner.xitEnabled(), owner.ritXitOffset());
 }
 
 void handleRO(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
@@ -89,7 +131,7 @@ void handleRO(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     const int offset = cmd.mid(2).toInt(&ok);
     if (ok && offset != state.ritXitOffset) {
         state.ritXitOffset = offset;
-        emit owner.ritXitChanged(state.ritEnabled, state.xitEnabled, state.ritXitOffset);
+        emit owner.ritXitChanged(owner.ritEnabled(), owner.xitEnabled(), offset);
     }
 }
 
@@ -106,7 +148,7 @@ void handleROSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd
     const int offset = cmd.mid(3).toInt(&ok);
     if (ok && offset != state.ritXitOffsetB) {
         state.ritXitOffsetB = offset;
-        emit owner.ritXitBChanged(state.ritEnabledB, state.ritXitOffsetB);
+        emit owner.ritXitBChanged(owner.ritEnabledB(), offset);
     }
 }
 
@@ -119,10 +161,7 @@ void handleLN(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (!ok)
         return;
     const bool linked = (ln == 1);
-    if (linked != state.vfoLink) {
-        state.vfoLink = linked;
-        emit owner.vfoLinkChanged(state.vfoLink);
-    }
+    state.vfoLink.set(linked);
 }
 
 void handleLK(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
@@ -130,10 +169,8 @@ void handleLK(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 3)
         return;
     const bool locked = (cmd.at(2) == '1');
-    if (locked != state.lockA) {
-        state.lockA = locked;
-        emit owner.lockAChanged(state.lockA);
-    }
+    if (state.lockA.set(locked))
+        emit owner.lockAChanged(locked);
 }
 
 void handleLKSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd) {
@@ -141,10 +178,8 @@ void handleLKSub(FrequencyVfoState &state, RadioState &owner, const QString &cmd
     if (cmd.length() < 4)
         return;
     const bool locked = (cmd.at(3) == '1');
-    if (locked != state.lockB) {
-        state.lockB = locked;
-        emit owner.lockBChanged(state.lockB);
-    }
+    if (state.lockB.set(locked))
+        emit owner.lockBChanged(locked);
 }
 
 } // namespace FrequencyVfoHandlers

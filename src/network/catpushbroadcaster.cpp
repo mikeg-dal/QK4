@@ -1,10 +1,9 @@
 #include "catpushbroadcaster.h"
+#include "logging/logcategories.h"
 
 #include "catframes.h"
 
 #include <QLoggingCategory>
-
-Q_LOGGING_CATEGORY(netCatPush, "net.catpush")
 
 CatPushBroadcaster::CatPushBroadcaster(RadioState *state, QObject *parent) : QObject(parent), m_radioState(state) {
     connect(m_radioState, &RadioState::frequencyChanged, this, &CatPushBroadcaster::onFrequencyChanged);
@@ -28,17 +27,17 @@ CatPushBroadcaster::~CatPushBroadcaster() = default;
 
 void CatPushBroadcaster::addClient(QTcpSocket *client) {
     m_clientAiModes.insert(client, 0);
-    qCDebug(netCatPush) << "client added" << client << "subscribers" << m_clientAiModes.size();
+    qCDebug(lcCatServerPush) << "client added" << client << "subscribers" << m_clientAiModes.size();
 }
 
 void CatPushBroadcaster::removeClient(QTcpSocket *client) {
     m_clientAiModes.remove(client);
-    qCDebug(netCatPush) << "client removed" << client << "subscribers" << m_clientAiModes.size();
+    qCDebug(lcCatServerPush) << "client removed" << client << "subscribers" << m_clientAiModes.size();
 }
 
 void CatPushBroadcaster::setClientAiMode(QTcpSocket *client, int mode) {
     m_clientAiModes.insert(client, mode);
-    qCDebug(netCatPush) << "client" << client << "AI mode set to" << mode;
+    qCDebug(lcCatServerPush) << "client" << client << "AI mode set to" << mode;
 }
 
 int CatPushBroadcaster::clientAiMode(QTcpSocket *client) const {
@@ -163,5 +162,5 @@ void CatPushBroadcaster::broadcast(const QByteArray &frame) {
         sock->write(frame);
         ++sent;
     }
-    qCDebug(netCatPush) << "push" << frame << "to" << sent << "subscribers";
+    qCDebug(lcCatServerPush) << "push" << frame << "to" << sent << "subscribers";
 }

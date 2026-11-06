@@ -4,6 +4,8 @@
 #include <QString>
 #include <QVector>
 
+#include <optional>
+
 // Amplitude axis for the panadapter: where a given dBm sits on screen, and which values earn a
 // label. Pure arithmetic with no Qt widget dependency so it can be tested directly — the bug that
 // prompted it (S1 printed at two different heights) was arithmetic, and only reachable through the
@@ -13,6 +15,26 @@
 // value here is absolute dBm. S-units follow the amateur convention: S9 = -73 dBm, 6 dB per unit
 // below it, 10 dB steps above.
 namespace SpectrumScale {
+
+// PAN bin byte -> dBm: dBm = byte - K4_DBM_OFFSET. Measured 2026-10-30 on K4D SN1641 against the
+// radio's own calibrated dBm meter (SMH), WWV 10 MHz carrier in CW, 200 Hz filter, preamp and
+// attenuator off: peak byte - SMH = 161-162 at the 48 kHz tier and 162-163 at the 96 kHz tier,
+// constant across 13 dB of fading. The bytes are power per bin, so the same constant holds at every
+// span (the radio's reported noise floor rose 3.4 dB when the bin width doubled; the carrier did
+// not move). With it a signal lands at the K4's dBm and AutoRef's REF puts the noise on the bottom
+// edge, as on the K4's own screen. 146 (tuned by eye in January while a baseline tracker pinned
+// the noise down) drew everything 16 dB high.
+constexpr float K4_DBM_OFFSET = 162.0f;
+
+// MiniPAN bin byte -> dBm: dBm = byte - K4_MINIPAN_DBM_OFFSET, 1 byte = 1 dB like PAN but a different
+// zero. Measured 2026-10-30 on K4D SN1641, Main in CW (pitch 500, 200 Hz filter) on the WWV 10 MHz
+// carrier, 3 kHz mini-pan: the frame's peak byte against SMH read at the same moment (nearest frame,
+// within 30 ms), ten pairs over two 20 s captures. Peak byte - SMH came out 110, 114, 119, 119, 120,
+// 120, 122, 122, 122, 123: median 120, mean 119, spread 13 dB. WWV was fading and SMH is one sample,
+// so single pairs scatter; 118 is the rounded centre of the measurements (a second alignment of the
+// same captures gave 109-123, median 118.5). Treat the constant as +-2 dB, a single frame as +-8 dB.
+// Byte 0 (dBm -118) is the floor: much of the mini-pan's noise arrives as 0.
+constexpr float K4_MINIPAN_DBM_OFFSET = 118.0f;
 
 // S9 and the width of one S-unit, in dBm/dB.
 constexpr float S9_DBM = -73.0f;
@@ -30,6 +52,11 @@ float sUnitDbm(int sUnit);
 // rather than a cast at the call site.
 float dbmForSMeterReading(double sMeterReading);
 
+// The receive level to report in dBm: the radio's own reading (SMH / SMH$) whenever it has sent one.
+// The bar estimate above is only the fallback until the first SMH arrives - on Mike's K4D the bars
+// read -115 dBm where SMH read -110...-112 (2026-10-30), so it is never preferred over the radio.
+float rxLevelDbm(std::optional<int> radioDbm, double sMeterReading);
+
 // Fraction of the chart height for a dBm value: 0 at minDb (bottom), 1 at maxDb (top).
 //
 // Deliberately unclamped at the top so a bin stronger than maxDb returns > 1 and the trace climbs
@@ -42,13 +69,22 @@ struct Label {
     QString text; // "S9", "S9+20", "-110 dBm"
 };
 
+// Minimum distance between neighbouring labels, in lines of text.
+//
+// WHY: 2.5 and not 1 — one line only stops labels overlapping, which on a ~300 px chart at SCALE 80
+// still printed a label every 5 dB — sixteen of them, touching, and colliding with DX spot calls.
+// 2.5 lines leaves a clear gap of at least a line and a half, so the axis is read at a glance.
+constexpr float kLabelPitchLines = 2.5f;
+
 // Labels for the visible window, in descending dBm (top of the chart first).
 //
 // A value is emitted only when its true dBm falls inside [minDb, maxDb] — never clamped into
 // range, which is what printed S1 twice. Spacing is decimated so that neighbouring labels stay at
-// least labelHeightPx apart: availablePx is the chart height the labels are drawn across, and
-// labelHeightPx the height of one line of text.
-QVector<Label> labelsFor(float minDb, float maxDb, bool useSUnits, int availablePx, int labelHeightPx);
+// least kLabelPitchLines * lineSpacingPx apart: availablePx is the chart height the labels are
+// drawn across and lineSpacingPx one line of the label font (QFontMetricsF::lineSpacing()), both
+// in logical pixels, so the step follows SCALE, the waterfall split, the window height and the
+// font size automatically.
+QVector<Label> labelsFor(float minDb, float maxDb, bool useSUnits, int availablePx, float lineSpacingPx);
 
 } // namespace SpectrumScale
 

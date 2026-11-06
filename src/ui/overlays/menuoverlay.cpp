@@ -1,14 +1,16 @@
 #include "ui/overlays/menuoverlay.h"
 #include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include <QPainter>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QScrollBar>
+#include <QHBoxLayout>
 
 // ============== MenuItemWidget ==============
 
-MenuItemWidget::MenuItemWidget(MenuItem *item, const MenuModel *model, QWidget *parent)
-    : QWidget(parent), m_item(item), m_model(model) {
+MenuItemWidget::MenuItemWidget(int menuId, const MenuModel *model, QWidget *parent)
+    : QWidget(parent), m_menuId(menuId), m_model(model) {
     setFixedHeight(K4Styles::Dimensions::MenuItemHeight);
     setCursor(Qt::PointingHandCursor);
 
@@ -16,32 +18,22 @@ MenuItemWidget::MenuItemWidget(MenuItem *item, const MenuModel *model, QWidget *
     layout->setContentsMargins(15, 5, 15, 5);
     layout->setSpacing(10);
 
-    // Name label — resolved through the model so "<n>" placeholders in XVTR Band
-    // rows render with the current XVTR Band # Select value.
-    m_nameLabel = new QLabel(m_model ? m_model->resolvedName(*item) : item->name, this);
-    m_nameLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                   .arg(K4Styles::Colors::TextGray)
-                                   .arg(K4Styles::Dimensions::FontSizePopup)); // Initial unselected state
+    m_nameLabel = new QLabel(this);
+    m_nameLabel->setStyleSheet(K4Styles::menuItemNameLabel());
     layout->addWidget(m_nameLabel, 1);
 
-    // Lock icon (for read-only items)
     m_lockLabel = new QLabel(this);
-    if (item->isReadOnly()) {
-        m_lockLabel->setText("\xF0\x9F\x94\x92"); // Lock emoji
-    }
     m_lockLabel->setFixedWidth(K4Styles::Dimensions::SmallIconSize);
     layout->addWidget(m_lockLabel);
 
-    // Value label
-    m_valueLabel = new QLabel(item->displayValue(), this);
-    m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                    .arg(K4Styles::Colors::TextFaded)
-                                    .arg(K4Styles::Dimensions::FontSizePopup)); // Initial unselected state
+    m_valueLabel = new QLabel(this);
+    m_valueLabel->setStyleSheet(K4Styles::menuItemValueLabel());
     m_valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_valueLabel->setMinimumWidth(K4Styles::Dimensions::FormLabelWidth);
     layout->addWidget(m_valueLabel);
 
     setLayout(layout);
+    updateDisplay();
 }
 
 void MenuItemWidget::setSelected(bool selected) {
@@ -51,35 +43,11 @@ void MenuItemWidget::setSelected(bool selected) {
 }
 
 void MenuItemWidget::updateLabelColors() {
-    // Update label colors based on selection and edit state
-    // Two-zone highlighting: left zone (name) and right zone (value) have different colors
-    if (m_selected) {
-        if (m_editing) {
-            // EDITING MODE: name on grey, value on off-white
-            m_nameLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                           .arg(K4Styles::Colors::SelectionLight)
-                                           .arg(K4Styles::Dimensions::FontSizePopup)); // Light text on grey
-            m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                            .arg(K4Styles::Colors::TextDark)
-                                            .arg(K4Styles::Dimensions::FontSizePopup)); // Dark text on off-white
-        } else {
-            // BROWSE MODE: name on off-white, value on grey
-            m_nameLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                           .arg(K4Styles::Colors::TextDark)
-                                           .arg(K4Styles::Dimensions::FontSizePopup)); // Dark text on off-white
-            m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                            .arg(K4Styles::Colors::TextWhite)
-                                            .arg(K4Styles::Dimensions::FontSizePopup)); // White text on grey
-        }
-    } else {
-        // Unselected: grey text on dark background
-        m_nameLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                       .arg(K4Styles::Colors::TextGray)
-                                       .arg(K4Styles::Dimensions::FontSizePopup));
-        m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                        .arg(K4Styles::Colors::TextFaded)
-                                        .arg(K4Styles::Dimensions::FontSizePopup));
-    }
+    // Two-zone highlighting: browsing lights the name zone, editing lights the value zone.
+    const QString state =
+        m_selected ? QString::fromLatin1(m_editing ? K4Styles::MenuRowEdit : K4Styles::MenuRowBrowse) : QString();
+    K4Styles::setStyleState(m_nameLabel, K4Styles::StateProperty, state);
+    K4Styles::setStyleState(m_valueLabel, K4Styles::StateProperty, state);
 }
 
 void MenuItemWidget::setEditMode(bool editing) {
@@ -89,10 +57,24 @@ void MenuItemWidget::setEditMode(bool editing) {
 }
 
 void MenuItemWidget::updateDisplay() {
-    m_valueLabel->setText(m_item->displayValue());
-    if (m_model) {
-        m_nameLabel->setText(m_model->resolvedName(*m_item));
+    const MenuItem *item = m_model->getMenuItem(m_menuId);
+    if (!item) {
+        return;
     }
+    // Resolved so "<n>" in the XVTR Band rows shows the current XVTR Band # Select value.
+    m_nameLabel->setText(m_model->resolvedName(*item));
+    m_lockLabel->setText(item->isReadOnly() ? QString::fromUtf8("\xF0\x9F\x94\x92") : QString()); // Lock emoji
+    if (m_typed.isEmpty())
+        m_valueLabel->setText(item->displayValue());
+    else
+        m_valueLabel->setText(m_typed + QStringLiteral("_") + MenuValueEntry::unitSuffix(*item));
+}
+
+void MenuItemWidget::setTypedText(const QString &typed) {
+    if (m_typed == typed)
+        return;
+    m_typed = typed;
+    updateDisplay();
 }
 
 void MenuItemWidget::paintEvent(QPaintEvent *event) {
@@ -144,13 +126,16 @@ MenuOverlayWidget::MenuOverlayWidget(MenuModel *model, QWidget *parent) : QWidge
 
     setupUi();
 
-    connect(m_model, &MenuModel::menuValueChanged, this, &MenuOverlayWidget::onMenuValueChanged);
+    // WHY: the radio sends its menu as one MEDF line per item, so an open overlay rebuilds once
+    // per burst rather than once per item. A zero interval runs after the pending events.
+    m_repopulateTimer = new QTimer(this);
+    m_repopulateTimer->setSingleShot(true);
+    m_repopulateTimer->setInterval(0);
+    connect(m_repopulateTimer, &QTimer::timeout, this, &MenuOverlayWidget::repopulateKeepingSelection);
 
-    // The row widgets hold raw MenuItem * into the model's map. On disconnect MenuController
-    // clears that map, so they have to go with it — otherwise the next ME update after a
-    // reconnect walks m_itemWidgets and dereferences freed memory. Reopening the menu
-    // repopulates from the new items.
-    connect(m_model, &MenuModel::modelCleared, this, &MenuOverlayWidget::clearItemWidgets);
+    connect(m_model, &MenuModel::menuValueChanged, this, &MenuOverlayWidget::onMenuValueChanged);
+    connect(m_model, &MenuModel::menuItemAdded, this, &MenuOverlayWidget::onMenuItemAdded);
+    connect(m_model, &MenuModel::modelCleared, this, &MenuOverlayWidget::onModelCleared);
 }
 
 void MenuOverlayWidget::setupUi() {
@@ -172,8 +157,8 @@ void MenuOverlayWidget::setupUi() {
     m_categoryLabel->setStyleSheet(QString("background-color: %1; color: %2; font-size: %3px; "
                                            "font-weight: bold; padding: 8px 15px;")
                                        .arg(K4Styles::Colors::OverlayHeaderBg)
-                                       .arg(K4Styles::Colors::InactiveGray)
-                                       .arg(K4Styles::Dimensions::FontSizeButton));
+                                       .arg(K4Styles::Colors::TextSecondary)
+                                       .arg(K4Styles::Dimensions::FontSizeReadout));
     contentLayout->addWidget(m_categoryLabel);
 
     // Scroll area for menu items
@@ -217,9 +202,9 @@ void MenuOverlayWidget::setupUi() {
                                   "border-radius: %3px; font-size: %4px; font-weight: bold; }"
                                   "QPushButton:pressed { background-color: %5; }")
                               .arg(K4Styles::Colors::OverlayNavButton)
-                              .arg(K4Styles::Colors::TextWhite)
+                              .arg(K4Styles::Colors::TextPrimary)
                               .arg(K4Styles::Dimensions::BorderRadius)
-                              .arg(K4Styles::Dimensions::FontSizeTitle)
+                              .arg(K4Styles::Dimensions::FontSizeIndicator)
                               .arg(K4Styles::Colors::OverlayNavButtonPressed);
 
     // Row 1: Up and Down buttons side by side
@@ -241,7 +226,7 @@ void MenuOverlayWidget::setupUi() {
     navOuterLayout->addLayout(row1);
     navOuterLayout->addStretch();
 
-    // Row 2: Search, NORM, and Back buttons (3 buttons, smaller width)
+    // Row 3: Search, NORM, and Back buttons (3 buttons, smaller width)
     QHBoxLayout *row3 = new QHBoxLayout();
     row3->setSpacing(6); // Tighter spacing for 3 buttons
 
@@ -255,14 +240,7 @@ void MenuOverlayWidget::setupUi() {
 
     m_normBtn = new QPushButton("NORM", navPanel);
     m_normBtn->setFixedSize(smallNavBtnWidth, K4Styles::Dimensions::PopupButtonHeight);
-    m_normBtn->setStyleSheet(QString("QPushButton { background-color: %1; color: %2; border: none; "
-                                     "border-radius: %3px; font-size: %4px; font-weight: bold; }"
-                                     "QPushButton:pressed { background-color: %5; }")
-                                 .arg(K4Styles::Colors::OverlayNavButton)
-                                 .arg(K4Styles::Colors::TextGray)
-                                 .arg(K4Styles::Dimensions::BorderRadius)
-                                 .arg(K4Styles::Dimensions::FontSizeMedium) // Fits in narrow button
-                                 .arg(K4Styles::Colors::OverlayNavButtonPressed));
+    m_normBtn->setStyleSheet(K4Styles::menuNormButton());
     connect(m_normBtn, &QPushButton::clicked, this, &MenuOverlayWidget::resetToDefault);
     row3->addWidget(m_normBtn);
 
@@ -278,11 +256,11 @@ void MenuOverlayWidget::setupUi() {
                                  .arg(K4Styles::Colors::GradientMid1)     // %2
                                  .arg(K4Styles::Colors::GradientMid2)     // %3
                                  .arg(K4Styles::Colors::GradientBottom)   // %4
-                                 .arg(K4Styles::Colors::TextWhite)        // %5
+                                 .arg(K4Styles::Colors::TextPrimary)      // %5
                                  .arg(K4Styles::Dimensions::BorderWidth)  // %6
                                  .arg(K4Styles::Colors::BorderNormal)     // %7
                                  .arg(K4Styles::Dimensions::BorderRadius) // %8
-                                 .arg(K4Styles::Dimensions::FontSizeTitle));
+                                 .arg(K4Styles::Dimensions::FontSizeIndicator));
     connect(m_backBtn, &QPushButton::clicked, this, &MenuOverlayWidget::closeOverlay);
     row3->addWidget(m_backBtn);
 
@@ -309,9 +287,9 @@ void MenuOverlayWidget::createSearchPopup() {
                                          "border-radius: 4px; padding: 6px; font-size: %4px; }"
                                          "QLineEdit:focus { border-color: %5; }")
                                      .arg(K4Styles::Colors::OverlayContentBg)
-                                     .arg(K4Styles::Colors::TextWhite)
+                                     .arg(K4Styles::Colors::TextPrimary)
                                      .arg(K4Styles::Colors::OverlayNavButton)
-                                     .arg(K4Styles::Dimensions::FontSizeMedium)
+                                     .arg(K4Styles::Dimensions::FontSizeCaption)
                                      .arg(K4Styles::Colors::VfoACyan));
     layout->addWidget(m_searchInput);
 
@@ -319,6 +297,8 @@ void MenuOverlayWidget::createSearchPopup() {
 
     connect(m_searchInput, &QLineEdit::textChanged, this, &MenuOverlayWidget::onSearchTextChanged);
 
+    // Sees the press that closes the box (see eventFilter).
+    m_searchPopup->installEventFilter(this);
     m_searchPopup->hide();
 }
 
@@ -348,16 +328,15 @@ void MenuOverlayWidget::clearItemWidgets() {
     m_itemWidgets.clear();
     m_selectedIndex = 0;
     m_editMode = false;
+    m_typed.clear();
 }
 
 void MenuOverlayWidget::populateItems() {
     clearItemWidgets();
 
-    // Add menu items (filtered if search is active)
-    QVector<MenuItem *> items =
-        m_currentFilter.isEmpty() ? m_model->getAllItems() : m_model->filterByName(m_currentFilter);
-    for (MenuItem *item : items) {
-        MenuItemWidget *widget = new MenuItemWidget(item, m_model, m_listContainer);
+    const QList<int> ids = m_model->itemIds(m_currentFilter);
+    for (const int id : ids) {
+        MenuItemWidget *widget = new MenuItemWidget(id, m_model, m_listContainer);
         connect(widget, &MenuItemWidget::clicked, this, [this, widget]() {
             int index = m_itemWidgets.indexOf(widget);
             if (index >= 0) {
@@ -388,13 +367,47 @@ void MenuOverlayWidget::populateItems() {
     m_scrollArea->verticalScrollBar()->setValue(0);
 }
 
+void MenuOverlayWidget::repopulateKeepingSelection() {
+    const MenuItem *selected = selectedMenuItem();
+    const int selectedId = selected ? selected->id : 0;
+    const bool hadSelection = selected != nullptr;
+    populateItems();
+    if (!hadSelection) {
+        return;
+    }
+    for (int i = 0; i < m_itemWidgets.size(); ++i) {
+        if (m_itemWidgets[i]->menuId() == selectedId) {
+            m_selectedIndex = i;
+            updateSelection();
+            updateNormButton();
+            ensureSelectedVisible();
+            return;
+        }
+    }
+}
+
+void MenuOverlayWidget::onMenuItemAdded() {
+    if (isVisible()) {
+        m_repopulateTimer->start();
+    }
+}
+
+void MenuOverlayWidget::onModelCleared() {
+    m_repopulateTimer->stop();
+    clearItemWidgets();
+    updateButtonLabels();
+    updateNormButton();
+}
+
 void MenuOverlayWidget::show() {
+    m_repopulateTimer->stop();
     populateItems();
     QWidget::show();
     setFocus();
 }
 
 void MenuOverlayWidget::hide() {
+    setTyped(QString());
     // Clear search filter when closing
     m_currentFilter.clear();
     if (m_searchInput) {
@@ -420,7 +433,77 @@ void MenuOverlayWidget::paintEvent(QPaintEvent *event) {
     painter.fillRect(rect(), QColor(K4Styles::Colors::OverlayContentBg));
 }
 
+void MenuOverlayWidget::setTyped(const QString &typed) {
+    m_typed = typed;
+    if (m_selectedIndex >= 0 && m_selectedIndex < m_itemWidgets.size())
+        m_itemWidgets[m_selectedIndex]->setTypedText(m_typed);
+}
+
+bool MenuOverlayWidget::handleTypedKey(const QKeyEvent *event) {
+    const MenuItem *item = selectedMenuItem();
+    if (!m_editMode || !item || !MenuValueEntry::acceptsTyping(*item))
+        return false;
+    constexpr int kMaxTypedChars = 8; // "-99999" MHz / "-99999" Hz, with room for a decimal
+    const int key = event->key();
+    const bool typing = !m_typed.isEmpty();
+
+    // A key that would take the value out of the item's range is refused, so the row shows the most
+    // it can hold rather than a number the radio would not take.
+    const auto accept = [&](const QString &candidate) {
+        if (MenuValueEntry::withinTypingBounds(*item, candidate))
+            setTyped(candidate);
+    };
+    if (key >= Qt::Key_0 && key <= Qt::Key_9) {
+        if (m_typed.size() < kMaxTypedChars)
+            accept(m_typed + QChar(u'0' + (key - Qt::Key_0)));
+        return true;
+    }
+    if ((key == Qt::Key_Period || key == Qt::Key_Comma) && MenuValueEntry::allowsDecimal(*item)) {
+        if (!m_typed.contains(u'.'))
+            accept(m_typed + (typing && m_typed != QStringLiteral("-") ? QStringLiteral(".") : QStringLiteral("0.")));
+        return true;
+    }
+    if (!typing)
+        return false; // +/- and the arrows still step the value, Enter and Escape leave edit mode
+    switch (key) {
+    case Qt::Key_Minus:
+        // WHY only while typing: before the first digit, - steps the value down, as it always has.
+        if (MenuValueEntry::allowsNegative(*item))
+            accept(m_typed.startsWith(u'-') ? m_typed.mid(1) : QStringLiteral("-") + m_typed);
+        return true;
+    case Qt::Key_Backspace: {
+        QString shorter = m_typed.chopped(1);
+        if (shorter == QStringLiteral("-"))
+            shorter.clear();
+        setTyped(shorter);
+        return true;
+    }
+    case Qt::Key_Return:
+    case Qt::Key_Enter: {
+        const std::optional<int> value = MenuValueEntry::rawFromTyped(*item, m_typed);
+        if (!value)
+            return true; // short of the minimum: keep the typing to be finished or backed out
+        const int id = item->id;
+        setTyped(QString());
+        emit menuValueSetRequested(id, *value);
+        setEditMode(false);
+        return true;
+    }
+    case Qt::Key_Escape:
+        setTyped(QString()); // back to the value; Escape again leaves edit mode
+        return true;
+    case Qt::Key_Up:
+    case Qt::Key_Down:
+        setTyped(QString());
+        return false; // and step as usual
+    default:
+        return false;
+    }
+}
+
 void MenuOverlayWidget::keyPressEvent(QKeyEvent *event) {
+    if (handleTypedKey(event))
+        return;
     switch (event->key()) {
     case Qt::Key_Up:
         navigateUp();
@@ -445,16 +528,12 @@ void MenuOverlayWidget::keyPressEvent(QKeyEvent *event) {
         break;
     case Qt::Key_Plus:
     case Qt::Key_Equal:
-        if (!m_itemWidgets.isEmpty() && m_selectedIndex < m_itemWidgets.size()) {
-            MenuItem *item = m_itemWidgets[m_selectedIndex]->menuItem();
+        if (const MenuItem *item = selectedMenuItem())
             emit menuValueChangeRequested(item->id, "+");
-        }
         break;
     case Qt::Key_Minus:
-        if (!m_itemWidgets.isEmpty() && m_selectedIndex < m_itemWidgets.size()) {
-            MenuItem *item = m_itemWidgets[m_selectedIndex]->menuItem();
+        if (const MenuItem *item = selectedMenuItem())
             emit menuValueChangeRequested(item->id, "-");
-        }
         break;
     default:
         QWidget::keyPressEvent(event);
@@ -470,71 +549,55 @@ void MenuOverlayWidget::mousePressEvent(QMouseEvent *event) {
 }
 
 void MenuOverlayWidget::wheelEvent(QWheelEvent *event) {
-    int steps = m_wheelAccumulator.accumulate(event);
-    if (steps == 0) {
-        event->accept();
-        return;
-    }
-
-    if (m_editMode) {
-        // In edit mode, wheel changes value
-        if (!m_itemWidgets.isEmpty() && m_selectedIndex < m_itemWidgets.size()) {
-            MenuItem *item = m_itemWidgets[m_selectedIndex]->menuItem();
-            for (int i = 0; i < qAbs(steps); ++i)
-                emit menuValueChangeRequested(item->id, steps > 0 ? "+" : "-");
-        }
-    } else {
-        // In browse mode, wheel scrolls through items
-        for (int i = 0; i < qAbs(steps); ++i) {
-            if (steps > 0)
-                navigateUp();
-            else
-                navigateDown();
-        }
-    }
+    applyWheelSteps(m_wheelAccumulator.accumulate(event));
     event->accept();
 }
 
 bool MenuOverlayWidget::eventFilter(QObject *watched, QEvent *event) {
+    // WHY: the search box is a Qt::Popup. A press outside it closes it, and where the platform's
+    // ReplayMousePressOutsidePopup hint is set (Windows, X11; not macOS) Qt then replays the press
+    // to the widget under it. On the search key that replay is a second click, which opened the box
+    // it had just closed. Qt::WA_NoMouseReplay, set on the popup while it handles that press, keeps
+    // the press from being replayed; a press anywhere else is still replayed, so it works where it
+    // lands. Qt clears the attribute before each new mouse event, so it only ever covers this press.
+    if (watched == m_searchPopup && event->type() == QEvent::MouseButtonPress) {
+        const QPoint globalPos = static_cast<QMouseEvent *>(event)->globalPosition().toPoint();
+        const QRect searchKey(m_searchBtn->mapToGlobal(QPoint(0, 0)), m_searchBtn->size());
+        if (searchKey.contains(globalPos))
+            m_searchPopup->setAttribute(Qt::WA_NoMouseReplay);
+        return false; // the popup still handles the press: it closes itself
+    }
     // Intercept wheel events from scroll area to move selection instead of scrolling
-    if (event->type() == QEvent::Wheel) {
-        if (watched == m_scrollArea || watched == m_scrollArea->viewport()) {
-            QWheelEvent *wheelEvent = static_cast<QWheelEvent *>(event);
-            wheelEvent->accept();
-
-            int steps = m_wheelAccumulator.accumulate(wheelEvent);
-            if (steps == 0)
-                return true;
-
-            if (m_editMode) {
-                // In edit mode, wheel changes value
-                if (!m_itemWidgets.isEmpty() && m_selectedIndex < m_itemWidgets.size()) {
-                    MenuItem *item = m_itemWidgets[m_selectedIndex]->menuItem();
-                    for (int i = 0; i < qAbs(steps); ++i)
-                        emit menuValueChangeRequested(item->id, steps > 0 ? "+" : "-");
-                }
-            } else {
-                // In browse mode, wheel moves selection (with hard stops)
-                for (int i = 0; i < qAbs(steps); ++i) {
-                    if (steps > 0)
-                        navigateUp();
-                    else
-                        navigateDown();
-                }
-            }
-            return true; // Event handled, don't let scroll area scroll
-        }
+    if (event->type() == QEvent::Wheel && (watched == m_scrollArea || watched == m_scrollArea->viewport())) {
+        auto *wheelEvent = static_cast<QWheelEvent *>(event);
+        wheelEvent->accept();
+        applyWheelSteps(m_wheelAccumulator.accumulate(wheelEvent));
+        return true; // Event handled, don't let scroll area scroll
     }
     return QWidget::eventFilter(watched, event);
+}
+
+void MenuOverlayWidget::applyWheelSteps(int steps) {
+    // Browse mode moves the selection (with hard stops); edit mode steps the value - navigateUp/Down do both.
+    for (int i = 0; i < qAbs(steps); ++i) {
+        if (steps > 0)
+            navigateUp();
+        else
+            navigateDown();
+    }
+}
+
+const MenuItem *MenuOverlayWidget::selectedMenuItem() const {
+    if (m_selectedIndex < 0 || m_selectedIndex >= m_itemWidgets.size())
+        return nullptr;
+    return m_model->getMenuItem(m_itemWidgets[m_selectedIndex]->menuId());
 }
 
 void MenuOverlayWidget::navigateUp() {
     if (m_editMode) {
         // In edit mode, up increments value
-        if (!m_itemWidgets.isEmpty() && m_selectedIndex < m_itemWidgets.size()) {
-            MenuItem *item = m_itemWidgets[m_selectedIndex]->menuItem();
+        if (const MenuItem *item = selectedMenuItem())
             emit menuValueChangeRequested(item->id, "+");
-        }
     } else {
         // In browse mode, up moves selection
         if (m_selectedIndex > 0) {
@@ -549,10 +612,8 @@ void MenuOverlayWidget::navigateUp() {
 void MenuOverlayWidget::navigateDown() {
     if (m_editMode) {
         // In edit mode, down decrements value
-        if (!m_itemWidgets.isEmpty() && m_selectedIndex < m_itemWidgets.size()) {
-            MenuItem *item = m_itemWidgets[m_selectedIndex]->menuItem();
+        if (const MenuItem *item = selectedMenuItem())
             emit menuValueChangeRequested(item->id, "-");
-        }
     } else {
         // In browse mode, down moves selection
         if (m_selectedIndex < m_itemWidgets.size() - 1) {
@@ -565,11 +626,9 @@ void MenuOverlayWidget::navigateDown() {
 }
 
 void MenuOverlayWidget::selectCurrent() {
-    if (m_itemWidgets.isEmpty() || m_selectedIndex >= m_itemWidgets.size()) {
+    const MenuItem *item = selectedMenuItem();
+    if (!item)
         return;
-    }
-
-    MenuItem *item = m_itemWidgets[m_selectedIndex]->menuItem();
     if (item->isReadOnly()) {
         return;
     }
@@ -592,22 +651,19 @@ void MenuOverlayWidget::closeOverlay() {
 }
 
 void MenuOverlayWidget::resetToDefault() {
-    if (m_itemWidgets.isEmpty() || m_selectedIndex >= m_itemWidgets.size()) {
+    const MenuItem *item = selectedMenuItem();
+    if (!item)
         return;
-    }
-
-    MenuItem *item = m_itemWidgets[m_selectedIndex]->menuItem();
     if (item->isReadOnly()) {
         return;
     }
 
-    // Set value to default
-    int defaultVal = item->defaultValue;
-    QString cmd = QString("%1").arg(defaultVal, 4, 10, QChar('0'));
-    emit menuValueChangeRequested(item->id, cmd);
+    const int id = item->id;
+    const int defaultVal = item->defaultValue;
+    emit menuValueChangeRequested(id, QString("%1").arg(defaultVal, 4, 10, QChar('0')));
 
     // Also update local model immediately
-    m_model->updateValue(item->id, defaultVal);
+    m_model->updateValue(id, defaultVal);
 }
 
 void MenuOverlayWidget::updateSelection() {
@@ -624,6 +680,7 @@ void MenuOverlayWidget::ensureSelectedVisible() {
 }
 
 void MenuOverlayWidget::setEditMode(bool editing) {
+    setTyped(QString());
     m_editMode = editing;
     updateSelection();
     updateButtonLabels();
@@ -641,65 +698,22 @@ void MenuOverlayWidget::updateButtonLabels() {
 }
 
 void MenuOverlayWidget::updateNormButton() {
-    QString normBtnDisabled = QString("QPushButton { background-color: %1; color: %2; border: none; "
-                                      "border-radius: %3px; font-size: %4px; font-weight: bold; }")
-                                  .arg(K4Styles::Colors::OverlayNavButton)
-                                  .arg(K4Styles::Colors::TextGray)
-                                  .arg(K4Styles::Dimensions::BorderRadius)
-                                  .arg(K4Styles::Dimensions::FontSizeMedium);
-
-    QString normBtnDefault = QString("QPushButton { background-color: %1; color: %2; border: none; "
-                                     "border-radius: %3px; font-size: %4px; font-weight: bold; }"
-                                     "QPushButton:pressed { background-color: %5; }")
-                                 .arg(K4Styles::Colors::OverlayNavButton)
-                                 .arg(K4Styles::Colors::TextGray)
-                                 .arg(K4Styles::Dimensions::BorderRadius)
-                                 .arg(K4Styles::Dimensions::FontSizeMedium)
-                                 .arg(K4Styles::Colors::OverlayNavButtonPressed);
-
-    QString normBtnActive = QString("QPushButton { background-color: %1; color: %2; border: none; "
-                                    "border-radius: %3px; font-size: %4px; font-weight: bold; }"
-                                    "QPushButton:pressed { background-color: %5; }")
-                                .arg(K4Styles::Colors::SelectionLight)
-                                .arg(K4Styles::Colors::TextDark)
-                                .arg(K4Styles::Dimensions::BorderRadius)
-                                .arg(K4Styles::Dimensions::FontSizeMedium)
-                                .arg(K4Styles::Colors::TextWhite);
-
-    if (m_itemWidgets.isEmpty() || m_selectedIndex >= m_itemWidgets.size()) {
-        m_normBtn->setStyleSheet(normBtnDisabled);
-        return;
-    }
-
-    MenuItem *item = m_itemWidgets[m_selectedIndex]->menuItem();
-    if (item->isReadOnly()) {
-        // NORM cannot change a read-only item, so it must not light up for one either
-        m_normBtn->setStyleSheet(normBtnDisabled);
-        return;
-    }
-
-    // Lit when the item IS at its default - NORM reads "this is the normal setting". Pressing it on
-    // an item that is not sets the default, and the value change re-runs this and lights it.
-    const bool isDefault = (item->currentValue == item->defaultValue);
-    m_normBtn->setStyleSheet(isDefault ? normBtnActive : normBtnDefault);
+    // NORM cannot change a read-only item, so it must not light up for one either. Lit when the item
+    // IS at its default - NORM reads "this is the normal setting". Pressing it on an item that is not
+    // sets the default, and the value change re-runs this and lights it.
+    const MenuItem *item = selectedMenuItem();
+    const bool greyed = !item || item->isReadOnly();
+    K4Styles::setStyleFlag(m_normBtn, K4Styles::DimmedProperty, greyed);
+    K4Styles::setSelected(m_normBtn, !greyed && item->currentValue == item->defaultValue);
 }
 
 void MenuOverlayWidget::onMenuValueChanged(int menuId, int newValue) {
     Q_UNUSED(newValue);
-    // Find and update the widget for this menu item
+    // XVTR Band # Select renames every "<n>" row, so it refreshes them all.
+    const bool everyRow = menuId == MenuModel::XVTR_BAND_SELECT_ID;
     for (auto *widget : m_itemWidgets) {
-        if (widget->menuItem()->id == menuId) {
+        if (everyRow || widget->menuId() == menuId) {
             widget->updateDisplay();
-            break;
-        }
-    }
-    // XVTR Band # Select changes the substitution for every "<n>" row — refresh
-    // those widgets so their resolved name picks up the new band number.
-    if (menuId == MenuModel::XVTR_BAND_SELECT_ID) {
-        for (auto *widget : m_itemWidgets) {
-            if (widget->menuItem()->name.contains(QStringLiteral("<n>"))) {
-                widget->updateDisplay();
-            }
         }
     }
     updateNormButton();

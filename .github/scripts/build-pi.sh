@@ -4,42 +4,50 @@ set -ex
 # =============================================================================
 # QK4 Raspberry Pi Build Script
 # =============================================================================
-# This script cross-compiles QK4 for Raspberry Pi (ARM64) using
-# Debian multiarch and creates a portable tarball with all required
-# libraries bundled.
+# Builds QK4 for Raspberry Pi (ARM64) natively, inside a debian:trixie container
+# on GitHub's arm64 runner, and creates a portable tarball with every library
+# it needs that Raspberry Pi OS does not provide.
 #
-# Target: Raspberry Pi 4/5 running Debian Trixie or compatible
-# Qt Version: 6.8+ (from Debian Trixie repos)
-# Build method: x86_64 cross-compilation with aarch64-linux-gnu toolchain
+# Target: Raspberry Pi 4/5 running Raspberry Pi OS / Debian Trixie (arm64)
+# Qt: the official Qt linux_arm64 build named in .github/qt-version, installed
+#     on the runner by install-qt-action and mounted read-only at $QT_ROOT.
+#     Debian's own Qt is not used: Trixie ships 6.8, and every other runner
+#     builds with the pinned version.
+# System libraries (opus, hidapi, OpenSSL, PulseAudio, ALSA) come from Trixie,
+# so the bundled copies are the ones Raspberry Pi OS itself ships.
+#
+# Usage (from _build-pi.yml): QT_ROOT=/opt/qt build-pi.sh <version>
 # =============================================================================
 
-ARM_LIB=/usr/lib/aarch64-linux-gnu
-QT_PLUGINS=$ARM_LIB/qt6/plugins
+: "${QT_ROOT:?QT_ROOT must point at the official Qt install (e.g. /opt/qt)}"
 
-# Enable arm64 multiarch
-dpkg --add-architecture arm64
+ARM_LIB=/usr/lib/aarch64-linux-gnu
+QT_LIB=$QT_ROOT/lib
+QT_PLUGINS=$QT_ROOT/plugins
+
 apt-get update
 
-# Native host tools (x86, full speed)
-apt-get install -y cmake g++-aarch64-linux-gnu file patchelf pkg-config ccache
+# Build tools
+apt-get install -y build-essential cmake pkg-config ccache file patchelf
 
-# Qt6 native host tools (moc, rcc, uic, qsb)
-apt-get install -y qt6-base-dev-tools qt6-shadertools-dev
-
-# Qt6 arm64 development libraries
+# What the official Qt's CMake packages and shared libraries need to be found and linked:
+# WrapOpenGL (GL/EGL headers) for Qt6Gui, and the libraries its .so files name in NEEDED.
 apt-get install -y \
-  qt6-base-dev:arm64 qt6-base-private-dev:arm64 \
-  qt6-multimedia-dev:arm64 qt6-shadertools-dev:arm64 \
-  qt6-serialport-dev:arm64 qt6-svg-dev:arm64
+  libgl-dev libegl-dev libxkbcommon-dev \
+  libfontconfig1 libfreetype6 libglib2.0-0t64 libdbus-1-3 libx11-6 libbrotli1 libzstd1
 
-# System arm64 libraries
+# QK4's own dependencies
 apt-get install -y \
-  libopus-dev:arm64 libhidapi-dev:arm64 libusb-1.0-0-dev:arm64 libssl-dev:arm64 \
-  libasound2-dev:arm64 libpulse-dev:arm64
+  libopus-dev libhidapi-dev libusb-1.0-0-dev libssl-dev \
+  libasound2-dev libpulse-dev libudev-dev
 
-# Build with cross-compilation toolchain
-export PKG_CONFIG_PATH=$ARM_LIB/pkgconfig
-export PKG_CONFIG_LIBDIR=$ARM_LIB/pkgconfig
+# The Qt mounted here must be the one .github/qt-version names.
+WANT_QT="$(tr -d '[:space:]' < .github/qt-version)"
+HAVE_QT="$("$QT_ROOT/bin/qtpaths" --qt-version)"
+if [ "$HAVE_QT" != "$WANT_QT" ]; then
+  echo "ERROR: Qt at $QT_ROOT is $HAVE_QT, .github/qt-version says $WANT_QT"
+  exit 1
+fi
 
 # Configure ccache (CCACHE_DIR may be mounted from host for persistence)
 export CCACHE_DIR="${CCACHE_DIR:-/tmp/ccache}"
@@ -54,11 +62,11 @@ if [ -n "$1" ]; then
 fi
 
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-aarch64-linux.cmake \
+  -DCMAKE_PREFIX_PATH="$QT_ROOT" \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
   -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
   $VERSION_FLAG
-cmake --build build -j$(nproc)
+cmake --build build -j"$(nproc)"
 
 echo "=== ccache stats ==="
 ccache --show-stats
@@ -108,17 +116,44 @@ for lib in \
   libQt6DBus.so.6 \
   libQt6Svg.so.6 \
   libQt6XcbQpa.so.6; do
-  require_lib "$ARM_LIB/$lib" "$DIST/lib/"
+  require_lib "$QT_LIB/$lib" "$DIST/lib/"
 done
+
+# ICU. The official Qt is built against its own ICU (libQt6Core NEEDs libicuuc/libicui18n of
+# that version), which Trixie does not have, so it ships with the bundle. Copied by soname.
+ICU_COUNT=0
+for path in "$QT_LIB"/libicu{data,i18n,uc}.so.*; do
+  [[ "$(basename "$path")" =~ ^libicu(data|i18n|uc)\.so\.[0-9]+$ ]] || continue
+  require_lib "$path" "$DIST/lib/"
+  ICU_COUNT=$((ICU_COUNT + 1))
+done
+[ "$ICU_COUNT" -eq 3 ] || { echo "ERROR: expected libicudata, libicui18n and libicuuc in $QT_LIB, copied $ICU_COUNT"; exit 1; }
 
 # -----------------------------------------------------------------------------
 # Qt Plugins
 # -----------------------------------------------------------------------------
-# Platform plugins (XCB — the only platform we ship)
-cp -r $QT_PLUGINS/platforms $DIST/plugins/
+# Platform plugins: XCB (the one run.sh selects; XWayland under Pi OS's Wayland session),
+# Wayland, plus offscreen and minimal for diagnostics. The rest of Qt's platforms directory
+# (eglfs, vnc, ...) needs Qt libraries this bundle does not carry.
+mkdir -p $DIST/plugins/platforms
+for plugin in libqxcb.so libqwayland.so libqoffscreen.so libqminimal.so; do
+  require_lib "$QT_PLUGINS/platforms/$plugin" "$DIST/plugins/platforms/"
+done
 optional_lib "$QT_PLUGINS/xcbglintegrations" "$DIST/plugins/"
 
-# TLS/SSL plugins (for HTTPS connections)
+# The Wayland plugin with what it needs to open a window: the client library, the xdg-shell
+# integration, EGL buffers and the fallback decoration. Unused while run.sh selects XCB, but
+# complete, so `QT_QPA_PLATFORM=wayland ./QK4` works for a native-Wayland test.
+require_lib "$QT_LIB/libQt6WaylandClient.so.6" "$DIST/lib/"
+for plugin in \
+  wayland-shell-integration/libxdg-shell.so \
+  wayland-graphics-integration-client/libqt-plugin-wayland-egl.so \
+  wayland-decoration-client/libbradient.so; do
+  mkdir -p "$DIST/plugins/$(dirname "$plugin")"
+  require_lib "$QT_PLUGINS/$plugin" "$DIST/plugins/$(dirname "$plugin")/"
+done
+
+# TLS/SSL plugins (the OpenSSL backend carries TLS-PSK for the K4 on port 9204)
 cp -r $QT_PLUGINS/tls $DIST/plugins/
 
 # Image format plugins
@@ -127,9 +162,9 @@ optional_lib "$QT_PLUGINS/imageformats" "$DIST/plugins/"
 # Icon engine plugins
 optional_lib "$QT_PLUGINS/iconengines" "$DIST/plugins/"
 
-# NOTE: We intentionally do NOT bundle plugins/multimedia. The audio engine
-# uses QAudioSink/QAudioSource which work directly through PulseAudio/ALSA
-# and do not require the GStreamer/FFmpeg-based multimedia backend plugins.
+# NOTE: We intentionally do NOT bundle plugins/multimedia (nor the FFmpeg libraries it
+# needs). The audio engine uses QAudioSink/QAudioSource, which libQt6Multimedia drives
+# through PulseAudio directly; the FFmpeg/GStreamer plugins are for media playback.
 
 # -----------------------------------------------------------------------------
 # System Libraries (required)
@@ -171,7 +206,9 @@ for check in \
   "$DIST/lib/libpulse.so.0" \
   "$DIST/lib/libasound.so.2" \
   "$DIST/lib/libssl.so.3" \
-  "$DIST/plugins/platforms"; do
+  "$DIST/lib/libcrypto.so.3" \
+  "$DIST/plugins/platforms/libqxcb.so" \
+  "$DIST/plugins/tls/libqopensslbackend.so"; do
   if [ ! -e "$check" ]; then
     echo "ERROR: Missing from bundle: $check"
     MISSING=1

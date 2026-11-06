@@ -32,7 +32,7 @@ enum class AntennaCfgVariant { MainRx, SubRx, Tx };
  * connect(popup, &AntennaCfgPopupWidget::configChanged, this, [](bool displayAll, QVector<bool> mask) {
  *     // Build and send ACM command
  * });
- * popup->showAboveButton(triggerButton);
+ * popup->showAboveWidget(openButtonRow);
  * @endcode
  */
 class AntennaCfgPopupWidget : public K4PopupBase {
@@ -46,13 +46,6 @@ public:
      * @param displayAll true for DISPLAY ALL, false for USE SUBSET
      */
     void setDisplayAll(bool displayAll);
-
-    /**
-     * @brief Set an individual antenna enable state.
-     * @param index Antenna index (0-6 for RX, 0-2 for TX)
-     * @param enabled Whether antenna is in the cycle
-     */
-    void setAntennaEnabled(int index, bool enabled);
 
     /**
      * @brief Set all antenna states at once.

@@ -7,8 +7,8 @@
 class RadioState;
 
 // Mode, filter shape, and CW keyer state. Covers MD, MD$, BW, BW$,
-// IS, IS$, FP, FP$, CW (pitch), KS (keyer speed), and KP (iambic mode
-// + paddle orientation + keying weight). These cluster naturally
+// IS, IS$, FP, FP$, CW (pitch), KS (keyer speed), KP (iambic mode
+// + paddle orientation + keying weight), and KZL (remote key-down delay). These cluster naturally
 // because the CW keyer settings are only meaningful when the mode is
 // CW or CW_R, and the filter shape (BW/IS/FP) is per-mode on the K4.
 //
@@ -29,6 +29,11 @@ struct ModeFilterState {
     int cwPitch = -1;    // Hz
     int keyerSpeed = -1; // WPM
 
+    // KZL: the K4's remote-paddle key-down initial delay, 0-1000 ms (default 80). The radio holds a
+    // remote key-down this long before transmitting so later timed key commands arrive in time.
+    // It is the operator's setting: QK4 writes it only from the CW Keyer page's Key-Down Delay.
+    int keyDownInitialDelayMs = -1;
+
     // Keyer paddle config (KP command): iambic + paddle + weight.
     QChar iambicMode;        // 'A' or 'B' (null = not yet received)
     QChar paddleOrientation; // 'N'ormal or 'R'everse
@@ -44,6 +49,7 @@ void handleMDSub(ModeFilterState &state, RadioState &owner, const QString &cmd);
 void handleCW(ModeFilterState &state, RadioState &owner, const QString &cmd);
 void handleKS(ModeFilterState &state, RadioState &owner, const QString &cmd);
 void handleKP(ModeFilterState &state, RadioState &owner, const QString &cmd);
+void handleKZL(ModeFilterState &state, RadioState &owner, const QString &cmd);
 
 // Inline lambda handlers in registerCommandHandlers call these:
 void handleBW(ModeFilterState &state, RadioState &owner, const QString &cmd);

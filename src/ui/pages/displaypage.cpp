@@ -3,9 +3,8 @@
 #include "settings/radiosettings.h"
 #include "ui/styling/k4styles.h"
 #include <QApplication>
-#include <QFrame>
-#include <QGridLayout>
-#include <QHBoxLayout>
+#include "ui/pages/optionspagelayout.h"
+#include <QFormLayout>
 #include <QVBoxLayout>
 #include <cmath>
 
@@ -18,29 +17,10 @@ QString percentText(double factor) {
 } // namespace
 
 DisplayPage::DisplayPage(QWidget *parent) : QWidget(parent) {
-    setStyleSheet(K4Styles::Dialog::pageBackground());
+    auto *layout = OptionsPageLayout::createPage(this);
+    OptionsPageLayout::addTitle(layout, this, "Display");
 
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
-                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
-    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
-
-    auto *titleLabel = new QLabel("Display", this);
-    titleLabel->setStyleSheet(K4Styles::Dialog::titleLabel());
-    layout->addWidget(titleLabel);
-
-    auto *line = new QFrame(this);
-    line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet(K4Styles::Dialog::separator());
-    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line);
-
-    auto *form = new QGridLayout();
-    form->setHorizontalSpacing(K4Styles::Dimensions::PaddingMedium);
-    form->setVerticalSpacing(K4Styles::Dimensions::PaddingMedium);
-
-    auto *scaleLabel = new QLabel("Interface Scale", this);
-    scaleLabel->setStyleSheet(K4Styles::Dialog::formLabel());
+    auto *form = OptionsPageLayout::addForm(layout);
     m_scaleCombo = new QComboBox(this);
     m_scaleCombo->setStyleSheet(K4Styles::Dialog::comboBox());
     m_scaleCombo->addItem("Auto (fit the screen)", RadioSettings::kInterfaceScaleAuto);
@@ -48,30 +28,26 @@ DisplayPage::DisplayPage(QWidget *parent) : QWidget(parent) {
         m_scaleCombo->addItem(QString("%1%").arg(percent), percent);
     const int index = m_scaleCombo->findData(RadioSettings::instance()->interfaceScale());
     m_scaleCombo->setCurrentIndex(index >= 0 ? index : 0);
-    form->addWidget(scaleLabel, 0, 0);
-    form->addWidget(m_scaleCombo, 0, 1);
-    layout->addLayout(form);
+    OptionsPageLayout::addRow(form, this, "Interface Scale", m_scaleCombo);
 
     m_statusLabel = new QLabel(this);
     m_statusLabel->setWordWrap(true);
     m_statusLabel->setStyleSheet(K4Styles::Dialog::formValue());
-    layout->addWidget(m_statusLabel);
+    QSizePolicy statusPolicy = m_statusLabel->sizePolicy();
+    statusPolicy.setHorizontalPolicy(QSizePolicy::Expanding);
+    m_statusLabel->setSizePolicy(statusPolicy);
+    form->addRow(QString(), m_statusLabel);
 
-    auto *buttonRow = new QHBoxLayout();
     m_restartButton = new QPushButton("Restart Now", this);
-    m_restartButton->setStyleSheet(K4Styles::Dialog::actionButton());
+    m_restartButton->setStyleSheet(K4Styles::Dialog::actionButtonSmall());
     m_restartButton->setCursor(Qt::PointingHandCursor);
-    buttonRow->addWidget(m_restartButton);
-    buttonRow->addStretch();
-    layout->addLayout(buttonRow);
+    m_restartButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    form->addRow(QString(), m_restartButton);
 
-    auto *help = new QLabel("Scales the whole window without rearranging it. Auto shrinks the interface only when the "
-                            "screen is too small for it, and returns to full size on a screen that has room. A new "
-                            "scale takes effect when QK4 restarts.",
-                            this);
-    help->setWordWrap(true);
-    help->setStyleSheet(K4Styles::Dialog::helpText());
-    layout->addWidget(help);
+    OptionsPageLayout::addHelp(layout, this,
+                               "Scales the whole window without rearranging it. Auto shrinks the interface when the "
+                               "screen is too small for it, and enlarges it to 125% on a screen with room for that. "
+                               "A new scale takes effect when QK4 restarts.");
 
     layout->addStretch();
 

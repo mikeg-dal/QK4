@@ -1,8 +1,9 @@
 name: Reusable · Raspberry Pi build
 
 # Reusable Raspberry Pi (ARM64) builder. Called by build-signed.yml, release.yml and ci-packaging.yml;
-# never triggered directly. All the real work lives in .github/scripts/build-pi.sh,
-# which already takes the version string as $1 and stamps it via QK4_VERSION_FULL.
+# never triggered directly. The build and bundling live in .github/scripts/build-pi.sh,
+# which takes the version string as $1 and stamps it via QK4_VERSION_FULL; the clean-system
+# dependency check lives in .github/scripts/check-pi-deps.sh.
 
 on:
   workflow_call:
@@ -26,7 +27,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    # WHY a native arm64 runner: the official Qt for linux_arm64 is a native build, and building
+    # on arm64 retires the x86 cross toolchain, which needed Debian's own Qt for its host tools.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     outputs:
       artifact-name: ${{ steps.names.outputs.artifact }}
@@ -37,23 +40,45 @@ jobs:
         id: names
         run: echo "artifact=QK4-raspberry-pi-${{ inputs.version }}" >> $GITHUB_OUTPUT
 
+      - name: Read Qt version
+        # WHY: the Pi ships the same official Qt as every other platform (.github/qt-version), not
+        # Debian Trixie's 6.8.
+        run: echo "QT_VERSION=$(tr -d '[:space:]' < .github/qt-version)" >> "$GITHUB_ENV"
+
+      - name: Install Qt
+        # Installed on the runner and mounted into the Debian build container below. install-deps
+        # is off: nothing builds on the runner itself.
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux_arm64'
+          target: 'desktop'
+          arch: 'linux_gcc_arm64'
+          modules: 'qtmultimedia qtshadertools qtserialport'
+          install-deps: 'false'
+          cache: true
+
       - name: Cache Pi build dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             /tmp/pi-apt-cache
             /tmp/pi-ccache
-          key: pi-arm64-${{ hashFiles('.github/scripts/build-pi.sh') }}
-          restore-keys: pi-arm64-
+          key: pi-native-arm64-${{ hashFiles('.github/scripts/build-pi.sh', '.github/qt-version') }}
+          restore-keys: pi-native-arm64-
 
-      - name: Cross-compile for ARM64 in Debian Trixie
+      - name: Build for ARM64 in Debian Trixie
+        # WHY Trixie and not the runner's Ubuntu: the bundled system libraries (OpenSSL, PulseAudio,
+        # ALSA, opus, hidapi, libusb) and the binary's glibc must be Raspberry Pi OS's own.
         run: |
           mkdir -p /tmp/pi-apt-cache /tmp/pi-ccache
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -v "${QT_ROOT_DIR}:/opt/qt:ro" \
             -v /tmp/pi-apt-cache:/var/cache/apt/archives \
             -v /tmp/pi-ccache:/ccache \
             -e CCACHE_DIR=/ccache \
+            -e QT_ROOT=/opt/qt \
             -w /workspace \
             debian:trixie \
             bash /workspace/.github/scripts/build-pi.sh "${{ inputs.version }}"
@@ -71,14 +96,28 @@ jobs:
             "QK4/QK4" \
             "QK4/run.sh" \
             "QK4/lib/libssl.so.3" \
+            "QK4/lib/libcrypto.so.3" \
+            "QK4/lib/libQt6Core.so.6" \
+            "QK4/lib/libicuuc.so." \
             "QK4/plugins/tls/libqopensslbackend.so" \
-            "QK4/plugins/platforms"; do
+            "QK4/plugins/platforms/libqxcb.so"; do
             if ! tar tzf "$TARBALL" | grep -q "^${required}"; then
               echo "ERROR: missing from tarball: $required"
               FAIL=1
             fi
           done
+          echo "tarball size: $(stat -c%s "$TARBALL") bytes"
           exit $FAIL
+
+      - name: Check the tarball's libraries on a clean Debian Trixie
+        # WHY a second, clean container: the build container has every -dev package, so a library
+        # the bundle forgot still resolves there. This one has only what a Pi OS desktop provides.
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            debian:trixie \
+            bash /workspace/.github/scripts/check-pi-deps.sh \
+              "/workspace/QK4-${{ inputs.version }}-raspberry-pi-arm64.tar.gz"
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

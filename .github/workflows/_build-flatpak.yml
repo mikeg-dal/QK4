@@ -35,7 +35,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.10
+      # WHY the digest: the kde-6.10 tag is rebuilt in place, so the tag alone does not say which
+      # image built a given bundle. The tag stays for readability and for scripts/check-qt-version.sh,
+      # which requires its X.Y to match .github/qt-version (a runtime branch cannot pin the patch).
+      # To refresh, resolve the tag's current index digest on ghcr.io and replace the sha256.
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.10@sha256:62920cbbb53c4e047801562c0475d70393482de9698dfeac740aad99e6c674e6
       # flatpak-builder needs to create its own sandboxes.
       options: --privileged
     outputs:
@@ -46,6 +50,16 @@ jobs:
       - name: Resolve artifact name
         id: names
         run: echo "artifact=QK4-linux-${{ inputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Cache key from the committed manifest
+        id: cache
+        # WHY before the pin step: pinning writes this commit into the manifest, so a hash taken
+        # after it changes on every commit and nothing is ever reused. The key has to start with
+        # `flatpak-builder-x86_64`, the prefix the action restores from (it appends `-x86_64`); the
+        # old `flatpak-builder-${{ github.sha }}` never matched it, so every build was cold and
+        # each commit saved another ~200 MB, filling the repository's 10 GB cache. flatpak-builder
+        # checks each module against its own checksums, so only the qk4 module rebuilds.
+        run: echo "key=flatpak-builder-x86_64-$(sha256sum flatpak/io.github.mikeg_dal.QK4.json | cut -c1-20)" >> "$GITHUB_OUTPUT"
 
       - name: Pin manifest to this commit and stamp the version
         env:
@@ -84,7 +98,7 @@ jobs:
           manifest-path: flatpak/io.github.mikeg_dal.QK4.json
           bundle: QK4-${{ inputs.version }}-linux-x86_64.flatpak
           upload-artifact: false
-          cache-key: flatpak-builder-${{ github.sha }}
+          cache-key: ${{ steps.cache.outputs.key }}
 
       - name: Verify build output
         env:

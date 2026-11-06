@@ -5,7 +5,7 @@
 
 class RadioState;
 
-// Text-decode state (TD / TD$ / TD$$) and text-buffer pass-through (TB / TB$).
+// Text-decode state (TD / TD$) and text-buffer pass-through (TB / TB$).
 //
 // WHY — Pattern C (plain-struct + façade re-read):
 // Each subsystem is a plain struct, not a QObject. RadioState remains the
@@ -15,12 +15,21 @@ class RadioState;
 // both the owning state struct AND RadioState — the latter lets them emit
 // signals through the façade. See PATTERNS.md → Subsystem State.
 struct TextDecodeState {
+    // WHY: TD<mode><threshold><lines>; carries each field as one digit, so the K4 cannot express
+    // 10 lines. The parser, setConfig and the window all bound by these.
+    static constexpr int ModeMin = 0;
+    static constexpr int ModeMax = 4;
+    static constexpr int ThresholdMin = 0;
+    static constexpr int ThresholdMax = 9;
+    static constexpr int LinesMin = 1;
+    static constexpr int LinesMax = 9;
+
     // Text Decode (TD) — Main RX
     int textDecodeMode = -1;      // 0=off, 1=DATA/SSB on, 2=8-45WPM, 3=8-60WPM, 4=8-90WPM
     int textDecodeThreshold = -1; // 0=AUTO, 1-9 (CW only)
-    int textDecodeLines = -1;     // 1-10 lines
+    int textDecodeLines = -1;     // 1-9 lines
 
-    // Text Decode (TD$$) — Sub RX
+    // Text Decode (TD$) — Sub RX
     int textDecodeModeB = -1;
     int textDecodeThresholdB = -1;
     int textDecodeLinesB = -1;
@@ -39,15 +48,9 @@ void handleTDSub(TextDecodeState &state, RadioState &owner, const QString &cmd);
 void handleTB(RadioState &owner, const QString &cmd);
 void handleTBSub(RadioState &owner, const QString &cmd);
 
-// Optimistic setters used by MainWindow when it issues TD SET to the K4
-// (the K4 does not echo DT / TD SET commands, so RadioState mutates the
-// field directly and emits).
-void setMode(TextDecodeState &state, RadioState &owner, int mode);
-void setThreshold(TextDecodeState &state, RadioState &owner, int threshold);
-void setLines(TextDecodeState &state, RadioState &owner, int lines);
-void setModeB(TextDecodeState &state, RadioState &owner, int mode);
-void setThresholdB(TextDecodeState &state, RadioState &owner, int threshold);
-void setLinesB(TextDecodeState &state, RadioState &owner, int lines);
+// Optimistic: a whole TD / TD$ SET as QK4 sends it (TextDecodeController). Clamped to the bounds
+// above; emits textDecodeChanged or textDecodeBChanged once if anything changed.
+void setConfig(TextDecodeState &state, RadioState &owner, bool subRx, int mode, int threshold, int lines);
 
 } // namespace TextDecodeHandlers
 

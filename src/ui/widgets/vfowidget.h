@@ -3,21 +3,20 @@
 
 #include <QWidget>
 #include <QLabel>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QStackedWidget>
 #include <QColor>
+#include "models/radiostate/spectrumdisplaystate.h"
 
 class MiniPanRhiWidget;
 class TxMeterWidget;
 class FrequencyDisplayWidget;
 
 /**
- * @brief Per-VFO (A or B) panel: frequency display, mode/AGC/pre/att/NB/NR/notch/APF labels,
+ * @brief Per-VFO (A or B) panel: frequency display, AGC/PRE/ATT/NB/NR/NTCH/APF labels,
  *        multifunction S/Po/ALC/COMP/SWR/Id meter, and a stacked mini-panadapter toggle. The
- *        stacked widget swaps index 0 (normal label column) ↔ index 1 (MiniPan) on click. The
- *        `m_pending*` fields cache mini-pan configuration applied from RadioState before the
- *        mini-pan is lazy-constructed.
+ *        stacked widget swaps index 0 (meter) ↔ index 1 (MiniPan) on click; the feature row stays
+ *        below it. The `m_pending*` fields cache mini-pan configuration applied from RadioState
+ *        before the mini-pan is lazy-constructed.
  */
 class VFOWidget : public QWidget {
     Q_OBJECT
@@ -29,9 +28,9 @@ public:
 
     // Setters for radio state
     void setFrequency(const QString &formatted);
-    void setTuningRate(int rate); // 0-5: 1Hz, 10Hz, 100Hz, 1kHz, 10kHz, 100kHz
+    void setTuningRate(int rate); // VT 0-5: 1Hz, 10Hz, 100Hz, 1kHz, 10kHz, 100Hz (KHZ key)
     void setSMeterValue(double value);
-    void setAGC(const QString &mode);
+    void setAGC(const QString &label, bool active);
     void setPreamp(bool on, int level);
     void setAtt(bool on, int level);
     void setNB(bool on);
@@ -46,7 +45,7 @@ public:
     void setTxMeterQrp(bool isQrp);
 
     // Mini-pan support
-    void updateMiniPan(const QByteArray &data);
+    void updateMiniPan(const QByteArray &bins, qint64 centerHz, int spanHz);
     void showMiniPan();
     void showNormal();
     bool isMiniPanVisible() const;
@@ -55,15 +54,15 @@ public:
     void setMiniPanMode(const QString &mode);
     void setMiniPanDataSubMode(int subMode);
     void setMiniPanFilterBandwidth(int bw);
+    void setMiniPanTunedFrequency(qint64 freqHz);
     void setMiniPanIfShift(int shift);
-    void setMiniPanCwPitch(int pitch);
     void setMiniPanNotchFilter(bool enabled, int pitchHz);
     void setMiniPanPassbandColor(const QColor &color);
     void setMiniPanWaterfallHeight(int percent);
     void setMiniPanAveraging(int level);
-
-    // Access to mini-pan (may return nullptr if not yet created)
-    MiniPanRhiWidget *miniPan() const { return m_miniPan; }
+    void setMiniPanRefLevel(int level);
+    void setMiniPanScale(int scale);
+    void setMiniPanWaterfallColorRange(int db);
 
     // Access to frequency display for styling (e.g., dimming when SUB RX off)
     FrequencyDisplayWidget *frequencyDisplay() const { return m_frequencyDisplay; }
@@ -83,6 +82,7 @@ public:
     // Open or cancel direct frequency entry on this VFO's display.
     void beginFrequencyEntry();
     void cancelFrequencyEntry();
+    void setFrequencyEntryLocked(bool locked); // VFO lock: no typed frequency (FrequencyDisplayWidget)
 
 signals:
     void normalContentClicked();                      // User clicked normal view → show mini-pan
@@ -100,7 +100,7 @@ private:
     VFOType m_type;
     QString m_primaryColor;
 
-    // Tuning rate indicator (0-5: 1Hz to 100kHz)
+    // VT tuning step (0-5; see setTuningRate)
     int m_tuningRate = 3; // Default 1kHz
 
     // Widgets
@@ -126,12 +126,15 @@ private:
     int m_pendingDataSubMode = 0;
     int m_pendingFilterBw = 2400;
     int m_pendingIfShift = 50;
-    int m_pendingCwPitch = 600;
+    qint64 m_pendingTunedFreq = 0;
     bool m_pendingNotchEnabled = false;
     int m_pendingNotchPitchHz = 0;
     QColor m_pendingPassbandColor;
     int m_pendingWaterfallHeight = -1; // -1 = unset, use MiniPan default
     int m_pendingAveraging = 1;
+    int m_pendingRefLevel = SpectrumDisplayLimits::RefLevelDefault;
+    int m_pendingScale = SpectrumDisplayLimits::ScaleDefault;
+    int m_pendingWaterfallColorRange = -1; // #WBS; -1 until the radio reports it
 };
 
 #endif // VFOWIDGET_H

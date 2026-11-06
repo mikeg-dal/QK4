@@ -3,6 +3,10 @@
 
 #include <QMouseEvent>
 #include <QPainter>
+#include <QResizeEvent>
+#include <algorithm>
+#include <numeric>
+#include <utility>
 
 DxSpotOverlay::DxSpotOverlay(QWidget *parent) : QWidget(parent) {
     setAttribute(Qt::WA_TranslucentBackground);
@@ -23,6 +27,21 @@ void DxSpotOverlay::setFrequencyRange(qint64 centerFreq, int spanHz) {
         layoutLabels();
         update();
     }
+}
+
+void DxSpotOverlay::setLeftReservedPx(int px) {
+    const int clamped = qMax(0, px);
+    if (m_leftReservedPx == clamped)
+        return;
+    m_leftReservedPx = clamped;
+    layoutLabels();
+    update();
+}
+
+int DxSpotOverlay::labelLeftFor(int xCenter, int textWidth) const {
+    const int maxLeft = qMax(0, width() - textWidth);
+    const int minLeft = qMin(m_leftReservedPx, maxLeft);
+    return qBound(minLeft, xCenter - textWidth / 2, maxLeft);
 }
 
 void DxSpotOverlay::setFontPixelSize(int px) {
@@ -69,10 +88,19 @@ void DxSpotOverlay::layoutLabels() {
             (i == m_spots.size() - 1) || (m_spots[i + 1].frequencyHz - m_spots[clusterStart].frequencyHz > 500);
         if (endOfCluster) {
             int clusterSize = i - clusterStart + 1;
-            // Take only the most recent spots (they're at the end since newer spots replace older)
-            int startIdx = (clusterSize > MAX_PER_FREQUENCY) ? i - MAX_PER_FREQUENCY + 1 : clusterStart;
             int overflow = clusterSize - MAX_PER_FREQUENCY;
-            for (int j = startIdx; j <= i; ++j)
+            // Keep the cluster's MAX_PER_FREQUENCY newest spots, still in frequency order. WHY: the
+            // cluster's last entries in m_spots (frequency order) were its highest frequencies, so
+            // a fresh spot at the low end of a busy FT8 column was the one hidden behind "+N".
+            QVector<int> kept(clusterSize);
+            std::iota(kept.begin(), kept.end(), clusterStart);
+            if (overflow > 0) {
+                std::partial_sort(kept.begin(), kept.begin() + MAX_PER_FREQUENCY, kept.end(),
+                                  [this](int a, int b) { return m_spots[a].timestamp > m_spots[b].timestamp; });
+                kept.resize(MAX_PER_FREQUENCY);
+                std::sort(kept.begin(), kept.end());
+            }
+            for (int j : kept)
                 filteredSpots.append(&m_spots[j]);
             // If we capped this cluster, record for the "+N" badge
             if (overflow > 0) {
@@ -103,17 +131,8 @@ void DxSpotOverlay::layoutLabels() {
             continue;
 
         int textWidth = fm.horizontalAdvance(spot->spottedCall);
-        int labelLeft = xInt - textWidth / 2;
+        int labelLeft = labelLeftFor(xInt, textWidth);
         int labelRight = labelLeft + textWidth;
-
-        // Clamp to widget bounds
-        if (labelLeft < 0) {
-            labelLeft = 0;
-            labelRight = textWidth;
-        } else if (labelRight > width()) {
-            labelRight = width();
-            labelLeft = labelRight - textWidth;
-        }
 
         // Find first available row (top-down)
         int assignedRow = -1;
@@ -141,7 +160,7 @@ void DxSpotOverlay::layoutLabels() {
         label.frequencyHz = spot->frequencyHz;
         label.xPixel = xInt;
         label.row = assignedRow;
-        // Bottom-up: row 0 just above the noise-floor anchor (or fallback margin), higher rows stack upward
+        // Bottom-up: row 0 sits on the midpoint, higher rows stack upward
         int y = qBound(TOP_MARGIN, stackBase - (assignedRow + 1) * rh, height() - rh);
         label.rect = QRect(labelLeft, y, textWidth, rh);
         m_labels.append(label);
@@ -153,13 +172,13 @@ void DxSpotOverlay::layoutLabels() {
             continue;
         // Find the highest row used at this X position
         int lastRow = 0;
-        for (const auto &other : m_labels) {
+        for (const auto &other : std::as_const(m_labels)) {
             if (other.row >= 0 && qAbs(other.xPixel - label.xPixel) < 40)
                 lastRow = qMax(lastRow, other.row);
         }
         int badgeRow = qMin(lastRow + 1, maxRows - 1);
         int tw = fm.horizontalAdvance(label.callsign);
-        int lx = label.xPixel - tw / 2;
+        int lx = labelLeftFor(label.xPixel, tw);
         label.row = badgeRow;
         int y = qBound(TOP_MARGIN, stackBase - (badgeRow + 1) * rh, height() - rh);
         label.rect = QRect(lx, y, tw, rh);
@@ -177,31 +196,14 @@ void DxSpotOverlay::paintEvent(QPaintEvent *event) {
     QFont font = K4Styles::Fonts::paintFont(m_fontPixelSize);
     painter.setFont(font);
 
-    QColor textColor(K4Styles::Colors::VfoACyan);
-    QColor badgeColor(K4Styles::Colors::TextGray); // Dimmer for "+N more" badges
-    QColor outlineColor(0, 0, 0, 153);             // Black at 60% alpha
-
-    QPen outlinePen(outlineColor);
-    outlinePen.setWidth(1);
-    QPen textPen(textColor);
+    const QColor textColor(K4Styles::Colors::VfoACyan);
+    const QColor badgeColor(K4Styles::Colors::TextSecondary); // Dimmer for "+N more" badges
 
     for (const auto &label : m_labels) {
-        int textY = label.rect.y() + label.rect.height() - 2;
-
-        // Text outline (draw text offset in 4 directions for readability)
-        painter.setPen(outlinePen);
-        for (int dx = -1; dx <= 1; ++dx) {
-            for (int dy = -1; dy <= 1; ++dy) {
-                if (dx == 0 && dy == 0)
-                    continue;
-                painter.drawText(label.rect.x() + dx, textY + dy, label.callsign);
-            }
-        }
-
-        // Foreground text — use dimmer color for "+N" overflow badges
-        bool isBadge = label.callsign.startsWith('+');
-        painter.setPen(isBadge ? QPen(badgeColor) : textPen);
-        painter.drawText(label.rect.x(), textY, label.callsign);
+        const int textY = label.rect.y() + label.rect.height() - 2;
+        const bool isBadge = label.callsign.startsWith('+');
+        K4Styles::drawHaloText(painter, QPointF(label.rect.x(), textY), label.callsign,
+                               isBadge ? badgeColor : textColor);
     }
 }
 
@@ -211,7 +213,7 @@ void DxSpotOverlay::mousePressEvent(QMouseEvent *event) {
         QPoint pos = event->pos();
         for (const auto &label : m_labels) {
             // WHY: pad the hit rect by 2 px in each direction. The painted text rect is only
-            // 12 px tall and the visible glyph has a 1 px outline halo; without padding the
+            // one text line tall and the visible glyph has a 1 px outline halo; without padding the
             // user has to land pixel-perfect on the rect and easily clicks 1–2 px outside it.
             if (label.rect.adjusted(-2, -2, 2, 2).contains(pos)) {
                 if (button == Qt::LeftButton)
@@ -226,4 +228,10 @@ void DxSpotOverlay::mousePressEvent(QMouseEvent *event) {
     // Not on a spot label — pass through to panadapter click-tune (left → VFO A,
     // right → VFO B at the mouse-x frequency).
     event->ignore();
+}
+
+void DxSpotOverlay::resizeEvent(QResizeEvent *event) {
+    QWidget::resizeEvent(event);
+    // Label positions and click targets are laid out against the width and height.
+    layoutLabels();
 }

@@ -20,8 +20,8 @@ EqBandWidget::EqBandWidget(int bandIndex, const QString &freqLabel, const QStrin
     m_valueLabel = new QLabel("0", this);
     m_valueLabel->setAlignment(Qt::AlignCenter);
     m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::FontSizeMedium));
+                                    .arg(K4Styles::Colors::TextPrimary)
+                                    .arg(K4Styles::Dimensions::FontSizeCaption));
     m_valueLabel->setFixedHeight(K4Styles::Dimensions::CheckboxSize);
     layout->addWidget(m_valueLabel);
 
@@ -39,7 +39,7 @@ EqBandWidget::EqBandWidget(int bandIndex, const QString &freqLabel, const QStrin
     m_slider->setValue(0);
     m_slider->setFixedSize(32, K4Styles::Dimensions::InputFieldWidthMedium);
 
-    // Vertical slider stylesheet with cyan fill below handle
+    // Vertical slider stylesheet with the accent-colour fill below the handle
     QString sliderStyle = QString("QSlider::groove:vertical {"
                                   "  border: 1px solid %1;"
                                   "  width: 10px;"
@@ -71,7 +71,7 @@ EqBandWidget::EqBandWidget(int bandIndex, const QString &freqLabel, const QStrin
                               .arg(K4Styles::Colors::SelectedMid1)            // handle gradient mid
                               .arg(K4Styles::Colors::SelectedBottom)          // handle gradient bottom
                               .arg(K4Styles::Colors::BorderNormal)            // handle border
-                              .arg(accentColor)                               // fill color (cyan)
+                              .arg(accentColor)                               // fill colour (accent)
                               .arg(K4Styles::Dimensions::SliderBorderRadius); // handle border radius
 
     m_slider->setStyleSheet(sliderStyle);
@@ -94,8 +94,8 @@ EqBandWidget::EqBandWidget(int bandIndex, const QString &freqLabel, const QStrin
                                        "border: 1px solid %7;"
                                        "border-radius: 4px;"
                                        "padding: 2px 4px;")
-                                   .arg(K4Styles::Colors::TextWhite)
-                                   .arg(K4Styles::Dimensions::FontSizeSmall)
+                                   .arg(K4Styles::Colors::TextPrimary)
+                                   .arg(K4Styles::Dimensions::FontSizeCaption)
                                    .arg(K4Styles::Colors::GradientTop)
                                    .arg(K4Styles::Colors::GradientMid1)
                                    .arg(K4Styles::Colors::GradientMid2)
@@ -188,9 +188,7 @@ EqPresetRowWidget::EqPresetRowWidget(int presetIndex, QWidget *parent) : QWidget
     // Preset name/load button
     m_loadBtn = new QPushButton("---", this);
     m_loadBtn->setFixedSize(48, 26);
-    m_loadBtn->setStyleSheet(
-        K4Styles::menuBarButtonSmall() +
-        QString("QPushButton { font-size: %1px; padding: 2px; }").arg(K4Styles::Dimensions::FontSizeSmall));
+    m_loadBtn->setStyleSheet(K4Styles::eqPresetLoadButton());
     connect(m_loadBtn, &QPushButton::clicked, this, &EqPresetRowWidget::onLoadClicked);
     layout->addWidget(m_loadBtn);
 
@@ -199,7 +197,7 @@ EqPresetRowWidget::EqPresetRowWidget(int presetIndex, QWidget *parent) : QWidget
     m_saveBtn->setFixedSize(K4Styles::Dimensions::ButtonHeightMini, 26);
     m_saveBtn->setStyleSheet(
         K4Styles::menuBarButtonSmall() +
-        QString("QPushButton { font-size: %1px; font-weight: bold; }").arg(K4Styles::Dimensions::FontSizeSmall));
+        QString("QPushButton { font-size: %1px; font-weight: bold; }").arg(K4Styles::Dimensions::FontSizeCaption));
     m_saveBtn->setToolTip("Save current EQ to this preset");
     connect(m_saveBtn, &QPushButton::clicked, this, &EqPresetRowWidget::onSaveClicked);
     layout->addWidget(m_saveBtn);
@@ -207,18 +205,8 @@ EqPresetRowWidget::EqPresetRowWidget(int presetIndex, QWidget *parent) : QWidget
 
 void EqPresetRowWidget::setPresetName(const QString &name) {
     m_name = name;
-    if (name.isEmpty()) {
-        m_loadBtn->setText("---");
-        m_loadBtn->setStyleSheet(K4Styles::menuBarButtonSmall() +
-                                 QString("QPushButton { font-size: %1px; padding: 2px; color: %2; }")
-                                     .arg(K4Styles::Dimensions::FontSizeSmall)
-                                     .arg(K4Styles::Colors::TextGray));
-    } else {
-        m_loadBtn->setText(name);
-        m_loadBtn->setStyleSheet(
-            K4Styles::menuBarButtonSmall() +
-            QString("QPushButton { font-size: %1px; padding: 2px; }").arg(K4Styles::Dimensions::FontSizeSmall));
-    }
+    m_loadBtn->setText(name.isEmpty() ? QStringLiteral("---") : name);
+    K4Styles::setStyleFlag(m_loadBtn, K4Styles::DimmedProperty, name.isEmpty());
 }
 
 void EqPresetRowWidget::onLoadClicked() {
@@ -264,8 +252,8 @@ void RxEqPopupWidget::setupUi(const QString &title, const QString &accentColor) 
                                       "  stop:0 %3, stop:1 %4);"
                                       "padding: 6px 12px;"
                                       "border-radius: 4px;")
-                                  .arg(K4Styles::Colors::TextWhite)
-                                  .arg(K4Styles::Dimensions::FontSizePopup)
+                                  .arg(K4Styles::Colors::TextPrimary)
+                                  .arg(K4Styles::Dimensions::FontSizeHeading)
                                   .arg(K4Styles::Colors::GradientTop)
                                   .arg(K4Styles::Colors::GradientBottom));
     mainLayout->addWidget(titleLabel);
@@ -293,8 +281,8 @@ void RxEqPopupWidget::setupUi(const QString &title, const QString &accentColor) 
 
     auto *dbLabel = new QLabel("dB", this);
     dbLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                               .arg(K4Styles::Colors::TextWhite)
-                               .arg(K4Styles::Dimensions::FontSizeMedium));
+                               .arg(K4Styles::Colors::TextPrimary)
+                               .arg(K4Styles::Dimensions::FontSizeCaption));
     dbLabel->setAlignment(Qt::AlignCenter);
     labelsLayout->addWidget(dbLabel);
 
@@ -302,8 +290,8 @@ void RxEqPopupWidget::setupUi(const QString &title, const QString &accentColor) 
 
     auto *hzLabel = new QLabel("Hz", this);
     hzLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                               .arg(K4Styles::Colors::TextWhite)
-                               .arg(K4Styles::Dimensions::FontSizeMedium));
+                               .arg(K4Styles::Colors::TextPrimary)
+                               .arg(K4Styles::Dimensions::FontSizeCaption));
     hzLabel->setAlignment(Qt::AlignCenter);
     labelsLayout->addWidget(hzLabel);
 
@@ -341,22 +329,8 @@ QSize RxEqPopupWidget::contentSize() const {
     int cm = K4Styles::Dimensions::PopupContentMargin;
     // 8 bands * 50px + 7 gaps * 8px + labels column ~30px + buttons column ~85px + margins
     int width = 8 * 50 + 7 * 8 + 30 + 85 + 2 * cm;
-    // Height: title ~30px + bands ~250px + margins
     int height = 310 + 2 * cm;
     return QSize(width, height);
-}
-
-void RxEqPopupWidget::setBandValue(int bandIndex, int dB) {
-    if (bandIndex >= 0 && bandIndex < m_bands.size()) {
-        m_bands[bandIndex]->setValue(dB);
-    }
-}
-
-int RxEqPopupWidget::bandValue(int bandIndex) const {
-    if (bandIndex >= 0 && bandIndex < m_bands.size()) {
-        return m_bands[bandIndex]->value();
-    }
-    return 0;
 }
 
 void RxEqPopupWidget::setAllBands(const QVector<int> &values) {

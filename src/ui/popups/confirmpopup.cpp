@@ -40,10 +40,12 @@ ConfirmPopup::ConfirmPopup(const QString &title, const QString &body, const QStr
     connect(m_cancelButton, &QPushButton::clicked, this, &ConfirmPopup::onCancelClicked);
 
     // Click-away / Escape (handled by K4PopupBase) reach us via closed().
-    // Emit cancelled() unless the user explicitly confirmed.
+    // Emit cancelled() unless the user explicitly confirmed. The latch belongs to one show, so it is
+    // consumed here; a reused popup must report a later cancel.
     connect(this, &K4PopupBase::closed, this, [this]() {
         if (!m_confirmedLatch)
             emit cancelled();
+        m_confirmedLatch = false;
     });
 
     auto *layout = new QVBoxLayout(this);

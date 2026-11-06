@@ -6,14 +6,14 @@
 #include <QLabel>
 #include <QComboBox>
 
-class QVBoxLayout;
+class QFormLayout;
 class KpodDevice;
 class KpodPlusDevice;
 
 /**
- * @brief OptionsDialog "KPOD" tab. Toggles KPOD USB tuning-knob integration and shows
+ * @brief OptionsDialog "K-Pod" tab. Toggles KPOD USB tuning-knob integration and shows
  *        probe/descriptor info (vendor id, product id, firmware) from the connected device.
- *        When a KPOD+ is detected, shows additional keyer configuration controls.
+ *        When a KPOD+ is detected, also shows its Encode Mode.
  */
 class KpodPage : public QWidget {
     Q_OBJECT
@@ -25,7 +25,7 @@ public:
 
 private:
     void updateKpodStatus();
-    void setupKeyerConfigSection(QVBoxLayout *layout);
+    void setupKeyerConfigSection(QFormLayout *form);
 
     KpodDevice *m_kpodDevice;
     KpodPlusDevice *m_kpodPlusDevice;
@@ -41,10 +41,9 @@ private:
     QLabel *m_kpodDeviceIdLabel = nullptr;
     QLabel *m_kpodHelpLabel = nullptr;
 
-    // KPOD+ configuration controls. Keyer speed / CW pitch / iambic mode /
-    // paddle orientation are no longer configured here — they mirror the K4
-    // (see CwController). Encode mode has no K4 equivalent and stays manual.
-    QWidget *m_keyerConfigWidget = nullptr;
+    // KPOD+ Encode Mode, the one KPOD+ setting with no K4 equivalent; the rest mirror the K4 (CwController).
+    QFormLayout *m_form = nullptr;
+    QLabel *m_keyerTitle = nullptr; // section header; its rows are shown only while a KPOD+ is detected
     QComboBox *m_encodeModeCombo = nullptr;
 };
 

@@ -1,6 +1,6 @@
 # K4 Protocol Quirks — Canonical Reference
 
-This document catalogs non-obvious K4 CAT behaviors that shape the QK4 code base. Each quirk has a *symptom*, the *K4 behavior* that causes it, and *where QK4 encodes the workaround* (with file:line so a maintainer can trace it).
+This document catalogs non-obvious K4 CAT behaviors that shape the QK4 code base. Each quirk has a *symptom*, the *K4 behavior* that causes it, and *where QK4 encodes the workaround*. Code is cited by file and function or constant name, not by line number (see "How to extend this document").
 
 Sources: every behaviour here was verified by driving a K4/0 server directly over a Python socket and reading what came back — QK4's own code is never the source of truth for this document. Raw session transcripts are kept in the maintainer's private notes; the findings, not the transcripts, are what this file records.
 
@@ -16,7 +16,7 @@ Sources: every behaviour here was verified by driving a K4/0 server directly ove
 - `src/models/radiostate.cpp` — the handler registry. See preamble comment in `registerCommandHandlers()` (file top of that function). Registry sorts **longest prefix first** so dispatch correctly prefers `RO$` over `RO`. Each `$` variant typically updates a `*B` member and emits a `*BChanged` signal.
 - `src/models/radiostate.h` — class-level Doxygen comment documents the convention.
 
-**Rules for new parser work.** Add the `$` variant's entry **before** the base variant in the registry (longer-prefix-first), and update/test both.
+**Rules for new parser work.** Register both variants and test both. The order you append them in does not matter: `registerCommandHandlers()` sorts the table longest prefix first after every entry is added. `tests/test_radiostate_registry.cpp` checks the sorted order.
 
 ---
 
@@ -29,11 +29,12 @@ Sources: every behaviour here was verified by driving a K4/0 server directly ove
 - Split + XIT (TX on VFO B)  → offset lives in `RO$` (VFO B).
 - BSET + RIT                 → offset lives in `RO$` (VFO B).
 
-`RU;` / `RD;` (increment/decrement) adjust *whichever register is currently active* and echo that register's name back (`RO` or `RO$`). `XT/;` (toggle) echoes `XT1;`/`XT0;`, but `XT1;` / `XT0;` (set) do *not* echo. `RC;` clears `RO`; to clear `RO$` send `RO$+0000;`.
+`RU;` / `RD;` (increment/decrement) adjust the active register and echo its name back (`RO` or `RO$`). One exception is encoded in QK4: with BSET on and only RIT active, QK4 sends `RU$;` / `RD$;`, because its code comment says plain `RU;` would adjust `RO` (VFO A). That exception has not been confirmed on a socket. `SW54;` (the BSET-aware RIT toggle) does not echo `RT$` or `RO$`, so QK4 queries both after sending it. `XT/;` (toggle) echoes `XT1;`/`XT0;`, but `XT1;` / `XT0;` (set) do *not* echo. `RC;` clears `RO`; to clear `RO$` send `RO$+0000;`.
 
 **QK4 encoding.**
-- `src/models/radiostate.cpp` — `RO$` handler at the inline lambda near L1095 (documented inline); `RT$` at L1112; base `RO`/`RT` handlers later in the registry.
-- UI consumption: see MainWindow's RIT/XIT box + BSET-aware routing.
+- `src/models/radiostate.cpp` — `registerCommandHandlers()` registers `RO$` and `RT$`, which forward to `FrequencyVfoHandlers::handleROSub` / `handleRTSub`. The WHY is in `handleROSub` (`src/models/radiostate/frequencyvfostate.cpp`). The base `RO` / `RT` go to `RadioState::handleRO` / `handleRT`.
+- UI: `RitXitController` (`src/controllers/ritxitcontroller.cpp`) picks which register to display, sends `SW54;` or `RT/;` on a RIT click, and sends `RU$`/`RD$` from the wheel in the BSET + RIT case.
+- KPOD: the rocker's RIT/XIT position in `HardwareController` (`src/controllers/hardwarecontroller.cpp`) applies the same `RU$`/`RD$` rule.
 
 **Gotcha.** When testing via direct socket, make sure QK4 is not also connected to the same K4 — interleaved commands confuse the test.
 
@@ -46,33 +47,43 @@ Sources: every behaviour here was verified by driving a K4/0 server directly ove
 **K4 behavior.** The K4 applies the new SL tier but does not echo an `SL<n>;` response. There is no query form that returns the current tier either. The tier → packet-size map was verified by socket session: four distinct tiers, bundling 20 / 40 / 60 / 120 ms of audio per packet.
 
 **QK4 encoding.**
-- `src/mainwindow.cpp::onRadioReady` — after the `RDY;` dump, QK4 sends its configured `SL` tier *and* calls `m_radioState->parseCATCommand("SL<n>;")` optimistically so RadioState (and everything downstream — AudioEngine frame sizing, the UI menu) matches what we just requested. Long comment block there explains why this post-RDY override is necessary.
-- Tier changes at runtime (from the radio manager dialog) go through `ConnectionController` → `RadioState::streamingLatencyChanged`, which AudioController listens to for TX Opus frame-size reconfiguration.
+- `TcpClient` sends the configured `SL<n>;` after `RDY;` in its fixed post-auth sequence. That is the only send on connect.
+- `src/mainwindow.cpp::onRadioReady` calls `m_radioState->parseCATCommand("SL<n>;")` with the same tier, so RadioState (and everything downstream — AudioEngine frame sizing, the UI menu) matches what was requested. Until 2026-11 it also sent `SL<n>;` a second time; that duplicate is gone.
+- Tier changes at runtime: a MainWindow lambda on `RadioManagerDialog::streamingLatencyChanged` sends `SL<n>;` and calls `parseCATCommand` with the same string. `RadioState` then emits `streamingLatencyChanged`, and `AudioController::onStreamingLatencyChanged` resizes the TX Opus frames.
 
 ---
 
 ## 4. `TX;` / `RX;` control
 
-**Symptom.** `TX;` and `RX;` from WSJT-X / MacLoggerDX need to drive QK4's internal PTT state and TX audio gate — not just forward to the K4.
+**Symptom.** WSJT-X and similar programs send `TX;` and `RX;` to QK4's CAT server. Forwarding them to the K4 would key it the wrong way.
 
-**K4 behavior.** `TX;` puts the radio in transmit; `RX;` returns it to receive. These are the canonical PTT commands over CAT.
+**K4 behavior.** `TX;` keys the K4 to transmit from its own audio input. Audio packets from QK4 carry a tunnel header, and that header alone keys the K4 to transmit the streamed audio. So `TX;` and "stream audio" are two different ways to key the radio, not one. The rationale is recorded in `src/models/transmitowner.h`. This section has not been re-confirmed on a socket since it was written; the design rests on that header comment.
 
 **QK4 encoding.**
-- `src/network/catserver.h` — `CatServer::pttRequested(bool)` signal emitted on parsed `TX;`/`RX;` from external CAT clients.
-- `src/mainwindow.cpp` — `sendCAT("TX;"|"RX;")` for internal PTT button flows at `:2601`; the disconnect path sends `RX;` (`:93`) to unlock both the K4 and QK4's internal gate.
-- Tests: `tests/test_catserver.cpp` covers the `TX;` / `RX;` → `pttRequested` pathway end-to-end over a real TCP loopback socket.
+- `CatServer` never forwards `TX;` or `RX;` to the K4. It records which client asked and emits `pttRequested(bool)` (the TX/RX branch in `catserver.cpp`). `TX/;` toggles from the radio's current TX state.
+- MainWindow routes `pttRequested` to `TransmitController::engage(Owner::CatClient, Route::StreamedFromHere)` or `release(Owner::CatClient)`. `StreamedFromHere` opens the audio gate and sends no `TX;`.
+- `TransmitOwner` (`src/models/transmitowner.h`) decides who holds the transmitter: PTT button, XMIT, CAT client, TCI client or the radio itself. It returns the effects of each decision. A release is the exact inverse of its engage, never a fixed `RX;`.
+- `TransmitController::apply` (`src/controllers/transmitcontroller.cpp`) is the only place that puts `TX;` or `RX;` on the wire, and it orders them against the audio gate. The routes that send `TX;` are `RadioLocal` and `CatKeyedAndStreamed` (XMIT).
+- The radio's own TX/RX is fed back through `RadioState::transmitStateChanged`. A disconnect calls `releaseAll()`. Esc calls `operatorStop()`, which always sends the CW abort (it carries its own `RX;`).
+- A CAT client that disconnects while holding PTT is released (`CatServer::releasePttIfOwner`).
+- Tests: `tests/test_transmitowner.cpp` covers the arbiter. `tests/test_catserver.cpp` covers `TX;`/`RX;` → `pttRequested` over a real TCP loopback socket.
 
 ---
 
 ## 5. Iambic latch semantics (internal keyer quirk)
 
-**Symptom.** Brief Iambic-A paddle taps would drop the character if naïve latch handling were used.
+**Symptom.** An iambic keyer that reads its paddles when its own timer fires decides on a state
+the operator may have left milliseconds earlier: a tap is lost, or a released squeeze earns an
+element nobody keyed.
 
-**K4 behavior.** Not a K4 quirk — a keyer-state-machine quirk. Iambic A terminates the character immediately when both paddles are released; Iambic B emits one more element. With atomic paddle state read off the hardware thread, the keyer's element-timer fire can race a paddle-release that already happened.
+**K4 behavior.** Not a K4 quirk — a keyer-state-machine quirk.
 
-**QK4 encoding.**
-- `src/hardware/iambickeyer.cpp::enterElement` (~L96) — clears **only** the just-consumed paddle's latch, preserves the opposite-paddle latch. Long WHY comment there explains the Iambic-A correctness argument.
-- `src/hardware/iambickeyer.h` — class-level Doxygen points readers at this quirk.
+**QK4 encoding (since 2026-10-27).** `src/hardware/paddlekeyer.cpp`, the port of K4-Companion's
+keyer, keeps every paddle edge in a time-stamped history. Each decision reads the paddles *as of
+when it was due* (`paddleTimestamps(asOf)`), and the memories are measured from when the previous
+element was *heard*. Iambic A keeps only the dit memory; Iambic B adds the dah memory, the
+squeeze-release memories and the Dit Memory Delay. The rules are pinned by Dale Farnsworth's 554
+recorded runs (`tests/test_paddlekeyersweeps.cpp`).
 
 See section 8 below for the KZ keying protocol that carries these elements to the K4.
 
@@ -89,7 +100,7 @@ Markers are mirror-imaged so corruption can't alias one for the other.
 **QK4 encoding.**
 - `src/network/protocol.h` — class/namespace header comment documents the frame format.
 - `src/network/protocol.cpp::parse` — the **"keep last 3 bytes"** branch when no marker is found is load-bearing: `START_MARKER` is 4 bytes; if a TCP read delivered 1–3 of those bytes, dropping them would lose sync on the next read. Inline WHY comment.
-- Buffer overflow recovery: `K4Protocol::MAX_BUFFER_SIZE = 1 MB` cap at `protocol.h:32`; overflow clears the buffer and warns.
+- Bogus lengths: a header announcing more than `K4Protocol::MAX_PAYLOAD_SIZE` (256 KiB, `protocol.h`) is treated as a false start marker and skipped, so it cannot stall parsing. There is no cap on a single read: every complete packet in it is delivered, and the unconsumed tail is bounded by one maximum frame.
 
 ---
 
@@ -115,8 +126,16 @@ Sidebar — not directly a protocol *quirk*, but non-obvious enough to belong he
 | `KZ-;` | dah element (3 dits on) |
 | `KZ ;` | letter space |
 | `KZP####;` | pause N ms before the next element (fist preservation) |
-| `KZL##;` | element length in ms (`1200 / WPM`) |
-| `KZD####;` / `KZU####;` | raw key-down / key-up for N ms. K4/0 uses this form for real-time paddle forwarding; QK4 does not |
+| `KZLnnnn;` | remote paddle **key-down initial delay**, 0–1000 ms, default 80. The K4 holds a remote key-down this long before transmitting, so the timed commands that follow arrive in time: a jitter buffer. **The operator's setting. QK4 reads it from the RDY dump and writes it only when the operator moves Key-Down Delay (Options → HaliKey → Remote Keying; `CwController::setKeyDownInitialDelay`).** It is *not* the element length |
+| `KZD####;` / `KZU####;` | timed key-down / key-up: `KZD` = the gap in ms before this key-down, `KZU` = how long it was down. The K4 replays the intervals behind its `KZL` delay, so network jitter cannot change an element. **QK4's HaliKey keyer sends only these** (since 2026-10-27; K4/0 and K4-Companion do the same) |
+
+**`KZL` was misread until 2026-10-27.** From `0bd443d` QK4 sent `KZL` = 1200 / WPM, two digits,
+on every connect and every speed change, taking it for the element length. That set the K4's
+remote-keying delay buffer to 30 ms at 40 WPM, shrinking it as the speed rose. The K4 stores the
+value, so a radio QK4 has keyed still holds the last one written. The golden capture of
+2026-04-20 shows `KZL60;` at `KS020`. Reset it once: Options → HaliKey → Remote Keying → Key-Down Delay, or the K4 menu.
+Reference: Elecraft K4 CAT, "KZL (Remote Paddle / Key-Down Initial Delay)". K4-Companion reads
+it the same way.
 
 **The byte between `Z` and `;` in the letter-space form is 0x20, a literal SPACE.** Confirmed by
 hexdump of EP02 traffic from a live KPOD+. Elecraft's `KPodKeyerInterface.pdf` v1.00 renders it as
@@ -127,8 +146,10 @@ Undocumented contest behaviour (confirmed by N6TV): inside an element-form strin
 `KZ-.-. --.-  -.;`, one blank is a 3-dit letter space and **two blanks are a 6-dit word space** —
 tighter than the ITU 7-dit default.
 
-QK4 emits these from `IambicKeyer` on its own high-priority thread, wired to the socket in
-`CwController`; see `src/hardware/README.md` for the keying chain.
+QK4's HaliKey keyer (`PaddleKeyer`) sends `KZD`/`KZU`. It runs on its own real-time thread (see
+`src/utils/README.md` → `rtscheduling`). The element
+forms `KZ.`/`KZ-`/`KZ `/`KZP` reach the K4 only from a KPOD+, whose EP02 strings are forwarded
+untouched. See `src/hardware/README.md` for the keying chain.
 
 ---
 
@@ -173,7 +194,8 @@ more mic gain to reach the same ALC. EM1 transmits audible noise while the opera
 
 **K4 behavior.** Three facts, all measured 2026-09-19 against a stationary reference — dummy load,
 **AGC OFF**, fixed AF gain, 20 s of receiver noise captured in each mode with
-`tools/k4_audio_capture.py` (capture `bench-logs/audiocal-20260919-0741`, 240,000 samples/mode):
+`tools/k4_audio_capture.py` (capture `bench-logs/audiocal-20260919-0741`, 240,000 samples/mode).
+Both are local to the maintainer's machine: `tools/` and `bench-logs/` are gitignored.
 
 1. **EM0 is 24-bit audio in a 32-bit container.** Its full scale is `2^23`, not the `2^17` QK4
    previously assumed. The K4's EM0 stream carries exactly **256× (2^8)** the values of its EM1
@@ -202,9 +224,10 @@ S32LE integers holding 24-bit values. Taking the documentation at its word is wh
   constants, including the 12.03 dB EM0-vs-EM1 spread.
 - `tests/test_rawaudioformat.cpp` — pins the TX wire format and scale.
 
-**Reproducing it.** `tools/k4_audio_capture.py capture ...` then `analyze`. AGC **must** be off: AGC
+**Reproducing it.** `tools/k4_audio_capture.py capture ...` then `analyze` (local-only script, not in git). AGC **must** be off: AGC
 normalises level and erases the quantity being measured. The modes cannot be compared simultaneously
-because `EM` is only applied at connect (it is sent in the startup macro), so the method relies on a
+because `EM` is only applied at connect (`TcpClient` sends it after `RDY;` in its fixed post-auth
+sequence; the user's startup macro goes out before `RDY;`), so the method relies on a
 stationary reference instead — captures minutes apart are comparable when the signal is receiver
 noise into a dummy load.
 
@@ -256,11 +279,117 @@ both on disconnect, because `SpectrumDisplayState::reset()` clears the flags wit
 
 ---
 
+## 13. AutoRef: the radio tracks REF itself, and a client `#REF` freezes it
+
+**Symptom.** The Display popup's AUTO button showed manual after every radio update, and Ctrl+Wheel
+could change REF while AutoRef was on. QK4 had parsed `#AR` against an invented format.
+
+**K4 behavior.** Measured on a K4D on 2026-10-19, once with `RDY;` alone and once with QK4's own
+`RDY;K41;ER1;` start-up. Both gave the same results.
+
+- **Format.** `#ARaadd±oom`: averaging, debounce, signed offset in dB, then `1` (auto) or `0`
+  (manual). Example: `#AR1201+041`. It is not `A`/`M`.
+- **Offset storage.** The AutoRef Offset menu is `ME0050`, stored 0–16 with 8 meaning 0 dB. The
+  front panel shows −8…+8. Each step sends `ME0050.00NN;` and a fresh `#AR`.
+- **`#AR` is pushed.** The radio sends it unprompted on every change, whether from the front panel
+  or from a client's `#AR/;` toggle.
+- **REF is pushed in AutoRef, with the offset already applied.** The radio sends `#REF`, `#HREF` and
+  their `$` forms unprompted as it tracks, in 1 dB steps.
+
+  ```
+  offset +4                #AR1201+041   REF -131/-132
+  offset +4 -> +8          #AR1201+081   REF -140 ... -136   (settles ~4 dB lower)
+  offset +8 -> +4          #AR1201+041   REF -137 ... -132
+  AutoRef off              #AR1201+040   REF updates stop
+  AutoRef on               #AR1201+041   REF -135 ... -132 within ~2 s
+  ```
+
+- **A client `#REF` during AutoRef is silently accepted and freezes tracking.** `#REF-110;` got no
+  reply. `#AR` still read `1`, but REF stayed at −110 against a −132 floor for over 20 s, until
+  AutoRef was toggled off and on.
+
+**QK4 encoding.**
+- `SpectrumDisplayHandlers::handleAR` (`src/models/radiostate/spectrumdisplaystate.cpp`) keeps only
+  the mode. QK4 follows the offset by applying the published `#REF`, so it never reads the offset.
+- `PopupManager`'s REF ± lambda and the two Ctrl+Wheel `refLevelScrolled` handlers in
+  `SpectrumController` both step REF through `RadioState::stepRefLevel()`, which refuses while
+  AutoRef is on (and before the radio has reported a REF).
+- The AUTO button in `DisplayPopupWidget` sends `#AR/;` and waits for the radio's `#AR` to set its
+  state.
+- Tests: the `testAutoRef*` cases in `tests/test_radiostate.cpp` use the radio's own strings.
+
+**Do not compute REF locally from the PAN noise floor.** The radio already publishes its tracked REF.
+A second tracker in QK4 would move the scale independently of the radio's own screen.
+
+---
+
+## 14. S-meter: `SM` streams bars, the dBm reading `SMH` must be asked for
+
+**Symptom.** TCI clients were sent a receive level ~3–5 dB below the radio's own: QK4 converted the
+`SM` bar count to dBm (`SM04` → −115 dBm) while the radio's `SMH` read −110…−112 dBm.
+
+**K4 behavior.** Captured on a K4D on 2026-10-30 with QK4's start-up sequence:
+
+- `SM` / `SM$` (bars, 0–42, matching the K4's bar graph) arrive unprompted whenever the meter
+  changes — about five a second on a quiet band.
+- `SMH` / `SMH$` (signal level in dBm, `SMH-110`, `SMH$-122`) arrived only in reply to `SMH;` /
+  `SMH$;`.
+- Programmer's Reference D12: "SMH$ (High-Resolution S-meter; GET only) RESP format: SMH$+nnn; where
+  +nnn is the signal level in dBm. SET format: SMHn; where n is 1 (Automatically delivered when
+  s-meter value changes.) … NOTE: SET format is not meta-mode dependent. Requires AI4 for
+  delivery." No way to turn delivery off again is documented.
+
+**QK4 encoding.**
+- `MainWindow::onRadioReady` sends `SMH1;` (delivery on change, at the rate the `SM` stream already
+  runs — no polling timer), then `SMH;` and `SMH$;` once so the first value does not wait for a
+  change.
+- `RxTxMeterHandlers::handleSMH` / `handleSMHSub` require the sign, so an echoed `SMH1` cannot be read
+  as +1 dBm. `RadioState::sMeterDbm()` / `sMeterDbmB()` are empty until the radio reports.
+- `SM` still drives the bar graphs. Anything that reports a level in dBm (TCI sensors, the CAT
+  server's `SMH` answer) uses `SMH`; `SpectrumScale::rxLevelDbm` falls back to the bar estimate only
+  before the first `SMH` arrives.
+- **Not yet bench-verified:** that `SMH1;` makes the radio push `SMH` and `SMH$` unprompted. If it
+  does not, TCI shows the one value read at connect; the fix is then to poll, not to go back to bars.
+
+---
+
+## 15. MiniPAN frames carry the PAN header, and its "sample rate" is the span
+
+Measured 2026-10-30 on K4D SN1641 (port 9205, WWV 10 MHz; Main in CW with FA 10,000,000 and pitch
+500, Sub in DATA-A on 10,131,000). Every MiniPAN payload (type 3) was 1051 bytes:
+
+```
+byte  0     type (3)              byte  5-6   u16 LE data length = 1024
+byte  1     version               byte 11-18  int64 LE centre, Hz
+byte  2     sequence              byte 19-22  int32 LE span, kHz: 3 in CW, 12 in DATA-A
+byte  3     pan type              byte 23-26  int32 LE, positive 192-319, meaning unknown
+byte  4     receiver (0/1)        byte 27..   1024 bins
+```
+
+That is the PAN layout (section 9), with two fields read differently: the int32 at 19 is the
+mini-pan's own span (not a tier rate), and the one at 23 is not a noise floor. The centre is the
+frequency in the middle of the span: **dial + CW pitch in CW** (10,000,500), the dial in DATA-A.
+
+QK4 once read MiniPAN as a 5-byte header and drew header bytes 5..26 as bins, hidden by a 75-bin
+trim at each edge, and assumed a 2 kHz / 10 kHz span. The passband was drawn about a third too wide.
+
+**Amplitude:** 1 byte = 1 dB, **dBm = byte − 118** — not PAN's 162. Peak byte on the WWV carrier
+against `SMH` (section 14) read at the same moment gave 110–123 over ten pairs (median 120; the
+carrier was fading). Byte 0 is the floor, about −118 dBm, and much of the noise arrives as 0. Every
+frame carries 512 values, each sent twice.
+
+**Where QK4 relies on it:** `Protocol::processPacket` (`K4Protocol::MiniPanPacket`, which aliases
+the PAN offsets) emits the centre, the span in Hz and the bins from 27, and drops a frame shorter than
+its data length or with no span. `MiniPanRhiWidget` draws the bins over that centre and span and
+converts them with `SpectrumScale::K4_MINIPAN_DBM_OFFSET`.
+
+---
+
 ## How to extend this document
 
 Add a new section only when a behavior satisfies **all** of:
 1. A direct socket-session test confirms the behavior (QK4 alone cannot be the source of truth).
-2. QK4 encodes a workaround or decision based on it (file:line reference required).
+2. QK4 encodes a workaround or decision based on it (cite the file and function or constant).
 3. The behavior is non-obvious from reading the code alone.
 
 Each section must cite the file where the workaround lives. Prefer naming the function or constant

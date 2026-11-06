@@ -5,54 +5,7 @@
 #include <QtGlobal>
 
 void AudioEffectsState::reset() {
-    afxMode = 0;
-
-    apfEnabled = false;
-    apfBandwidth = 0;
-    apfEnabledB = false;
-    apfBandwidthB = 0;
-
-    voxCW = false;
-    voxVoice = false;
-    voxData = false;
-
-    voxGainVoice = -1;
-    voxGainData = -1;
-
-    antiVox = -1;
-
-    essbEnabled = false;
-    ssbTxBw = -1;
-
-    for (int i = 0; i < 8; ++i) {
-        rxEqBands[i] = 0;
-        txEqBands[i] = 0;
-    }
-
-    lineOutLeft = -1;
-    lineOutRight = -1;
-    lineOutRightEqualsLeft = false;
-
-    lineInSoundCard = -1;
-    lineInJack = -1;
-    lineInSource = -1;
-
-    micInput = -1;
-    micFrontPreamp = -1;
-    micFrontBias = -1;
-    micFrontButtons = -1;
-    micRearPreamp = -1;
-    micRearBias = -1;
-
-    monitorLevelCW = -1;
-    monitorLevelData = -1;
-    monitorLevelVoice = -1;
-
-    audioMixLeft = -1;
-    audioMixRight = -1;
-
-    balanceMode = -1;
-    balanceOffset = -99;
+    *this = AudioEffectsState();
 }
 
 namespace AudioEffectsHandlers {
@@ -81,12 +34,12 @@ void handleAP(AudioEffectsState &state, RadioState &owner, const QString &cmd) {
     if (!ok)
         return;
 
-    bool enabled = (m == 1);
+    const bool enabled = (m == 1);
     int bandwidth = qBound(0, b, 2);
-    if (enabled != state.apfEnabled || bandwidth != state.apfBandwidth) {
-        state.apfEnabled = enabled;
+    const bool enabledChanged = state.apfEnabled.set(enabled);
+    if (enabledChanged || bandwidth != state.apfBandwidth) {
         state.apfBandwidth = bandwidth;
-        emit owner.apfChanged(state.apfEnabled, state.apfBandwidth);
+        emit owner.apfChanged(enabled, bandwidth);
     }
 }
 
@@ -102,12 +55,12 @@ void handleAPSub(AudioEffectsState &state, RadioState &owner, const QString &cmd
     if (!ok)
         return;
 
-    bool enabled = (m == 1);
+    const bool enabled = (m == 1);
     int bandwidth = qBound(0, b, 2);
-    if (enabled != state.apfEnabledB || bandwidth != state.apfBandwidthB) {
-        state.apfEnabledB = enabled;
+    const bool enabledChanged = state.apfEnabledB.set(enabled);
+    if (enabledChanged || bandwidth != state.apfBandwidthB) {
         state.apfBandwidthB = bandwidth;
-        emit owner.apfBChanged(state.apfEnabledB, state.apfBandwidthB);
+        emit owner.apfBChanged(enabled, bandwidth);
     }
 }
 
@@ -117,20 +70,15 @@ void handleVX(AudioEffectsState &state, RadioState &owner, const QString &cmd) {
         return;
     QChar modeChar = cmd.at(2);
     bool enabled = (cmd.at(3) == '1');
-    bool changed = false;
-    if (modeChar == 'C' && state.voxCW != enabled) {
-        state.voxCW = enabled;
-        changed = true;
-    } else if (modeChar == 'V' && state.voxVoice != enabled) {
-        state.voxVoice = enabled;
-        changed = true;
-    } else if (modeChar == 'D' && state.voxData != enabled) {
-        state.voxData = enabled;
-        changed = true;
-    }
-    if (changed) {
+    ReportedFlag *target = nullptr;
+    if (modeChar == 'C')
+        target = &state.voxCW;
+    else if (modeChar == 'V')
+        target = &state.voxVoice;
+    else if (modeChar == 'D')
+        target = &state.voxData;
+    if (target && target->set(enabled))
         emit owner.voxChanged(owner.voxEnabled());
-    }
 }
 
 void handleVG(AudioEffectsState &state, RadioState &owner, const QString &cmd) {
@@ -183,10 +131,8 @@ void handleLO(AudioEffectsState &state, RadioState &owner, const QString &cmd) {
             state.lineOutRight = right;
             changed = true;
         }
-        if ((modeVal == 1) != state.lineOutRightEqualsLeft) {
-            state.lineOutRightEqualsLeft = (modeVal == 1);
+        if (state.lineOutRightEqualsLeft.set(modeVal == 1))
             changed = true;
-        }
         if (changed)
             emit owner.lineOutChanged();
     }
@@ -280,22 +226,18 @@ void handleES(AudioEffectsState &state, RadioState &owner, const QString &cmd) {
 
     if (cmd.length() >= 5) {
         newBw = cmd.mid(3, 2).toInt(&ok);
-        if (!ok || newBw < 24 || newBw > 45) {
+        if (!ok || newBw < AudioEffectsState::SsbTxBwMin || newBw > AudioEffectsState::EssbTxBwMax) {
             newBw = state.ssbTxBw;
         }
     }
 
-    bool changed = false;
-    if (newEssb != state.essbEnabled) {
-        state.essbEnabled = newEssb;
-        changed = true;
-    }
-    if (newBw >= 24 && newBw <= 45 && newBw != state.ssbTxBw) {
+    bool changed = state.essbEnabled.set(newEssb);
+    if (newBw >= AudioEffectsState::SsbTxBwMin && newBw <= AudioEffectsState::EssbTxBwMax && newBw != state.ssbTxBw) {
         state.ssbTxBw = newBw;
         changed = true;
     }
     if (changed) {
-        emit owner.essbChanged(state.essbEnabled, state.ssbTxBw);
+        emit owner.essbChanged(newEssb, state.ssbTxBw);
     }
 }
 
@@ -506,27 +448,20 @@ void setTxEqBands(AudioEffectsState &state, RadioState &owner, const QVector<int
     }
 }
 
-void setLineOutLeft(AudioEffectsState &state, RadioState &owner, int level) {
-    level = qBound(0, level, AudioEffectsState::LineOutMax);
-    if (level != state.lineOutLeft) {
-        state.lineOutLeft = level;
-        emit owner.lineOutChanged();
+void setLineOut(AudioEffectsState &state, RadioState &owner, int left, int right, bool rightEqualsLeft) {
+    left = qBound(0, left, AudioEffectsState::LineOutMax);
+    right = qBound(0, right, AudioEffectsState::LineOutMax);
+    bool changed = state.lineOutRightEqualsLeft.set(rightEqualsLeft);
+    if (left != state.lineOutLeft) {
+        state.lineOutLeft = left;
+        changed = true;
     }
-}
-
-void setLineOutRight(AudioEffectsState &state, RadioState &owner, int level) {
-    level = qBound(0, level, AudioEffectsState::LineOutMax);
-    if (level != state.lineOutRight) {
-        state.lineOutRight = level;
-        emit owner.lineOutChanged();
+    if (right != state.lineOutRight) {
+        state.lineOutRight = right;
+        changed = true;
     }
-}
-
-void setLineOutRightEqualsLeft(AudioEffectsState &state, RadioState &owner, bool enabled) {
-    if (enabled != state.lineOutRightEqualsLeft) {
-        state.lineOutRightEqualsLeft = enabled;
+    if (changed)
         emit owner.lineOutChanged();
-    }
 }
 
 void setLineInSoundCard(AudioEffectsState &state, RadioState &owner, int level) {
@@ -619,17 +554,15 @@ void setAntiVox(AudioEffectsState &state, RadioState &owner, int level) {
 }
 
 void setEssbEnabled(AudioEffectsState &state, RadioState &owner, bool enabled) {
-    if (enabled != state.essbEnabled) {
-        state.essbEnabled = enabled;
-        emit owner.essbChanged(state.essbEnabled, state.ssbTxBw);
-    }
+    if (state.essbEnabled.set(enabled))
+        emit owner.essbChanged(enabled, state.ssbTxBw);
 }
 
 void setSsbTxBw(AudioEffectsState &state, RadioState &owner, int bw) {
-    bw = qBound(30, bw, 45);
+    bw = qBound(AudioEffectsState::SsbTxBwMin, bw, AudioEffectsState::EssbTxBwMax);
     if (bw != state.ssbTxBw) {
         state.ssbTxBw = bw;
-        emit owner.essbChanged(state.essbEnabled, state.ssbTxBw);
+        emit owner.essbChanged(state.essbEnabled.isOn(), state.ssbTxBw);
     }
 }
 

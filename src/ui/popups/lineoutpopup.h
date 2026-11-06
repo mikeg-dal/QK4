@@ -7,7 +7,7 @@
 
 // Floating popup for LINE OUT L/R levels (0-50) with optional "R = L"
 // link. Emits leftLevelChanged / rightLevelChanged /
-// rightEqualsLeftChanged for MainWindow -> CAT.
+// rightEqualsLeftChanged; PopupManager sends them as LO.
 class LineOutPopupWidget : public K4PopupBase {
     Q_OBJECT
 
@@ -18,8 +18,6 @@ public:
     void setRightLevel(int level); // 0-50
     void setRightEqualsLeft(bool enabled);
 
-    int leftLevel() const { return m_leftLevel; }
-    int rightLevel() const { return m_rightLevel; }
     bool rightEqualsLeft() const { return m_rightEqualsLeft; }
 
 signals:

@@ -5,6 +5,8 @@
 #include "controllers/popupmanager.h"
 #include "controllers/textdecodecontroller.h"
 #include "models/radiostate.h"
+#include "network/catframes.h"
+#include "utils/radioutils.h"
 
 #include <QChar>
 #include <QString>
@@ -24,10 +26,6 @@ ButtonRowDispatcher::ButtonRowDispatcher(RadioState *radioState, ConnectionContr
     // Mode flip changes whether buttons 5/6 show paddle/weight (CW) or
     // SSB BW/ESSB (voice/data).
     connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode) { refreshTxButtonsForMode(); });
-}
-
-ButtonRowDispatcher::~ButtonRowDispatcher() {
-    disconnect(this);
 }
 
 void ButtonRowDispatcher::onMainRxClicked(int index) {
@@ -52,11 +50,12 @@ void ButtonRowDispatcher::onMainRxClicked(int index) {
     case 4: { // AGC — toggle Fast ↔ Slow (skip Off)
         const RadioState::AGCSpeed current = m_radioState->agcSpeed();
         const int next = (current == RadioState::AGC_Fast) ? 1 : 2;
-        m_connection->sendCAT(QString("GT%1;").arg(next));
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::agcSpeed(next)));
         break;
     }
-    case 5: // APF — toggle (Main RX)
-        m_connection->sendCAT("AP/;");
+    case 5: // APF — toggle (Main RX); "N/A" outside CW, as on the K4
+        if (RadioUtils::apfAvailable(static_cast<int>(m_radioState->mode())))
+            m_connection->sendCAT("AP/;");
         break;
     case 6: // TEXT DECODE — open window for Main RX
         m_textDecode->showMainRx();
@@ -82,8 +81,9 @@ void ButtonRowDispatcher::onMainRxRightClicked(int index) {
         m_connection->sendCAT(current == RadioState::AGC_Off ? "GT1;" : "GT0;");
         break;
     }
-    case 5: // APF — cycle bandwidth (Main RX)
-        m_connection->sendCAT("AP+;");
+    case 5: // APF — cycle bandwidth (Main RX); "N/A" outside CW
+        if (RadioUtils::apfAvailable(static_cast<int>(m_radioState->mode())))
+            m_connection->sendCAT("AP+;");
         break;
     default:
         break;
@@ -112,11 +112,12 @@ void ButtonRowDispatcher::onSubRxClicked(int index) {
     case 4: { // AGC Sub — toggle Fast ↔ Slow
         const RadioState::AGCSpeed current = m_radioState->agcSpeedB();
         const int next = (current == RadioState::AGC_Fast) ? 1 : 2;
-        m_connection->sendCAT(QString("GT$%1;").arg(next));
+        m_connection->sendCAT(QString::fromLatin1(CatFrames::subRx(CatFrames::agcSpeed(next))));
         break;
     }
-    case 5: // APF — toggle (Sub RX)
-        m_connection->sendCAT("AP$/;");
+    case 5: // APF — toggle (Sub RX); "N/A" outside CW
+        if (RadioUtils::apfAvailable(static_cast<int>(m_radioState->modeB())))
+            m_connection->sendCAT("AP$/;");
         break;
     case 6: // TEXT DECODE — open window for Sub RX
         m_textDecode->showSubRx();
@@ -142,8 +143,9 @@ void ButtonRowDispatcher::onSubRxRightClicked(int index) {
         m_connection->sendCAT(current == RadioState::AGC_Off ? "GT$1;" : "GT$0;");
         break;
     }
-    case 5: // APF — cycle bandwidth (Sub RX)
-        m_connection->sendCAT("AP$+;");
+    case 5: // APF — cycle bandwidth (Sub RX); "N/A" outside CW
+        if (RadioUtils::apfAvailable(static_cast<int>(m_radioState->modeB())))
+            m_connection->sendCAT("AP$+;");
         break;
     default:
         break;
@@ -174,13 +176,8 @@ void ButtonRowDispatcher::onTxClicked(int index) {
         if (mode == RadioState::CW || mode == RadioState::CW_R) {
             const QChar curPaddle = m_radioState->paddleOrientation();
             const QChar newPaddle = (curPaddle == 'R') ? QChar('N') : QChar('R');
-            // WHY: K4's KP command requires all three fields — iambic, paddle,
-            // weight — even when we only want to change one. Re-emit current
-            // values for the other two, defaulting to A/100 if the K4 hasn't
-            // sent its KP state yet.
-            const QChar iambic = m_radioState->iambicMode().isNull() ? QChar('A') : m_radioState->iambicMode();
-            const int weight = m_radioState->keyingWeight() < 0 ? 100 : m_radioState->keyingWeight();
-            m_connection->sendCAT(QString("KP%1%2%3;").arg(iambic).arg(newPaddle).arg(weight, 3, 10, QChar('0')));
+            m_connection->sendCAT(QString::fromLatin1(
+                CatFrames::keyerPaddle(m_radioState->iambicMode(), newPaddle, m_radioState->keyingWeight())));
             m_radioState->setPaddleOrientation(newPaddle);
         } else {
             m_popupManager->showSsbBwAbove(PopupManager::ButtonRowLane::Tx);
@@ -198,21 +195,18 @@ void ButtonRowDispatcher::onTxClicked(int index) {
             // ESSB 30-45. Switching mode with an out-of-range BW would reject
             // the K4's ES command, so snap to the nearest valid default.
             if (newState) {
-                if (bw < 30 || bw > 45)
-                    bw = 30;
+                if (bw < AudioEffectsState::EssbTxBwMin || bw > AudioEffectsState::EssbTxBwMax)
+                    bw = AudioEffectsState::EssbTxBwMin;
             } else {
-                if (bw < 24 || bw > 28)
-                    bw = 28;
+                if (bw < AudioEffectsState::SsbTxBwMin || bw > AudioEffectsState::SsbTxBwMax)
+                    bw = AudioEffectsState::SsbTxBwMax;
             }
             m_connection->sendCAT(QString("ES%1%2;").arg(newState ? 1 : 0).arg(bw, 2, 10, QChar('0')));
             // Optimistic — ES SET is echoed, but also immediately re-paint labels.
             m_radioState->setEssbEnabled(newState);
             m_radioState->setSsbTxBw(bw);
-            if (m_popupManager->anchorForLane(PopupManager::ButtonRowLane::Tx)) {
-                const QString bwStr = QString("%1k").arg(bw / 10.0, 0, 'f', 1);
-                m_popupManager->setTxButtonLabel(5, "SSB BW", bwStr, false);
-                m_popupManager->setTxButtonLabel(6, "ESSB", newState ? "ON" : "OFF", false);
-            }
+            m_popupManager->setTxButtonLabel(5, "SSB BW", RadioUtils::txBandwidthLabel(bw), false);
+            m_popupManager->setTxButtonLabel(6, "ESSB", newState ? "ON" : "OFF", false);
         }
         break;
     }
@@ -231,10 +225,8 @@ void ButtonRowDispatcher::onTxRightClicked(int index) {
         if (mode == RadioState::CW || mode == RadioState::CW_R) {
             const QChar curIambic = m_radioState->iambicMode();
             const QChar newIambic = (curIambic == 'B') ? QChar('A') : QChar('B');
-            const QChar paddle =
-                m_radioState->paddleOrientation().isNull() ? QChar('N') : m_radioState->paddleOrientation();
-            const int weight = m_radioState->keyingWeight() < 0 ? 100 : m_radioState->keyingWeight();
-            m_connection->sendCAT(QString("KP%1%2%3;").arg(newIambic).arg(paddle).arg(weight, 3, 10, QChar('0')));
+            m_connection->sendCAT(QString::fromLatin1(
+                CatFrames::keyerPaddle(newIambic, m_radioState->paddleOrientation(), m_radioState->keyingWeight())));
             m_radioState->setIambicMode(newIambic);
         }
     } else if (index == 3) { // MIC CFG — skips LINE IN (input==2)
@@ -245,11 +237,6 @@ void ButtonRowDispatcher::onTxRightClicked(int index) {
 }
 
 void ButtonRowDispatcher::refreshTxButtonsForMode() {
-    // TX popup's anchor is nullptr until setBottomMenuBar is injected
-    // and the popup is first constructed; skip early refreshes.
-    if (!m_popupManager->anchorForLane(PopupManager::ButtonRowLane::Tx))
-        return;
-
     const RadioState::Mode mode = m_radioState->mode();
     if (mode == RadioState::CW || mode == RadioState::CW_R) {
         // CW mode: buttons 5/6 show paddle orientation + iambic mode, and keying weight.
@@ -264,7 +251,7 @@ void ButtonRowDispatcher::refreshTxButtonsForMode() {
             // KP state not yet received from the K4 — render defaults.
             m_popupManager->setTxButtonLabel(5, "PDL NOR", "IAMB A", true);
         }
-        if (weight >= 90 && weight <= 125) {
+        if (weight >= RadioUtils::KEYING_WEIGHT_MIN && weight <= RadioUtils::KEYING_WEIGHT_MAX) {
             const QString weightStr = QString::number(weight / 100.0, 'f', 2);
             m_popupManager->setTxButtonLabel(6, "WEIGHT", weightStr, false);
         } else {
@@ -273,12 +260,9 @@ void ButtonRowDispatcher::refreshTxButtonsForMode() {
     } else {
         // Voice / data mode: buttons 5/6 show SSB BW and ESSB toggle.
         const int bw = m_radioState->ssbTxBw();
-        if (bw >= 24 && bw <= 45) {
-            const QString bwStr = QString("%1k").arg(bw / 10.0, 0, 'f', 1);
-            m_popupManager->setTxButtonLabel(5, "SSB BW", bwStr, false);
-        } else {
-            m_popupManager->setTxButtonLabel(5, "SSB BW", "2.8k", false);
-        }
+        const bool known = bw >= AudioEffectsState::SsbTxBwMin && bw <= AudioEffectsState::EssbTxBwMax;
+        m_popupManager->setTxButtonLabel(
+            5, "SSB BW", RadioUtils::txBandwidthLabel(known ? bw : AudioEffectsState::SsbTxBwMax), false);
         m_popupManager->setTxButtonLabel(6, "ESSB", m_radioState->essbEnabled() ? "ON" : "OFF", false);
     }
 }

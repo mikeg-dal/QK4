@@ -1,10 +1,10 @@
 #include "ui/widgets/vfowidget.h"
-#include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include "ui/widgets/txmeterwidget.h"
 #include "ui/widgets/frequencydisplaywidget.h"
 #include "dsp/minipan_rhi.h"
-#include <QMouseEvent>
-#include <QKeyEvent>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 VFOWidget::VFOWidget(VFOType type, QWidget *parent)
     : QWidget(parent), m_type(type),
       m_primaryColor(type == VFO_A ? K4Styles::Colors::VfoACyan : K4Styles::Colors::VfoBGreen) {
@@ -17,7 +17,7 @@ void VFOWidget::setupUi() {
     auto *mainLayout = new QVBoxLayout(this);
     // Outer edge margin (toward waterfall border) is tight; inner edge (toward center) has spacing
     int outerMargin = 2; // Align with spectrum container border
-    int innerMargin = K4Styles::Dimensions::PopupButtonSpacing;
+    int innerMargin = K4Styles::Dimensions::VfoInnerMargin;
     if (m_type == VFO_A) {
         mainLayout->setContentsMargins(outerMargin, 4, innerMargin, 4);
     } else {
@@ -62,7 +62,7 @@ void VFOWidget::setupUi() {
     // Use Maximum horizontal policy so it doesn't expand beyond content width
     m_stackedWidget = new QStackedWidget(this);
     m_stackedWidget->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    m_stackedWidget->setMaximumWidth(270); // Fit all indicators with values (ATT-6, NTCH-A/M, APF-150)
+    m_stackedWidget->setMaximumWidth(270); // The panel column's width
 
     // Page 0: the multifunction meter. Same height as the mini-pan (page 1), so toggling between
     // them never shifts the layout. The feature row is NOT on this page - see below.
@@ -72,10 +72,9 @@ void VFOWidget::setupUi() {
     normalLayout->setContentsMargins(0, 0, 0, 0);
     normalLayout->setSpacing(2);
 
-    // Row 2: Multifunction Meter (S/Po, ALC, COMP, SWR, Id) - replaces old S-meter
-    // Meter fills full width of normal content (both are 200px)
+    // Multifunction meter (S/Po, ALC, COMP, SWR, Id)
     m_txMeter = new TxMeterWidget(m_normalContent);
-    m_txMeter->setFixedWidth(260); // Match expanded indicator row
+    m_txMeter->setFixedWidth(260);
     normalLayout->addWidget(m_txMeter);
 
     // Row 3: AGC, PRE, ATT, NB, NR, NTCH, APF. Its own row below the stack, so it stays visible when
@@ -87,8 +86,7 @@ void VFOWidget::setupUi() {
     featuresRow->setSpacing(4); // Comfortable spacing for all indicators
 
     // Feature indicator label style
-    const QString featureLabelStyle =
-        QString("color: %1; font-size: %2px;").arg(K4Styles::Colors::TextGray).arg(K4Styles::Dimensions::FontSizeLarge);
+    const QString featureLabelStyle = K4Styles::vfoFeatureLabel();
 
     m_agcLabel = new QLabel("AGC-S", featuresContainer);
     m_agcLabel->setStyleSheet(featureLabelStyle);
@@ -112,7 +110,6 @@ void VFOWidget::setupUi() {
     m_apfLabel->setMinimumWidth(48); // Wide enough for "APF-150"
     m_apfLabel->setStyleSheet(featureLabelStyle);
 
-    // Add labels to layout
     featuresRow->addWidget(m_agcLabel);
     featuresRow->addWidget(m_preampLabel);
     featuresRow->addWidget(m_attLabel);
@@ -130,12 +127,10 @@ void VFOWidget::setupUi() {
     // ALL QRhiWidgets in the window from initializing properly.
     m_miniPan = nullptr; // Will be created on first showMiniPan() call
 
-    // The stack and the feature row share one column, the size the meter page used to be on its
-    // own (270 x 150). WHY one column and not a third row in mainLayout: this widget is usually
-    // given more height than it needs and mainLayout shares the spare among its rows, so adding a
-    // row moved the frequency display and the meter. With the column the row count is unchanged
-    // and every pixel stays where it was; the feature row sits left-aligned below the stack, where
-    // it was on the meter page.
+    // The stack and the feature row share one fixed 270 x 150 column. WHY one column and not a
+    // third row in mainLayout: this widget is usually given more height than it needs and
+    // mainLayout shares the spare among its rows, so a third row would move the frequency display
+    // and the meter. The feature row sits left-aligned below the stack.
     auto *panelColumn = new QWidget(this);
     panelColumn->setFixedSize(270,
                               K4Styles::Dimensions::VfoPanelHeight + 2 + K4Styles::Dimensions::VfoFeatureRowHeight);
@@ -194,13 +189,9 @@ void VFOWidget::setSMeterValue(double value) {
         m_txMeter->setSMeter(value);
 }
 
-void VFOWidget::setAGC(const QString &mode) {
-    m_agcLabel->setText(mode);
-    // AGC is always shown, color indicates active state
-    bool active = !mode.contains("-") || mode == "AGC-F" || mode == "AGC-S" || mode == "AGC-M";
-    m_agcLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                  .arg(active ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
-                                  .arg(K4Styles::Dimensions::FontSizeLarge));
+void VFOWidget::setAGC(const QString &label, bool active) {
+    m_agcLabel->setText(label);
+    K4Styles::setSelected(m_agcLabel, active);
 }
 
 void VFOWidget::setPreamp(bool on, int level) {
@@ -210,9 +201,7 @@ void VFOWidget::setPreamp(bool on, int level) {
     } else {
         m_preampLabel->setText("PRE");
     }
-    m_preampLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                     .arg(on ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
-                                     .arg(K4Styles::Dimensions::FontSizeLarge));
+    K4Styles::setSelected(m_preampLabel, on);
 }
 
 void VFOWidget::setAtt(bool on, int level) {
@@ -222,23 +211,17 @@ void VFOWidget::setAtt(bool on, int level) {
     } else {
         m_attLabel->setText("ATT");
     }
-    m_attLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                  .arg(on ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
-                                  .arg(K4Styles::Dimensions::FontSizeLarge));
+    K4Styles::setSelected(m_attLabel, on);
 }
 
 void VFOWidget::setNB(bool on) {
-    m_nbLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                 .arg(on ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
-                                 .arg(K4Styles::Dimensions::FontSizeLarge));
+    K4Styles::setSelected(m_nbLabel, on);
 }
 
 void VFOWidget::setNR(bool lmsOn, bool ssnrOn) {
     const bool active = lmsOn || ssnrOn;
     m_nrLabel->setText(ssnrOn ? "NR+" : "NR");
-    m_nrLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                 .arg(active ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
-                                 .arg(K4Styles::Dimensions::FontSizeLarge));
+    K4Styles::setSelected(m_nrLabel, active);
 }
 
 void VFOWidget::setNotch(bool autoEnabled, bool manualEnabled) {
@@ -254,9 +237,7 @@ void VFOWidget::setNotch(bool autoEnabled, bool manualEnabled) {
     }
 
     m_ntchLabel->setText(text);
-    m_ntchLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                   .arg(active ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
-                                   .arg(K4Styles::Dimensions::FontSizeLarge));
+    K4Styles::setSelected(m_ntchLabel, active);
 }
 
 void VFOWidget::setApf(bool enabled, int bandwidth) {
@@ -266,15 +247,13 @@ void VFOWidget::setApf(bool enabled, int bandwidth) {
         text = QString("APF-%1").arg(bwNames[qBound(0, bandwidth, 2)]);
     }
     m_apfLabel->setText(text);
-    m_apfLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                  .arg(enabled ? K4Styles::Colors::TextWhite : K4Styles::Colors::TextGray)
-                                  .arg(K4Styles::Dimensions::FontSizeLarge));
+    K4Styles::setSelected(m_apfLabel, enabled);
 }
 
-void VFOWidget::updateMiniPan(const QByteArray &data) {
+void VFOWidget::updateMiniPan(const QByteArray &bins, qint64 centerHz, int spanHz) {
     // Only update if mini-pan exists and is visible
     if (m_miniPan && m_stackedWidget->currentIndex() == 1) {
-        m_miniPan->updateSpectrum(data);
+        m_miniPan->updateSpectrum(bins, centerHz, spanHz);
     }
 }
 
@@ -295,11 +274,14 @@ void VFOWidget::showMiniPan() {
         m_miniPan->setDataSubMode(m_pendingDataSubMode);
         m_miniPan->setFilterBandwidth(m_pendingFilterBw);
         m_miniPan->setIfShift(m_pendingIfShift);
-        m_miniPan->setCwPitch(m_pendingCwPitch);
+        m_miniPan->setTunedFrequency(m_pendingTunedFreq);
         m_miniPan->setNotchFilter(m_pendingNotchEnabled, m_pendingNotchPitchHz);
         if (m_pendingWaterfallHeight >= 0)
             m_miniPan->setWaterfallHeight(m_pendingWaterfallHeight);
         m_miniPan->setAveraging(m_pendingAveraging);
+        m_miniPan->setRefLevel(m_pendingRefLevel);
+        m_miniPan->setScale(m_pendingScale);
+        m_miniPan->setWaterfallColorRange(m_pendingWaterfallColorRange);
 
         // Connect mini-pan click to show normal view and emit signal
         connect(m_miniPan, &MiniPanRhiWidget::clicked, this, [this]() {
@@ -335,10 +317,10 @@ void VFOWidget::setMiniPanIfShift(int shift) {
         m_miniPan->setIfShift(shift);
 }
 
-void VFOWidget::setMiniPanCwPitch(int pitch) {
-    m_pendingCwPitch = pitch;
+void VFOWidget::setMiniPanTunedFrequency(qint64 freqHz) {
+    m_pendingTunedFreq = freqHz;
     if (m_miniPan)
-        m_miniPan->setCwPitch(pitch);
+        m_miniPan->setTunedFrequency(freqHz);
 }
 
 void VFOWidget::setMiniPanNotchFilter(bool enabled, int pitchHz) {
@@ -366,12 +348,30 @@ void VFOWidget::setMiniPanAveraging(int level) {
         m_miniPan->setAveraging(level);
 }
 
+void VFOWidget::setMiniPanRefLevel(int level) {
+    m_pendingRefLevel = level;
+    if (m_miniPan)
+        m_miniPan->setRefLevel(level);
+}
+
+void VFOWidget::setMiniPanScale(int scale) {
+    m_pendingScale = scale;
+    if (m_miniPan)
+        m_miniPan->setScale(scale);
+}
+
+void VFOWidget::setMiniPanWaterfallColorRange(int db) {
+    m_pendingWaterfallColorRange = db;
+    if (m_miniPan)
+        m_miniPan->setWaterfallColorRange(db);
+}
+
 void VFOWidget::resetToDefaults() {
     setFrequency(QString());
     setSMeterValue(0);
     setTransmitting(false);
     setTxMeters(0, 0, 0, 1.0);
-    setAGC("AGC");
+    setAGC(QStringLiteral("AGC"), false);
     setPreamp(false, 0);
     setAtt(false, 0);
     setNB(false);
@@ -384,7 +384,12 @@ void VFOWidget::resetToDefaults() {
     setMiniPanMode("USB");
     setMiniPanFilterBandwidth(2400);
     setMiniPanIfShift(50);
-    setMiniPanCwPitch(600);
+    setMiniPanTunedFrequency(0);
+    // The mini-pan's clear() already reset its own window; the next creation must not reapply
+    // the last session's.
+    m_pendingRefLevel = SpectrumDisplayLimits::RefLevelDefault;
+    m_pendingScale = SpectrumDisplayLimits::ScaleDefault;
+    m_pendingWaterfallColorRange = -1;
     setMiniPanNotchFilter(false, 0);
 }
 
@@ -396,7 +401,6 @@ bool VFOWidget::isMiniPanVisible() const {
     return m_stackedWidget->currentIndex() == 1;
 }
 
-// Multifunction meter methods (S/Po, ALC, COMP, SWR, Id)
 void VFOWidget::setTransmitting(bool isTx) {
     if (m_txMeter)
         m_txMeter->setTransmitting(isTx);
@@ -427,4 +431,8 @@ void VFOWidget::beginFrequencyEntry() {
 
 void VFOWidget::cancelFrequencyEntry() {
     m_frequencyDisplay->cancelEntry();
+}
+
+void VFOWidget::setFrequencyEntryLocked(bool locked) {
+    m_frequencyDisplay->setEntryLocked(locked);
 }

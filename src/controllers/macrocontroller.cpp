@@ -1,4 +1,5 @@
 #include "macrocontroller.h"
+#include "logging/logcategories.h"
 
 #include "connectioncontroller.h"
 #include "controllers/popupmanager.h"
@@ -8,8 +9,7 @@
 #include <QLoggingCategory>
 #include <QMessageBox>
 #include <QString>
-
-Q_LOGGING_CATEGORY(qk4Macro, "qk4.macro")
+#include <QStringView>
 
 MacroController::MacroController(ConnectionController *connection, PopupManager *popupManager, QWidget *dialogParent,
                                  QObject *parent)
@@ -17,17 +17,13 @@ MacroController::MacroController(ConnectionController *connection, PopupManager 
     connect(m_popupManager, &PopupManager::macroFunctionTriggered, this, &MacroController::onFunctionTriggered);
 }
 
-MacroController::~MacroController() {
-    disconnect(this);
-}
-
 void MacroController::executeMacro(const QString &functionId) {
     const MacroEntry macro = RadioSettings::instance()->macro(functionId);
     if (macro.command.isEmpty()) {
-        qCDebug(qk4Macro) << "No macro configured for" << functionId;
+        qCDebug(lcUiMacro) << "No macro configured for" << functionId;
         return;
     }
-    qCDebug(qk4Macro) << "Executing macro" << functionId << ":" << macro.command;
+    qCDebug(lcUiMacro) << "Executing macro" << functionId << ":" << macro.command;
     if (!m_connection->isConnected())
         return;
 
@@ -35,25 +31,31 @@ void MacroController::executeMacro(const QString &functionId) {
 
     // WHY: RT1 / RT0 / RT/ / SW54 and XT1 / XT0 / XT/ / SW74 are silent SET
     // commands — the K4 does not echo the resulting RT/XT state. Follow up
-    // with a query so the UI reflects the change.
-    const QString &cmd = macro.command;
-    if (cmd.contains("RT1") || cmd.contains("RT0") || cmd.contains("RT/") || cmd.contains("SW54")) {
+    // with a query so the UI reflects the change. Matched as whole commands of
+    // the macro, so SW540 or SW741 does not count.
+    bool ritChanged = false;
+    bool xitChanged = false;
+    for (const QStringView part : QStringView(macro.command).split(u';', Qt::SkipEmptyParts)) {
+        const QStringView c = part.trimmed();
+        ritChanged = ritChanged || c == u"RT1" || c == u"RT0" || c == u"RT/" || c == u"SW54";
+        xitChanged = xitChanged || c == u"XT1" || c == u"XT0" || c == u"XT/" || c == u"SW74";
+    }
+    if (ritChanged) {
         m_connection->sendCAT("RT;");
         m_connection->sendCAT("RT$;");
     }
-    if (cmd.contains("XT1") || cmd.contains("XT0") || cmd.contains("XT/") || cmd.contains("SW74")) {
+    if (xitChanged)
         m_connection->sendCAT("XT;");
-    }
 }
 
 void MacroController::onFunctionTriggered(const QString &functionId) {
-    qCDebug(qk4Macro) << "Fn function triggered:" << functionId;
+    qCDebug(lcUiMacro) << "Fn function triggered:" << functionId;
 
     if (functionId == MacroIds::ScrnCap) {
         // SS0; tells the K4 to write a screenshot to its internal SD card.
         if (m_connection->isConnected()) {
             m_connection->sendCAT("SS0;");
-            qCDebug(qk4Macro) << "Screenshot captured (SS0;)";
+            qCDebug(lcUiMacro) << "Screenshot captured (SS0;)";
         }
     } else if (functionId == MacroIds::Macros) {
         emit macroDialogRequested();

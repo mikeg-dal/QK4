@@ -9,6 +9,8 @@
 
 class DualControlButton;
 class QGridLayout;
+class QHBoxLayout;
+class QIcon;
 class MonOverlay;
 class BalOverlay;
 
@@ -16,7 +18,7 @@ class BalOverlay;
  * SideControlPanel - Left-side vertical control panel for QK4
  *
  * Contains 3 groups of 2 DualControlButtons each:
- * - Group 1 (Global/Orange): WPM/PTCH, PWR/DLY
+ * - Group 1 (Global/Orange): WPM/PTCH (CW) or MIC/CMP (voice), PWR/DLY
  * - Group 2 (MainRx/Cyan): BW/HI, SHFT/LO (linked pair - swap together)
  * - Group 3 (RF-SQL): M.RF/M.SQL, S.SQL/S.RF
  *
@@ -56,7 +58,6 @@ public:
     void setSubRfGain(int gain);
 
     // Update status area (mirrors header data)
-    void setTime(const QString &time);
     void setPowerReading(double watts);
     void setSwr(double swr);
     void setVoltage(double volts);
@@ -160,7 +161,10 @@ private:
     void setGroup1Active(DualControlButton *activeBtn);
     void setGroup2Active(DualControlButton *activeBtn);
     void setGroup3Active(DualControlButton *activeBtn);
-    QPushButton *createIconButton(const QString &text);
+    QPushButton *createIconButton(const QIcon &icon);
+    QLabel *createVolumeName(const QString &text, const char *color);
+    QSlider *createVolumeSlider(int value, const char *color);
+    static QHBoxLayout *createVolumeRow(QLabel *name, QSlider *slider);
     QWidget *createTxFunctionButton(const QString &mainText, const QString &subText, QPushButton *&btnOut);
 
     // Track mode (CW shows WPM/PTCH, Voice shows MIC/CMP)
@@ -206,6 +210,7 @@ private:
     // Icon buttons (at bottom of panel)
     QPushButton *m_helpBtn;
     QPushButton *m_connectBtn;
+    QLabel *m_versionLabel = nullptr; // QK4 version, one line under the icons (null without a version)
 
     // TX Function buttons (2x3 grid)
     QPushButton *m_tuneBtn;

@@ -5,7 +5,6 @@
 #include "ui/styling/k4constants.h"
 #include "utils/wheelaccumulator.h"
 #include <QLabel>
-#include <QMenu>
 #include <QPushButton>
 #include <QSlider>
 #include <QWidget>
@@ -63,7 +62,7 @@ private:
 /**
  * @brief RX Graphic Equalizer popup with 8 frequency bands.
  *
- * Used for Main RX EQ, Sub RX EQ, and TX EQ (with different titles/colors).
+ * Used for RX EQ and TX EQ (two instances, different titles/colours).
  * Each band adjusts -16 to +16 dB in 1 dB steps.
  *
  * Frequency bands: 100, 200, 400, 800, 1200, 1600, 2400, 3200 Hz
@@ -77,7 +76,7 @@ private:
  * connect(popup, &RxEqPopupWidget::flatRequested, this, []() {
  *     // Reset all bands to 0
  * });
- * popup->showAboveButton(triggerButton);
+ * popup->showAboveWidget(openButtonRow);
  * @endcode
  */
 class RxEqPopupWidget : public K4PopupBase {
@@ -93,20 +92,6 @@ public:
      */
     explicit RxEqPopupWidget(const QString &title = "RX GRAPHIC EQUALIZER",
                              const QString &accentColor = K4Styles::Colors::VfoACyan, QWidget *parent = nullptr);
-
-    /**
-     * @brief Set a band's dB value.
-     * @param bandIndex Band 0-7 (100Hz to 3200Hz)
-     * @param dB Value -16 to +16
-     */
-    void setBandValue(int bandIndex, int dB);
-
-    /**
-     * @brief Get a band's current dB value.
-     * @param bandIndex Band 0-7
-     * @return dB value -16 to +16
-     */
-    int bandValue(int bandIndex) const;
 
     /**
      * @brief Set all bands at once.
@@ -193,7 +178,6 @@ public:
     explicit EqPresetRowWidget(int presetIndex, QWidget *parent = nullptr);
 
     void setPresetName(const QString &name);
-    QString presetName() const { return m_name; }
     bool hasPreset() const { return !m_name.isEmpty(); }
 
 signals:

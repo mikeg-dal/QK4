@@ -47,7 +47,7 @@ public:
 
 public slots:
     void start();    // wired to QThread::started — hid_init + timers + initial detection
-    void shutdown(); // BlockingQueued from façade dtor — stops timers, closes handle, hid_exit
+    void shutdown(); // run on this thread by the façade dtor — stops timers, closes handle, hid_exit
 
     void openDevice();
     void closeDevice();

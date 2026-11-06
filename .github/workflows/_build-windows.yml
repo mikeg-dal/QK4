@@ -47,22 +47,37 @@ jobs:
         shell: bash
         run: echo "artifact=QK4-windows-${{ inputs.version }}" >> $GITHUB_OUTPUT
 
+      - name: vcpkg cache key
+        id: vcpkg-key
+        shell: bash
+        # WHY the runner image version: vcpkg names each binary by an ABI hash that includes the
+        # compiler and the vcpkg tool, and both change with the runner image. Keyed on vcpkg.json
+        # alone, the key matched exactly after an image update, actions/cache does not save on an
+        # exact hit, and the cache from 2026-09-27 restored 0 of 11 packages on every run since:
+        # all of them rebuilt, about 10 min of each Windows build.
+        run: echo "key=vcpkg-win-${ImageOS}-${ImageVersion}-${{ hashFiles('vcpkg.json') }}" >> "$GITHUB_OUTPUT"
+
       - name: Cache vcpkg binary packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: vcpkg-bincache
-          # Keyed on the manifest so a dependency or baseline bump rebuilds
-          # instead of restoring stale binaries.
-          key: vcpkg-win-${{ hashFiles('vcpkg.json') }}
+          # A dependency or baseline bump, or a new runner image, saves a fresh cache; the closest
+          # older one is restored first so unchanged packages are still reused.
+          key: ${{ steps.vcpkg-key.outputs.key }}
           restore-keys: |
             vcpkg-win-
 
+      - name: Read Qt version
+        # WHY: .github/qt-version is the one Qt version every runner uses (scripts/check-qt-version.sh).
+        shell: bash
+        run: echo "QT_VERSION=$(tr -d '[:space:]' < .github/qt-version)" >> "$GITHUB_ENV"
+
       - name: Install Qt
-        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
         with:
-          # 6.11 pending: its restructured download repository isn't supported
-          # by the installer tooling yet; bump when a release handles it.
-          version: '6.10.*'
+          # WHY no 6.11 yet: Qt 6.11 split the Windows repository per toolchain and no released
+          # aqtinstall reads it (scheduled-qt611-canary.yml watches for one).
+          version: ${{ env.QT_VERSION }}
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'

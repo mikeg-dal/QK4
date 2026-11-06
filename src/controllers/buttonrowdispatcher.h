@@ -26,7 +26,6 @@ public:
     explicit ButtonRowDispatcher(RadioState *radioState, ConnectionController *connection, PopupManager *popupManager,
                                  AntennaConfigController *antennaCfg, TextDecodeController *textDecode,
                                  QObject *parent = nullptr);
-    ~ButtonRowDispatcher() override;
 
 private slots:
     void onMainRxClicked(int index);

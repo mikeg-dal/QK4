@@ -1,141 +1,85 @@
 # Conventions
 
-Code style, naming conventions, and development rules for QK4.
+The rules for QK4 code: naming, formatting, commits, comments, styling, and the numbered
+architecture rules. This file owns the rules. How-to recipes live in `PATTERNS.md`; the controller
+inventory lives in `docs/controllers.md`; the styling guide is `docs/styling.md`; what is in each
+source directory is in that directory's `README.md`.
 
-## Development Rules
+Rule numbers are cited from code comments (`Rule 2`, `Rule 11` …). Do not renumber; add new rules at
+the end.
 
-- Preserve existing functionality when adding features
-- Use Qt signal/slot for inter-component communication
-- Use `QByteArray` for binary protocol data
-- Test with actual K4 hardware when possible
-- Keep custom widgets self-contained with clear signal interfaces
+## General
 
-### Clean Coding Principles
-
-1. **Do it right the first time** - A proper implementation now prevents technical debt later.
-
-2. **Avoid patchwork** - If a feature requires changes to multiple components, make cohesive changes rather than scattered workarounds.
-
-3. **Consistent patterns** - Follow established patterns:
-   - RadioState for all radio state with signals for UI updates
-   - Signal/slot connections in MainWindow for orchestration
-   - Protocol for CAT parsing, emitting typed signals
-   - Widgets self-contained with clear public interfaces
-
-4. **Write descriptive commits** - GitHub Release notes are auto-generated from conventional commits by `git-cliff` at tag time (see `.github/workflows/release.yml`). Use commit body text for details that should appear in the release notes (see Commit Messages below).
-
-5. **Parse order matters** - Check specific patterns FIRST (e.g., `RG$` before `RG`)
-
-6. **Initialize state to trigger signals** - Use invalid initial values (`-1`, `-999`) for state that needs to emit signals on first update
+- Preserve existing behaviour when adding features. Test against K4 hardware when the change touches
+  the radio link, audio, CW keying or USB devices.
+- Use `QByteArray` for binary protocol data.
+- Radio state lives in `RadioState` and its subsystem structs. Widgets learn about it from
+  `RadioState` signals (`PATTERNS.md` → Direct Observation, Controller Pattern).
+- `Protocol` only frames packets. It emits the raw CAT text (`catResponseReceived(QString)`);
+  `RadioState::parseCATCommand()` and the subsystem handlers parse it.
+- Each controller wires its own slice. `MainWindow` constructs and coordinates controllers (Rule 12).
+- **Parse order:** register specific prefixes before general ones (`RG$` before `RG`).
+  `test_radiostate_registry` enforces this.
+- **Sentinels:** initialise state to an invalid value (`-1`, `-999`) so the first radio update emits.
+  Never a legal value, not even "off" or 0: the connection dump reports those, and a change guard
+  would swallow them. On/off state is a `ReportedFlag` (`src/models/radiostate/reportedflag.h`).
+  Every subsystem struct has a `reset()` that restores its sentinels; `RadioState::reset()` calls it
+  on disconnect.
 
 ---
 
-## Naming Conventions
+## Naming
 
 | Element | Convention | Example |
 |---------|------------|---------|
 | Classes | PascalCase | `PanadapterRhiWidget`, `RadioState` |
 | Methods | camelCase | `updateSpectrum()`, `setRefLevel()` |
-| Member Variables | m_camelCase | `m_frequencyALabel`, `m_tcpClient` |
-| Signals | camelCase | `frequencyChanged`, `clicked` |
-| Slots | on + Source + Event | `onFrequencyChanged`, `onConnectClicked` |
-| Constants (header / class) | SCREAMING_SNAKE | `WATERFALL_HISTORY`, `BASE_TEXTURE_WIDTH` |
-| Constants (file-local in `.cpp`) | `kCamelCase` | `kArpMaxRetries`, `kOverlayMaxSegments` |
+| Member variables | `m_camelCase` | `m_frequencyALabel`, `m_ioThread` |
+| Signals | camelCase, past tense for state changes | `frequencyChanged`, `clicked` |
+| Slots | `on` + source + event | `onFrequencyChanged`, `onConnectClicked` |
 | Namespaces | PascalCase | `K4Styles`, `K4Styles::Colors` |
+| Design tokens (namespace scope) | PascalCase | `FontSizeBody`, `ShadowMargin`, `KnobButtonWidth` |
+| Class- and header-scope constants | SCREAMING_SNAKE or `kCamelCase` — match the file | `BASE_TEXTURE_WIDTH`, `kPreferredWidth` |
+| File-local constants in a `.cpp` | `kCamelCase` | `kOverlayMaxSegments` |
 
-The two constant styles are split by **location**, not by taste: a constant visible through a header
-is SCREAMING_SNAKE, one confined to a single `.cpp` is `kCamelCase`. The codebase follows this about
-95% of the time; it was documented in 2026-08 after an audit found the rule in the code but not in
-this file.
-
-## Member Variable Prefixes
-
-```cpp
-// Pointers to UI elements
-QLabel *m_frequencyALabel;      // Labels: m_<purpose>Label
-QPushButton *m_spanUpBtn;       // Buttons: m_<name>Btn
-SMeterWidget *m_sMeterA;        // Widgets: m_<name> or m_<name><VFO>
-QStackedWidget *m_vfoAStackedWidget;
-
-// A/B suffix for dual-VFO components
-m_frequencyALabel, m_frequencyBLabel
-m_sMeterA, m_sMeterB
-m_panadapterA, m_panadapterB
-```
-
-## Code Formatting (clang-format)
-
-| Aspect | Style |
-|--------|-------|
-| Indentation | 4 spaces |
-| Line length | 120 characters max |
-| Braces | Same line (Attach) |
-| Pointers | Right-aligned (`Type *name`) |
-| Includes | Preserve order (no auto-sort) |
+Constants in `.cpp` files are almost all `kCamelCase`. Header constants are mixed: the K4Styles and
+panadapter tokens are PascalCase, protocol and audio limits are SCREAMING_SNAKE, and some classes use
+`kCamelCase`. New code follows the file it lands in. Count the split with:
 
 ```bash
-# Check formatting - src AND tests, the same file set CI walks
-scripts/check-format.sh
-
-# Auto-format
-scripts/check-format.sh --fix
+rg -o --no-filename "constexpr [\w:<>\s\*]+? (\w+)\s*(=|\{)" -r '$1' -g '*.h' src \
+  | awk '/^[A-Z][A-Z0-9_]+$/{s++;next} /^k[A-Z]/{k++;next} /^[A-Z]/{p++} END{print "SCREAMING",s,"kCamel",k,"Pascal",p}'
 ```
 
-The script finds clang-format wherever it is installed and **refuses to run on the wrong version**
-rather than reporting a misleading pass. It reads the pinned version out of `ci-checks.yml`, so there is no
-second copy of the number to keep in sync. If you have no matching version, `--bootstrap` installs
-one into `.format-venv/`.
-
-The version matters more than it looks: clang-format changes its line-breaking heuristics between
-**patch** releases, so a nearby 18.x can accept wrapping CI rejects. `ci-checks.yml` pins an exact version
-for this reason.
-
-Running clang-format by hand works too, but the path below is correct only on an Apple Silicon Mac
-with Homebrew — it does not exist on Linux, on Windows, or on an Intel Mac:
-
-```bash
-CF=/opt/homebrew/opt/llvm@18/bin/clang-format
-find src tests -name '*.cpp' -o -name '*.h' | xargs $CF --dry-run --Werror
-```
-
-### Example
-
-```cpp
-void MainWindow::onFrequencyChanged(quint64 freq)
-{
-    if (freq > 0) {
-        m_frequencyLabel->setText(QString::number(freq));
-        m_radioState->setFrequency(freq);
-    }
-}
-
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent),
-      m_tcpClient(new TcpClient(this)),
-      m_radioState(new RadioState(this))
-{
-    setupUi();
-}
-```
+Member pointer suffixes: `m_<purpose>Label`, `m_<name>Btn`, and an `A`/`B` suffix for dual-VFO pairs
+(`m_vfoA`, `m_vfoB`).
 
 ---
 
-## Pre-Commit Checklist
+## Formatting
 
-**REQUIRED before every commit:**
+`.clang-format`: LLVM base, 4-space indent, 120 columns, attached braces, right-aligned pointers
+(`Type *name`), includes not sorted, `IndentCaseLabels: false`.
+
+Always use the script. It reads the pinned version from the `pipx install clang-format==` line in
+`.github/workflows/ci-checks.yml`, finds that exact clang-format, and refuses any other version.
+clang-format changes its line breaking between patch releases, so a near-miss version can pass
+locally and fail CI.
 
 ```bash
-# 1. Run lint check (MUST pass before commit)
-scripts/check-format.sh
-
-# 2. Auto-fix if lint fails
-scripts/check-format.sh --fix
+scripts/check-format.sh             # check src/ and tests/, the same set CI checks
+scripts/check-format.sh --fix       # rewrite offending files
+scripts/check-format.sh --staged    # check only staged content (the hook form)
+scripts/check-format.sh --bootstrap # install the pinned version into .format-venv/
 ```
 
-If lint fails in CI, it means this step was skipped locally.
+Exit codes: 0 clean, 1 violations, 2 cannot check.
 
-**Or stop skipping it.** Install it as a pre-commit hook, which checks only the staged content of
-staged files and so costs a fraction of a second:
+On an Apple Silicon Mac with Homebrew the pinned binary is
+`/opt/homebrew/opt/llvm@18/bin/clang-format`. That path does not exist on Linux, Windows or an Intel
+Mac. A major-version bump moves it; update this line with the bump.
+
+### Pre-commit hook
 
 ```bash
 printf '#!/bin/sh\nexec "$(git rev-parse --show-toplevel)/scripts/check-format.sh" --staged\n' \
@@ -143,182 +87,432 @@ printf '#!/bin/sh\nexec "$(git rev-parse --show-toplevel)/scripts/check-format.s
 chmod +x .git/hooks/pre-commit
 ```
 
-Do not symlink the script into `.git/hooks/` instead — a symlink cannot pass `--staged`, so every
-commit pays for a whole-tree check.
+Do not symlink the script into `.git/hooks/`. A symlink cannot pass `--staged`, so every commit pays
+for a whole-tree check.
 
-## Code Review Checklist
+---
 
-Before considering a feature complete:
-- [ ] Does it follow existing patterns?
-- [ ] Are signals/slots properly connected?
-- [ ] Is state initialized correctly?
-- [ ] Lint check passes? (REQUIRED - run pre-commit checklist above)
-- [ ] Would another developer understand this code?
+## Before Every Commit
+
+```bash
+scripts/check-format.sh --fix
+scripts/check-format.sh
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+All four must pass (Rule 10). Then review against this list:
+
+- [ ] Follows the existing pattern for its kind of change (`PATTERNS.md`).
+- [ ] Every new `connect()` has a context object, and cross-thread connections are queued (Rule 14).
+- [ ] State initialised to sentinels; `reset()` covers new fields.
+- [ ] Anything the change replaced is fully removed — code, tests, comments, docs (Rule 13).
+- [ ] New files are listed in their directory's `README.md`.
+- [ ] Another developer would understand it.
 
 ## Commit Messages
 
-Commits drive the auto-generated GitHub Release notes (via `git-cliff --latest` in the release workflow). Use [conventional commit](https://www.conventionalcommits.org/) format:
+Release notes are generated from commits by `git-cliff` at tag time (`.github/workflows/release.yml`).
+Use [conventional commits](https://www.conventionalcommits.org/):
 
 ```
 type(scope): short summary
 
-Optional body with detail — each line becomes a sub-bullet in the release notes.
+Optional body. Each line becomes a sub-bullet in the release notes.
 ```
 
-| Type | Release Notes Section | Example |
+| Type | Release notes section | Example |
 |------|-----------------------|---------|
 | `feat` | Added | `feat(audio): add jitter buffer for RX playback` |
 | `fix` | Fixed | `fix(panadapter): correct CW pitch offset in passband` |
 | `refactor` | Changed | `refactor(state): replace if-else chain with handler registry` |
 | `perf` | Changed | `perf(dsp): reduce CPU usage with GPU spectrum rendering` |
-| `docs` | *(skipped)* | `docs: update README build instructions` |
-| `chore` | *(skipped)* | `chore: bump Qt to 6.8` |
-| `ci` | *(skipped)* | `ci: add Raspberry Pi build job` |
+| `docs` | skipped | `docs: update README build instructions` |
+| `chore` | skipped | `chore: bump Qt to 6.8` |
+| `ci` | skipped | `ci: add Raspberry Pi build job` |
 
-**Tips:**
-- The `(scope)` is optional but makes entries scannable (e.g., `audio`, `panadapter`, `state`, `ui`)
-- Put detail in the commit body — it flows into the release notes as sub-bullets
-- Keep the summary line under 72 characters
-
----
-
-## Styling
-
-**Source of truth:** `src/ui/k4styles.h`. Every color, font, dimension, and stylesheet helper is declared there.
-
-Reference tables (colors, fonts, dimensions, helpers, `Dialog::` namespace): `docs/K4STYLES_REFERENCE.md`.
-
-Rules for new widget code:
-- Use `setPixelSize()` with `K4Styles::Dimensions::FontSize*` constants — never `setPointSize()` (macOS 72 PPI vs Windows 96 PPI divergence).
-- Use `K4Styles::Colors::*` constants — never hardcoded hex strings.
-- For custom-painted widgets, use `K4Styles::Fonts::paintFont()` / `dataFont()` instead of constructing `QFont` directly.
-- For inline stylesheet construction, prefer `K4Styles::Dialog::labelText(color, size)` over `QString("color: %1; font-size: %2px;").arg(...)`.
-- **Never leave a form control to the operating system's theme.** `main()` installs `K4Styles::applicationStyleSheet()` app-wide, so a checkbox, combo box, line edit or spin box with no stylesheet of its own still gets the K4 look. Give each control its `Dialog::` helper anyway — the fallback is the safety net, not the design. A **new** form-control type (a `QRadioButton`, a `QDoubleSpinBox`) needs a rule in `applicationStyleSheet()` first; `test_formcontroltheme` fails until it has one. Why: Windows 11 in dark mode draws unstyled controls dark-on-dark, and no other platform does, so it cannot be caught by eye on a Mac.
-
-**Adding a popup menu** follows a fixed recipe — see `PATTERNS.md` → "Adding a Popup Menu".
-
----
-
-## Architecture Rules
-
-These rules prevent the architectural issues identified in the 2026-03-30 audit. They are non-negotiable for all new code and refactoring work.
-
-**How rules are enforced:** not all twelve rules have the same bite. The tag at the front of each rule tells a new contributor what happens when they're broken:
-
-- **[CI]** — a test or lint check in `.github/workflows/ci-checks.yml` fails. The rule *breaks the build*.
-- **[sanitizer]** — ASAN or UBSAN in the sanitizer CI job catches the violation when the offending code path runs.
-- **[review]** — no automation. Enforced by reviewer discipline. Violations ship if reviewers miss them.
-- **[aspirational]** — target not fully met today; documented exemptions exist. Binds new code only.
-
-The CI-enforced rules (4, 6, 10) are the load-bearing ones. Sanitizer rules (11) catch the nastiest violations at runtime. Review-only rules (2, 3, 5, 8, 9, 12) depend on human attention. Aspirational rules (1, 7) mark architectural intent without strict enforcement.
-
-### 1. [aspirational] No Duplicated Static Functions
-
-If a function is needed in more than one translation unit, it goes in `src/utils/` with a namespace (e.g., `RadioUtils::`). Copy-pasting a static function into another `.cpp` file is a defect. Fix it immediately.
-
-No lint check enforces this; honored today by convention.
-
-### 2. [review] Controllers Do Not Expose Owned Objects
-
-Controllers expose **task-level APIs**, not internal workers. No `audioEngine()`, `kpodDevice()`, or `tcpClient()` accessors in the public interface. If external code needs to configure a device, add a method to the controller (e.g., `audioController->setInputDevice(...)` instead of `audioController->audioEngine()->setInputDevice(...)`).
-
-**Exception:** `tcpClient()` is exposed for AudioController's performance-sensitive audio data path and CatServer's direct TCP forwarding. These are documented exceptions, not precedent.
-
-### 3. [review] No Non-Const References to Shared State
-
-Never return `Type&` from a getter when multiple callers may read or write. Use `const Type&` for read access and typed setters for mutations. This prevents data races and makes state changes auditable.
-
-### 4. [CI] RadioState is Main-Thread Only
-
-`parseCATCommand()` is enforced by `Q_ASSERT(QThread::currentThread() == thread())`. All callers must be on the main (GUI) thread. If cross-thread parsing is ever needed, use `QMetaObject::invokeMethod` with `Qt::QueuedConnection`.
-
-Debug builds assert on violation; sanitizer CI catches any cross-thread access that slips past the assert.
-
-### 5. [review] Network Buffers Have Explicit Size Limits
-
-Any buffer that accumulates data from an external source must check against a maximum size and handle overflow (disconnect, discard, or reset). Use `K4Protocol::MAX_BUFFER_SIZE` (1MB) as the default limit.
-
-### 6. [CI + review] Parser Changes Require Test Cases
-
-Any modification to `RadioState::parseCATCommand()` or its handlers must include a corresponding test case in `tests/test_radiostate.cpp`. No merge without test coverage for the changed behavior.
-
-Three CI-enforced invariants catch structural breaks:
-- `test_radiostate_registry` — every registered prefix resolves; longest-first ordering preserved.
-- `test_radiostate_golden` — byte-for-byte replay of captured K4 CAT session.
-- `test_catserver` — `RadioState` public API pinned to `docs/radiostate-catserver-api-contract.md`.
-
-Behavioral coverage of the specific change is still author discipline.
-
-### 7. [aspirational] No File Over 800 Lines
-
-If a `.cpp` or `.h` file grows past 800 lines, split it by responsibility before merging. Check with `wc -l` before committing.
-
-**Status: aspirational with documented exemptions.** Binding for *new* code: PRs that introduce new files over 800 LOC or push a borderline file past the limit are blocked. PRs that leave an existing violator untouched are fine.
-
-Current exempt files (do not green-light new additions that bloat these further):
-
-| File | LOC | Notes |
-|------|----:|-------|
-| `src/dsp/panadapter_rhi.cpp` | 1884 | Naturally large — RHI pipeline + buffer management. Low priority. |
-| `src/mainwindow.cpp` | 1364 | Down from 4967 pre-refactor. Remaining scope is genuine coordination (setupUi, event-filter dispatch, lifecycle). Further decomposition is judgment territory. |
-| `src/models/radiostate.cpp` | 1152 | Down from 2893 pre-refactor. Handler registry + façade delegation. |
-| `src/dsp/minipan_rhi.cpp` | 1090 | Mirrors panadapter structure. |
-| `src/controllers/popupmanager.cpp` | 1063 | Coherent registry of 14 popup objects — size is justified, not a split candidate. |
-| `src/controllers/spectrumcontroller.cpp` | 966 | Past 800-LOC threshold — split candidate (DX cluster spot overlay wiring is the natural extraction target). |
-| `src/models/radiostate.h` | 896 | Down from 1156 pre-refactor; 11 subsystem struct references + public API. |
-| `src/ui/popups/displaypopupwidget.cpp` | 865 | Close to threshold — hold the line. |
-
-### 8. [review] Every Extraction is Traced First
-
-Before moving code between classes: read every member variable, method, signal, and `connect()` call involved. Document what moves, what stays, and what the cross-domain dependencies are. Missing a dependency means a broken extraction.
-
-### 9. [review] One Commit Per Logical Change
-
-Never combine structural moves with logic changes in the same commit. If a refactor introduces a new class AND fixes a bug, those are two commits. This enables `git bisect` and clean `git revert`.
-
-### 10. [CI] Build + Format + Tests Before Every Commit
-
-```bash
-scripts/check-format.sh --fix   # or scripts/check-format.sh to check without rewriting
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-All three must pass. No exceptions. `.github/workflows/ci-checks.yml` mirrors the format gate and runs the test suites — skipping locally means the CI run will fail.
-
-### 11. [sanitizer + review] Controlled Shutdown Order
-
-Every controller and MainWindow calls `disconnect(this)` as the first statement in its destructor. This prevents queued signals from arriving during partial destruction. Thread shutdown follows the dependency chain: producers stop before consumers.
-
-ASAN in the sanitizer CI job catches use-after-free on violation if the destruction path runs under test. Review catches the rest.
-
-### 12. [review] New UI Concerns Belong in Controllers, Not MainWindow
-
-After the 2026-04 MainWindow decomposition, `src/mainwindow.cpp`'s scope is **window chrome, top-level layout, and controller coordination — nothing else**. New features that need a widget, a signal wiring, a CAT dispatch helper, or mode-dependent UI behavior go in a controller under `src/controllers/` (see `PATTERNS.md` → Controller Pattern). If the widget only consumes a single RadioState property, use Direct Observation instead of adding a controller.
-
-Regressing to "throw it on MainWindow" is the single biggest risk for re-drifting into a god object. The banned anti-patterns in `PATTERNS.md` are non-negotiable:
-
-- No new widget member pointers on `MainWindow`.
-- No slots on MainWindow that just forward a RadioState signal to a widget setter.
-- No inline lambdas over ~5 lines or ~5 connect() calls clustered at one site — extract to a helper, or if it grows past ~30 lines, promote to a controller.
-- No cross-controller reach-in (`controllerA->someGetter()->doThing()`) — communicate via signals.
-
-No automated check; relies on PR review.
+Keep the summary under 72 characters. The scope is optional (`audio`, `panadapter`, `state`, `ui` …).
+Do not add `Co-Authored-By` trailers.
 
 ---
 
 ## Comment Conventions
 
-Default: **write no comments.** Well-named identifiers already describe *what* the code does. Only add a comment when the *why* is non-obvious: a hidden constraint, a subtle invariant, a K4 protocol quirk, a threading/ordering requirement, a workaround for a specific transient. If removing the comment would not confuse a future reader, do not write it.
+Default: **write no comments.** Names say what the code does. Comment only when the *why* is not
+obvious: a hidden constraint, an invariant, a K4 protocol quirk, a threading or ordering requirement,
+a workaround. If removing the comment would not confuse a later reader, do not write it.
 
-Two prefixes are reserved so grep-based surveys can find them:
+Two prefixes are reserved so they can be surveyed with `rg`:
 
-- **`// WHY: <rationale>`** — design rationale for a non-obvious choice. Use this for protocol quirks (`RO`/`RO$` routing, SL no-echo), threading decisions (`BlockingQueuedConnection` avoidance, deferred-setup to dodge deadlocks), constants whose value is load-bearing (3-byte parse-tail, `PREBUFFER_PACKETS = 1`), and any workaround whose removal would silently break behavior. Prefer this over a bare paragraph so future audits can grep `rg "// WHY:"` to survey every non-obvious decision in the codebase.
+- **`// WHY: <rationale>`** — the reason for a non-obvious choice: protocol quirks (`RO`/`RO$`
+  routing, SL not echoed), threading decisions (avoiding `BlockingQueuedConnection`, deferred setup to
+  dodge a deadlock), load-bearing constants, and workarounds whose removal would silently break
+  something. Survey: `rg "// WHY:"`.
+- **`// TODO(gh#NNN): <summary>`** — tracked debt. File the issue first. Bare `TODO`, `FIXME`,
+  `HACK` and `XXX` are not used. Survey: `rg "// TODO\(gh#"`.
 
-- **`// TODO(gh#NNN): <summary>`** — tracked technical debt. The `gh#NNN` points at a GitHub issue. **A `// TODO` without an issue number is not allowed** — file the issue first, then reference it. This prevents TODOs from turning into ambient guilt. Bare `// FIXME`, `// HACK`, `// XXX` are not used; use `// TODO(gh#NNN)` with an issue that states the concern, or delete the comment.
+Do not write comments that restate a name, refer to the current task or PR, describe deleted code, or
+explain an obvious field.
 
-Do NOT write comments that:
-- Restate the function/type name in prose.
-- Reference the current task, PR, or fix (that belongs in the commit message).
-- Describe code that was deleted (git has it).
-- Explain a field whose purpose is obvious from a read-through (e.g., `// the name`).
+---
+
+## Styling
+
+The rules below are the must-follow summary. `docs/styling.md` owns the detail and the reasons: Qt's
+style-sheet cascade, inheritance and re-polish rules, the contrast policy, the type roles, side-panel
+keys, the fixed 90×44 knob keys, and removed names. Values live only in
+`src/ui/styling/k4constants.h`; helpers in `src/ui/styling/k4styles.h`.
+
+- **Fonts:** `setPixelSize()` with a `K4Styles::Dimensions::FontSize*` role, never `setPointSize()`
+  and never a literal. Custom-painted text uses `K4Styles::Fonts::paintFont()` / `dataFont()`.
+  This deliberately departs from Qt's advice (*QFont::setPixelSize*: pixel sizes make a font "device
+  dependent"); `docs/styling.md` → Type roles and pixel sizes gives the reason. The cost: QK4 ignores
+  the OS text-size setting, and the interface scale (`src/settings/interfacescale.h`) is the only
+  way to enlarge text.
+- **Colours:** tokens only. Translucency is `withAlpha()` / `cssRgba()` with a `Colors::Alpha::*`.
+  Never a hex string, `QColor(r, g, b)`, `Qt::white`/`Qt::black` or a style-sheet `rgb()`/`rgba()`
+  literal. A new text/background pair goes into `test_tokenstandard`'s contrast list.
+  `TokenStandardTests` enforces all of this over `src/` [CI].
+- **Form controls:** never leave one to the OS theme. A **new** form-control type needs a rule in
+  `K4Styles::applicationStyleSheet()` first; `FormControlThemeTests` fails until it has one [CI].
+  Why: Windows 11 dark mode draws unstyled controls dark-on-dark.
+- **A widget's own style sheet beats the app sheet** whatever the specificity (*The Style Sheet
+  Syntax*, Cascading). The app sheet is only a fallback; to change a widget that has its own sheet,
+  change that sheet.
+- **State styling uses selectors, not sheet swaps.** Set one sheet when the widget is made and let
+  the state select the look; never call `setStyleSheet()` again to change it. Prefer a pseudo-state:
+  a checkable button's selected look is `:checked` and needs no code. Any other state is a dynamic
+  property set through `K4Styles::setStyleFlag()`, `setStyleState()` or `setSelected()`, which
+  re-apply the sheet as Qt requires after a property change (*The Style Sheet Syntax*, Selector
+  Types) and only when the value changed. The properties are `selected` (lit), `dimmed` (greyed),
+  `error` and `state` (one of several named looks); `whenFlag()`/`whenState()` build their
+  selectors. A state sheet is the resting sheet followed by the state rules, each at least as
+  specific as the resting rule it overrides. `ButtonSheetsTests` and `StateSheetsTests` hold every
+  migrated widget pixel-identical, state by state, to the sheet it used to swap in [CI]. Rebuilding a
+  sheet for a *value* (a user-chosen font size) is not a state swap. Count:
+  `rg -c "setStyleSheet\(" src | awk -F: '{s+=$2} END {print s}'`.
+- **Image buffers carry a device pixel ratio.** Never draw into a `QPixmap` at 1× and let Qt stretch
+  it. Recipe: `PATTERNS.md` → High-DPI drawing.
+
+**Adding a popup** follows a fixed recipe: `PATTERNS.md` → Adding a Popup Menu.
+
+---
+
+## Architecture Rules
+
+**Tags** say what happens when a rule is broken:
+
+- **[CI]** — a named check in `.github/workflows/ci-checks.yml` fails.
+- **[review]** — no automation. Reviewers catch it or it ships.
+- **[aspirational]** — not met everywhere today. Binds new code; the exceptions are listed.
+
+| Rule | Tag |
+|---|---|
+| 1 No duplicated static functions | review |
+| 2 Controllers do not expose owned objects | aspirational |
+| 3 No non-const references to shared state | review |
+| 4 RadioState is main-thread only | review (+ Debug assert) |
+| 5 Network buffers have size limits | review |
+| 6 Parser changes need tests | CI + review |
+| 7 No file over 800 lines | aspirational |
+| 8 Every extraction is traced first | review |
+| 9 One commit per logical change | review |
+| 10 Format + build + tests before every commit | CI |
+| 11 Controlled shutdown order | review |
+| 12 New UI concerns go in controllers | review |
+| 13 Replacing code removes everything only it used | review |
+| 14 Threads and object affinity | review |
+| 15 No new singletons | aspirational |
+| 16 Nothing on a real-time thread formats, allocates, locks or does I/O | CI (RealtimeSanitizer, on `QK4_NONBLOCKING` functions a test reaches) + review |
+| 17 Logging goes through `src/logging/` | CI (`LogCategoriesTests`, `LogRulesTests`) + review |
+
+### 1. [review] No Duplicated Static Functions
+
+A function needed in more than one translation unit goes in `src/utils/` under a namespace
+(`RadioUtils::`). Copying a static function into another `.cpp` is a defect. No lint checks this; a
+scan on 2026-10-29 found no duplicates.
+
+### 2. [aspirational] Controllers Do Not Expose Owned Objects
+
+Controllers expose task-level APIs, not their internal workers. To configure a device, add a method
+on the controller (`audioController->setInputDevice(…)`), not a getter
+(`audioController->audioEngine()->setInputDevice(…)`).
+
+Existing exceptions. Each is a deliberate trade-off; none is precedent for a new one:
+
+| Accessor | Consumers | Why |
+|---|---|---|
+| `ConnectionController::tcpClient()` | AudioController (TX packets straight to `TcpClient::sendRaw`, RX decode via `tcpClient()->protocol()`), CwController (keyer-thread `KZD`/`KZU`, KPOD+ keyer bytes) | Audio and keying must not hop through the main thread |
+| `ConnectionController::networkMetrics()` | AudioController (feeds samples), MainWindow (hands it to StatusBarController) | Shared metrics sink |
+| `HardwareController::kpodDevice()`, `kpodPlusDevice()`, `halikeyDevice()` | OptionsDialog pages (KpodPage, CwKeyerPage), CwController | Pages configure and observe per-device signals; reason in `hardwarecontroller.h` |
+| `HardwareController::paddleKeyer()`, `keyerLink()`, `sidetoneGenerator()` | CwController, wired once in MainWindow | HardwareController constructs the CW devices; CwController wires them |
+| `KPA1500UiController::client()` | OptionsDialog KPA1500 page | The page sets host/port/enable directly |
+| `SpectrumController::spectrumContainer()` | MainWindow layout, MenuController (menu overlay geometry) | Layout placement |
+| `StatusBarController::widget()` | MainWindow layout | Layout placement |
+
+Prefer a controller-level signal or setter when a consumer needs only one value, and remove that
+consumer's use of the raw pointer.
+
+### 3. [review] No Non-Const References to Shared State
+
+Never return `Type&` from a getter that several callers use. Return `const Type&` for reads and use
+typed setters for writes.
+
+### 4. [review] RadioState Is Main-Thread Only
+
+`parseCATCommand()` asserts `Q_ASSERT(QThread::currentThread() == thread())`. Every caller must be
+on the main thread; parse requests from another thread arrive through a queued connection or
+`QMetaObject::invokeMethod(…, Qt::QueuedConnection)`.
+
+The assert fires only in a Debug build. CI's unit tests are Release, and no test calls the parser
+off-thread, so CI cannot catch a violation. ASAN and UBSAN do not detect races; only the weekly
+ThreadSanitizer job (`scheduled-sanitizers.yml`) could, and only on a path a test exercises.
+
+### 5. [review] Network Buffers Have Size Limits
+
+A buffer that accumulates external data checks a maximum size and handles overflow (disconnect,
+discard or reset). Default limit: `K4Protocol::MAX_BUFFER_SIZE` (1 MB, `src/network/protocol.h`).
+
+### 6. [CI + review] Parser Changes Require Tests
+
+A change to `RadioState::parseCATCommand()` or a handler adds a case to `tests/test_radiostate.cpp`.
+Covering the specific behaviour is the author's job [review].
+
+CI catches structural breaks:
+
+- `test_radiostate_registry` — every registered prefix resolves; longest prefix first.
+- `test_catserver` — the `RadioState` API that CatServer uses, pinned to
+  `docs/radiostate-catserver-api-contract.md`.
+
+`test_radiostate_golden` replays a captured K4 session byte for byte, but its trace is not committed
+(it holds personal data). It skips in CI and protects only machines that have the fixture.
+
+### 7. [aspirational] No File Over 800 Lines
+
+Split a `.cpp` or `.h` by responsibility before it passes 800 lines. Nothing enforces this, and files
+have crossed the line since it was written. Do not grow a listed file further without a reason in the
+PR.
+
+`src/` files over 800 lines on 2026-10-29:
+
+| File | Lines | Note |
+|---|---:|---|
+| `src/dsp/panadapter_rhi.cpp` | 1875 | RHI pipeline and buffer management |
+| `src/mainwindow.cpp` | 1455 | Window chrome, layout, event-filter dispatch, lifecycle |
+| `src/models/radiostate.cpp` | 1174 | Handler registry and façade delegation |
+| `src/settings/radiosettings.cpp` | 1074 | Split candidate |
+| `src/controllers/popupmanager.cpp` | 1026 | Registry of the shared popups |
+| `src/controllers/tcicontroller.cpp` | 959 | Split candidate |
+| `src/dsp/minipan_rhi.cpp` | 940 | Mirrors the panadapter |
+| `src/models/radiostate.h` | 918 | Public API over the subsystems |
+| `src/hardware/paddlekeyer.cpp` | 823 | Port of Dale's keyer; kept close to the original |
+| `src/ui/styling/k4styles.cpp` | 809 | Style-sheet helpers |
+
+Regenerate:
+
+```bash
+find src -name '*.cpp' -o -name '*.h' | xargs wc -l | awk '$1 > 800 && $2 != "total"' | sort -rn
+```
+
+Test files are not held to this limit.
+
+### 8. [review] Every Extraction Is Traced First
+
+Before moving code between classes, read every member, method, signal and `connect()` involved.
+Write down what moves, what stays and what crosses the boundary. A missed dependency is a broken
+extraction.
+
+### 9. [review] One Commit per Logical Change
+
+Never mix a structural move with a logic change. A refactor that adds a class and fixes a bug is two
+commits, so `git bisect` and `git revert` stay clean.
+
+### 10. [CI] Format, Build and Tests Before Every Commit
+
+Run the sequence in "Before Every Commit". CI repeats it: `ci-checks.yml` runs the format check, the
+unit tests (Release) and the ASAN + UBSAN tests (Debug); `ci-packaging.yml` builds the app on all
+four platforms for every PR. Skipping it locally means a red CI run.
+
+### 11. [review] Controlled Shutdown Order
+
+Threads stop in dependency order: producers before consumers, and before anything they read is
+destroyed (`MainWindow::closeEvent`, CONC-001).
+
+A destructor cuts every incoming connection that can still fire while its body runs, and nothing
+else. `sender->disconnect(receiver)` removes that sender's signals into that receiver. Called bare
+inside a member, `disconnect(this)` names `this` as the *sender*, so it removes only connections
+from this object. No call cuts every incoming connection at once ("The sender may never be nullptr",
+*QObject::disconnect*). Qt removes a connection by itself only when either end is destroyed — in
+`~QObject`, after the derived destructor body, and for a `QWidget` after its children are gone.
+
+In the destructor:
+
+- **A sender that the body's own work makes emit** (a teardown call that emits back into this object
+  synchronously): `sender->disconnect(this)` before that work. Guard with `QPointer` if the sender may
+  already be gone.
+- **A cross-thread `Qt::DirectConnection`, or a lambda whose context object is not `this`:** keep the
+  `QMetaObject::Connection` and `QObject::disconnect(handle)` first. A handle is safe to disconnect
+  after the sender is destroyed; a raw sender pointer is not. A disconnect stops new calls only. It
+  does not wait for a call already running on another thread, so stopping that thread first is the
+  real guarantee.
+- **A `QWidget` that receives from its own descendants** (MainWindow): cut each descendant from it
+  before the body ends.
+- **Otherwise nothing.** Queued signals are not delivered mid-destructor unless the body runs an
+  event loop, and `~QObject` removes events still posted to the object. Do not add a destructor only
+  to disconnect.
+
+**Outside a destructor, a disconnect does not cancel queued calls.** "If a queued connection is
+disconnected, already scheduled events may still be delivered, causing the receiver to be called
+after the connection is disconnected" (*QObject::disconnect*). A slot that can run after its
+connection is cut must check its own state.
+
+The ASAN job catches a use-after-free only on a path a test runs, and no test builds MainWindow or
+runs the shutdown graph. Review is the real gate.
+
+### 12. [review] New UI Concerns Belong in Controllers, Not MainWindow
+
+`src/mainwindow.cpp` is window chrome, top-level layout and controller coordination. A new widget,
+signal wiring, CAT helper or mode-dependent behaviour goes in a controller under `src/controllers/`.
+A widget that consumes one `RadioState` property observes it directly. The banned shapes and their
+reasons are in `PATTERNS.md` → Anti-patterns. In short: no new widget members or forwarding slots on
+MainWindow, no long inline lambdas, no reaching through one controller into another.
+
+### 13. [review] Replacing Code Removes Everything Only It Used
+
+A change that replaces or removes a feature deletes, in the same change, everything that existed
+only for it: signals nothing connects to and the code that emits them, members only that code wrote,
+helpers only it called, the tests of those helpers, and every comment, README and doc line that names
+any of it.
+
+Before committing, `rg` each removed symbol and file name across `src/`, `tests/`, `docs/` and the
+module READMEs. A hit is either a live user (so it was not dead) or leftover to remove. For a signal,
+also check that something still `connect()`s to it; an emit with no receiver runs silently.
+
+Why: the 2026-10 keyer port deleted `IambicKeyer` but left the HaliKey line-state signal, its dedupe
+helper and test, and a dozen comments and docs. Everything compiled and passed.
+
+### 14. [review] Threads and Object Affinity
+
+A `QObject` lives in the thread that created it, or the one it was moved to. Its events, timers and
+queued slots run there (*Threads and QObjects*). This rule is the contract every thread follows.
+List the threads with `rg -n "new QThread|QThread::create|moveToThread" src`.
+
+- **Worker objects, not `QThread` subclasses with slots.** Create the worker without a parent,
+  `moveToThread()` it, connect `&QThread::finished` to the worker's `deleteLater`, then `start()`.
+  Stop it through `ThreadShutdown` (`src/utils/threadshutdown.h`), never a bare `quit()` +
+  `wait()`: `callBlocking()` for the worker's last call (a `BlockingQueuedConnection` has no
+  timeout), then `retire()`, or `join()` for a thread without an event loop. A thread that misses
+  its deadline is disowned and reported, because deleting a running `QThread` crashes, and one made
+  by `QThread::create()` instead blocks until it finishes (*~QThread*). Anything that thread's code
+  uses that is not a `QObject` living on it is the owner's to leak too. A `QThread` object itself
+  lives in the creating thread, so slots on a `QThread` subclass run there, not in the new thread.
+- **A thread without an event loop gets no events.** `QThread::create(fn)` (the keyer, the HaliKey
+  port scan) runs `fn` and exits; queued calls, timers and `deleteLater()` aimed at objects living
+  there are never delivered (*Threads and QObjects*, Per-Thread Event Loop). Hand such a thread
+  plain data or a thread-safe queue, not `QObject`s that expect events.
+- **Touch an object only from its thread.** "QObject and all of its subclasses are not thread-safe"
+  (*Threads and QObjects*). Call across threads with a queued connection or
+  `QMetaObject::invokeMethod(obj, …, Qt::QueuedConnection)`. A direct call from another thread is
+  allowed only where the class documents it as thread-safe and protects its data (for example a
+  mutex- or atomic-guarded API); say so in a `// WHY:` comment at the call.
+- **Timers and sockets belong to their thread.** "You cannot start a timer or connect a socket in a
+  thread that is not the object's thread" (*Threads and QObjects*). Create them in the worker's
+  thread (in a slot run after `started`), or as children of the worker before it moves.
+- **Widgets are main-thread only.** `QWidget` and its subclasses are not reentrant.
+- **Parent and child share a thread.** Never pass the `QThread` as parent of an object created in
+  that thread.
+- **Delete from the owning thread.** Never `delete` a `QObject` that lives in another thread; use
+  `deleteLater()` (*~QObject*). Every object created in a thread is deleted before its `QThread`.
+- **`BlockingQueuedConnection` only across threads.** Qt: "This connection must not be used if the
+  receiver lives in the signalling thread, or else the application will deadlock" (*Qt namespace*,
+  ConnectionType). It also deadlocks if the receiver's thread is itself blocked waiting on the
+  caller. Before adding one, show the receiver's thread cannot be waiting on the caller, and record
+  why in a `// WHY:` comment.
+- **`Qt::DirectConnection` across threads** runs the slot in the emitter's thread. Use it only for a
+  receiver documented as thread-safe, and keep the connection handle (Rule 11).
+- **Every lambda connection has a context object.** The context-less overload "is error prone … the
+  connection does not get automatically disconnected" and is always a direct connection
+  (*QObject*, `QT_NO_CONTEXTLESS_CONNECT`). A scan on 2026-10-29 found none in `src/`.
+- **An event filter lives in the same thread as the object it watches** (*Threads and QObjects*).
+  `K4PopupBase` installs an app-wide filter on `qApp`, so popups are main-thread only.
+
+The threading work in progress will extend this rule with the thread inventory and priorities; keep
+this section to principles.
+
+### 15. [aspirational] No New Singletons
+
+Shared state reaches a controller through its constructor. Do not add a static service locator or
+`instance()` accessor.
+
+The one existing exception is `RadioSettings::instance()`, the QSettings-backed settings store, used
+from many files (`rg -c "RadioSettings::instance\(\)" src`). It is a function-local static `QObject`,
+so it is created on first use and destroyed after `main()` returns, after `QApplication`. Qt does not
+support that: "creating QObjects before the QApplication is not supported … static instances of
+QObject are also not supported" (*Threads and QObjects*). Treat it as tracked debt; do not copy the
+shape.
+
+### 16. [CI + review] Real-Time Threads Do Not Log, Allocate, Lock or Block
+
+The keyer, the HaliKey serial poller, the RtMidi callback, the KPOD+ EP02 reader, the sidetone and
+the audio thread run against deadlines. Code on them must never format a string, allocate, take a
+lock that another thread can hold for long, or do I/O. That includes logging: no per-element,
+per-edge, per-packet or per-frame `qCDebug`/`qCInfo` on these threads, even behind a category.
+
+- Every category is declared with a level, normally `Q_LOGGING_CATEGORY(name, "…", QtInfoMsg)`
+  (`QtWarningMsg` for diagnostic-only categories such as `qk4.pan.diag`), so debug is off by default. With no level argument, "all message types are
+  enabled" (*QLoggingCategory*, Q_LOGGING_CATEGORY), including debug, in Release builds too:
+  "Logging categories are not affected by your C++ build configuration".
+- Turn debug on per category at run time with `QT_LOGGING_RULES`, e.g.
+  `QT_LOGGING_RULES="qk4.cw.keyer.debug=true"`, or tick the subsystem in Options → Diagnostics.
+- A disabled `qCDebug` skips evaluating its arguments, so it is cheap on ordinary threads. On a
+  real-time thread it still is not free when someone enables it, which is why the rule bans it there
+  rather than relying on the default.
+- To observe a real-time thread, record into a preallocated buffer or lock-free queue and format it
+  on another thread.
+
+- A promoted thread gets its class from its entry in `RtScheduling::Threads`
+  (`src/utils/rtscheduling.h`), the one table of who is promoted: the CW threads (keyer, sidetone,
+  HaliKey poller, KPOD+ EP02) are `RealTime`; the I/O thread and the RX and TX audio threads are
+  `High`, never real-time. It promotes itself first thing, on itself:
+  `RtScheduling::promoteCurrentThread(RtScheduling::Threads::kName)` at the top of its run function,
+  or `RtScheduling::promoteOnStart(thread, RtScheduling::Threads::kName)` before `start()` for an
+  event-loop thread. Never `QThread::HighPriority` or any `QThread::Priority`. A real-time thread
+  must block between wake-ups, never spin: under `SCHED_FIFO` or the Mach time-constraint policy a
+  spinning thread starves its core. `test_rtscheduling` checks the table and where each entry is
+  applied [CI].
+- A thread that must never block on logging is marked with `Logging::markRealtimeOnStart(thread)`
+  (connected before any `started()` connection that enters a loop); the handler then only
+  try-locks its queue and drops and counts instead of waiting.
+
+**Enforcement.** Mark the work a real-time thread does between wake-ups `noexcept QK4_NONBLOCKING`
+(`src/utils/rtsan.h`): per element, edge, packet or block, not the loop that waits, not
+configuration. The RealtimeSanitizer job in `ci-checks.yml` then fails any test in which such a
+function, or anything it calls, allocates, takes a lock, sleeps or does I/O. It sees only what a
+test reaches; the rest is review.
+
+- The short locks this rule allows are `RtSan::BoundedMutex`, not `std::mutex`. Its contract is the
+  rule's: no holder a real-time thread can wait on holds it across a sleep, a wait, a send or an
+  allocation, or calls out into code that does. RTSan cannot check that; review does.
+- `RtSan::Allow` exempts one statement that is bounded by construction (a non-blocking wake-up
+  write) or is the thread's own wait between wake-ups (the keyer's deadline sleep). Every use has a
+  `// WHY allowed:`. Test doubles that record what they are sent use it too; the real
+  implementation they stand in for is checked on its own.
+- No `std::deque` or `std::function` in a marked path: both can allocate in steady use. Use
+  `RingDeque` and `FunctionRef` (`src/utils/`), or a preallocated ring.
+
+### 17. [CI] Logging Goes Through `src/logging/`
+
+- Every category is declared in `src/logging/logcategories.{h,cpp}` at `QtInfoMsg`, named
+  `qk4.<area>[.<detail>]` with an `lc<Area><Detail>` symbol, and belongs to a group in
+  `logrules.cpp`. Every log call names a category (`qCWarning(lcX)`), never bare `qWarning()`.
+  Enforced by `LogCategoriesTests` and `LogRulesTests`.
+- No info-or-above line on a per-sample, per-frame, per-element or per-CAT-response path; those
+  stay `qCDebug` in a category that is off by default, or become a bench item. [review]
+- Never log a password, PSK or PSK identity; log `.isEmpty()` or `.size()`. A new credential field
+  is passed to `Logging::registerSecret()` when loaded. Enforced by the secret scan in
+  `LogCategoriesTests`; the writer also redacts registered secrets.
+- Only `main()` installs a message handler, through `Logging::install()`. Production code never
+  calls `QLoggingCategory::installFilter()`, which would make Qt ignore every rule; rules change
+  only through `Logging::apply()`. [review]
+
+Where logs go and how testers turn them on: `README.md` → "Reporting a Bug: Log Files", and `src/logging/README.md`.

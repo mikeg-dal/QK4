@@ -1,10 +1,14 @@
 #include "ui/widgets/txmeterwidget.h"
 #include "ui/styling/k4styles.h"
-#include <QPainter>
+#include <QFontMetricsF>
 #include <QLinearGradient>
+#include <QPainter>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 TxMeterWidget::TxMeterWidget(QWidget *parent) : QWidget(parent) {
-    // 5 meters, each ~26px high with spacing (matches KPA1500 meter sizing)
+    // 5 meter rows of 24 px plus 2 px spacing
     setFixedHeight(130);
     setMinimumWidth(200);
     setMaximumWidth(380);
@@ -13,66 +17,17 @@ TxMeterWidget::TxMeterWidget(QWidget *parent) : QWidget(parent) {
     // Transparent background - let parent show through
     setAttribute(Qt::WA_TranslucentBackground);
 
-    // Setup decay timer
+    // WHY started on demand: the decay only has work while a bar or peak sits above its target.
+    // Free-running, both VFOs' meters woke the GUI thread 40 times a second while idle and
+    // disconnected (#92).
     m_decayTimer = new QTimer(this);
+    m_decayTimer->setInterval(DecayIntervalMs);
     connect(m_decayTimer, &QTimer::timeout, this, &TxMeterWidget::decayValues);
-    m_decayTimer->start(DecayIntervalMs);
 }
 
-void TxMeterWidget::setPower(double watts, bool isQrp) {
-    m_isQrp = isQrp;
-    double maxPower = isQrp ? MaxPowerQRP : MaxPowerDefault;
-    double ratio = qMin(watts / maxPower, 1.0);
-    m_powerTarget = ratio;
-    if (ratio > m_powerDisplay) {
-        m_powerDisplay = ratio; // Instant rise
-    }
-    if (ratio > m_powerPeak) {
-        m_powerPeak = ratio;
-        m_powerPeakHold = PeakHoldTicks;
-    }
-    update();
-}
-
-void TxMeterWidget::setAlc(int bars) {
-    // K4 ALC meter is 0-7 bars (labeled 1, 3, 5, 7)
-    double ratio = qBound(0, bars, MaxAlcBars) / static_cast<double>(MaxAlcBars);
-    m_alcTarget = ratio;
-    if (ratio > m_alcDisplay) {
-        m_alcDisplay = ratio;
-    }
-    if (ratio > m_alcPeak) {
-        m_alcPeak = ratio;
-        m_alcPeakHold = PeakHoldTicks;
-    }
-    update();
-}
-
-void TxMeterWidget::setCompression(int dB) {
-    double ratio = qBound(0, dB, MaxCompressionDb) / static_cast<double>(MaxCompressionDb);
-    m_compTarget = ratio;
-    if (ratio > m_compDisplay) {
-        m_compDisplay = ratio;
-    }
-    if (ratio > m_compPeak) {
-        m_compPeak = ratio;
-        m_compPeakHold = PeakHoldTicks;
-    }
-    update();
-}
-
-void TxMeterWidget::setSwr(double ratio) {
-    // SWR scale: 1.0 to 3.0, map to 0-1 fill ratio
-    double fillRatio = qMin((qMax(1.0, ratio) - 1.0) / MaxSwrScale, 1.0);
-    m_swrTarget = fillRatio;
-    if (fillRatio > m_swrDisplay) {
-        m_swrDisplay = fillRatio;
-    }
-    if (fillRatio > m_swrPeak) {
-        m_swrPeak = fillRatio;
-        m_swrPeakHold = PeakHoldTicks;
-    }
-    update();
+void TxMeterWidget::startDecay() {
+    if (!m_decayTimer->isActive())
+        m_decayTimer->start();
 }
 
 void TxMeterWidget::setCurrent(double amps) {
@@ -85,6 +40,7 @@ void TxMeterWidget::setCurrent(double amps) {
         m_currentPeak = ratio;
         m_currentPeakHold = PeakHoldTicks;
     }
+    startDecay();
     update();
 }
 
@@ -137,6 +93,7 @@ void TxMeterWidget::setTxMeters(int alc, int compDb, double fwdPower, double swr
         m_swrPeakHold = PeakHoldTicks;
     }
 
+    startDecay();
     update();
 }
 
@@ -151,6 +108,7 @@ void TxMeterWidget::setSMeter(double sValue) {
         m_sMeterPeak = ratio;
         m_sMeterPeakHold = PeakHoldTicks;
     }
+    startDecay();
     update();
 }
 
@@ -204,6 +162,8 @@ void TxMeterWidget::decayValues() {
 
     if (needsUpdate) {
         update();
+    } else {
+        m_decayTimer->stop();
     }
 }
 
@@ -217,7 +177,7 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
 
     // No background fill - let parent widget show through
 
-    // Layout constants (matched to KPA1500 meter styling)
+    // Layout constants
     const int labelWidth = 40; // Width of label box (Po, ALC, etc.)
     const int rowHeight = 24;  // Height per meter row
     const int barStartX = labelWidth + 4;
@@ -226,12 +186,11 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
     const int spacing = 2;
 
     QFont labelFont = font();
-    labelFont.setPixelSize(K4Styles::Dimensions::FontSizeMedium);
+    labelFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
     labelFont.setBold(true);
     painter.setFont(labelFont);
 
-    QFont scaleFont = font();
-    scaleFont.setPixelSize(K4Styles::Dimensions::FontSizeSmall);
+    const QFont scaleFont = K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeFloor, QFont::Medium);
 
     int y = 0;
 
@@ -264,10 +223,6 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
 
     // === ALC - Gradient ===
     {
-        // The K4 marks ALC 1/3/5/7. Those are not evenly spaced over 0..7 and so cannot sit on
-        // evenly spaced ticks. NOTE: the radio emits ALC 8 on occasion (observed on hardware);
-        // MaxAlcBars stays 7 because that is what the scale is marked to, so 8 renders as full.
-        // Changing the maximum without knowing the radio's true top of scale would be a guess.
         const QList<ScaleMark> marks = alcMarks();
         drawMeterRow(painter, y, rowHeight, "ALC", m_alcDisplay, m_alcPeak, marks, scaleFont, barStartX, barWidth,
                      barHeight, MeterType::Gradient);
@@ -284,16 +239,13 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
 
     // === SWR - Gradient ===
     {
-        // setSwr maps 1.0..3.0 onto the bar, so a mark for SWR s sits at (s - 1) / MaxSwrScale.
-        // The bar clamps at 3, hence "3+" at the right end - the previous infinity symbol occupied
-        // a tick slot of its own, which pushed every numbered mark off its true position.
         const QList<ScaleMark> marks = swrMarks();
         drawMeterRow(painter, y, rowHeight, "SWR", m_swrDisplay, m_swrPeak, marks, scaleFont, barStartX, barWidth,
                      barHeight, MeterType::Gradient);
         y += rowHeight + spacing;
     }
 
-    // === Id (PA Drain Current) - Red ===
+    // === Id (PA Drain Current) - Green ===
     {
         const QList<ScaleMark> marks = currentMarks();
         drawMeterRow(painter, y, rowHeight, "Id", m_currentDisplay, m_currentPeak, marks, scaleFont, barStartX,
@@ -304,15 +256,15 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
 void TxMeterWidget::drawMeterRow(QPainter &painter, int y, int rowHeight, const QString &label, double fillRatio,
                                  double peakRatio, const QList<ScaleMark> &marks, const QFont &scaleFont, int barStartX,
                                  int barWidth, int barHeight, MeterType type) {
-    // Label box on the left (wider for larger font)
+    // Label box on the left
     QRect labelRect(2, y + 2, 36, rowHeight - 4);
-    painter.setPen(QColor(K4Styles::Colors::InactiveGray));
+    painter.setPen(QColor(K4Styles::Colors::MutedGraphic));
     painter.setBrush(QColor(K4Styles::Colors::Background));
     painter.drawRect(labelRect);
 
-    painter.setPen(QColor(K4Styles::Colors::TextWhite));
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
     QFont labelFont = font();
-    labelFont.setPixelSize(K4Styles::Dimensions::FontSizeMedium);
+    labelFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
     labelFont.setBold(true);
     painter.setFont(labelFont);
     painter.drawText(labelRect, Qt::AlignCenter, label);
@@ -321,7 +273,7 @@ void TxMeterWidget::drawMeterRow(QPainter &painter, int y, int rowHeight, const 
     int barY = y + 2;
     QRect trackRect(barStartX, barY, barWidth, barHeight);
     painter.fillRect(trackRect, QColor(K4Styles::Colors::Background));
-    painter.setPen(QColor(K4Styles::Colors::InactiveGray));
+    painter.setPen(QColor(K4Styles::Colors::MutedGraphic));
     painter.drawRect(trackRect);
 
     // Filled meter bar
@@ -344,35 +296,45 @@ void TxMeterWidget::drawMeterRow(QPainter &painter, int y, int rowHeight, const 
     // Draw peak indicator
     if (peakRatio > 0.01) {
         int peakX = barStartX + static_cast<int>(barWidth * peakRatio);
-        painter.setPen(QPen(QColor(K4Styles::Colors::TextWhite), 2));
+        painter.setPen(QPen(QColor(K4Styles::Colors::TextPrimary), 2));
         painter.drawLine(peakX - 1, barY, peakX - 1, barY + barHeight);
     }
 
-    // Scale labels below bar, each at its own position along the bar.
+    // Scale labels below bar, each at its own position along the bar. The digits hang from the bar:
+    // baseline one cap height below it, so the glyphs fit the 2 px row spacing plus the gap under
+    // the bar without growing the row (nothing here has a descender).
     painter.setFont(scaleFont);
-    int scaleY = barY + barHeight + 1;
-    for (const ScaleMark &mark : marks) {
+    const QFontMetricsF fm(scaleFont, this);
+    const qreal baselineY = barY + barHeight + 2 + fm.capHeight();
+    // Right to left, so the end label (which carries the unit) always wins; a label that would
+    // touch the one to its right is dropped rather than overprinted on a narrow meter.
+    qreal leftmostDrawn = std::numeric_limits<qreal>::max();
+    for (auto it = marks.crbegin(); it != marks.crend(); ++it) {
+        const ScaleMark &mark = *it;
         if (mark.text.isEmpty())
             continue;
-        // Color +dB labels red (S-meter over S9)
-        if (mark.text.startsWith('+')) {
-            painter.setPen(QColor(K4Styles::Colors::TxRed));
-        } else {
-            painter.setPen(QColor(K4Styles::Colors::TextGray));
-        }
-        int x = barStartX + static_cast<int>(barWidth * mark.pos);
-        // Center the label, but keep the one at the right end from overhanging the bar.
-        int labelW = 20;
-        int labelX = (mark.pos >= 0.999) ? x - labelW : x - labelW / 2;
-        painter.drawText(labelX, scaleY, labelW, 8, Qt::AlignCenter, mark.text);
+        const qreal x = barStartX + static_cast<int>(barWidth * mark.pos);
+        const qreal textW = fm.horizontalAdvance(mark.text);
+        const qreal textX = std::round(scaleLabelLeft(x, textW, barStartX, barStartX + barWidth));
+        if (textX + textW + 2.0 > leftmostDrawn)
+            continue;
+        // Over-S9 marks are red. TextRed, not TxRed: pure red is under 4.5:1 on the dark background.
+        painter.setPen(QColor(mark.text.startsWith('+') ? K4Styles::Colors::TextRed : K4Styles::Colors::TextSecondary));
+        painter.drawText(QPointF(textX, baselineY), mark.text);
+        leftmostDrawn = textX;
     }
 
     // Draw tick marks on the bar
-    painter.setPen(QColor(K4Styles::Colors::InactiveGray));
+    painter.setPen(QColor(K4Styles::Colors::MutedGraphic));
     for (const ScaleMark &mark : marks) {
         int x = barStartX + static_cast<int>(barWidth * mark.pos);
         painter.drawLine(x, barY, x, barY + 2);
     }
+}
+
+qreal TxMeterWidget::scaleLabelLeft(qreal markX, qreal textWidth, qreal barLeft, qreal barRight) {
+    const qreal maxLeft = std::max(barLeft, barRight - textWidth);
+    return std::clamp(markX - textWidth / 2.0, barLeft, maxLeft);
 }
 
 namespace {
@@ -391,7 +353,7 @@ QList<TxMeterWidget::ScaleMark> affineMarks(const QList<double> &values, const Q
 
 QList<TxMeterWidget::ScaleMark> TxMeterWidget::sMeterMarks() {
     // setSMeter maps S1..S9 to 1..9 and +20/+40/+60 over S9 to 11/13/15, so S1 sits at 1/15 of
-    // the bar - not at the left end, which is where evenly spaced labels used to put it.
+    // the bar.
     return affineMarks({1, 3, 5, 7, 9, 11, 13, 15}, {"1", "3", "5", "7", "9", "+20", "+40", "+60"}, 0.0, MaxSMeter);
 }
 
@@ -414,9 +376,7 @@ QList<TxMeterWidget::ScaleMark> TxMeterWidget::compMarks() {
 }
 
 QList<TxMeterWidget::ScaleMark> TxMeterWidget::swrMarks() {
-    // setSwr maps 1.0..3.0 onto the bar. The bar clamps at 3, hence "3+" at the right end - the
-    // previous infinity symbol occupied a tick slot of its own, which pushed every numbered mark
-    // off its true position.
+    // setTxMeters maps SWR 1.0..3.0 onto the bar and clamps at 3, hence "3+" at the right end.
     return affineMarks({1.0, 1.5, 2.0, 2.5, 3.0}, {"1", "1.5", "2", "2.5", "3+"}, MinSwr, MinSwr + MaxSwrScale);
 }
 

@@ -3,22 +3,12 @@
 #include "controllers/spectrumcontroller.h"
 #include "models/radiostate.h"
 #include "ui/widgets/frequencydisplaywidget.h"
-#include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include "ui/widgets/vfowidget.h"
 
 #include <QColor>
 #include <QLabel>
 #include <QString>
-
-namespace {
-
-QString badgeStyle(const char *background, const char *color) {
-    return QString("background-color: %1; color: %2; font-size: %3px; font-weight: bold; border-radius: 2px;")
-        .arg(background, color)
-        .arg(K4Styles::Dimensions::FontSizeNormal);
-}
-
-} // namespace
 
 SubDivIndicatorController::SubDivIndicatorController(RadioState *radioState, SpectrumController *spectrum,
                                                      VFOWidget *vfoB, QLabel *subLabel, QLabel *divLabel,
@@ -27,10 +17,6 @@ SubDivIndicatorController::SubDivIndicatorController(RadioState *radioState, Spe
       m_divLabel(divLabel), m_modeBLabel(modeBLabel) {
     connect(m_radioState, &RadioState::subRxEnabledChanged, this, &SubDivIndicatorController::onSubRxEnabledChanged);
     connect(m_radioState, &RadioState::diversityChanged, this, &SubDivIndicatorController::onDiversityChanged);
-}
-
-SubDivIndicatorController::~SubDivIndicatorController() {
-    disconnect(this);
 }
 
 void SubDivIndicatorController::onSubRxEnabledChanged(bool enabled) {
@@ -45,8 +31,7 @@ void SubDivIndicatorController::onSubRxEnabledChanged(bool enabled) {
 
     setVfoBDimmed(!enabled);
 
-    // Auto-hide mini pan B if VFOs are on different bands — only makes
-    // sense with SUB RX on.
+    // SUB RX off: hide mini pan B if the VFOs are on different bands.
     if (!enabled)
         m_spectrum->checkAndHideMiniPanB();
 }
@@ -57,22 +42,17 @@ void SubDivIndicatorController::onDiversityChanged(bool enabled) {
 }
 
 void SubDivIndicatorController::setSubLabelActive(bool active) {
-    m_subLabel->setStyleSheet(
-        active ? badgeStyle(K4Styles::Colors::StatusGreen, "black")
-               : badgeStyle(K4Styles::Colors::DisabledBackground, K4Styles::Colors::LightGradientTop));
+    K4Styles::setSelected(m_subLabel, active);
 }
 
 void SubDivIndicatorController::setDivLabelActive(bool active) {
-    m_divLabel->setStyleSheet(
-        active ? badgeStyle(K4Styles::Colors::StatusGreen, "black")
-               : badgeStyle(K4Styles::Colors::DisabledBackground, K4Styles::Colors::LightGradientTop));
+    K4Styles::setSelected(m_divLabel, active);
 }
 
 void SubDivIndicatorController::setVfoBDimmed(bool dimmed) {
-    const char *color = dimmed ? K4Styles::Colors::InactiveGray : K4Styles::Colors::TextWhite;
+    const char *color = dimmed ? K4Styles::Colors::TextSecondary : K4Styles::Colors::TextPrimary;
     m_vfoB->frequencyDisplay()->setNormalColor(QColor(color));
-    m_modeBLabel->setStyleSheet(
-        QString("color: %1; font-size: %2px; font-weight: bold;").arg(color).arg(K4Styles::Dimensions::FontSizeLarge));
+    K4Styles::setStyleFlag(m_modeBLabel, K4Styles::DimmedProperty, dimmed);
 }
 
 void SubDivIndicatorController::reset() {

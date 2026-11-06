@@ -5,16 +5,15 @@
 // subsystem decomposition unchanged and must continue to. The regression
 // gate is tests/test_catserver.cpp, pinned in CI.
 #include "catserver.h"
+#include "logging/logcategories.h"
 #include "catframes.h"
 #include "catpushbroadcaster.h"
 #include "models/radiostate.h"
 #include "protocol.h"
-#include "tcpclient.h"
+#include "utils/radioutils.h"
 
 #include <QLoggingCategory>
 #include <QTimer>
-
-Q_LOGGING_CATEGORY(netCat, "net.cat")
 
 CatServer::CatServer(RadioState *state, QObject *parent)
     : QObject(parent), m_server(new QTcpServer(this)), m_radioState(state) {
@@ -24,10 +23,6 @@ CatServer::CatServer(RadioState *state, QObject *parent)
 
 CatServer::~CatServer() {
     stop();
-}
-
-void CatServer::setTcpClient(TcpClient *client) {
-    m_tcpClient = client;
 }
 
 bool CatServer::start(quint16 port) {
@@ -44,8 +39,8 @@ bool CatServer::start(quint16 port) {
     }
 
     m_port = m_server->serverPort(); // use actual port (may differ from requested if 0)
-    qCInfo(netCat) << "CAT server listening on port" << m_port;
-    emit started(port);
+    qCInfo(lcCatServer) << "CAT server listening on port" << m_port;
+    emit started(m_port);
     return true;
 }
 
@@ -93,8 +88,8 @@ void CatServer::onNewConnection() {
 
             // Protect against unbounded buffer growth from misbehaving clients
             if (buffer.size() > K4Protocol::MAX_BUFFER_SIZE) {
-                qCWarning(netCat) << "CAT client buffer overflow from" << client->peerAddress().toString()
-                                  << "- disconnecting";
+                qCWarning(lcCatServer) << "CAT client buffer overflow from" << client->peerAddress().toString()
+                                       << "- disconnecting";
                 client->disconnectFromHost();
                 return;
             }
@@ -107,13 +102,13 @@ void CatServer::onNewConnection() {
                 offset = idx + 1;
 
                 if (!command.isEmpty()) {
-                    qCDebug(netCat) << "RX <-" << client->peerPort() << command;
+                    qCDebug(lcCatServer) << "RX <-" << client->peerPort() << command;
                     QByteArray response = handleCommand(command, client);
                     if (!response.isEmpty()) {
-                        qCDebug(netCat) << "TX ->" << client->peerPort() << response;
+                        qCDebug(lcCatServer) << "TX ->" << client->peerPort() << response;
                         client->write(response);
                     } else {
-                        qCDebug(netCat) << "   (no response)" << client->peerPort() << command;
+                        qCDebug(lcCatServer) << "   (no response)" << client->peerPort() << command;
                     }
                 }
             }
@@ -125,7 +120,7 @@ void CatServer::onNewConnection() {
 
         connect(client, &QTcpSocket::disconnected, this, [this, client]() {
             QString address = QString("%1:%2").arg(client->peerAddress().toString()).arg(client->peerPort());
-            qCInfo(netCat) << "CAT client disconnected:" << address;
+            qCInfo(lcCatServer) << "CAT client disconnected:" << address;
             // A client that crashes or is killed mid-transmission never sends RX;. Without this
             // the mic gate stayed open and the K4 kept transmitting until the operator pressed
             // Escape.
@@ -138,7 +133,7 @@ void CatServer::onNewConnection() {
         });
 
         QString address = QString("%1:%2").arg(client->peerAddress().toString()).arg(client->peerPort());
-        qCInfo(netCat) << "CAT client connected:" << address;
+        qCInfo(lcCatServer) << "CAT client connected:" << address;
         emit clientConnected(address);
     }
 }
@@ -154,11 +149,12 @@ void CatServer::askRadio(const QString &key, QTcpSocket *client) {
     QTimer::singleShot(kRadioQueryTimeoutMs, this, [this, key, generation]() {
         auto it = m_pendingRadioQueries.find(key);
         if (it != m_pendingRadioQueries.end() && it->generation == generation) {
-            qCDebug(netCat) << "   radio did not answer" << key << "- dropping" << it->waiters.size() << "waiter(s)";
+            qCDebug(lcCatServer) << "   radio did not answer" << key << "- dropping" << it->waiters.size()
+                                 << "waiter(s)";
             m_pendingRadioQueries.erase(it);
         }
     });
-    qCDebug(netCat) << "   asking the radio:" << key;
+    qCDebug(lcCatServer) << "   asking the radio:" << key;
     emit radioQueryRequested(key + ';');
 }
 
@@ -179,7 +175,7 @@ void CatServer::onRadioResponse(const QString &response) {
             const QByteArray reply = (frame + ';').toUtf8();
             for (const QPointer<QTcpSocket> &client : std::as_const(it->waiters)) {
                 if (client && m_clients.contains(client)) {
-                    qCDebug(netCat) << "TX ->" << client->peerPort() << reply << "(from the radio)";
+                    qCDebug(lcCatServer) << "TX ->" << client->peerPort() << reply << "(from the radio)";
                     client->write(reply);
                 }
             }
@@ -192,7 +188,7 @@ void CatServer::releasePttIfOwner(QTcpSocket *client) {
     if (!client || m_pttOwner != client) {
         return;
     }
-    qCInfo(netCat) << "CAT client that asserted PTT is gone - releasing";
+    qCInfo(lcCatServer) << "CAT client that asserted PTT is gone - releasing";
     m_pttOwner = nullptr;
     emit pttRequested(false);
 }
@@ -256,16 +252,21 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         }
     }
 
+    // A GET is answered only from a value the radio has reported; a sentinel read as 0 or off would
+    // look like a real setting to the client.
+    using CF = RadioState::CatField;
+    const auto known = [this](CF field) { return m_radioState->hasReported(field); };
+
     // Handle VFO-B suffix GET queries (args == "$" means "query VFO B", no value to SET).
     // The letter-only prefix extractor strips "$" into args, so "MD$;" arrives here as
     // prefix="MD", args="$" and would otherwise fall through to the SET path.
     if (args == "$") {
         if (prefix == "MD") {
-            return CatFrames::modeB(m_radioState->modeB());
+            return known(CF::ModeB) ? CatFrames::modeB(m_radioState->modeB()) : QByteArray();
         }
         if (prefix == "SQ") {
             const int sq = m_radioState->squelchLevelB();
-            return sq < 0 ? QByteArray() : CatFrames::squelch(sq, true);
+            return sq < 0 ? QByteArray() : CatFrames::subRx(CatFrames::squelch(sq));
         }
         if (prefix == "AG") {
             askRadio(QStringLiteral("AG$"), client);
@@ -273,23 +274,30 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         }
         if (prefix == "RG") {
             const int rg = m_radioState->rfGainB();
-            return rg < 0 ? QByteArray() : CatFrames::rfGain(rg, true);
+            return rg < 0 ? QByteArray() : CatFrames::subRx(CatFrames::rfGain(rg));
         }
         if (prefix == "RO") {
-            return CatFrames::subRx(CatFrames::ritOffset(m_radioState->ritXitOffsetB()));
+            return known(CF::RitXitOffsetB) ? CatFrames::subRx(CatFrames::ritOffset(m_radioState->ritXitOffsetB()))
+                                            : QByteArray();
         }
         if (prefix == "RT") {
-            return CatFrames::subRx(CatFrames::ritEnabled(m_radioState->ritEnabledB()));
+            return known(CF::RitB) ? CatFrames::subRx(CatFrames::ritEnabled(m_radioState->ritEnabledB()))
+                                   : QByteArray();
         }
         if (prefix == "GT") {
-            return CatFrames::subRx(CatFrames::agcSpeed(static_cast<int>(m_radioState->agcSpeedB())));
+            return known(CF::AgcB) ? CatFrames::subRx(CatFrames::agcSpeed(static_cast<int>(m_radioState->agcSpeedB())))
+                                   : QByteArray();
         }
         if (prefix == "NB") {
+            if (!known(CF::NoiseBlankerB))
+                return QByteArray();
             return CatFrames::subRx(CatFrames::setNoiseBlanker(m_radioState->noiseBlankerLevelB(),
                                                                m_radioState->noiseBlankerEnabledB(),
                                                                m_radioState->noiseBlankerFilterWidthB()));
         }
         if (prefix == "NR") {
+            if (!known(CF::NoiseReductionB))
+                return QByteArray();
             return CatFrames::subRx(CatFrames::noiseReduction(m_radioState->noiseReductionLevelB(),
                                                               m_radioState->noiseReductionEnabledB()));
         }
@@ -301,60 +309,74 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
             const int dt = m_radioState->dataSubModeB();
             return dt < 0 ? QByteArray() : CatFrames::subRx(CatFrames::dataSubMode(dt));
         }
+        if (prefix == "SMH") {
+            const auto dbm = m_radioState->sMeterDbmB();
+            return dbm ? CatFrames::signalLevelDbm(*dbm, true) : QByteArray();
+        }
         // XT$ stays unanswered: the radio itself does not answer it.
     }
 
     // Handle GET commands (no args) - respond from RadioState
     if (args.isEmpty()) {
         if (prefix == "FA") {
-            return CatFrames::frequencyA(m_radioState->frequency());
+            return known(CF::FrequencyA) ? CatFrames::frequencyA(m_radioState->frequency()) : QByteArray();
         }
         if (prefix == "FB") {
-            return CatFrames::frequencyB(m_radioState->vfoB());
+            return known(CF::FrequencyB) ? CatFrames::frequencyB(m_radioState->vfoB()) : QByteArray();
         }
         if (prefix == "MD") {
-            return CatFrames::modeA(m_radioState->mode());
+            return known(CF::ModeA) ? CatFrames::modeA(m_radioState->mode()) : QByteArray();
         }
         if (prefix == "TQ") {
+            // Answered even before a report: the radio sends TX state only when it changes, so it is
+            // never known on an idle link, and a client polling TQ (WSJT-X) would stall on silence.
             return CatFrames::ptt(m_radioState->isTransmitting());
         }
         if (prefix == "FT") {
-            return CatFrames::split(m_radioState->splitEnabled());
+            return known(CF::Split) ? CatFrames::split(m_radioState->splitEnabled()) : QByteArray();
         }
         if (prefix == "FR") {
             return QByteArray("FR0;"); // Always VFO A for RX
         }
         if (prefix == "IF") {
-            return CatFrames::ifFrame(*m_radioState);
+            // IF packs frequency, mode, RIT/XIT, offset and split into one frame; it waits for all of them.
+            const bool ifKnown = known(CF::FrequencyA) && known(CF::ModeA) && known(CF::RitA) && known(CF::Xit) &&
+                                 known(CF::RitXitOffsetA) && known(CF::Split);
+            return ifKnown ? CatFrames::ifFrame(*m_radioState) : QByteArray();
         }
         if (prefix == "RO") {
-            return CatFrames::ritOffset(m_radioState->ritXitOffset());
+            return known(CF::RitXitOffsetA) ? CatFrames::ritOffset(m_radioState->ritXitOffset()) : QByteArray();
         }
         if (prefix == "RT") {
-            return CatFrames::ritEnabled(m_radioState->ritEnabled());
+            return known(CF::RitA) ? CatFrames::ritEnabled(m_radioState->ritEnabled()) : QByteArray();
         }
         if (prefix == "XT") {
-            return CatFrames::xitEnabled(m_radioState->xitEnabled());
+            return known(CF::Xit) ? CatFrames::xitEnabled(m_radioState->xitEnabled()) : QByteArray();
         }
         if (prefix == "PC") {
-            return CatFrames::rfPower(m_radioState->rfPower(), m_radioState->powerRange());
+            return known(CF::RfPower) ? CatFrames::rfPower(m_radioState->rfPower(), m_radioState->powerRange())
+                                      : QByteArray();
         }
         if (prefix == "GT") {
-            return CatFrames::agcSpeed(static_cast<int>(m_radioState->agcSpeed()));
+            return known(CF::AgcA) ? CatFrames::agcSpeed(static_cast<int>(m_radioState->agcSpeed())) : QByteArray();
         }
         if (prefix == "KS") {
-            return CatFrames::keyerSpeed(m_radioState->keyerSpeed());
+            return known(CF::KeyerSpeed) ? CatFrames::keyerSpeed(m_radioState->keyerSpeed()) : QByteArray();
         }
         if (prefix == "NB") {
+            if (!known(CF::NoiseBlankerA))
+                return QByteArray();
             return CatFrames::setNoiseBlanker(m_radioState->noiseBlankerLevel(), m_radioState->noiseBlankerEnabled(),
                                               m_radioState->noiseBlankerFilterWidth());
         }
         if (prefix == "NR") {
+            if (!known(CF::NoiseReductionA))
+                return QByteArray();
             return CatFrames::noiseReduction(m_radioState->noiseReductionLevel(),
                                              m_radioState->noiseReductionEnabled());
         }
         if (prefix == "VX") {
-            return CatFrames::vox(*m_radioState);
+            return known(CF::VoxCurrentMode) ? CatFrames::vox(*m_radioState) : QByteArray();
         }
         if (prefix == "BW") {
             const int bw = m_radioState->filterBandwidth();
@@ -384,12 +406,19 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
             return QByteArray("SB0;"); // Sub RX off by default
         }
         if (prefix == "DV") {
-            return CatFrames::diversity(m_radioState->diversityEnabled());
+            return known(CF::Diversity) ? CatFrames::diversity(m_radioState->diversityEnabled()) : QByteArray();
         }
         if (prefix == "SM") {
             return CatFrames::sMeterMain(m_radioState->sMeter());
         }
+        if (prefix == "SMH") {
+            // The radio's own dBm reading; no answer until it has reported one.
+            const auto dbm = m_radioState->sMeterDbm();
+            return dbm ? CatFrames::signalLevelDbm(*dbm, false) : QByteArray();
+        }
         if (prefix == "PCX") {
+            if (!known(CF::RfPower))
+                return QByteArray();
             return CatFrames::rfPowerExtended(m_radioState->rfPower(), m_radioState->powerRange());
         }
         if (prefix == "AG") {
@@ -403,14 +432,15 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
             // No answer until the radio has reported it - a made-up 000 is indistinguishable from
             // a real zero.
             const int sq = m_radioState->squelchLevel();
-            return sq < 0 ? QByteArray() : CatFrames::squelch(sq, false);
+            return sq < 0 ? QByteArray() : CatFrames::squelch(sq);
         }
         if (prefix == "RG") {
             const int rg = m_radioState->rfGain();
-            return rg < 0 ? QByteArray() : CatFrames::rfGain(rg, false);
+            return rg < 0 ? QByteArray() : CatFrames::rfGain(rg);
         }
         if (prefix == "FW") {
-            return CatFrames::filterWidthExtended(m_radioState->filterBandwidth());
+            return known(CF::FilterBandwidth) ? CatFrames::filterWidthExtended(m_radioState->filterBandwidth())
+                                              : QByteArray();
         }
         if (prefix == "TM") {
             return CatFrames::txMeter(m_radioState->alcMeter(), m_radioState->compressionDb(),
@@ -425,9 +455,9 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         int level = args.toInt(&ok);
         if (ok && (level == 0 || level == 1 || level == 2 || level == 4)) {
             m_broadcaster->setClientAiMode(client, level);
-            qCDebug(netCat) << "   AI mode set to" << level << "for client" << client->peerPort();
+            qCDebug(lcCatServer) << "   AI mode set to" << level << "for client" << client->peerPort();
         } else {
-            qCDebug(netCat) << "   AI SET rejected (invalid level):" << cmd;
+            qCDebug(lcCatServer) << "   AI SET rejected (invalid level):" << cmd;
         }
         return QByteArray();
     }
@@ -437,22 +467,36 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
     // "TX;" asserts transmit; "TX/;" toggles based on the radio's current TX state.
     if (prefix == "TX") {
         const bool on = (args == "/") ? !m_radioState->isTransmitting() : true;
-        qCDebug(netCat) << "   PTT request:" << (on ? "ON" : "OFF");
+        qCDebug(lcCatServer) << "   PTT request:" << (on ? "ON" : "OFF");
         // Remember who keyed so the transmission can be ended if that client vanishes.
         m_pttOwner = on ? client : nullptr;
         emit pttRequested(on);
         return QByteArray();
     }
     if (prefix == "RX") {
-        qCDebug(netCat) << "   PTT request: OFF";
+        qCDebug(lcCatServer) << "   PTT request: OFF";
         m_pttOwner = nullptr;
         emit pttRequested(false);
         return QByteArray();
     }
 
+    // A frequency change for a locked VFO is refused, as it is from QK4's own controls. The client
+    // sees the unchanged frequency on its next FA/FB poll or AI push.
+    if (RadioUtils::catMovesLockedVfo(command, m_radioState->lockA(), m_radioState->lockB())) {
+        qCDebug(lcCatServer) << "   refused SET, VFO locked:" << cmd;
+        return QByteArray();
+    }
+
+    // With no radio there is nothing to change: dropped rather than applied to RadioState, where it
+    // would show as a radio setting that never existed.
+    if (!m_radioLinkUp) {
+        qCDebug(lcCatServer) << "   dropped SET, radio not connected:" << cmd;
+        return QByteArray();
+    }
+
     // SET commands (have args) - forward to real K4
     // Commands like FA14074000;, MD1;, etc.
-    qCDebug(netCat) << "   forwarding SET to K4:" << cmd;
+    qCDebug(lcCatServer) << "   forwarding SET to K4:" << cmd;
     emit catCommandReceived(cmd);
 
     // Most SET commands echo the new value

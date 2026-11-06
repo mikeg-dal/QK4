@@ -21,11 +21,27 @@
 
 set -euo pipefail
 
-readonly QT_VERSION=6.10.1
-# Qt's published checksum for qtbase-everywhere-src-6.10.1.tar.xz (download.qt.io, .sha256).
-readonly QT_SHA256=5a6226f7e23db51fdc3223121eba53f3f5447cf0cc4d6cb82a3a2df7a65d265d
-
 prefix=${1:?usage: $0 <install-prefix>}
+
+# The version every runner uses. scripts/check-qt-version.sh fails CI if the table below lacks it.
+version_file="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.github/qt-version"
+QT_VERSION="$(tr -d '[:space:]' <"$version_file")"
+readonly QT_VERSION
+
+# WHY a table kept here and not the .sha256 from download.qt.io: fetching the checksum from the
+# server that serves the tarball would check nothing. Each entry is Qt's published checksum for
+# qtbase-everywhere-src-<version>.tar.xz, confirmed against a tarball from a different mirror when
+# it was added. Bumping .github/qt-version means adding a line here.
+case "$QT_VERSION" in
+6.10.1) QT_SHA256=5a6226f7e23db51fdc3223121eba53f3f5447cf0cc4d6cb82a3a2df7a65d265d ;;
+6.10.3) QT_SHA256=383dc907816338f0cba72088a524c07458dfc69ce684ca9132fcc4fe91c24b0b ;;
+*)
+    echo "No qtbase sha256 for Qt $QT_VERSION in $0." >&2
+    echo "Add Qt's published checksum for qtbase-everywhere-src-$QT_VERSION.tar.xz to the table." >&2
+    exit 1
+    ;;
+esac
+readonly QT_SHA256
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 

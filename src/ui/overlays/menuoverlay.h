@@ -3,13 +3,12 @@
 
 #include <QWidget>
 #include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QGridLayout>
 #include <QScrollArea>
 #include <QLabel>
 #include <QPushButton>
 #include <QLineEdit>
 #include <QList>
+#include <QTimer>
 #include <QWheelEvent>
 #include "models/menumodel.h"
 #include "utils/wheelaccumulator.h"
@@ -22,15 +21,19 @@ class MenuItemWidget : public QWidget {
     Q_OBJECT
 
 public:
-    // model is used to resolve "<n>" placeholders in item->name (XVTR Band rows).
-    explicit MenuItemWidget(MenuItem *item, const MenuModel *model, QWidget *parent = nullptr);
+    // WHY: the row keeps the id, never a MenuItem *. The model owns its items and clears them on
+    // every disconnect; a row holding a pointer outlived them and crashed on reconnect (#124).
+    explicit MenuItemWidget(int menuId, const MenuModel *model, QWidget *parent = nullptr);
 
     void setSelected(bool selected);
     void setEditMode(bool editing);
     bool isSelected() const { return m_selected; }
     bool isEditing() const { return m_editing; }
-    MenuItem *menuItem() const { return m_item; }
+    int menuId() const { return m_menuId; }
     void updateDisplay();
+    // While a value is being typed: the digits so far, shown with a caret and the unit in place of the
+    // value. Empty shows the value again.
+    void setTypedText(const QString &typed);
 
 signals:
     void clicked();
@@ -42,18 +45,20 @@ protected:
 private:
     void updateLabelColors();
 
-    MenuItem *m_item;
+    int m_menuId;
     const MenuModel *m_model;
     QLabel *m_nameLabel;
     QLabel *m_valueLabel;
     QLabel *m_lockLabel;
     bool m_selected = false;
     bool m_editing = false;
+    QString m_typed;
 };
 
 /**
  * @brief Full-screen MENU overlay backing the K4's MN menu system. Driven by MenuModel; emits
- *        `menuValueChangeRequested(menuId, "+"/"-"/"/")` back to MainWindow for CAT dispatch.
+ *        `menuValueChangeRequested(menuId, "+"/"-"/"/")` and, for a typed value,
+ *        `menuValueSetRequested(menuId, value)` to MenuController for CAT dispatch.
  *        Implements scroll, search, and the dual-panel K4 highlight style.
  */
 class MenuOverlayWidget : public QWidget {
@@ -69,6 +74,9 @@ public:
 signals:
     void closed();
     void menuValueChangeRequested(int menuId, const QString &action); // "+", "-", "/"
+    // A value typed in edit mode, converted to the item's stored units and held to its range
+    // (MenuValueEntry::rawFromTyped).
+    void menuValueSetRequested(int menuId, int value);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -84,21 +92,28 @@ private slots:
     void closeOverlay();
     void resetToDefault();
     void onMenuValueChanged(int menuId, int newValue);
+    void onMenuItemAdded();
+    void onModelCleared();
     void toggleSearchPopup();
     void onSearchTextChanged(const QString &text);
 
 private:
     void setupUi();
+    void applyWheelSteps(int steps);
+    const MenuItem *selectedMenuItem() const; // nullptr when nothing is selected
     void createSearchPopup();
     void populateItems();
-    // Destroy the row widgets and forget the selection. Called before repopulating, and when the
-    // model clears — each row holds a MenuItem * that the clear has just invalidated.
+    void repopulateKeepingSelection();
     void clearItemWidgets();
     void updateSelection();
     void ensureSelectedVisible();
     void setEditMode(bool editing);
     void updateButtonLabels();
     void updateNormButton();
+    // Type-in on a numeric item in edit mode: digits replace the value, Backspace removes the last,
+    // Enter sends, Escape restores. Returns true when the key was part of typing.
+    bool handleTypedKey(const QKeyEvent *event);
+    void setTyped(const QString &typed);
 
     MenuModel *m_model;
     QWidget *m_contentWidget;
@@ -110,6 +125,7 @@ private:
     QList<MenuItemWidget *> m_itemWidgets;
     int m_selectedIndex = 0;
     bool m_editMode = false;
+    QString m_typed; // the value being typed, in display units; empty when not typing
 
     // Navigation buttons
     QPushButton *m_upBtn;
@@ -123,6 +139,8 @@ private:
     QLineEdit *m_searchInput;
     QString m_currentFilter;
     WheelAccumulator m_wheelAccumulator;
+
+    QTimer *m_repopulateTimer;
 };
 
 #endif // MENUOVERLAY_H

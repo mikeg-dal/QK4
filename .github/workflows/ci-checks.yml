@@ -55,6 +55,19 @@ jobs:
           clang-format --version
           find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
 
+  qt-version:
+    name: Check Qt Version Drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Check every Qt version against .github/qt-version
+        # WHY: workflows read .github/qt-version at run time, but a container image tag, the Flatpak
+        # manifest, the TSan checksum table and the documented install paths cannot. This fails when
+        # any of them, or a newly hard-coded version, disagrees with the file.
+        run: scripts/check-qt-version.sh
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -62,16 +75,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Install Qt 6 and dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qt6-base-dev qt6-base-private-dev \
-            qt6-multimedia-dev qt6-serialport-dev qt6-svg-dev \
-            qt6-shadertools-dev qt6-qpa-plugins \
+          sudo apt-get install -y \
             libopus-dev libhidapi-dev libusb-1.0-0-dev libssl-dev libudev-dev libasound2-dev
 
+      - name: Read Qt version
+        # WHY: tests run on the exact Qt every package ships with (.github/qt-version), not Ubuntu's
+        # Qt 6.4.2, which is older than the app's own floor and tested a Qt nobody runs.
+        run: echo "QT_VERSION=$(tr -d '[:space:]' < .github/qt-version)" >> "$GITHUB_ENV"
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux'
+          target: 'desktop'
+          arch: 'linux_gcc_64'
+          modules: 'qtmultimedia qtshadertools qtserialport'
+          cache: true
+
+      - name: Compiler cache
+        # WHY: most pushes change a few files, but every job rebuilt all of them. ccache keeps the
+        # objects per job across runs (saved in its post step). Not used in ci-codeql.yml: CodeQL
+        # reads each compile as it happens, and a cache hit would hide that file from it.
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: ${{ github.job }}
+          max-size: 500M
+
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build tests
         # `qk4_tests` is a CMake aggregate target defined in tests/CMakeLists.txt
@@ -80,7 +115,9 @@ jobs:
         # test_catserver remains the Phase 0.7 regression gate protecting the
         # RadioState public API contract used by the CAT server (see
         # docs/radiostate-catserver-api-contract.md).
-        run: cmake --build build --target qk4_tests
+        # WHY --parallel 4: serial, this step took 12 min; 4 is the runner's cores (see the RTSan
+        # job for why never a bare --parallel).
+        run: cmake --build build --target qk4_tests --parallel 4
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
@@ -99,20 +136,42 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Install Qt 6 and dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qt6-base-dev qt6-base-private-dev \
-            qt6-multimedia-dev qt6-serialport-dev qt6-svg-dev \
-            qt6-shadertools-dev qt6-qpa-plugins \
+          sudo apt-get install -y \
             libopus-dev libhidapi-dev libusb-1.0-0-dev libssl-dev libudev-dev libasound2-dev
 
+      - name: Read Qt version
+        # Same Qt as the unit-tests job; see there.
+        run: echo "QT_VERSION=$(tr -d '[:space:]' < .github/qt-version)" >> "$GITHUB_ENV"
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux'
+          target: 'desktop'
+          arch: 'linux_gcc_64'
+          modules: 'qtmultimedia qtshadertools qtserialport'
+          cache: true
+
+      - name: Compiler cache
+        # WHY: most pushes change a few files, but every job rebuilt all of them. ccache keeps the
+        # objects per job across runs (saved in its post step). Not used in ci-codeql.yml: CodeQL
+        # reads each compile as it happens, and a cache hit would hide that file from it.
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: ${{ github.job }}
+          max-size: 500M
+
       - name: Configure CMake (sanitizers on for tests)
-        run: cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DQK4_TESTS_SANITIZE=ON
+        run: cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DQK4_TESTS_SANITIZE=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build instrumented tests
         # See unit-tests job comment for why this uses the qk4_tests aggregate.
-        run: cmake --build build-san --target qk4_tests
+        # WHY --parallel 4: serial, this step took 15 min (see the RTSan job for the limit).
+        run: cmake --build build-san --target qk4_tests --parallel 4
 
       - name: Run instrumented tests
         # UBSAN_OPTIONS=halt_on_error=1 makes CI fail fast on any UB detection.
@@ -121,3 +180,98 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
           ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1
         run: ctest --test-dir build-san --output-on-failure
+
+  rtsan-tests:
+    # RealtimeSanitizer (CONVENTIONS Rule 16). Every function marked QK4_NONBLOCKING
+    # (src/utils/rtsan.h), and everything it calls, fails the test that reaches it if it
+    # allocates, takes an unmarked lock, sleeps outside an RtSan::Allow, or does I/O.
+    #
+    # WHY here, on every push, and not in scheduled-sanitizers.yml with TSan: RTSan checks nothing
+    # outside a marked function, so the suites run at full speed; it intercepts the C library, so a
+    # malloc or a mutex inside Qt is seen without an instrumented Qt (TSan needs a qtbase built from
+    # source); and a violation on a tested path fails every run, not one run in many. That is the
+    # cost and the determinism of the ASAN/UBSAN job above, and it keeps a regression out of the
+    # branch instead of reporting it a week later.
+    #
+    # WHY every suite rather than a list of threaded ones: only marked functions are checked, so
+    # a suite that never reaches one costs nothing, and a new suite that does is covered with no
+    # edit here. RtSanSelfTest* (tests/test_rtsanselftest.cpp) fails if the build checks nothing.
+    name: RealtimeSanitizer Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # RTSan is Clang 20+. Ubuntu 24.04's own archive stops at older majors, so Clang comes from
+      # apt.llvm.org, which carries the last two releases. 22 matches Homebrew's llvm@22, the local
+      # reproducer on macOS. When apt.llvm.org drops it, the install step fails; bump this.
+      LLVM_MAJOR: '22'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install Clang from apt.llvm.org
+        # WHY the key is checked against a fingerprint: the repository is a third party, and this
+        # job runs its compiler. The fingerprint is the LLVM apt signing key's (Sylvestre Ledru,
+        # Debian LLVM packages), as published on apt.llvm.org. No llvm.sh: piping a script into a
+        # root shell would run whatever it says that day.
+        run: |
+          set -euo pipefail
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o llvm.asc
+          fpr=$(gpg --show-keys --with-colons llvm.asc | awk -F: '/^fpr/ {print $10; exit}')
+          if [ "$fpr" != "6084F3CF814B57C1CF12EFD515CF4D18AF4F7421" ]; then
+            echo "::error::apt.llvm.org signing key fingerprint is $fpr, expected 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421"
+            exit 1
+          fi
+          gpg --dearmor < llvm.asc | sudo tee /usr/share/keyrings/apt.llvm.org.gpg > /dev/null
+          codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+          echo "deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] http://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-${LLVM_MAJOR} main" \
+            | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          # libclang-rt-N-dev holds the RTSan runtime; llvm-N the symbolizer for readable reports.
+          sudo apt-get install -y "clang-${LLVM_MAJOR}" "libclang-rt-${LLVM_MAJOR}-dev" "llvm-${LLVM_MAJOR}"
+          "clang++-${LLVM_MAJOR}" --version
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get install -y \
+            libopus-dev libhidapi-dev libusb-1.0-0-dev libssl-dev libudev-dev libasound2-dev
+
+      - name: Read Qt version
+        # Same Qt as the unit-tests job; see there.
+        run: echo "QT_VERSION=$(tr -d '[:space:]' < .github/qt-version)" >> "$GITHUB_ENV"
+
+      - name: Install Qt
+        # WHY no extra modules: QK4_TESTS_ONLY configures only the tests, which need qtbase alone.
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux'
+          target: 'desktop'
+          arch: 'linux_gcc_64'
+          cache: true
+
+      - name: Compiler cache
+        # WHY: most pushes change a few files, but every job rebuilt all of them. ccache keeps the
+        # objects per job across runs (saved in its post step). Not used in ci-codeql.yml: CodeQL
+        # reads each compile as it happens, and a cache hit would hide that file from it.
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: ${{ github.job }}
+          max-size: 500M
+
+      - name: Configure CMake (RealtimeSanitizer on for tests)
+        run: >-
+          cmake -B build-rtsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQK4_TESTS_ONLY=ON -DQK4_TESTS_RTSAN=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          "-DCMAKE_C_COMPILER=clang-${LLVM_MAJOR}" "-DCMAKE_CXX_COMPILER=clang++-${LLVM_MAJOR}"
+
+      - name: Build instrumented tests
+        # See unit-tests job comment for why this uses the qk4_tests aggregate.
+        # WHY 4: a bare --parallel under Makefiles is `make -j` with no limit, which started every
+        # instrumented compile at once; the runner ran out of memory and GitHub stopped it ("The
+        # runner has received a shutdown signal") three minutes in, twice (2026-10-30). 4 matches
+        # the hosted runner's cores and CMAKE_BUILD_PARALLEL_LEVEL in the platform builders.
+        run: cmake --build build-rtsan --target qk4_tests --parallel 4
+
+      - name: Run instrumented tests
+        # halt_on_error: the first violation ends the test, red. The self-tests set their own.
+        run: |
+          export RTSAN_OPTIONS="halt_on_error=1:external_symbolizer_path=/usr/lib/llvm-${LLVM_MAJOR}/bin/llvm-symbolizer"
+          ctest --test-dir build-rtsan --output-on-failure

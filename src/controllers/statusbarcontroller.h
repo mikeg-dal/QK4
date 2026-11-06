@@ -18,10 +18,9 @@ class RadioState;
 // (temperature, voltage), KPA1500 status, K4 connection status, NetHealthWidget,
 // and the K4 remote-power button on the right.
 //
-// Observes RadioState directly for voltage and power-state updates so MainWindow
-// no longer needs to route those slots. The bar dropped its W / SWR / A readouts
-// (redundant with the rest of the UI); future at-a-glance fields are added as
-// IconTextLabel instances and wired to whatever RadioState signal feeds them.
+// Observes RadioState directly for voltage and power-state updates. New
+// at-a-glance fields are IconTextLabel instances wired to whatever RadioState
+// signal feeds them.
 //
 // The power button on the right is the click target for the K4 remote power-off
 // flow: a ConfirmPopup is shown above it, and on confirm the controller sends
@@ -35,7 +34,6 @@ class StatusBarController : public QObject {
 public:
     StatusBarController(RadioState *radioState, ConnectionController *connectionController,
                         NetworkMetrics *networkMetrics, QWidget *parentWidget, QObject *parent = nullptr);
-    ~StatusBarController() override;
 
     // Container widget — MainWindow adds this into its top layout.
     QWidget *widget() const;
@@ -43,8 +41,11 @@ public:
     // Task-level API.
     void setTitle(const QString &text);
     void clearReadings();
+    // Close the power-off confirmation and the network-metrics popup (disconnect reset).
+    void closePopups();
     void setKpa1500Visible(bool visible);
-    void setKpa1500Status(const QString &text, const QString &styleSheet);
+    // Green and bold while the amplifier is connected, grey while it is not.
+    void setKpa1500Status(const QString &text, bool connected);
 
     // Connection-state indicator transitions. Each sets the K4 status label
     // text and style appropriate for that state. Disconnected also resets
@@ -52,8 +53,8 @@ public:
     void showDisconnected();
     void showConnecting();                       // amber bold — same style for Connecting + Authenticating
     void showConnected();                        // green bold
-    void showError(const QString &errorMessage); // red bold — survives the disconnect that follows // red bold —
-                                                 // "Error: <message>"
+    void showError(const QString &errorMessage); // red bold "K4" (the message goes to the notification
+                                                 // banner) — survives the disconnect that follows
 
 private:
     void onPowerButtonClicked();

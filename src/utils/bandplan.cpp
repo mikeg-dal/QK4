@@ -151,16 +151,28 @@ const QVector<Band> &regionBands(int region) {
 }
 
 const Band *bandAt(int region, qint64 freqHz) {
-    if (region < 1 || (region > 3 && region != RegionUS))
-        return nullptr;
-    for (const Band &b : regionBands(region)) {
-        if (freqHz >= b.lo && freqHz <= b.hi)
-            return &b;
-    }
-    return nullptr;
+    const int index = planBandIndex(region, freqHz);
+    return index < 0 ? nullptr : &regionBands(region)[index];
 }
 
 } // namespace
+
+// WHY a key of its own rather than the K4's band: the K4 band table, these
+// per-region plan tables and bandName() deliberately disagree at the edges. The K4 table follows
+// the radio's band buttons (widest allocation, e.g. 40 m to 7300 kHz everywhere), the plan tables
+// follow each region's actual allocation (Region 1 40 m ends at 7200 kHz) and bandName() is
+// region-independent. Caching the plan on the K4 band kept a Region 1 overlay empty after tuning
+// from 7250 kHz (no plan) to 7100 kHz (same K4 band, but inside the plan).
+int planBandIndex(int region, qint64 freqHz) {
+    if (region < 1 || (region > 3 && region != RegionUS))
+        return -1;
+    const QVector<Band> &bands = regionBands(region);
+    for (int i = 0; i < bands.size(); ++i) {
+        if (freqHz >= bands[i].lo && freqHz <= bands[i].hi)
+            return i;
+    }
+    return -1;
+}
 
 QVector<BandSegment> segmentsForBand(int region, qint64 freqHz) {
     const Band *b = bandAt(region, freqHz);

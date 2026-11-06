@@ -41,11 +41,11 @@ void PowerStatusButton::applyAppearance() {
         break;
     case State::Unknown:
     default:
-        color = QColor(K4Styles::Colors::InactiveGray);
+        color = QColor(K4Styles::Colors::MutedGraphic);
         tip = QStringLiteral("K4 power state unknown");
         break;
     }
-    setIcon(QIcon(m_glyph(color)));
+    setIcon(m_glyph(color));
     setToolTip(tip);
     setEnabled(clickable);
     setCursor(clickable ? Qt::PointingHandCursor : Qt::ArrowCursor);

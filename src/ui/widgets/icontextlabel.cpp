@@ -4,6 +4,7 @@
 
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QEvent>
 #include <QMouseEvent>
 
 namespace {
@@ -24,34 +25,23 @@ IconTextLabel::IconTextLabel(QWidget *parent)
     layout->addWidget(m_iconLabel);
 
     m_prefixLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
-    m_prefixLabel->setFont(K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeMedium, QFont::Bold));
-    m_prefixLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextGray));
+    m_prefixLabel->setFont(K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeCaption, QFont::Bold));
+    m_prefixLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextSecondary));
     m_prefixLabel->hide();
     layout->addWidget(m_prefixLabel);
 
     m_valueLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
-    m_valueLabel->setFont(K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizePopup));
+    m_valueLabel->setFont(K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeHeading));
     layout->addWidget(m_valueLabel);
 
     m_unitLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
-    m_unitLabel->setFont(K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeMedium, QFont::Normal));
-    m_unitLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextGray));
+    m_unitLabel->setFont(K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeCaption, QFont::Normal));
+    m_unitLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextSecondary));
     m_unitLabel->hide();
     layout->addWidget(m_unitLabel);
 
     applyValueStyle(m_valueColor);
     clear();
-}
-
-void IconTextLabel::setIcon(const QPixmap &pixmap) {
-    // Static-pixmap path; setGlyph() takes precedence when present, since the
-    // glyph factory needs to re-render on color changes.
-    m_glyph = nullptr;
-    if (pixmap.isNull()) {
-        m_iconLabel->clear();
-        return;
-    }
-    m_iconLabel->setPixmap(pixmap.scaled(kIconSize, kIconSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
 }
 
 void IconTextLabel::setGlyph(K4Glyphs::Glyph glyph) {
@@ -60,7 +50,7 @@ void IconTextLabel::setGlyph(K4Glyphs::Glyph glyph) {
     // honour the muted "no data" color; otherwise use the most recently set
     // glyph color so setGlyph + setGlyphColor are order-independent.
     const QColor initial =
-        m_valueLabel->text() == kEmptyPlaceholder ? QColor(K4Styles::Colors::TextFaded) : m_glyphColor;
+        m_valueLabel->text() == kEmptyPlaceholder ? QColor(K4Styles::Colors::TextSecondary) : m_glyphColor;
     renderGlyph(initial);
 }
 
@@ -72,7 +62,17 @@ void IconTextLabel::setGlyphColor(const QColor &color) {
 void IconTextLabel::renderGlyph(const QColor &color) {
     if (!m_glyph)
         return;
-    m_iconLabel->setPixmap(m_glyph(color));
+    m_renderedGlyphColor = color;
+    m_iconLabel->setPixmap(m_glyph(color).pixmap(QSize(kIconSize, kIconSize), m_iconLabel->devicePixelRatioF()));
+}
+
+bool IconTextLabel::event(QEvent *event) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+    // WHY: the pixmap carries the ratio it was drawn at; moving to a screen with another ratio redraws it.
+    if (event->type() == QEvent::DevicePixelRatioChange)
+        renderGlyph(m_renderedGlyphColor);
+#endif
+    return QWidget::event(event);
 }
 
 void IconTextLabel::setLabel(const QString &label) {
@@ -115,7 +115,7 @@ void IconTextLabel::clear() {
     // so the slot reads as "no data" regardless of any semantic glyph color
     // the controller had set. The semantic color returns the next time the
     // controller calls setGlyphColor() on a real reading.
-    const QColor muted(K4Styles::Colors::TextFaded);
+    const QColor muted(K4Styles::Colors::TextSecondary);
     applyValueStyle(muted);
     renderGlyph(muted);
 }

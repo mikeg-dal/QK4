@@ -1,0 +1,280 @@
+[
+ {
+  "tap_ms": 64,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 68,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 72,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 76,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 80,
+  "elements": "dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 8
+ },
+ {
+  "tap_ms": 84,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 88,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 92,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 96,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 100,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 104,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 108,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 112,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 116,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 120,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ },
+ {
+  "tap_ms": 124,
+  "elements": "dit dit dah dah dah",
+  "sent": [
+   "KZD0000;",
+   "ML0000;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0030;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;",
+   "KZD0030;",
+   "KZU0090;"
+  ],
+  "edges": 10
+ }
+]

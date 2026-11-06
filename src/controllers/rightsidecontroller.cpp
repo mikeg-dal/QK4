@@ -94,7 +94,12 @@ RightSideController::RightSideController(RadioState *radioState, ConnectionContr
     connect(m_panel, &RightSidePanel::diversityClicked, this, [this]() { m_connection->sendCAT("SW152;"); });
     connect(m_panel, &RightSidePanel::freqEntClicked, this, &RightSideController::frequencyEntryRequested);
     connect(m_panel, &RightSidePanel::rateClicked, this, [this]() {
+        if (!m_connection->isConnected())
+            return;
         // Cycle fine rates: 1 Hz → 10 Hz → 100 Hz → 1 Hz
+        // WHY VT and not the radio's RATE switch (SW73): on the bench SW73 only toggles
+        // 1 Hz ↔ 10 Hz and never reaches 100 Hz, so QK4 sets the step itself with VTn
+        // (D12: n = 0 is 1 Hz, 1 is 10 Hz, 2 is 100 Hz). D12's VT/; toggle is the same RATE tap.
         const bool bSet = m_radioState->bSetEnabled();
         const int current = bSet ? m_radioState->tuningStepB() : m_radioState->tuningStep();
         const int next = (current >= 0 && current < 2) ? current + 1 : 0;
@@ -103,7 +108,10 @@ RightSideController::RightSideController(RadioState *radioState, ConnectionContr
         m_radioState->parseCATCommand(cmd);
     });
     connect(m_panel, &RightSidePanel::khzClicked, this, [this]() {
+        if (!m_connection->isConnected())
+            return;
         // Set tuning step to 1 kHz (VT3)
+        // WHY VT3 and not SW150 (the KHZ hold): on the bench SW150 sets VT2, 100 Hz, not 1 kHz.
         const bool bSet = m_radioState->bSetEnabled();
         const QString cmd = bSet ? QStringLiteral("VT$3;") : QStringLiteral("VT3;");
         m_connection->sendCAT(cmd);
@@ -111,10 +119,6 @@ RightSideController::RightSideController(RadioState *radioState, ConnectionContr
     });
     connect(m_panel, &RightSidePanel::lockAClicked, this, [this]() { m_connection->sendCAT("SW63;"); });
     connect(m_panel, &RightSidePanel::lockBClicked, this, [this]() { m_connection->sendCAT("SW151;"); });
-}
-
-RightSideController::~RightSideController() {
-    disconnect(this);
 }
 
 void RightSideController::cycleFilterPreset(bool vfoB) {

@@ -13,14 +13,14 @@
 #include "utils/radioutils.h"
 
 #include <QDateTime>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QTimer>
 #include <QWidget>
 
 namespace {
-// 1 Hz clock tick. Sub-second drift on the status-bar clock is imperceptible;
-// saves 50× timer overhead vs 50 ms updates.
+// 1 Hz clock tick. Sub-second drift on the status-bar clock is imperceptible.
 constexpr int kClockUpdateIntervalMs = 1000;
 
 // Generic "safe-for-ham-radio" PA/LPA thresholds — we don't have the K4's
@@ -41,7 +41,7 @@ struct ColorPair {
 };
 
 ColorPair temperatureColors(int celsius) {
-    const QColor red(K4Styles::Colors::TxRed);
+    const QColor red(K4Styles::Colors::TextRed);
     const QColor orange(K4Styles::Colors::MeterOrange);
     const QColor amber(K4Styles::Colors::AccentAmber);
     if (celsius >= kCritTempC)
@@ -53,7 +53,7 @@ ColorPair temperatureColors(int celsius) {
 }
 
 ColorPair voltageColors(double volts) {
-    const QColor red(K4Styles::Colors::TxRed);
+    const QColor red(K4Styles::Colors::TextRed);
     const QColor orange(K4Styles::Colors::MeterOrange);
     const QColor amber(K4Styles::Colors::AccentAmber);
     const QColor gold(K4Styles::Colors::FilterIndicatorGold);
@@ -80,15 +80,25 @@ StatusBarController::StatusBarController(RadioState *radioState, ConnectionContr
     // Elecraft K4 title
     m_titleLabel = new QLabel("Elecraft K4", m_container);
     m_titleLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: %2px;")
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::FontSizePopup));
+                                    .arg(K4Styles::Colors::TextPrimary)
+                                    .arg(K4Styles::Dimensions::FontSizeHeading));
     layout->addWidget(m_titleLabel);
 
     // Date/Time
     m_dateTimeLabel = new QLabel("--/-- --:--:-- Z", m_container);
-    m_dateTimeLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                       .arg(K4Styles::Colors::TextGray)
-                                       .arg(K4Styles::Dimensions::FontSizeButton));
+    m_dateTimeLabel->setStyleSheet(QString("color: %1;").arg(K4Styles::Colors::TextSecondary));
+    m_dateTimeLabel->setFont(K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeReadout, QFont::Normal));
+    // WHY a fixed size wide enough for any date and time: a QLabel whose size can change asks its
+    // parent to re-lay out on every setText(). With proportional digits the clock's width changed
+    // most seconds, shifting every status-bar field to its right and repainting that whole strip
+    // once a second while idle (#92). Fixed in both directions, setText() repaints only the label.
+    const QFontMetrics clockMetrics(m_dateTimeLabel->font());
+    int clockWidth = 0;
+    for (QChar digit = u'0'; digit <= u'9'; digit = QChar(digit.unicode() + 1)) {
+        const QString widest = QString("%1%1-%1%1 / %1%1:%1%1:%1%1 Z").arg(digit);
+        clockWidth = qMax(clockWidth, clockMetrics.horizontalAdvance(widest));
+    }
+    m_dateTimeLabel->setFixedSize(clockWidth, clockMetrics.height());
     layout->addWidget(m_dateTimeLabel);
 
     layout->addStretch();
@@ -130,17 +140,13 @@ StatusBarController::StatusBarController(RadioState *radioState, ConnectionContr
 
     // KPA1500 status (to left of K4 status)
     m_kpa1500StatusLabel = new QLabel("", m_container);
-    m_kpa1500StatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                            .arg(K4Styles::Colors::InactiveGray)
-                                            .arg(K4Styles::Dimensions::FontSizeButton));
+    m_kpa1500StatusLabel->setStyleSheet(K4Styles::kpa1500StatusLabel());
     m_kpa1500StatusLabel->hide(); // Hidden when not enabled
     layout->addWidget(m_kpa1500StatusLabel);
 
     // K4 connection status
     m_connectionStatusLabel = new QLabel("K4", m_container);
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                               .arg(K4Styles::Colors::InactiveGray)
-                                               .arg(K4Styles::Dimensions::FontSizeButton));
+    m_connectionStatusLabel->setStyleSheet(K4Styles::connectionStatusLabel());
     layout->addWidget(m_connectionStatusLabel);
 
     // Network health signal bars
@@ -197,12 +203,6 @@ StatusBarController::StatusBarController(RadioState *radioState, ConnectionContr
     updateDateTime();
 }
 
-StatusBarController::~StatusBarController() {
-    // Architecture Rule 11 — disconnect first to prevent queued signals from
-    // arriving during partial destruction.
-    disconnect(this);
-}
-
 QWidget *StatusBarController::widget() const {
     return m_container;
 }
@@ -230,9 +230,7 @@ void StatusBarController::showDisconnected() {
     }
 
     m_connectionStatusLabel->setText("K4");
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                               .arg(K4Styles::Colors::InactiveGray)
-                                               .arg(K4Styles::Dimensions::FontSizeButton));
+    K4Styles::setStyleState(m_connectionStatusLabel, K4Styles::StateProperty, QString());
     m_titleLabel->setText("Elecraft K4");
 }
 
@@ -240,31 +238,31 @@ void StatusBarController::showConnecting() {
     // A new attempt is the one thing that supersedes a previous failure.
     m_errorShown = false;
     m_connectionStatusLabel->setText("K4");
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                               .arg(K4Styles::Colors::AccentAmber)
-                                               .arg(K4Styles::Dimensions::FontSizeButton));
+    K4Styles::setStyleState(m_connectionStatusLabel, K4Styles::StateProperty, QStringLiteral("connecting"));
 }
 
 void StatusBarController::showConnected() {
     m_errorShown = false;
     m_connectionStatusLabel->setText("K4");
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                               .arg(K4Styles::Colors::StatusGreen)
-                                               .arg(K4Styles::Dimensions::FontSizeButton));
+    K4Styles::setStyleState(m_connectionStatusLabel, K4Styles::StateProperty, QStringLiteral("connected"));
 }
 
 void StatusBarController::showError(const QString &errorMessage) {
-    // The status bar carries the STATE, not the story. The whole failure message used to be
-    // written into this label in red, which crammed a sentence naming a host and a port into a
-    // slot sized for the word "K4" and looked nothing like the themed banner every device
-    // notification uses. MainWindow sends the text to the NotificationWidget instead; what stays
+    // The status bar carries the STATE, not the story: a sentence naming a host and a port does
+    // not fit a slot sized for the word "K4", and the themed banner is where every device
+    // notification goes. MainWindow sends the text to the NotificationWidget; what stays
     // here is a red "K4", which is the part that should persist after the banner times out.
     Q_UNUSED(errorMessage)
     m_errorShown = true;
     m_connectionStatusLabel->setText("K4");
-    m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                               .arg(K4Styles::Colors::TxRed)
-                                               .arg(K4Styles::Dimensions::FontSizeButton));
+    K4Styles::setStyleState(m_connectionStatusLabel, K4Styles::StateProperty, QStringLiteral("error"));
+}
+
+void StatusBarController::closePopups() {
+    // WHY: a power-off confirmation left up after the link dropped would send PS0 into nothing.
+    if (m_confirmPopup)
+        m_confirmPopup->hidePopup();
+    m_netHealthWidget->closeMetricsPopup();
 }
 
 void StatusBarController::clearReadings() {
@@ -308,10 +306,9 @@ void StatusBarController::setKpa1500Visible(bool visible) {
     m_kpa1500StatusLabel->setVisible(visible);
 }
 
-void StatusBarController::setKpa1500Status(const QString &text, const QString &styleSheet) {
+void StatusBarController::setKpa1500Status(const QString &text, bool connected) {
     m_kpa1500StatusLabel->setText(text);
-    if (!styleSheet.isEmpty())
-        m_kpa1500StatusLabel->setStyleSheet(styleSheet);
+    K4Styles::setSelected(m_kpa1500StatusLabel, connected);
 }
 
 void StatusBarController::onPowerButtonClicked() {

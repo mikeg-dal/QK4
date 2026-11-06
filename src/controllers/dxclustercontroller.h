@@ -34,7 +34,6 @@ public:
     // later connection down one so each stays keyed by its entry's new row.
     void removeCluster(int index);
     DxClusterClient::ConnectionState clusterState(int index) const;
-    bool isAnyConnected() const;
 
     // Console access for the selected cluster
     QStringList consoleBuffer(int index) const;
@@ -43,7 +42,6 @@ public:
     // Aggregated spot cache (from all connected clusters)
     QVector<DxSpot> spotsForFrequencyRange(qint64 startFreqHz, qint64 endFreqHz) const;
     void setSpotMaxAge(int seconds);
-    void clearSpots();
 
 signals:
     void clusterStateChanged(int index, DxClusterClient::ConnectionState state);
@@ -60,6 +58,8 @@ private:
     // up at delivery rather than capturing it, because removeCluster() renumbers instances.
     int indexOf(const DxClusterClient *client) const;
     void destroyInstance(int index);
+    // Closes the instance's connection and retires its thread; the client goes with the thread.
+    void stopInstance(DxClusterInstance &inst);
     // Drops the spots that came from the cluster at `index`, leaving every other cluster's intact.
     // A spot both clusters reported is held once, under whichever reported it last.
     void clearSpotsFrom(int index);

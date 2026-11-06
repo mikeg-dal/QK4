@@ -1,5 +1,6 @@
 #include <QtTest>
 
+#include <QSet>
 #include <QSignalSpy>
 #include <QTcpSocket>
 
@@ -180,6 +181,24 @@ private slots:
         }
 
         QVERIFY2(response.startsWith("HTTP/1.1 400"), response.left(40).constData());
+
+        // The declared length must match the body, or a client reads a truncated message.
+        timer.restart();
+        while (plain.state() == QAbstractSocket::ConnectedState && timer.elapsed() < kTimeoutMs) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            response.append(plain.readAll());
+        }
+        response.append(plain.readAll());
+        const int headerEnd = response.indexOf("\r\n\r\n");
+        QVERIFY(headerEnd > 0);
+        const QByteArray header = response.left(headerEnd);
+        const int at = header.indexOf("Content-Length: ");
+        QVERIFY(at > 0);
+        const int lineEnd = header.indexOf("\r\n", at);
+        const int declared = header.mid(at + 16, (lineEnd < 0 ? header.size() : lineEnd) - at - 16).toInt();
+        const QByteArray body = response.mid(headerEnd + 4);
+        QVERIFY(!body.isEmpty());
+        QCOMPARE(declared, body.size());
         plain.abort();
         server.stop();
     }
@@ -553,9 +572,40 @@ private slots:
         b.readHandshake();
         QTRY_COMPARE(connected.count(), 2);
 
+        QSignalSpy disconnected(&server, &WebSocketServer::clientDisconnected);
         server.stop();
         QCOMPARE(server.clientCount(), 0);
         QVERIFY(!server.isListening());
+        // Exactly once per client: a closed socket can report its own disconnect during stop().
+        QCOMPARE(disconnected.count(), 2);
+        QSet<int> ids;
+        for (const QList<QVariant> &args : disconnected) {
+            ids.insert(args.at(0).toInt());
+        }
+        QCOMPARE(ids.size(), 2);
+    }
+
+    void stopNeverReportsAPeerThatDidNotUpgrade() {
+        WebSocketServer server;
+        const quint16 port = freePort(server);
+        QSignalSpy connected(&server, &WebSocketServer::clientConnected);
+        QSignalSpy disconnected(&server, &WebSocketServer::clientDisconnected);
+
+        TestClient client;
+        QVERIFY(client.connectTo(port));
+        client.readHandshake();
+        QTRY_COMPARE(connected.count(), 1);
+
+        // Connected at TCP level, handshake never sent: a session exists, a client does not.
+        QTcpSocket plain;
+        plain.connectToHost(QHostAddress::LocalHost, port);
+        QVERIFY(plain.waitForConnected(kTimeoutMs));
+        QTest::qWait(100);
+
+        server.stop();
+        QCOMPARE(disconnected.count(), 1);
+        QCOMPARE(disconnected.at(0).at(0).toInt(), connected.at(0).at(0).toInt());
+        plain.abort();
     }
 
     // ---- re-entrancy ---------------------------------------------------------------------------

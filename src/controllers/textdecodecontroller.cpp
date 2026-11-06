@@ -1,4 +1,6 @@
 #include "textdecodecontroller.h"
+#include "utils/radioutils.h"
+#include "logging/logcategories.h"
 
 #include "connectioncontroller.h"
 #include "models/radiostate.h"
@@ -6,8 +8,6 @@
 
 #include <QLoggingCategory>
 #include <QWidget>
-
-Q_LOGGING_CATEGORY(qk4TextDecode, "qk4.textdecode")
 
 namespace {
 
@@ -129,13 +129,25 @@ TextDecodeController::TextDecodeController(RadioState *radioState, ConnectionCon
 
     // Mode changes while a window is open → refresh its operating mode so
     // the title bar / controls reflect the new mode (CW WPM vs data rate).
+    // A mode with no decoder (SSB, AM, FM) closes the window, as the K4 offers no text decode there.
+    // Nothing is sent: TD in SSB is the 2-TONE generator, which this window must never touch.
     connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode mode) {
-        if (m_mainWindow->isVisible())
-            m_mainWindow->setOperatingMode(operatingModeFor(mode, m_radioState->dataSubMode()));
+        if (!m_mainWindow->isVisible())
+            return;
+        if (!RadioUtils::textDecodeSetAllowed(static_cast<int>(mode))) {
+            closeWithoutSending(m_mainWindow);
+            return;
+        }
+        m_mainWindow->setOperatingMode(operatingModeFor(mode, m_radioState->dataSubMode()));
     });
     connect(m_radioState, &RadioState::modeBChanged, this, [this](RadioState::Mode mode) {
-        if (m_subWindow->isVisible())
-            m_subWindow->setOperatingMode(operatingModeFor(mode, m_radioState->dataSubModeB()));
+        if (!m_subWindow->isVisible())
+            return;
+        if (!RadioUtils::textDecodeSetAllowed(static_cast<int>(mode))) {
+            closeWithoutSending(m_subWindow);
+            return;
+        }
+        m_subWindow->setOperatingMode(operatingModeFor(mode, m_radioState->dataSubModeB()));
     });
     connect(m_radioState, &RadioState::dataSubModeChanged, this, [this](int subMode) {
         if (m_mainWindow->isVisible())
@@ -156,16 +168,20 @@ TextDecodeController::TextDecodeController(RadioState *radioState, ConnectionCon
     });
 }
 
-TextDecodeController::~TextDecodeController() {
-    // Architecture Rule 11 — disconnect first to prevent queued signals
-    // from arriving during partial destruction.
-    disconnect(this);
-    // m_mainWindow / m_subWindow are owned by parentWidget (passed to the
-    // TextDecodeWindow constructor) and delete via Qt parent-ownership.
+void TextDecodeController::closeWithoutSending(TextDecodeWindow *window) {
+    // setDecodeEnabled(false) emits enabledChanged, whose sendTextDecodeCmd is gated by the mode and
+    // sends nothing here; the window's state simply follows the radio, which has no decoder now.
+    window->setDecodeEnabled(false);
+    window->clearText();
+    window->hide();
 }
 
+// TEXT DECODE exists only in CW and DATA, as on the K4's own front panel: in SSB, AM and FM the key
+// does nothing.
 void TextDecodeController::showMainRx() {
     RadioState::Mode mode = m_radioState->mode();
+    if (!RadioUtils::textDecodeSetAllowed(static_cast<int>(mode)))
+        return;
     m_mainWindow->setOperatingMode(operatingModeFor(mode, m_radioState->dataSubMode()));
     if (mode == RadioState::DATA || mode == RadioState::DATA_R) {
         int dr = m_radioState->dataRate();
@@ -173,12 +189,16 @@ void TextDecodeController::showMainRx() {
             m_mainWindow->setDataRate(dr);
     }
     m_mainWindow->show();
-    if (!m_mainWindow->isDecodeEnabled())
+    if (!m_mainWindow->isDecodeEnabled()) {
         m_mainWindow->setDecodeEnabled(true);
+        sendTextDecodeCmd(m_mainWindow, true);
+    }
 }
 
 void TextDecodeController::showSubRx() {
     RadioState::Mode modeB = m_radioState->modeB();
+    if (!RadioUtils::textDecodeSetAllowed(static_cast<int>(modeB)))
+        return;
     m_subWindow->setOperatingMode(operatingModeFor(modeB, m_radioState->dataSubModeB()));
     if (modeB == RadioState::DATA || modeB == RadioState::DATA_R) {
         int dr = m_radioState->dataRateB();
@@ -186,13 +206,24 @@ void TextDecodeController::showSubRx() {
             m_subWindow->setDataRate(dr);
     }
     m_subWindow->show();
-    if (!m_subWindow->isDecodeEnabled())
+    if (!m_subWindow->isDecodeEnabled()) {
         m_subWindow->setDecodeEnabled(true);
+        sendTextDecodeCmd(m_subWindow, false);
+    }
 }
 
 void TextDecodeController::sendTextDecodeCmd(TextDecodeWindow *window, bool isMainRx) {
     if (!m_connection->isConnected())
         return;
+    // TRANSMIT SAFETY: TD is a decode command only in CW and DATA. In SSB its 1 arms the 2-TONE
+    // generator, so the next PTT would send two tones instead of the microphone. Decided from the
+    // radio's own mode for this receiver, not the window's label, and nothing is sent otherwise -
+    // not even TD0, which in SSB would switch off a 2-TONE the operator set.
+    const RadioState::Mode rxMode = isMainRx ? m_radioState->mode() : m_radioState->modeB();
+    if (!RadioUtils::textDecodeSetAllowed(static_cast<int>(rxMode))) {
+        qCDebug(lcUiTextDecode) << "not sending TD: no text decoder in mode" << rxMode;
+        return;
+    }
     int mode = 0;
     int threshold = 0;
     if (window->isDecodeEnabled()) {
@@ -204,8 +235,14 @@ void TextDecodeController::sendTextDecodeCmd(TextDecodeWindow *window, bool isMa
             mode = 1;
         }
     }
+    // WHY applied here as well as sent: the K4 does not echo a client's own SET at AI4, so without
+    // it RadioState, the CAT server and TCI would keep the old TD until the radio next reported it.
+    if (isMainRx)
+        m_radioState->setTextDecode(mode, threshold, window->maxLines());
+    else
+        m_radioState->setTextDecodeB(mode, threshold, window->maxLines());
     QString cmdPrefix = isMainRx ? "TD" : "TD$";
     QString cmd = QString("%1%2%3%4;").arg(cmdPrefix).arg(mode).arg(threshold).arg(window->maxLines());
-    qCDebug(qk4TextDecode) << "sending" << cmd;
+    qCDebug(lcUiTextDecode) << "sending" << cmd;
     m_connection->sendCAT(cmd);
 }

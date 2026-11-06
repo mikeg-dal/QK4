@@ -5,7 +5,7 @@
 
 // Decides what a failed connection attempt is called, and what the operator is told about it.
 // Pure logic with no socket or Qt::Network dependency so it can be unit-tested without standing up
-// a TcpClient, mirroring hardware/halikey_edge.h.
+// a TcpClient.
 //
 // WHY this is a separate decision rather than four inline branches in TcpClient: the K4 sends no
 // error codes. Nothing means "wrong password" and nothing means "accepted" - a good password

@@ -1,13 +1,20 @@
 #include "dxclustercontroller.h"
+#include "logging/logcategories.h"
+#include "utils/threadshutdown.h"
 
 #include <QDebug>
 #include <QMetaObject>
 #include <algorithm>
+#include <chrono>
 
 namespace {
 // Spot aging cadence. 30 s matches typical cluster post rate; shorter churns the overlay,
 // longer lets stale spots linger after the spotter gives up.
 constexpr int kSpotAgingIntervalMs = 30000;
+
+// WHY 1 s: a cluster thread only runs an event loop around one telnet socket; closing it does not
+// block. Anything near this long means it is wedged.
+constexpr std::chrono::milliseconds kClusterStopTimeout{1000};
 } // namespace
 
 DxClusterController::DxClusterController(QObject *parent) : QObject(parent) {
@@ -20,18 +27,25 @@ DxClusterController::DxClusterController(QObject *parent) : QObject(parent) {
 }
 
 DxClusterController::~DxClusterController() {
-    disconnect(this);
-    // Shut down all cluster instances
     for (auto it = m_instances.begin(); it != m_instances.end(); ++it) {
-        auto &inst = it.value();
-        if (inst.thread) {
-            QMetaObject::invokeMethod(inst.client, "disconnectFromHost", Qt::BlockingQueuedConnection);
-            inst.thread->quit();
-            inst.thread->wait(2000);
-        }
-        delete inst.client;
+        stopInstance(it.value());
     }
     m_instances.clear();
+}
+
+void DxClusterController::stopInstance(DxClusterInstance &inst) {
+    // The client is cut from this controller first: a disconnect it reports on the way out is not
+    // news to anyone, and a disowned client must not reach this object after it is gone.
+    if (inst.client) {
+        inst.client->disconnect(this);
+    }
+    const QDeadlineTimer deadline(kClusterStopTimeout);
+    if (DxClusterClient *client = inst.client) {
+        ThreadShutdown::callBlocking(client, [client]() { client->disconnectFromHost(); }, deadline);
+    }
+    // The client is deleted with its thread (finished -> deleteLater), or left on it if disowned.
+    ThreadShutdown::retire(inst.thread, deadline, lcDxCluster());
+    inst.client = nullptr;
 }
 
 DxClusterInstance &DxClusterController::ensureInstance(int index) {
@@ -41,6 +55,7 @@ DxClusterInstance &DxClusterController::ensureInstance(int index) {
         inst.thread = new QThread(this);
         inst.thread->setObjectName(QString("DxCluster-%1").arg(index));
         inst.client->moveToThread(inst.thread);
+        connect(inst.thread, &QThread::finished, inst.client, &QObject::deleteLater);
         inst.thread->start();
 
         // Wire signals by client, not by index: removeCluster() renumbers instances, so the index a
@@ -77,7 +92,7 @@ DxClusterInstance &DxClusterController::ensureInstance(int index) {
             spot.clusterIndex = indexOf(client);
             if (spot.clusterIndex < 0)
                 return; // queued from a cluster that has since been removed
-            qCDebug(netDxCluster) << "Spot received:" << spot.spottedCall << spot.frequencyHz << spot.mode;
+            qCDebug(lcDxCluster) << "Spot received:" << spot.spottedCall << spot.frequencyHz << spot.mode;
             // Deduplicate: same callsign within 500 Hz replaces older entry
             for (int i = 0; i < m_spots.size(); ++i) {
                 if (m_spots[i].spottedCall == spot.spottedCall &&
@@ -116,29 +131,22 @@ DxClusterInstance &DxClusterController::ensureInstance(int index) {
 void DxClusterController::destroyInstance(int index) {
     if (!m_instances.contains(index))
         return;
-    auto &inst = m_instances[index];
-    if (inst.thread) {
-        QMetaObject::invokeMethod(inst.client, "disconnectFromHost", Qt::BlockingQueuedConnection);
-        inst.thread->quit();
-        inst.thread->wait(2000);
-    }
-    delete inst.client;
+    stopInstance(m_instances[index]);
     m_instances.remove(index);
     if (m_instances.isEmpty())
         m_agingTimer->stop();
 }
 
 void DxClusterController::connectCluster(int index, const QString &host, quint16 port, const QString &callsign) {
-    qCDebug(netDxCluster) << "connectCluster index:" << index << host << port << callsign;
+    qCDebug(lcDxCluster) << "connectCluster index:" << index << host << port << callsign;
     auto &inst = ensureInstance(index);
-    QMetaObject::invokeMethod(inst.client, "connectToHost", Qt::QueuedConnection, Q_ARG(QString, host),
-                              Q_ARG(quint16, port), Q_ARG(QString, callsign));
+    QMetaObject::invokeMethod(inst.client, &DxClusterClient::connectToHost, Qt::QueuedConnection, host, port, callsign);
 }
 
 void DxClusterController::disconnectCluster(int index) {
     if (!m_instances.contains(index))
         return;
-    QMetaObject::invokeMethod(m_instances[index].client, "disconnectFromHost", Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_instances[index].client, &DxClusterClient::disconnectFromHost, Qt::QueuedConnection);
     // WHY: clear spots synchronously so the overlay updates immediately. The async lambda on
     // stateChanged is unreliable here — setState() is a no-op when the socket already
     // self-disconnected (server kick / idle timeout), leaving stale spots on screen.
@@ -173,7 +181,7 @@ void DxClusterController::removeCluster(int index) {
 
 void DxClusterController::disconnectAll() {
     for (auto it = m_instances.begin(); it != m_instances.end(); ++it) {
-        QMetaObject::invokeMethod(it.value().client, "disconnectFromHost", Qt::QueuedConnection);
+        QMetaObject::invokeMethod(it.value().client, &DxClusterClient::disconnectFromHost, Qt::QueuedConnection);
     }
     m_spots.clear();
     emit spotsUpdated();
@@ -185,14 +193,6 @@ DxClusterClient::ConnectionState DxClusterController::clusterState(int index) co
     return DxClusterClient::Disconnected;
 }
 
-bool DxClusterController::isAnyConnected() const {
-    for (auto it = m_instances.constBegin(); it != m_instances.constEnd(); ++it) {
-        if (it.value().state == DxClusterClient::Connected)
-            return true;
-    }
-    return false;
-}
-
 QStringList DxClusterController::consoleBuffer(int index) const {
     if (m_instances.contains(index))
         return m_instances[index].consoleBuffer;
@@ -202,7 +202,7 @@ QStringList DxClusterController::consoleBuffer(int index) const {
 void DxClusterController::sendCommand(int index, const QString &command) {
     if (!m_instances.contains(index))
         return;
-    QMetaObject::invokeMethod(m_instances[index].client, "sendCommand", Qt::QueuedConnection, Q_ARG(QString, command));
+    QMetaObject::invokeMethod(m_instances[index].client, &DxClusterClient::sendCommand, Qt::QueuedConnection, command);
 }
 
 QVector<DxSpot> DxClusterController::spotsForFrequencyRange(qint64 startFreqHz, qint64 endFreqHz) const {
@@ -218,13 +218,6 @@ QVector<DxSpot> DxClusterController::spotsForFrequencyRange(qint64 startFreqHz, 
 
 void DxClusterController::setSpotMaxAge(int seconds) {
     m_spotMaxAgeSec = qBound(300, seconds, 1800);
-}
-
-void DxClusterController::clearSpots() {
-    if (!m_spots.isEmpty()) {
-        m_spots.clear();
-        emit spotsUpdated();
-    }
 }
 
 void DxClusterController::clearSpotsFrom(int index) {

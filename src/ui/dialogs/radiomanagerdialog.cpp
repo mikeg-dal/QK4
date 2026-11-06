@@ -2,19 +2,20 @@
 #include "ui/styling/k4styles.h"
 #include "network/protocol.h"
 #include "utils/radioutils.h"
+#include <QIntValidator>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QLabel>
+#include <QMessageBox>
+#include <QScopedValueRollback>
+#include <QSignalBlocker>
 
 RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QDialog(parent), m_currentIndex(-1), m_discovery(nullptr) {
-    // WHY a tool window and not modal: the dialog has two jobs that modality set against each other.
-    // It must not be buried - an ordinary window disappeared behind the main window at the first
-    // click elsewhere, and since it stays open across a disconnect that left an inert app with the
-    // one control that fixes it hidden. And the globe icon must close it again (d46a802), which
-    // needs the main window to keep taking clicks. Modal (f1b6b82) fixed the first and broke the
-    // second: input to the main window was blocked, so the globe click never arrived. A tool
-    // window floats above its parent on macOS, Windows and Linux without blocking it.
+    // WHY: a tool window, not modal. It must float above the main window (it stays open across a
+    // disconnect, and an ordinary window was buried at the first click elsewhere), yet the main
+    // window must keep taking clicks so the globe icon can close it; modality blocks that. A tool
+    // window does both on macOS, Windows and Linux.
     //
     // Shown with show(), not exec(): exec() nests an event loop, and this dialog is deleted from
     // its own finished() signal.
@@ -29,26 +30,10 @@ RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QDialog(parent), m_cur
     startDiscovery();
 }
 
-QString RadioManagerDialog::lineEditStyle(const QString &borderColor) {
-    return QString("QLineEdit { "
-                   "  background-color: %1; "
-                   "  color: %2; "
-                   "  border: 1px solid %3; "
-                   "  border-radius: 4px; "
-                   "  padding: %4px; "
-                   "  min-width: 150px; "
-                   "  font-size: %5px; "
-                   "}")
-        .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, borderColor)
-        .arg(K4Styles::Dimensions::PaddingSmall)
-        .arg(K4Styles::Dimensions::FontSizeLarge);
-}
-
 void RadioManagerDialog::setupUi() {
     setWindowTitle("Server Manager");
     setFixedSize(580, 395);
 
-    // Dark theme for the dialog
     setStyleSheet(QString("QDialog { background-color: %1; }").arg(K4Styles::Colors::Background));
 
     auto *mainLayout = new QVBoxLayout(this);
@@ -67,7 +52,7 @@ void RadioManagerDialog::setupUi() {
     auto *serversTitle = new QLabel("Available Servers", this);
     serversTitle->setStyleSheet(QString("QLabel { color: %1; font-weight: bold; font-size: %2px; }")
                                     .arg(K4Styles::Colors::AccentAmber)
-                                    .arg(K4Styles::Dimensions::FontSizePopup));
+                                    .arg(K4Styles::Dimensions::FontSizeHeading));
     leftSection->addWidget(serversTitle);
 
     m_radioList = new QListWidget(this);
@@ -95,7 +80,7 @@ void RadioManagerDialog::setupUi() {
                 "  background-color: %5; "
                 "  color: %1; "
                 "}")
-            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextPrimary, K4Styles::Colors::DialogBorder)
             .arg(K4Styles::Dimensions::PaddingSmall)
             .arg(K4Styles::Colors::AccentAmber, K4Styles::Colors::GradientBottom));
     leftSection->addWidget(m_radioList);
@@ -108,7 +93,7 @@ void RadioManagerDialog::setupUi() {
     auto *editTitle = new QLabel("Edit Connect", this);
     editTitle->setStyleSheet(QString("QLabel { color: %1; font-weight: bold; font-size: %2px; }")
                                  .arg(K4Styles::Colors::AccentAmber)
-                                 .arg(K4Styles::Dimensions::FontSizePopup));
+                                 .arg(K4Styles::Dimensions::FontSizeHeading));
     rightSection->addWidget(editTitle);
 
     // Form fields - label on LEFT of text box
@@ -116,62 +101,57 @@ void RadioManagerDialog::setupUi() {
     formLayout->setHorizontalSpacing(K4Styles::Dimensions::PaddingMedium);
     formLayout->setVerticalSpacing(K4Styles::Dimensions::PaddingMedium);
 
-    const QString normalLineEditStyle = lineEditStyle(K4Styles::Colors::DialogBorder);
-    m_hostNormalStyle = normalLineEditStyle;
-    m_hostErrorStyle = lineEditStyle(K4Styles::Colors::ErrorRed);
+    // One sheet for every field; only the host field ever sets ErrorProperty.
+    const QString &fieldStyle = K4Styles::Dialog::serverLineEdit();
 
     QString labelStyle = QString("QLabel { color: %1; font-size: %2px; }")
-                             .arg(K4Styles::Colors::TextGray)
-                             .arg(K4Styles::Dimensions::FontSizeButton);
+                             .arg(K4Styles::Colors::TextSecondary)
+                             .arg(K4Styles::Dimensions::FontSizeReadout);
 
-    // Row 0: Name
     auto *nameLabel = new QLabel("Name", this);
     nameLabel->setStyleSheet(labelStyle);
     m_nameEdit = new QLineEdit(this);
-    m_nameEdit->setStyleSheet(normalLineEditStyle);
+    m_nameEdit->setStyleSheet(fieldStyle);
     m_nameEdit->setPlaceholderText("Server Name");
     formLayout->addWidget(nameLabel, 0, 0);
     formLayout->addWidget(m_nameEdit, 0, 1);
 
-    // Row 1: Host or IP
     auto *hostLabel = new QLabel("Host or IP", this);
     hostLabel->setStyleSheet(labelStyle);
     m_hostEdit = new QLineEdit(this);
-    m_hostEdit->setStyleSheet(normalLineEditStyle);
+    m_hostEdit->setStyleSheet(fieldStyle);
     m_hostEdit->setPlaceholderText("192.168.1.100");
     formLayout->addWidget(hostLabel, 1, 0);
     formLayout->addWidget(m_hostEdit, 1, 1);
 
-    // Row 2: Port
     auto *portLabel = new QLabel("Port", this);
     portLabel->setStyleSheet(labelStyle);
     m_portEdit = new QLineEdit(this);
-    m_portEdit->setStyleSheet(normalLineEditStyle);
+    m_portEdit->setStyleSheet(fieldStyle);
     m_portEdit->setPlaceholderText("64242");
+    m_portEdit->setValidator(new QIntValidator(1, 65535, m_portEdit));
     m_portEdit->setMaximumWidth(80);
     formLayout->addWidget(portLabel, 2, 0);
     formLayout->addWidget(m_portEdit, 2, 1);
 
-    // Row 3: Password
     auto *passwordLabel = new QLabel("Password", this);
     passwordLabel->setStyleSheet(labelStyle);
     m_passwordEdit = new QLineEdit(this);
-    m_passwordEdit->setStyleSheet(normalLineEditStyle);
+    m_passwordEdit->setStyleSheet(fieldStyle);
     m_passwordEdit->setEchoMode(QLineEdit::Password);
     m_passwordEdit->setPlaceholderText("Password");
     formLayout->addWidget(passwordLabel, 3, 0);
     formLayout->addWidget(m_passwordEdit, 3, 1);
 
-    // Row 4: ID (only visible when TLS is checked)
+    // ID: shown only while TLS is checked
     m_identityLabel = new QLabel("ID", this);
     m_identityLabel->setStyleSheet(labelStyle);
     m_identityEdit = new QLineEdit(this);
-    m_identityEdit->setStyleSheet(normalLineEditStyle);
+    m_identityEdit->setStyleSheet(fieldStyle);
     m_identityEdit->setPlaceholderText("Identity (optional)");
     formLayout->addWidget(m_identityLabel, 4, 0);
     formLayout->addWidget(m_identityEdit, 4, 1);
 
-    // Row 5: TLS Checkbox (below ID field)
     m_tlsCheckbox = new QCheckBox("Use TLS (Encrypted)", this);
     // Same indicator treatment as K4Styles::Dialog::checkBox - see the reasoning there. The colour
     // and size differ from the shared style deliberately, which is why this is not simply replaced
@@ -184,20 +164,17 @@ void RadioManagerDialog::setupUi() {
                 "QCheckBox::indicator:checked { background-color: %6;"
                 "  border-color: %6; }"
                 "QCheckBox::indicator:hover { border-color: %6; }")
-            .arg(K4Styles::Colors::TextGray)
-            .arg(K4Styles::Dimensions::FontSizeButton)
+            .arg(K4Styles::Colors::TextSecondary)
+            .arg(K4Styles::Dimensions::FontSizeReadout)
             .arg(K4Styles::Dimensions::BorderRadiusLarge)
-            .arg(K4Styles::Colors::TextGray, K4Styles::Colors::DarkBackground, K4Styles::Colors::AccentAmber));
+            .arg(K4Styles::Colors::TextSecondary, K4Styles::Colors::DarkBackground, K4Styles::Colors::AccentAmber));
     formLayout->addWidget(m_tlsCheckbox, 5, 0, 1, 2);
 
-    // The ONE control for this setting. The list shows WHICH radio is armed - see refreshList -
-    // but showing is not editing, and two controls for one setting is what had them disagreeing
-    // about when a change applies.
+    // The one control for connect-at-startup; refreshList only marks which radio holds it.
     m_startupCheckbox = new QCheckBox("Connect to this radio at startup (only one)", this);
     m_startupCheckbox->setStyleSheet(m_tlsCheckbox->styleSheet());
     formLayout->addWidget(m_startupCheckbox, 6, 0, 1, 2);
 
-    // Row 7: Encode Mode dropdown
     auto *encodeModeLabel = new QLabel("Audio Mode", this);
     encodeModeLabel->setStyleSheet(labelStyle);
     m_encodeModeCombo = new QComboBox(this);
@@ -223,14 +200,14 @@ void RadioManagerDialog::setupUi() {
                 "  background-color: %1; "
                 "  color: %2; "
                 "  selection-background-color: %5; "
+                "  selection-color: %1; "
                 "}")
-            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextPrimary, K4Styles::Colors::DialogBorder)
             .arg(K4Styles::Dimensions::PaddingSmall)
             .arg(K4Styles::Colors::AccentAmber)
-            .arg(K4Styles::Dimensions::FontSizeLarge));
+            .arg(K4Styles::Dimensions::FontSizeBody));
     // EM0 is 24-bit audio in a 32-bit container, not the "RAW 32-bit float" Elecraft's
-    // documentation describes — measured 2026-09-19, see docs/k4-protocol-quirks.md. The old
-    // label told the operator something untrue about the format they were selecting.
+    // documentation describes — measured 2026-09-19, see docs/k4-protocol-quirks.md.
     m_encodeModeCombo->addItem("EM3 - Opus (float decode)", 3); // Default
     m_encodeModeCombo->addItem("EM2 - Opus (integer decode)", 2);
     m_encodeModeCombo->addItem("EM1 - Uncompressed 16-bit", 1);
@@ -239,7 +216,6 @@ void RadioManagerDialog::setupUi() {
     formLayout->addWidget(encodeModeLabel, 7, 0);
     formLayout->addWidget(m_encodeModeCombo, 7, 1);
 
-    // Row 8: Streaming Latency dropdown
     auto *streamingLatencyLabel = new QLabel("Streaming Latency", this);
     streamingLatencyLabel->setStyleSheet(labelStyle);
     m_streamingLatencyCombo = new QComboBox(this);
@@ -264,7 +240,7 @@ void RadioManagerDialog::setupUi() {
 
     // === BOTTOM: Button Row ===
     auto *buttonLayout = new QHBoxLayout();
-    buttonLayout->setSpacing(16); // More spacing between buttons
+    buttonLayout->setSpacing(16);
 
     m_connectButton = new QPushButton("Connect", this);
     m_connectButton->setStyleSheet(K4Styles::dialogButton());
@@ -297,7 +273,6 @@ void RadioManagerDialog::setupUi() {
 
     mainLayout->addLayout(buttonLayout);
 
-    // Connections
     connect(m_connectButton, &QPushButton::clicked, this, &RadioManagerDialog::onConnectClicked);
     connect(m_newButton, &QPushButton::clicked, this, &RadioManagerDialog::onNewClicked);
     connect(m_saveButton, &QPushButton::clicked, this, &RadioManagerDialog::onSaveClicked);
@@ -312,22 +287,19 @@ void RadioManagerDialog::setupUi() {
         updateButtonStates();
         updateHostFieldStyle();
     });
+    connect(m_portEdit, &QLineEdit::textChanged, this, &RadioManagerDialog::updateButtonStates);
 }
 
 void RadioManagerDialog::refreshList() {
+    const QSignalBlocker blocker(m_radioList);
     m_radioList->clear();
+    m_currentIndex = -1;
 
     const auto radios = RadioSettings::instance()->radios();
     for (const auto &radio : radios) {
         auto *item = new QListWidgetItem(radio.name.isEmpty() ? radio.host : radio.name);
         // A MARKER, NOT A CONTROL. This answers "which one opens at startup" at a glance, which
         // is what was asked for; the checkbox that SETS it is in the form beside the other fields.
-        //
-        // An earlier version put a real checkbox on every row and it was worse three ways over: the
-        // boxes dominated a list whose job is names, the setting gained a second control that
-        // applied at a different time from the first, and the indicator needed stylesheet work to
-        // be visible and clickable at all against this background - it was briefly present,
-        // functional and invisible.
         if (radio.connectAtStartup) {
             item->setText(QStringLiteral("\u25cf  ") + item->text());
             QFont marked = item->font();
@@ -353,9 +325,58 @@ void RadioManagerDialog::refreshList() {
         m_radioList->setCurrentRow(lastIndex);
         m_currentIndex = lastIndex;
         populateFieldsFromSelection();
+    } else {
+        clearFields();
     }
 
+    m_selectedRow = m_radioList->currentRow();
     updateButtonStates();
+}
+
+QStringList RadioManagerDialog::fieldValues() const {
+    return {m_nameEdit->text(),
+            m_hostEdit->text(),
+            m_portEdit->text(),
+            m_passwordEdit->text(),
+            QString::number(m_tlsCheckbox->isChecked()),
+            QString::number(m_startupCheckbox->isChecked()),
+            m_identityEdit->text(),
+            QString::number(m_encodeModeCombo->currentData().toInt()),
+            QString::number(m_streamingLatencyCombo->currentData().toInt())};
+}
+
+bool RadioManagerDialog::confirmUnsavedChanges() {
+    if (m_confirmingChanges)
+        return false;
+    if (fieldValues() == m_loadedFields)
+        return true;
+
+    const QScopedValueRollback<bool> confirming(m_confirmingChanges, true);
+    QMessageBox prompt(QMessageBox::Question, "Unsaved Server Changes", "Save changes to this server?",
+                       QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, this);
+    prompt.setDefaultButton(QMessageBox::Save);
+    prompt.setEscapeButton(QMessageBox::Cancel);
+    prompt.setStyleSheet(
+        QString("QMessageBox { background-color: %1; } QLabel { %2 }")
+            .arg(K4Styles::Colors::Background,
+                 K4Styles::Dialog::labelText(K4Styles::Colors::TextPrimary, K4Styles::Dimensions::FontSizeBody)) +
+        K4Styles::dialogButton());
+    const bool canSave = RadioUtils::isValidHostOrIp(m_hostEdit->text().trimmed()) && portFromField().has_value();
+    prompt.button(QMessageBox::Save)->setEnabled(canSave);
+    if (!canSave)
+        prompt.setInformativeText(
+            "Enter a valid host or IP and port before saving. Choose Cancel to continue editing.");
+    const int choice = prompt.exec();
+    if (choice == QMessageBox::Save) {
+        onSaveClicked();
+        return true;
+    }
+    return choice == QMessageBox::Discard;
+}
+
+void RadioManagerDialog::reject() {
+    if (confirmUnsavedChanges())
+        QDialog::reject();
 }
 
 void RadioManagerDialog::onConnectClicked() {
@@ -374,23 +395,23 @@ void RadioManagerDialog::onConnectClicked() {
             return;
         }
 
+        if (!confirmUnsavedChanges())
+            return;
+
         RadioEntry entry;
         entry.name = m_nameEdit->text().trimmed();
         entry.host = host;
         entry.password = m_passwordEdit->text();
-        QString portText = m_portEdit->text().trimmed();
+        const std::optional<quint16> port = portFromField();
+        if (!port) {
+            return;
+        }
+        entry.port = *port;
         entry.useTls = m_tlsCheckbox->isChecked();
         entry.identity = m_identityEdit->text();
         entry.encodeMode = m_encodeModeCombo->currentData().toInt();
         entry.streamingLatency = m_streamingLatencyCombo->currentData().toInt();
         entry.connectAtStartup = m_startupCheckbox->isChecked();
-
-        // Set port based on TLS mode if not specified
-        if (portText.isEmpty()) {
-            entry.port = entry.useTls ? K4Protocol::TLS_PORT : K4Protocol::DEFAULT_PORT;
-        } else {
-            entry.port = portText.toUShort();
-        }
 
         if (m_currentIndex >= 0) {
             RadioSettings::instance()->setLastSelectedIndex(m_currentIndex);
@@ -401,12 +422,15 @@ void RadioManagerDialog::onConnectClicked() {
 }
 
 void RadioManagerDialog::onNewClicked() {
+    if (!confirmUnsavedChanges())
+        return;
     m_currentIndex = -1;
     clearFields();
     m_radioList->blockSignals(true);
     m_radioList->clearSelection();
     m_radioList->setCurrentRow(-1);
     m_radioList->blockSignals(false);
+    m_selectedRow = -1;
     m_nameEdit->setFocus();
     updateButtonStates();
 }
@@ -415,7 +439,6 @@ void RadioManagerDialog::onSaveClicked() {
     QString name = m_nameEdit->text().trimmed();
     QString host = m_hostEdit->text().trimmed();
     QString password = m_passwordEdit->text();
-    QString portText = m_portEdit->text().trimmed();
     bool useTls = m_tlsCheckbox->isChecked();
     QString identity = m_identityEdit->text();
 
@@ -425,6 +448,10 @@ void RadioManagerDialog::onSaveClicked() {
 
     if (!RadioUtils::isValidHostOrIp(host)) {
         return; // Can't save without a valid host/IP
+    }
+    const std::optional<quint16> port = portFromField();
+    if (!port) {
+        return;
     }
 
     RadioEntry entry;
@@ -436,19 +463,11 @@ void RadioManagerDialog::onSaveClicked() {
     entry.encodeMode = m_encodeModeCombo->currentData().toInt();
     entry.streamingLatency = m_streamingLatencyCombo->currentData().toInt();
     entry.connectAtStartup = m_startupCheckbox->isChecked();
-
-    // Set port based on TLS mode if not specified
-    if (portText.isEmpty()) {
-        entry.port = useTls ? K4Protocol::TLS_PORT : K4Protocol::DEFAULT_PORT;
-    } else {
-        entry.port = portText.toUShort();
-    }
+    entry.port = *port;
 
     if (m_currentIndex >= 0 && m_currentIndex < RadioSettings::instance()->radios().size()) {
-        // Update existing
         RadioSettings::instance()->updateRadio(m_currentIndex, entry);
     } else {
-        // Add new
         RadioSettings::instance()->addRadio(entry);
     }
 
@@ -524,6 +543,31 @@ void RadioManagerDialog::onSelectionChanged() {
         return;
     }
 
+    // WHY: saving can sort and rebuild the list. Keep the destination by identity, and restore
+    // the old highlight before prompting so Cancel leaves the form and selection together.
+    const QSignalBlocker blocker(m_radioList);
+    const auto radios = RadioSettings::instance()->radios();
+    const std::optional<RadioEntry> target = row < radios.size() ? std::make_optional(radios.at(row)) : std::nullopt;
+    const QString targetIp = m_radioList->item(row)->data(Qt::UserRole + 1).toString();
+    m_radioList->setCurrentRow(m_selectedRow);
+    if (!confirmUnsavedChanges())
+        return;
+    if (target) {
+        row = RadioSettings::instance()->radios().indexOf(*target);
+    } else {
+        row = -1;
+        for (int i = 0; i < m_radioList->count(); ++i) {
+            if (m_radioList->item(i)->data(Qt::UserRole + 1).toString() == targetIp) {
+                row = i;
+                break;
+            }
+        }
+    }
+    if (row < 0)
+        return;
+    m_radioList->setCurrentRow(row);
+    m_selectedRow = row;
+
     QListWidgetItem *item = m_radioList->item(row);
     if (item && item->data(Qt::UserRole).toString() == QStringLiteral("discovered")) {
         // Discovered but unconfigured entry — look up by IP stored in the item
@@ -549,6 +593,7 @@ void RadioManagerDialog::onSelectionChanged() {
             m_identityEdit->setVisible(true);
             m_encodeModeCombo->setCurrentIndex(0);       // EM3 default
             m_streamingLatencyCombo->setCurrentIndex(3); // SL3 default
+            m_loadedFields = fieldValues();
         }
     } else {
         m_currentIndex = row;
@@ -561,6 +606,8 @@ void RadioManagerDialog::onItemDoubleClicked(QListWidgetItem *item) {
     // Don't allow double-click connect on discovered (unconfigured) entries
     if (item && item->data(Qt::UserRole).toString() == QStringLiteral("discovered"))
         return;
+    if (item != m_radioList->currentItem())
+        return;
     onConnectClicked();
 }
 
@@ -568,6 +615,7 @@ void RadioManagerDialog::updateButtonStates() {
     bool isSavedEntry = m_currentIndex >= 0 && m_currentIndex < RadioSettings::instance()->radios().size();
     QString host = m_hostEdit->text().trimmed();
     bool hasValidHost = RadioUtils::isValidHostOrIp(host);
+    const bool hasValidPort = portFromField().has_value();
 
     // Check if the selected radio is the connected one
     bool isConnectedRadio = !m_connectedHost.isEmpty() && host == m_connectedHost;
@@ -578,17 +626,17 @@ void RadioManagerDialog::updateButtonStates() {
     bool isDiscoveredEntry = currentItem && currentItem->data(Qt::UserRole).toString() == QStringLiteral("discovered");
 
     // Connect disabled for discovered entries — user must Save first
-    m_connectButton->setEnabled(hasValidHost && !isDiscoveredEntry);
+    m_connectButton->setEnabled(hasValidHost && hasValidPort && !isDiscoveredEntry);
     m_connectButton->setText(isConnectedRadio ? "Disconnect" : "Connect");
     m_deleteButton->setEnabled(isSavedEntry);
-    m_saveButton->setEnabled(hasValidHost);
+    m_saveButton->setEnabled(hasValidHost && hasValidPort);
 }
 
 void RadioManagerDialog::updateHostFieldStyle() {
     const QString host = m_hostEdit->text().trimmed();
     // Empty = neutral (don't flag a blank or just-cleared field as an error).
     bool showError = !host.isEmpty() && !RadioUtils::isValidHostOrIp(host);
-    m_hostEdit->setStyleSheet(showError ? m_hostErrorStyle : m_hostNormalStyle);
+    K4Styles::setStyleFlag(m_hostEdit, K4Styles::ErrorProperty, showError);
     m_hostEdit->setToolTip(showError ? QStringLiteral("Enter a valid IP address (e.g. 192.168.1.100) or "
                                                       "hostname (e.g. k4.local)")
                                      : QString());
@@ -606,6 +654,7 @@ void RadioManagerDialog::clearFields() {
     m_identityEdit->setVisible(false);
     m_encodeModeCombo->setCurrentIndex(0);       // Reset to EM3 (default)
     m_streamingLatencyCombo->setCurrentIndex(3); // Reset to SL3 (default)
+    m_loadedFields = fieldValues();
 }
 
 void RadioManagerDialog::populateFieldsFromSelection() {
@@ -620,16 +669,15 @@ void RadioManagerDialog::populateFieldsFromSelection() {
         m_identityEdit->setText(radio.identity);
         m_identityLabel->setVisible(radio.useTls);
         m_identityEdit->setVisible(radio.useTls);
-        // Set encode mode combo to match saved value
         int encodeModeIndex = m_encodeModeCombo->findData(radio.encodeMode);
         if (encodeModeIndex >= 0) {
             m_encodeModeCombo->setCurrentIndex(encodeModeIndex);
         }
-        // Set streaming latency combo to match saved value
         int latencyIndex = m_streamingLatencyCombo->findData(radio.streamingLatency);
         if (latencyIndex >= 0) {
             m_streamingLatencyCombo->setCurrentIndex(latencyIndex);
         }
+        m_loadedFields = fieldValues();
     }
 }
 
@@ -646,15 +694,18 @@ void RadioManagerDialog::onTlsCheckboxToggled(bool checked) {
     }
 }
 
-RadioEntry RadioManagerDialog::selectedRadio() const {
-    if (m_currentIndex >= 0) {
-        return RadioSettings::instance()->radios().at(m_currentIndex);
+std::optional<quint16> RadioManagerDialog::portFromField() const {
+    const QString text = m_portEdit->text().trimmed();
+    if (text.isEmpty()) {
+        // Blank means the default for the TLS mode.
+        return m_tlsCheckbox->isChecked() ? K4Protocol::TLS_PORT : K4Protocol::DEFAULT_PORT;
     }
-    return RadioEntry();
-}
-
-bool RadioManagerDialog::hasSelection() const {
-    return m_currentIndex >= 0;
+    bool ok = false;
+    const int port = text.toInt(&ok);
+    if (!ok || port < 1 || port > 65535) {
+        return std::nullopt;
+    }
+    return static_cast<quint16>(port);
 }
 
 void RadioManagerDialog::setConnectedHost(const QString &host) {
@@ -712,7 +763,7 @@ void RadioManagerDialog::addDiscoveredItem(const K4RadioInfo &radio) {
     if (isK4Z) {
         // K4Z (K4/0) is not supported by QK4 — show grayed out and unselectable
         item->setFlags(item->flags() & ~(Qt::ItemIsSelectable | Qt::ItemIsEnabled));
-        item->setForeground(QColor(K4Styles::Colors::TextGray));
+        item->setForeground(QColor(K4Styles::Colors::TextSecondary));
     }
     m_radioList->addItem(item);
 }

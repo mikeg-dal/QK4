@@ -6,8 +6,7 @@
 #include <QPushButton>
 
 // Floating popup for LINE IN source + level (SoundCard vs LineInJack).
-// Sends back level (0-250) and source (0/1) changes for MainWindow to
-// emit as K4 LMC / MIC-related CAT.
+// Emits level (0-250) and source (0/1) changes; PopupManager sends them as LI.
 class LineInPopupWidget : public K4PopupBase {
     Q_OBJECT
 public:
@@ -17,8 +16,6 @@ public:
     void setLineInJackLevel(int level); // 0-250
     void setSource(int source);         // 0=SoundCard, 1=LineInJack
 
-    int soundCardLevel() const { return m_soundCardLevel; }
-    int lineInJackLevel() const { return m_lineInJackLevel; }
     int source() const { return m_source; }
 
 signals:

@@ -42,17 +42,17 @@ void BalOverlay::setupUi() {
                                           .arg(K4Styles::Colors::GradientMid1)
                                           .arg(K4Styles::Colors::GradientMid2)
                                           .arg(K4Styles::Colors::GradientBottom))
-                                 .arg(K4Styles::Colors::TextWhite)
+                                 .arg(K4Styles::Colors::TextPrimary)
                                  .arg(K4Styles::Colors::BorderNormal)
                                  .arg(K4Styles::Dimensions::BorderRadius)
-                                 .arg(K4Styles::Dimensions::FontSizeButton)
+                                 .arg(K4Styles::Dimensions::FontSizeReadout)
                                  .arg(QString("qlineargradient(x1:0, y1:0, x2:0, y2:1,"
                                               "stop:0 %1, stop:0.4 %2, stop:0.6 %3, stop:1 %4)")
                                           .arg(K4Styles::Colors::SelectedTop)
                                           .arg(K4Styles::Colors::SelectedMid1)
                                           .arg(K4Styles::Colors::SelectedMid2)
                                           .arg(K4Styles::Colors::SelectedBottom))
-                                 .arg(K4Styles::Colors::TextDark)
+                                 .arg(K4Styles::Colors::TextOnLight)
                                  .arg(K4Styles::Colors::BorderSelected));
     layout->addWidget(m_modeBtn);
 
@@ -67,18 +67,16 @@ void BalOverlay::setupUi() {
     // Push labels to the bottom
     layout->addStretch();
 
-    // Main value
     m_mainLabel = new QLabel("MAIN:  50", this);
     QFont valueFont = m_mainLabel->font();
-    valueFont.setPixelSize(K4Styles::Dimensions::FontSizeNormal);
+    valueFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
     m_mainLabel->setFont(valueFont);
-    m_mainLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(K4Styles::Colors::TextGray));
+    m_mainLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(K4Styles::Colors::TextSecondary));
     layout->addWidget(m_mainLabel);
 
-    // Sub value
     m_subLabel = new QLabel("SUB:   50", this);
     m_subLabel->setFont(valueFont);
-    m_subLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(K4Styles::Colors::TextGray));
+    m_subLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(K4Styles::Colors::TextSecondary));
     layout->addWidget(m_subLabel);
 }
 
@@ -113,6 +111,6 @@ void BalOverlay::wheelEvent(QWheelEvent *event) {
 }
 
 void BalOverlay::mousePressEvent(QMouseEvent *event) {
-    // Don't close on click - allow adjustment via wheel
+    // WHY: overrides the base close-on-click; a click inside is ignored so the wheel can adjust.
     Q_UNUSED(event)
 }

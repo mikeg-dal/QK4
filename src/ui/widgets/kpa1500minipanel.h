@@ -17,7 +17,7 @@ class Kpa1500MiniPanel : public QWidget {
 public:
     explicit Kpa1500MiniPanel(QWidget *parent = nullptr);
 
-    // Meter setters (same API as KPA1500Panel)
+    // Meter setters
     void setForwardPower(float watts);
     void setReflectedPower(float watts);
     void setSWR(float swr);
@@ -46,8 +46,6 @@ private slots:
     void onDecayTimer();
 
 private:
-    void updateButtonLabels();
-
     // Animation timer
     QTimer *m_decayTimer;
 
@@ -90,21 +88,25 @@ private:
     static constexpr float DECAY_RATE = 0.06f;
     static constexpr float PEAK_DECAY_RATE = 0.04f;
 
-    // Layout constants
-    static constexpr int PANEL_PAD = 6; // Internal padding for panel background edges
-    static constexpr int TOP_PAD = 14;  // Above header
-    static constexpr int HEADER_HEIGHT = 14;
-    static constexpr int BAR_HEIGHT = 7;
-    static constexpr int METER_SPACING = 16;
-    static constexpr int LABEL_WIDTH = 24;
-    static constexpr int VALUE_WIDTH = 30;
-    static constexpr int METER_START_Y = TOP_PAD + HEADER_HEIGHT + 4;
+    // Vertical positions and column widths, measured once from the fonts the panel paints with.
+    struct Geometry {
+        int headerY = 0;
+        int headerHeight = 0;
+        int ruleY = 0;
+        int meterLineHeight = 0; // One line of label/value text; each bar is centred on it
+        int meterPitch = 0;
+        int firstMeterLineY = 0;
+        int labelWidth = 0;
+        int valueWidth = 0;
+        int lcdY = 0;
+        int lcdRowHeight = 0;
+        int lcdHeight = 0;
+        int buttonsY = 0;
+    };
+    static Geometry measure(const QWidget *context);
+    Geometry m_geom;
 
-    // LCD constants (occupies the space the LED indicator cards used)
-    static constexpr int LCD_ROW_HEIGHT = 12; // Per text line
-    static constexpr int LCD_TOP_PAD = 5;     // Space above the LCD
-    static constexpr int LCD_TEXT_PAD = 4;    // Horizontal inset of text inside the LCD
-    static constexpr int LCD_HEIGHT = LCD_TOP_PAD + (LCD_ROW_HEIGHT * 2) + 6;
+    static constexpr int BAR_HEIGHT = 7; // Meter bar thickness
 };
 
 #endif // KPA1500MINIPANEL_H

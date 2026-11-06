@@ -1,24 +1,25 @@
 # models/radiostate/
 
-11 subsystem structs composing `RadioState`. Each is a plain `struct` + a `*Handlers` namespace of free functions.
+The subsystem structs composing `RadioState` (`ls src/models/radiostate/*.h` lists them). Each is a plain `struct` + a `*Handlers` namespace of free functions.
 
 ## Subsystem inventory
 
 | File | Topic | CAT commands (primary) |
 |---|---|---|
-| `frequencyvfostate.{h,cpp}` | VFO A/B freq, split, RIT/XIT, VFO link/lock | FA, FB, FT, RT, RT$, XT, RO, RO$, LN, LK, LK$ |
-| `modefilterstate.{h,cpp}` | Operating mode, filter, CW keyer | MD, MD$, BW, BW$, IS, IS$, FP, FP$, CW, KS, KP |
-| `processingstate.{h,cpp}` | NB / NR / PA / RA / GT / NA / NM (per VFO) | NB, NB$, NR, NR$, PA, PA$, RA, RA$, GT, GT$, NA, NA$, NM, NM$ |
-| `antennastate.{h,cpp}` | Antenna selection + per-band masks + ATU | AN, AT, ACN, ACM, ACS, ACT, AR, AR$ |
+| `frequencyvfostate.{h,cpp}` | VFO A/B freq, band number, split, RIT/XIT, VFO link/lock | FA, FB, BN, BN$, FT, RT, RT$, XT, RO, RO$, LN, LK, LK$ |
+| `modefilterstate.{h,cpp}` | Operating mode, filter, CW keyer | MD, MD$, BW, BW$, IS, IS$, FP, FP$, CW, KS, KP, KZL |
+| `processingstate.{h,cpp}` | NB / NR / PA / RA / GT / NA / NM (per VFO) | NB, NB$, NR, NR$, NRS, NRS$, PA, PA$, RA, RA$, GT, GT$, NA, NA$, NM, NM$ |
+| `antennastate.{h,cpp}` | Antenna selection + per-band masks + ATU | AN, AT, ACN, ACM, ACS, ACT, AR, AR$ (plain `AR` is here; `#AR` is in spectrumdisplaystate) |
 | `audioeffectsstate.{h,cpp}` | VOX, FX, APF, ESSB, EQ, line in/out, mic, ML, MX, BL | FX, AP, AP$, VX, VG, VI, ES, RE, TE, LO, LI, MI, MS, ML, MX, BL |
-| `datacontrolstate.{h,cpp}` | Data sub-mode, rate, tuning step, streaming latency | DT, DT$, DR, DR$, TD, TD$, TB, TB$, VT, VT$, SL |
-| `spectrumdisplaystate.{h,cpp}` | All `#`-prefix panadapter / waterfall display state | #REF, #SPN, #SCL, #MP, #DPM, #DSM, #FPS, #WFC, #WFH, #AVG, #PKM, #FXT, #FXA, #FRZ, #VFA, #VFB, #AR, #NB$, #NBL$ (+ EXT variants) |
+| `datacontrolstate.{h,cpp}` | Data sub-mode, rate, tuning step, streaming latency | DT, DT$, DR, DR$, VT, VT$, SL |
+| `spectrumdisplaystate.{h,cpp}` | All `#`-prefix panadapter / waterfall display state | #REF, #SPN, #SCL, #MP, #DPM, #DSM, #FPS, #WFC, #WFH, #AVG, #PKM, #FXT, #FXA, #FRZ, #VFA, #VFB, #AR, #NB$, #NBL$, #REF$, #SPN$, #MP$, #HWFH, #HDPM, #HDSM |
 | `textdecodestate.{h,cpp}` | Text decoder mode / threshold / lines | TD, TD$, TB, TB$ |
-| `rxtxmeterstate.{h,cpp}` | S-meter, TX meter, TX/RX transition, supply V/A, radio identity, SB/DV/TS/BS | SM, SM$, PO, TM, TX, RX, ID, OM, RV., ER, MN, SIFP, SB, DV, TS, BS |
+| `rxtxmeterstate.{h,cpp}` | S-meter, TX meter, TX/RX transition, supply V/A, radio identity, SB/DV/TS/BS | SM, SM$, SMH, SMH$, TM, TX, RX, ID, OM, RV., ER, MN, SIFP, SIRF, SB, DV, TS, BS |
 | `levelsstate.{h,cpp}` | RF power, QRP/QRO, mic gain, compression, RF gain A/B, squelch A/B | PC, MG, CP, RG, RG$, SQ, SQ$ |
 | `qskcontrolstate.{h,cpp}` | QSK enable + per-mode TX→RX delay | SD |
 | `powerstate.{h,cpp}` | K4 remote power on/off — `PS1` = on, `PS0` = off | PS |
-| `xvtrbandstate.{h,cpp}` | Per-XVTR-band transverter configuration (12 bands) | XV\* |
+| `xvtrbandstate.{h,cpp}` | Per-XVTR-band transverter configuration (12 bands) | XVN, XVM, XVR |
+| `reportedflag.h` | `ReportedFlag`: an on/off field that is unknown until the radio reports it, so its first report (even "off") always emits | — |
 
 ## File layout per subsystem
 
@@ -40,13 +41,13 @@ void RadioState::handleMD(const QString &cmd) {
 
 1. **Plain structs, not `QObject`.** Only `RadioState` is a `QObject`.
 2. **RadioState is the only emitter.** Handler fns take `RadioState &owner` and emit via `emit owner.xxxChanged(...)`.
-3. **Each subsystem owns a reset().** Called from `RadioState::reset()` on disconnect. Note: reset() does NOT emit signals — controllers wanting reset-state labels must implement their own `reset()`.
+3. **Each subsystem owns a reset().** Called from `RadioState::reset()` on disconnect. It returns every field to its unknown sentinel, so the next session's first report of each always emits and the UI follows the radio's dump. reset() does NOT emit signals — controllers wanting reset-state labels while disconnected implement their own `reset()` — with one exception: `RadioState::reset()` emits `transmitStateChanged(false)` when it was transmitting.
 4. **Each subsystem registers its handlers** into the prefix-keyed dispatch table in `RadioState::registerCommandHandlers()`.
 5. **Public API (getters + signals) stays on `RadioState`.** External callers see a stable surface.
 
 ## Adding a subsystem
 
-Rare (existing 11 cover the K4's CAT surface well). If you need to:
+Rare (the existing subsystems cover the K4's CAT surface well). If you need to:
 
 1. Create `xxxstate.{h,cpp}` — mirror the shape of an existing simple one (e.g., `qskcontrolstate.{h,cpp}`).
 2. Add `XxxState m_xxxState;` to `RadioState` in `radiostate.h`.

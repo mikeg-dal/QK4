@@ -14,6 +14,7 @@ class VFOWidget;
 class QFrame;
 class QPushButton;
 class QLabel;
+class QSize;
 
 /**
  * @brief Orchestrates the panadapter/waterfall UI: owns PanadapterRhiWidget A/B, the span +/-
@@ -26,13 +27,10 @@ class SpectrumController : public QObject {
 
 public:
     explicit SpectrumController(ConnectionController *conn, RadioState *radioState, QObject *parent = nullptr);
-    ~SpectrumController();
 
     void setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA, VFOWidget *vfoB);
 
     QWidget *spectrumContainer() const;
-    PanadapterRhiWidget *panadapterA() const;
-    PanadapterRhiWidget *panadapterB() const;
 
     enum class PanadapterMode { MainOnly, Dual, SubOnly };
     void setPanadapterMode(PanadapterMode mode);
@@ -40,11 +38,9 @@ public:
     void setMouseQsyMode(int mode);
     void setDxClusterController(DxClusterController *controller);
 
-    // Task-level setters that route to both panadapters. Prefer these over
-    // reaching through panadapterA()/panadapterB() — CONVENTIONS Rule 2.
+    // Task-level setters that route to both panadapters (CONVENTIONS Rule 2).
     void setAmplitudeUnits(bool useSUnits);
     void setFskMarkTone(int toneHz);
-    void setWaterfallHeight(int percent);
 
     // Clear both panadapter displays — used when the K4 disconnects to
     // prevent stale spectrum data from sitting on-screen.
@@ -53,7 +49,8 @@ public:
 public slots:
     void onSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
                         qint32 sampleRate, float noiseFloor);
-    void onMiniSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount);
+    void onMiniSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
+                            int spanHz);
     void updatePanadapterPassbands();
     void updateTxMarkers();
     void checkAndHideMiniPanB();
@@ -62,40 +59,56 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    // Widgets that sit on one panadapter, plus that panadapter's band-plan cache.
+    struct PanUi {
+        PanadapterRhiWidget *pad = nullptr;
+        QPushButton *zoomOutBtn = nullptr;
+        QPushButton *zoomInBtn = nullptr;
+        QPushButton *centerBtn = nullptr;
+        QLabel *vfoIndicator = nullptr;
+        MouseVfoIndicator *mouseVfoIndicator = nullptr;
+        DxSpotOverlay *spotOverlay = nullptr;
+        // Band-plan cache: the plan band (BandPlan::planBandIndex) + region last pushed.
+        // Sentinel -2 so the first update always pushes.
+        int lastPlanBand = -2;
+        int lastRegion = -2;
+    };
+
+    PanUi &pan(bool vfoB) { return vfoB ? m_panB : m_panA; }
+    void createPanOverlays(PanUi &ui, const QString &buttonStyle, const QString &indicatorStyle);
+    void wirePan(bool vfoB);
+    void layoutPanOverlays(PanUi &ui, const QSize &size);
+
+    // Mouse and wheel actions, shared by both panadapters.
     qint64 adjustClickFreqForMode(qint64 freq, bool vfoB);
-    // Push the band-plan overlay segments for the current VFO A/B band + IARU region.
-    // Cached band+region (sentinel -2) so per-Hz tuning doesn't re-push within a band.
-    void updateBandPlanA();
-    void updateBandPlanB();
+    void tuneFromPan(bool vfoB, qint64 freq, bool dragging);
+    void tuneToSpot(bool vfoB, qint64 freq);
+    void sendVfoFrequency(bool vfoB, qint64 freq, bool dragging);
+    void setScrollVfo(bool vfoB);
+    void scrollTune(int steps);
+    // `steps` tuning steps on VFO A or B (honours its lock); scrollTune uses the scroll VFO.
+    void stepVfo(bool tuneB, int steps);
+    void zoomSpan(bool vfoB, bool zoomIn);
+    void adjustScaleFromWheel(int steps);
+    void adjustRefLevelFromWheel(bool vfoB, int steps);
+
+    // Push the band-plan overlay segments for the VFO's current band + IARU region. Skipped while
+    // the plan band and region are unchanged, so per-Hz tuning doesn't re-push within a band.
+    void updateBandPlan(bool vfoB);
+    void updateSpotOverlay(bool vfoB);
 
     ConnectionController *m_connectionController = nullptr;
     RadioState *m_radioState = nullptr;
     VFOWidget *m_vfoA = nullptr;
     VFOWidget *m_vfoB = nullptr;
-    PanadapterRhiWidget *m_panadapterA = nullptr;
-    PanadapterRhiWidget *m_panadapterB = nullptr;
+    PanUi m_panA;
+    PanUi m_panB;
     QWidget *m_spectrumContainer = nullptr;
     QFrame *m_spectrumSeparator = nullptr;
-    QPushButton *m_zoomInBtn = nullptr;
-    QPushButton *m_zoomOutBtn = nullptr;
-    QPushButton *m_centerBtn = nullptr;
-    QPushButton *m_zoomInBtnB = nullptr;
-    QPushButton *m_zoomOutBtnB = nullptr;
-    QPushButton *m_centerBtnB = nullptr;
-    QLabel *m_vfoIndicatorA = nullptr;
-    QLabel *m_vfoIndicatorB = nullptr;
-    MouseVfoIndicator *m_mouseVfoIndicatorA = nullptr;
-    MouseVfoIndicator *m_mouseVfoIndicatorB = nullptr;
     bool m_scrollVfoB = false;
     int m_mouseQsyMode = 0;
-    int m_lastBandA = -2;
-    int m_lastRegionA = -2;
-    int m_lastBandB = -2;
-    int m_lastRegionB = -2;
 
     DxClusterController *m_dxClusterController = nullptr;
-    DxSpotOverlay *m_spotOverlayA = nullptr;
-    DxSpotOverlay *m_spotOverlayB = nullptr;
     void updateSpotOverlays();
 };
 

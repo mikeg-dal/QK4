@@ -1,9 +1,8 @@
 #include "dxclusterclient.h"
+#include "logging/logcategories.h"
 
 #include <QDebug>
 #include <QtMath>
-
-Q_LOGGING_CATEGORY(netDxCluster, "net.dxcluster")
 
 // "DX de K3GMQ-#:  14031.00  K0RX           CW    18 dB  24 WPM  CQ      1902Z"
 const QRegularExpression
@@ -62,7 +61,7 @@ QString DxClusterClient::sanitizeLine(const QString &raw) {
 }
 
 void DxClusterClient::connectToHost(const QString &host, quint16 port, const QString &callsign) {
-    qCDebug(netDxCluster) << "connectToHost:" << host << port << "callsign:" << callsign;
+    qCInfo(lcDxCluster) << "connectToHost:" << host << port << "callsign:" << callsign;
     if (m_state != Disconnected)
         disconnectFromHost();
 
@@ -93,7 +92,7 @@ void DxClusterClient::onSocketConnected() {
     // detects half-open sockets across NAT keepalive expirations on long-running connections.
     m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
     m_socket->setSocketOption(QAbstractSocket::KeepAliveOption, 1);
-    qCDebug(netDxCluster) << "TCP socket connected, waiting for login prompt...";
+    qCDebug(lcDxCluster) << "TCP socket connected, waiting for login prompt...";
 }
 
 void DxClusterClient::onSocketDisconnected() {
@@ -108,12 +107,12 @@ void DxClusterClient::onReadyRead() {
     static constexpr int kMaxBufferSize = 64 * 1024;
     m_receiveBuffer += QString::fromUtf8(m_socket->readAll());
     if (m_receiveBuffer.size() > kMaxBufferSize) {
-        qCWarning(netDxCluster) << "Buffer overflow (" << m_receiveBuffer.size() << "bytes) — disconnecting";
+        qCWarning(lcDxCluster) << "Buffer overflow (" << m_receiveBuffer.size() << "bytes) — disconnecting";
         m_receiveBuffer.clear();
         disconnectFromHost();
         return;
     }
-    qCDebug(netDxCluster) << "onReadyRead, state:" << m_state << "buffer:" << m_receiveBuffer.left(200);
+    qCDebug(lcDxCluster) << "onReadyRead, state:" << m_state << "buffer:" << m_receiveBuffer.left(200);
 
     // Process complete lines.
     // WHY sanitizeLine here: one sanitation point feeds both the console and the spot
@@ -133,9 +132,9 @@ void DxClusterClient::onReadyRead() {
     // Login prompts typically don't end with a newline (the server waits for
     // input on the same line), so check the partial buffer for a prompt too.
     if (m_state == Connecting && !m_receiveBuffer.isEmpty()) {
-        qCDebug(netDxCluster) << "Checking partial buffer for login prompt:" << m_receiveBuffer;
+        qCDebug(lcDxCluster) << "Checking partial buffer for login prompt:" << m_receiveBuffer;
         if (s_loginRegex.match(m_receiveBuffer).hasMatch()) {
-            qCDebug(netDxCluster) << "Login prompt detected, sending callsign:" << m_callsign;
+            qCDebug(lcDxCluster) << "Login prompt detected, sending callsign:" << m_callsign;
             if (!m_callsign.isEmpty()) {
                 m_socket->write((m_callsign + "\r\n").toUtf8());
                 m_receiveBuffer.clear();
@@ -148,7 +147,7 @@ void DxClusterClient::onReadyRead() {
 void DxClusterClient::onSocketError(QAbstractSocket::SocketError error) {
     Q_UNUSED(error)
     QString errorMsg = m_socket->errorString();
-    qCDebug(netDxCluster) << "Socket error:" << errorMsg;
+    qCWarning(lcDxCluster) << "Socket error:" << errorMsg;
     setState(Disconnected);
     emit errorOccurred(errorMsg);
 }

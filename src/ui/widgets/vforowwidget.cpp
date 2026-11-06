@@ -1,7 +1,9 @@
 #include "ui/widgets/vforowwidget.h"
-#include "ui/styling/k4constants.h"
+#include "ui/styling/k4styles.h"
 #include <QHBoxLayout>
 #include <QResizeEvent>
+#include <QPainter>
+#include <QVBoxLayout>
 
 // ============== VfoSquareWidget Implementation ==============
 
@@ -35,9 +37,9 @@ void VfoSquareWidget::paintEvent(QPaintEvent *) {
     p.drawRoundedRect(squareRect, borderRadius, borderRadius);
 
     // Draw "A" or "B" text
-    p.setPen(QColor(K4Styles::Colors::DarkBackground));
+    p.setPen(QColor(K4Styles::Colors::TextOnAccent));
     QFont font;
-    font.setPixelSize(K4Styles::Dimensions::FontSizeTitle);
+    font.setPixelSize(K4Styles::Dimensions::FontSizeIndicator);
     font.setBold(true);
     p.setFont(font);
     p.drawText(squareRect, Qt::AlignCenter, m_text);
@@ -63,7 +65,7 @@ void VfoSquareWidget::paintEvent(QPaintEvent *) {
 VfoRowWidget::VfoRowWidget(QWidget *parent) : QWidget(parent) {
     setupWidgets();
     // Set fixed height to match content (A/B squares + mode labels)
-    // Increased from 55 to 78 to accommodate lock arc padding + TEST label
+    // Room for the lock arc padding and the TEST label
     setFixedHeight(78);
 }
 
@@ -96,19 +98,22 @@ void VfoRowWidget::setupWidgets() {
 
     m_modeALabel = new QLabel("USB", m_vfoAContainer);
     m_modeALabel->setFixedWidth(K4Styles::Dimensions::VfoSquareSize);
-    m_modeALabel->setAlignment(Qt::AlignCenter);
+    // WHY taller than its text, the text at the top: the word stays where it was and the space below it,
+    // empty down to the row's bottom edge, makes the label a full-size click target.
+    m_modeALabel->setMinimumHeight(K4Styles::Dimensions::MinClickTarget);
+    m_modeALabel->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
     m_modeALabel->setCursor(Qt::PointingHandCursor);
     m_modeALabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::FontSizeLarge));
+                                    .arg(K4Styles::Colors::TextPrimary)
+                                    .arg(K4Styles::Dimensions::FontSizeBody));
     vfoAColumn->addWidget(m_modeALabel, 0, Qt::AlignHCenter);
 
     // TEST indicator - independent label, positioned above TX container
     m_testLabel = new QLabel("TEST", this);
     m_testLabel->setAlignment(Qt::AlignCenter);
     m_testLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                   .arg(K4Styles::Colors::TxRed)
-                                   .arg(K4Styles::Dimensions::FontSizePopup));
+                                   .arg(K4Styles::Colors::TextRed)
+                                   .arg(K4Styles::Dimensions::FontSizeHeading));
     m_testLabel->setVisible(false);
 
     // === TX Container (triangles + TX) ===
@@ -124,23 +129,17 @@ void VfoRowWidget::setupWidgets() {
     m_txTriangle = new QLabel(QString::fromUtf8("\u25C0"), m_txContainer); // ◀
     m_txTriangle->setFixedSize(K4Styles::Dimensions::ButtonHeightMini, K4Styles::Dimensions::ButtonHeightMini);
     m_txTriangle->setAlignment(Qt::AlignCenter);
-    m_txTriangle->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                    .arg(K4Styles::Colors::AccentAmber)
-                                    .arg(K4Styles::Dimensions::FontSizeIndicator));
+    m_txTriangle->setStyleSheet(K4Styles::txTriangleLabel());
     txIndicatorRow->addWidget(m_txTriangle);
 
     m_txIndicator = new QLabel("TX", m_txContainer);
-    m_txIndicator->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                     .arg(K4Styles::Colors::AccentAmber)
-                                     .arg(K4Styles::Dimensions::FontSizeIndicator));
+    m_txIndicator->setStyleSheet(K4Styles::txIndicatorLabel());
     txIndicatorRow->addWidget(m_txIndicator);
 
     m_txTriangleB = new QLabel("", m_txContainer); // Empty by default
     m_txTriangleB->setFixedSize(K4Styles::Dimensions::ButtonHeightMini, K4Styles::Dimensions::ButtonHeightMini);
     m_txTriangleB->setAlignment(Qt::AlignCenter);
-    m_txTriangleB->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                     .arg(K4Styles::Colors::AccentAmber)
-                                     .arg(K4Styles::Dimensions::FontSizeIndicator));
+    m_txTriangleB->setStyleSheet(K4Styles::txTriangleLabel());
     txIndicatorRow->addWidget(m_txTriangleB);
 
     txVLayout->addLayout(txIndicatorRow);
@@ -160,11 +159,10 @@ void VfoRowWidget::setupWidgets() {
 
     m_modeBLabel = new QLabel("USB", m_vfoBContainer);
     m_modeBLabel->setFixedWidth(K4Styles::Dimensions::VfoSquareSize);
-    m_modeBLabel->setAlignment(Qt::AlignCenter);
+    m_modeBLabel->setMinimumHeight(K4Styles::Dimensions::MinClickTarget);
+    m_modeBLabel->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
     m_modeBLabel->setCursor(Qt::PointingHandCursor);
-    m_modeBLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                    .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::FontSizeLarge));
+    m_modeBLabel->setStyleSheet(K4Styles::vfoBModeLabel());
     vfoBColumn->addWidget(m_modeBLabel, 0, Qt::AlignHCenter);
 
     // === SUB/DIV Container ===
@@ -176,27 +174,13 @@ void VfoRowWidget::setupWidgets() {
     m_subLabel = new QLabel("SUB", m_subDivContainer);
     m_subLabel->setAlignment(Qt::AlignCenter);
     m_subLabel->setFixedSize(36, 14);
-    m_subLabel->setStyleSheet(QString("background-color: %1;"
-                                      "color: %2;"
-                                      "font-size: %3px;"
-                                      "font-weight: bold;"
-                                      "border-radius: 2px;")
-                                  .arg(K4Styles::Colors::DisabledBackground)
-                                  .arg(K4Styles::Colors::LightGradientTop)
-                                  .arg(K4Styles::Dimensions::FontSizeNormal));
+    m_subLabel->setStyleSheet(K4Styles::subDivBadge());
     subDivStack->addWidget(m_subLabel);
 
     m_divLabel = new QLabel("DIV", m_subDivContainer);
     m_divLabel->setAlignment(Qt::AlignCenter);
     m_divLabel->setFixedSize(36, 14);
-    m_divLabel->setStyleSheet(QString("background-color: %1;"
-                                      "color: %2;"
-                                      "font-size: %3px;"
-                                      "font-weight: bold;"
-                                      "border-radius: 2px;")
-                                  .arg(K4Styles::Colors::DisabledBackground)
-                                  .arg(K4Styles::Colors::LightGradientTop)
-                                  .arg(K4Styles::Dimensions::FontSizeNormal));
+    m_divLabel->setStyleSheet(K4Styles::subDivBadge());
     subDivStack->addWidget(m_divLabel);
 
     m_subDivContainer->adjustSize();
@@ -206,16 +190,17 @@ void VfoRowWidget::setupWidgets() {
     m_splitLabel->setAlignment(Qt::AlignCenter);
     m_splitLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
                                     .arg(K4Styles::Colors::AccentAmber)
-                                    .arg(K4Styles::Dimensions::FontSizeButton));
+                                    .arg(K4Styles::Dimensions::FontSizeReadout));
 
     // B SET indicator — replaces SPLIT when active
     m_bSetLabel = new QLabel("B SET", this);
     m_bSetLabel->setAlignment(Qt::AlignCenter);
     m_bSetLabel->setStyleSheet(
-        QString("background-color: %1; color: black; font-size: %2px; font-weight: bold; border-radius: 4px; "
+        QString("background-color: %1; color: %3; font-size: %2px; font-weight: bold; border-radius: 4px; "
                 "padding: 2px 8px;")
             .arg(K4Styles::Colors::StatusGreen)
-            .arg(K4Styles::Dimensions::FontSizeButton));
+            .arg(K4Styles::Dimensions::FontSizeReadout)
+            .arg(K4Styles::Colors::TextOnAccent));
     m_bSetLabel->setVisible(false);
 
     // MSG Bank indicator — below SPLIT/BSET
@@ -223,7 +208,7 @@ void VfoRowWidget::setupWidgets() {
     m_msgBankLabel->setAlignment(Qt::AlignCenter);
     m_msgBankLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
                                       .arg(K4Styles::Colors::AccentAmber)
-                                      .arg(K4Styles::Dimensions::FontSizeButton));
+                                      .arg(K4Styles::Dimensions::FontSizeReadout));
 }
 
 void VfoRowWidget::resizeEvent(QResizeEvent *event) {

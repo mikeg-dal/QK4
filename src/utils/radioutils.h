@@ -1,9 +1,13 @@
 #ifndef RADIOUTILS_H
 #define RADIOUTILS_H
 
+#include "models/radiostate/levelsstate.h"
+
 #include <QString>
 #include <QVector>
 #include <QtGlobal>
+
+#include <optional>
 
 /**
  * @brief Shared radio utility functions and constants.
@@ -22,22 +26,72 @@ constexpr int SPAN_MAX = 368000;
 constexpr int SPAN_THRESHOLD_UP = 144000;
 constexpr int SPAN_THRESHOLD_DOWN = 140000;
 
-// K4 keyer speed range. The manual gives "from 8 to 100 WPM" and the KS command documents the
-// same, so a speed outside it cannot come from the radio.
+// K4 keyer speed range. Programmer's Reference D12, KS: "KSnnn; where nnn is the keyer speed, from
+// 8 to 100 WPM", so a speed outside it cannot come from the radio.
 constexpr int KEYER_WPM_MIN = 8;
 constexpr int KEYER_WPM_MAX = 100;
 
-/// Dit unit length in ms for a keyer speed, clamped to the K4's range.
-///
-/// WHY this is shared rather than written out at each site: three places derive an element length
-/// from the speed — the local iambic keyer's element clock, the sidetone's PCM block length, and
-/// the KZL element length sent to the K4 — and they have to agree exactly. They did not: the
-/// sidetone clamped to 5-60 WPM while the keyer clamped not at all, so above 60 WPM the sidetone
-/// built longer blocks than the keyer's element interval and fell further behind on every element,
-/// with no recovery until keying stopped. One conversion, one clamp, no drift.
-inline int ditMsForWpm(int wpm) {
-    return 1200 / qBound(KEYER_WPM_MIN, wpm, KEYER_WPM_MAX);
-}
+// Keying weight, in hundredths. Programmer's Reference D12, KP: "nnn = keying weight (090-125).
+// Weight value should be constrained to multiples of 5".
+constexpr int KEYING_WEIGHT_MIN = 90;
+constexpr int KEYING_WEIGHT_MAX = 125;
+constexpr int KEYING_WEIGHT_STEP = 5;
+
+// K4 limits from the Programmer's Reference rev. D12, in the unit RadioState stores. Every control
+// that steps one of these values and every builder that sends it uses these, never a copy.
+// CW: "CWnn; where nn is sidetone pitch x10 Hz (25-95)".
+constexpr int CW_PITCH_MIN_HZ = 250;
+constexpr int CW_PITCH_MAX_HZ = 950;
+constexpr int CW_PITCH_STEP_HZ = 10;
+// SQ / SQ$: "nnn is 000-040".
+constexpr int SQUELCH_MAX = 40;
+// MG: "<xxx> is 000-080".
+constexpr int MIC_GAIN_MAX = 80;
+// CP: "nnn is 000-030".
+constexpr int COMPRESSION_MAX = 30;
+// RG / RG$: "nn is 00 to 60 (-0 to -60 dB)". RadioState stores the magnitude.
+constexpr int RF_GAIN_MAX = 60;
+// SD: "delay in 10-ms increments (000-255 = 0.00 to 2.55 seconds)".
+constexpr int QSK_DELAY_MAX = 255;
+
+/// `current` moved by `steps` and clamped to [min, max], or nullopt when nothing must be sent:
+/// `current` is negative (the radio has not reported the value yet; every such field starts at a
+/// negative sentinel, and stepping from it sends a value the operator never chose), or the clamped
+/// result equals `current` (already at the limit).
+std::optional<int> stepWithin(int current, int steps, int min, int max);
+
+/// Keyer speed after `steps` WPM, within KEYER_WPM_MIN..KEYER_WPM_MAX. nullopt as stepWithin().
+std::optional<int> nextKeyerSpeed(int currentWpm, int steps);
+
+/// CW pitch after `steps` x CW_PITCH_STEP_HZ, within CW_PITCH_MIN_HZ..CW_PITCH_MAX_HZ. nullopt as
+/// stepWithin().
+std::optional<int> nextCwPitch(int currentHz, int steps);
+
+/// Squelch after `steps`, within 0..SQUELCH_MAX. nullopt as stepWithin().
+std::optional<int> nextSquelch(int current, int steps);
+
+// PC power limits (Programmer's Reference rev. D12): "L = low power (QRP, 0.1-10.0 W) ... H = high
+// power (QRO, 1-110 W) ... X = milliwatt range (for XVTRs, 0.1-10.0 mW)". QRP and XVTR are in tenths
+// of their unit, as the PC command carries them; QRO is in whole watts.
+constexpr int RF_POWER_TENTHS_MIN = 1;
+constexpr int RF_POWER_TENTHS_MAX = 100;
+constexpr int RF_POWER_QRO_MIN_W = 1;
+constexpr int RF_POWER_QRO_MAX_W = 110;
+
+/// RF power as the K4 holds it: `value` in the range's own unit (W for QRP and QRO, mW for XVTR).
+struct RfPower {
+    double value;
+    LevelsState::PowerRange range;
+};
+
+/// RF power after `steps` knob ticks, stepping within the range the radio reported:
+///  - QRP steps 0.1 W down to 0.1 W; past 10.0 W it moves to 11 W QRO.
+///  - QRO steps 1 W within 1-110 W. It moves to 10.0 W QRP only when it crosses down from above
+///    10 W, so a QRO setting of 1-10 W that the radio reported stays QRO.
+///  - XVTR steps 0.1 mW within 0.1-10.0 mW and never leaves XVTR: the range belongs to the
+///    transverter band, and a value in watts there would ask for a different power entirely.
+/// nullopt when the power is not known yet (negative sentinel) or the tick changes nothing.
+std::optional<RfPower> nextRfPower(double value, LevelsState::PowerRange range, int steps);
 
 /// Convert VT tuning step index (0-5) to Hz.
 /// Returns 1000 Hz for out-of-range values.
@@ -48,9 +102,18 @@ int tuningStepToHz(int step);
 /// tuning step above 10 kHz (VT5 wraps back to 100 Hz).
 int tuningStepForDigit(int digitFromRight);
 
-/// Convert frequency (Hz) to K4 band number (0=160m ... 10=6m, 16=XVTR).
-/// Returns -1 for out-of-band frequencies.
-int getBandFromFrequency(quint64 freq);
+// K4 band numbers for the XVTR bands (BN / BN$, XV$). Programmer's Reference D12 states this two
+// ways: the XV$ entry says "BN11 corresponds to XVTR1, etc." and "use XV$n (1-12) or BN$ (11-22)",
+// while the BN$ entry says "16-25 = transverter bands (11-15 reserved for future HF bands)". QK4
+// follows XV$: 11-22 is also what the band popup sends for XVTR1-12, checked against a K4 by
+// sending BN11..BN22 and watching FA move to each configured XVTR dial frequency.
+constexpr int BAND_NUMBER_XVTR_FIRST = 11;
+constexpr int BAND_NUMBER_XVTR_LAST = 22;
+
+/// True for a K4 band number that selects an XVTR band (BAND_NUMBER_XVTR_FIRST..LAST).
+constexpr bool isXvtrBandNumber(int band) {
+    return band >= BAND_NUMBER_XVTR_FIRST && band <= BAND_NUMBER_XVTR_LAST;
+}
 
 /// Get next span step up (zoom out) from current span in Hz.
 /// Clamps at SPAN_MAX.
@@ -68,6 +131,86 @@ int spanAfterZoom(int currentSpan, bool zoomIn);
 /// Returns -1 for anything outside 1-3 (preset not known yet).
 int nextFilterPreset(int currentPreset);
 
+/// Next panadapter (DDC) noise blanker mode (#NB$) when the DISPLAY menu's NB key is tapped:
+/// OFF (0) -> ON (1) -> AUTO (2) -> OFF. A mode not reported yet (-1) is taken as OFF.
+int nextDdcNoiseBlankerMode(int currentMode);
+
+/// Filter as the K4 holds it: bandwidth and IF shift (centre), both in decahertz.
+struct FilterBwIs {
+    int bwDah;
+    int isDah;
+};
+
+/// Limits for filterAfterEdgeStep(), in decahertz. isLocked: the mode fixes IS (FSK-D, PSK-D).
+struct FilterEdgeLimits {
+    int bwMinDah;
+    int bwMaxDah;
+    int isMinDah;
+    int isMaxDah;
+    bool isLocked;
+};
+
+/// Which of the K4's three per-mode settings groups a mode belongs to; SD and VX name them C / V / D,
+/// ML 0 / 2 / 1. Programmer's Reference rev. D12, SD: "C=CW & direct data, V=voice, D=AF data";
+/// VX: "C = CW/direct data"; ML: "In CW/direct-data modes this is the sidetone/alert tone level".
+/// Direct data is DATA in the FSK D (DT2) or PSK D (DT3) sub-mode, keyed like CW, so it shares CW's
+/// delay, VOX and monitor level rather than AF data's.
+enum class ModeClass {
+    CwDirect,
+    Voice,
+    AfData,
+};
+
+/// The class of K4 mode `mdCode` (the MD digit) with DATA sub-mode `dataSubMode` (DT, consulted
+/// only in DATA and DATA-R). Unknown and voice modes are Voice.
+constexpr ModeClass modeClass(int mdCode, int dataSubMode) {
+    if (mdCode == 3 || mdCode == 7) // CW, CW-R
+        return ModeClass::CwDirect;
+    if (mdCode == 6 || mdCode == 9) // DATA, DATA-R
+        return (dataSubMode == 2 || dataSubMode == 3) ? ModeClass::CwDirect : ModeClass::AfData;
+    return ModeClass::Voice;
+}
+
+/// The SD / VX mode letter: C, V or D.
+constexpr char modeClassLetter(ModeClass modeClass) {
+    switch (modeClass) {
+    case ModeClass::CwDirect:
+        return 'C';
+    case ModeClass::AfData:
+        return 'D';
+    case ModeClass::Voice:
+        break;
+    }
+    return 'V';
+}
+
+/// The ML mode digit: 0 (CW and direct data), 1 (AF data) or 2 (voice).
+constexpr int monitorModeCode(ModeClass modeClass) {
+    switch (modeClass) {
+    case ModeClass::CwDirect:
+        return 0;
+    case ModeClass::AfData:
+        return 1;
+    case ModeClass::Voice:
+        break;
+    }
+    return 2;
+}
+
+/// BW and IS limits of the K4's receive filter in K4 mode `mdCode` (the MD digit) with DATA sub-mode
+/// `dataSubMode` (DT, consulted only in DATA and DATA-R), measured on a K4 (the Programmer's
+/// Reference gives no ranges): BW 50-5000 Hz, but 150-800 Hz in FSK D (DT2) and 50-200 Hz in PSK D
+/// (DT3); IS 300 Hz up to 2000 Hz in CW and CW-R, 3000 Hz otherwise; IS fixed in AM, FM, FSK D and
+/// PSK D. The one table every BW / SHFT / HI / LO control reads.
+FilterEdgeLimits filterLimits(int mdCode, int dataSubMode);
+
+/// One HI or LO scroll tick (`steps` x 20 Hz) applied to a filter while the OPPOSITE edge stays put.
+/// The moved edge is recomputed from the fixed edge and the clamped bandwidth, and IS is derived from
+/// those two edges. Returns nullopt when the tick changes nothing or when honouring the IS limit would
+/// move the fixed edge or take LO below 0 Hz. With isLocked, only the bandwidth changes and IS is returned unchanged.
+std::optional<FilterBwIs> filterAfterEdgeStep(FilterBwIs current, bool adjustHi, int steps,
+                                              const FilterEdgeLimits &limits);
+
 /// Build an 8-band EQ CAT command string (e.g., "RE+00-02+04..." or "TE+00...").
 /// prefix is "RE" (RX) or "TE" (TX), bands must have exactly 8 values in [-16, +16].
 QString buildEqCommand(const QString &prefix, const QVector<int> &bands);
@@ -76,25 +219,6 @@ QString buildEqCommand(const QString &prefix, const QVector<int> &bands);
 /// SL0=240 (20ms), SL1-2=480 (40ms), SL3-5=720 (60ms), SL6-7=1440 (120ms).
 /// Returns 720 (SL3 default) for out-of-range values.
 int slTierToFrameSamples(int sl);
-
-// --- RX jitter-buffer self-correction watermarks ---------------------------
-// The AudioEngine RX queue can ratchet up a permanent latency backlog after a
-// stall (e.g. PTT mic init / output-device rebuild). These watermarks let the
-// queue trim itself back down. They are expressed as MULTIPLES OF THE CURRENT
-// PACKET SIZE (one decoded K4 SL-bundle) — never fixed milliseconds — so the
-// buffer scales with the operator's chosen SL tier: SL0's 20ms packets get a
-// small buffer, SL7's 120ms packets get a proportionally larger one. A fixed-ms
-// target would sit below one packet at high SL and drop every packet.
-constexpr int JITTER_TARGET_PACKETS = 2;     // trim-to depth after a stall
-constexpr int JITTER_HIGH_WATER_PACKETS = 5; // trigger; must exceed normal jitter (~1 pkt)
-
-/// SL-scaled trim-to depth in bytes for the RX jitter buffer, given the current
-/// decoded packet size in bytes. Returns 0 for non-positive input.
-int jitterTargetBytes(int pktBytes);
-
-/// SL-scaled high-water mark in bytes: once the RX queue exceeds this, it trims
-/// back down to jitterTargetBytes(). Returns 0 for non-positive input.
-int jitterHighWaterBytes(int pktBytes);
 
 // --- K4 panadapter fixed-tune display mode ---------------------------------
 // The K4 encodes the panadapter tuning mode across two CAT params: #FXT
@@ -132,6 +256,47 @@ QString fixedTuneSetCommand(FixedTuneMode mode);
 /// when already aligned or stepHz <= 0. Used by every tune path so dial/scroll/drag
 /// land on the same step boundary the dimmed-digit display indicates.
 qint64 snapFreqToStep(qint64 freq, int stepHz);
+
+/// Frequency a wheel turn of `steps` over a VFO's frequency display tunes that VFO to, or 0 when the
+/// turn must not tune. 0 when the VFO is locked (LK / LK$): the K4's lock holds only its own knob -
+/// the Programmer's Reference gives FA/FB no lock exception - so honouring it is QK4's job, as the
+/// panadapter and KPOD paths already do. Also 0 when the result is not a positive frequency.
+qint64 vfoWheelTuneTarget(quint64 currentHz, int steps, int stepHz, bool locked);
+
+/// The VFOs one CAT command would move, as a mask of VfoA and VfoB. Recognises the K4's frequency
+/// SETs (Programmer's Reference rev. D12): FAn / FBn, UP / DN (VFO A) and UPB / DNB (VFO B),
+/// VOsnnnnn (A) and VO$snnnnn (B; the reference lists both under "VO$ (VFO Offset)"), and ABn
+/// ("0 (FA>FB), 1 (FB>FA), 2 (FA/FB swap), 3 (all A>B), 4 (all B>A), 5 (all A/B)"). A GET (FA;) moves nothing. The
+/// trailing ';' is optional. SWnn front-panel key emulations are not counted: those are the radio's own keys and the
+/// radio applies its own rules.
+enum VfoMask { VfoNone = 0, VfoA = 1, VfoB = 2 };
+
+/// Whether QK4 may send a TD / TD$ SET for a receiver in K4 mode `mdCode` (the MD digit: 3 CW,
+/// 7 CW-R, 6 DATA, 9 DATA-R). TD's argument means something different per mode (Programmer's
+/// Reference D12): text decode in CW and DATA, but in SSB "encode mode (2-tone): 0=2-TONE off,
+/// 1=on", and nothing defined in AM/FM. So TD is a decode command only in CW and DATA; in any other
+/// mode a TD1 would arm the two-tone generator and the next PTT would transmit two tones.
+bool textDecodeSetAllowed(int mdCode);
+
+/// Whether the K4's APF (audio peaking filter, AP / AP$) exists in K4 mode `mdCode`: CW and CW-R only.
+/// In every other mode the K4's RX row shows the key as "N/A" and it does nothing.
+bool apfAvailable(int mdCode);
+int vfosMovedByCat(const QString &command);
+
+/// True when `command` would move a VFO that is locked (LK for A, LK$ for B, each on its own). Every
+/// path that sends a frequency change - QK4's own controls, TCI clients and CAT-server clients - asks
+/// this first. Honouring the lock is QK4's job: the K4 documents no lock exception for these SETs.
+bool catMovesLockedVfo(const QString &command, bool lockA, bool lockB);
+
+/// GT AGC speed (RadioState::AGCSpeed: 0 off, 1 slow, 2 fast) as the K4 labels it: "AGC", "AGC-S",
+/// "AGC-F". Anything else, including the not-yet-received sentinel, reads as off.
+QString agcLabel(int agcSpeed);
+
+/// True when the GT AGC speed is slow or fast, i.e. AGC is on.
+bool agcActive(int agcSpeed);
+
+/// ES TX bandwidth (100 Hz units) as a button label, e.g. 28 -> "2.8k".
+QString txBandwidthLabel(int bwHundredsHz);
 
 /// Convert a Celsius reading to Fahrenheit, rounded to the nearest degree.
 /// Display-only: warning/critical thresholds stay in Celsius so a given physical

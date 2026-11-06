@@ -9,6 +9,7 @@
 //
 // Pure logic — no device, no libusb, no hidapi, no event loop.
 #include <QtTest/QtTest>
+#include "hardware/kpodudevmatch.h"
 #include "hardware/usbdevicelifecycle.h"
 
 using namespace UsbDeviceLifecycle;
@@ -228,6 +229,28 @@ private slots:
                 }
             }
         }
+    }
+
+    // ---- D-026: KPOD unplug on Linux is recognised from the udev event alone -----------------------
+
+    // A remove event carries no sysattrs - the sysfs node is already gone - so the match must come
+    // from the event's properties. This is the shape of a real remove: PRODUCT only.
+    void udevRemoveEventMatchesFromProductProperty() {
+        QVERIFY(KpodUdevMatch::eventMatches("4d8/f12d/100", nullptr, nullptr, 0x04D8, 0xF12D));
+        QVERIFY(KpodUdevMatch::eventMatches("4D8/F12D/1", nullptr, nullptr, 0x04D8, 0xF12D));
+    }
+
+    void udevEventFallsBackToIdProperties() {
+        QVERIFY(KpodUdevMatch::eventMatches(nullptr, "04d8", "f12d", 0x04D8, 0xF12D));
+        QVERIFY(KpodUdevMatch::eventMatches("garbage", "04d8", "f12d", 0x04D8, 0xF12D));
+    }
+
+    void udevEventForAnotherDeviceDoesNotMatch() {
+        QVERIFY(!KpodUdevMatch::eventMatches("4d8/f12e/100", nullptr, nullptr, 0x04D8, 0xF12D));
+        QVERIFY(!KpodUdevMatch::eventMatches("46d/c52b/1200", "04d8", "f12d", 0x04D8, 0xF12D));
+        QVERIFY(!KpodUdevMatch::eventMatches(nullptr, "04d8", nullptr, 0x04D8, 0xF12D));
+        QVERIFY(!KpodUdevMatch::eventMatches(nullptr, nullptr, nullptr, 0x04D8, 0xF12D));
+        QVERIFY(!KpodUdevMatch::eventMatches("", nullptr, nullptr, 0x04D8, 0xF12D));
     }
 };
 

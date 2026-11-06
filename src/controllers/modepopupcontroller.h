@@ -10,10 +10,9 @@ class QWidget;
 
 // Owns the ModePopupWidget (the grid of mode buttons shown above the
 // bottom menu bar) and keeps it in sync with RadioState. The popup is
-// opened from three call sites in MainWindow: (1) RightSidePanel's
-// MODE button — uses current BSet state to target VFO A or VFO B,
-// (2) clicking the VFO A mode label or VFO-A square, (3) clicking the
-// VFO B mode label or VFO-B square. All three routes target the same
+// opened from three places: (1) RightSideController's MODE button — uses
+// current BSet state to target VFO A or VFO B, (2) and (3) MainWindow's
+// clicks on the VFO A / VFO B mode label or square. All three routes target the same
 // single popup instance — the popup's "BSet enabled" flag selects A or
 // B before display. See PATTERNS.md → Controller Pattern.
 //
@@ -26,7 +25,6 @@ class ModePopupController : public QObject {
 public:
     explicit ModePopupController(RadioState *radioState, ConnectionController *connection, QWidget *parentWidget,
                                  QObject *parent = nullptr);
-    ~ModePopupController() override;
 
     // Task-level toggle entry points. Each captures current-visibility
     // first, then hides OR shows with the target-VFO preset.

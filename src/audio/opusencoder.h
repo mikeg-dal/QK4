@@ -1,22 +1,25 @@
 #ifndef OPUSENCODER_H
 #define OPUSENCODER_H
 
-#include <QObject>
+#include <QByteArray>
 #include <opus/opus.h>
 
 /**
  * @brief Opus encoder wrapper for outbound TX mic audio. Frame size is dynamic: 240 / 480 / 720 /
  *        1440 samples at 12 kHz, matching the current K4 SL tier. AudioController swaps frame
  *        size in response to `streamingLatencyChanged`.
+ *
+ *        A plain class, not a QObject: no signals, slots or timers, and owned by value by the TX
+ *        pipeline on the thread that uses it. Not copyable - it owns the libopus state.
  */
-class OpusEncoder : public QObject {
-    Q_OBJECT
-
+class OpusEncoder {
 public:
     static constexpr int MAX_PACKET_SIZE = 4000; // Max Opus packet size
 
-    explicit OpusEncoder(QObject *parent = nullptr);
+    OpusEncoder();
     ~OpusEncoder();
+    OpusEncoder(const OpusEncoder &) = delete;
+    OpusEncoder &operator=(const OpusEncoder &) = delete;
 
     bool initialize(int sampleRate = 12000, int channels = 1, int bitrate = 24000);
 

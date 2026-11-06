@@ -1,7 +1,10 @@
 #include "menumodel.h"
-#include <QSet>
+
+#include "models/radiostate/spectrumdisplaystate.h"
 #include <QUrl>
+#include <QtMath>
 #include <algorithm>
+#include <utility>
 
 MenuModel::MenuModel(QObject *parent) : QObject(parent) {}
 
@@ -37,103 +40,38 @@ void MenuModel::addSyntheticDisplayFpsItem(int currentValue) {
     item.category = "APP SETTINGS";
     item.type = "DEC";
     item.flag = 0;
-    item.minValue = 12;
-    item.maxValue = 30;
-    item.defaultValue = 30;
+    item.minValue = SpectrumDisplayLimits::FpsMin;
+    item.maxValue = SpectrumDisplayLimits::FpsMax;
+    item.defaultValue = currentValue; // the K4 states no default; the operator's saved rate
     item.currentValue = currentValue;
     item.step = 1;
     addMenuItem(item);
 }
 
-MenuItem *MenuModel::getMenuItem(int menuId) {
-    if (m_items.contains(menuId)) {
-        return &m_items[menuId];
-    }
-    return nullptr;
-}
-
 const MenuItem *MenuModel::getMenuItem(int menuId) const {
-    auto it = m_items.find(menuId);
-    if (it != m_items.end()) {
-        return &it.value();
-    }
-    return nullptr;
+    auto it = m_items.constFind(menuId);
+    return it != m_items.constEnd() ? &it.value() : nullptr;
 }
 
-MenuItem *MenuModel::getMenuItemByName(const QString &name) {
-    for (auto it = m_items.begin(); it != m_items.end(); ++it) {
-        if (it.value().name == name) {
-            return &it.value();
+QList<int> MenuModel::itemIds(const QString &nameFilter) const {
+    QList<const MenuItem *> matches;
+    for (const MenuItem &item : m_items) {
+        if (nameFilter.isEmpty() || item.name.contains(nameFilter, Qt::CaseInsensitive)) {
+            matches.append(&item);
         }
     }
-    return nullptr;
-}
-
-const MenuItem *MenuModel::getMenuItemByName(const QString &name) const {
-    for (auto it = m_items.constBegin(); it != m_items.constEnd(); ++it) {
-        if (it.value().name == name) {
-            return &it.value();
-        }
+    std::sort(matches.begin(), matches.end(),
+              [](const MenuItem *a, const MenuItem *b) { return a->name.compare(b->name, Qt::CaseInsensitive) < 0; });
+    QList<int> ids;
+    ids.reserve(matches.size());
+    for (const MenuItem *item : std::as_const(matches)) {
+        ids.append(item->id);
     }
-    return nullptr;
-}
-
-QVector<MenuItem *> MenuModel::getAllItems() {
-    QVector<MenuItem *> result;
-    for (auto it = m_items.begin(); it != m_items.end(); ++it) {
-        result.append(&it.value());
-    }
-    // Sort alphabetically by name
-    std::sort(result.begin(), result.end(),
-              [](MenuItem *a, MenuItem *b) { return a->name.toLower() < b->name.toLower(); });
-    return result;
-}
-
-QVector<MenuItem *> MenuModel::getItemsByCategory(const QString &category) {
-    QVector<MenuItem *> result;
-    for (auto it = m_items.begin(); it != m_items.end(); ++it) {
-        if (it.value().category == category) {
-            result.append(&it.value());
-        }
-    }
-    // Sort alphabetically by name
-    std::sort(result.begin(), result.end(),
-              [](MenuItem *a, MenuItem *b) { return a->name.toLower() < b->name.toLower(); });
-    return result;
-}
-
-QVector<MenuItem *> MenuModel::filterByName(const QString &pattern) {
-    if (pattern.isEmpty()) {
-        return getAllItems();
-    }
-    QVector<MenuItem *> result;
-    for (auto it = m_items.begin(); it != m_items.end(); ++it) {
-        if (it.value().name.contains(pattern, Qt::CaseInsensitive)) {
-            result.append(&it.value());
-        }
-    }
-    // Sort alphabetically by name
-    std::sort(result.begin(), result.end(),
-              [](MenuItem *a, MenuItem *b) { return a->name.toLower() < b->name.toLower(); });
-    return result;
-}
-
-QStringList MenuModel::getCategories() const {
-    QSet<QString> categories;
-    for (const auto &item : m_items) {
-        categories.insert(item.category);
-    }
-    QStringList result = categories.values();
-    result.sort();
-    return result;
+    return ids;
 }
 
 void MenuModel::clear() {
     m_items.clear();
-    // WHY this has to be announced: getMenuItem/getAllItems/filterByName hand out raw MenuItem *
-    // into m_items, and the menu overlay keeps one per row for the lifetime of the overlay. A
-    // silent clear left those rows pointing at freed memory, and the next ME update after a
-    // reconnect dereferenced them.
     emit modelCleared();
 }
 
@@ -244,3 +182,69 @@ bool MenuModel::parseME(const QString &meLine) {
 
     return true;
 }
+
+namespace MenuValueEntry {
+
+bool acceptsTyping(const MenuItem &item) {
+    return !item.isReadOnly() && item.options.isEmpty() && item.type != QLatin1String("BIN") &&
+           item.maxValue > item.minValue;
+}
+
+bool allowsNegative(const MenuItem &item) {
+    return item.minValue < 0;
+}
+
+bool allowsDecimal(const MenuItem &item) {
+    return item.type == QLatin1String("D10mW");
+}
+
+QString unitSuffix(const MenuItem &item) {
+    if (item.type == QLatin1String("MHz"))
+        return QStringLiteral(" MHz");
+    if (item.type == QLatin1String("Hz") || item.type == QLatin1String("M50Hz"))
+        return QStringLiteral(" Hz");
+    if (item.type == QLatin1String("ms"))
+        return QStringLiteral(" ms");
+    if (item.type == QLatin1String("D10mW"))
+        return QStringLiteral(" mW");
+    return QString();
+}
+
+namespace {
+// typed in display units -> stored units, nothing else.
+std::optional<qint64> toStored(const MenuItem &item, const QString &typed) {
+    bool ok = false;
+    qint64 raw = 0;
+    if (allowsDecimal(item)) {
+        const double mw = typed.toDouble(&ok); // D10mW: tenths of a milliwatt
+        raw = qRound64(mw * 10.0);
+    } else if (item.type == QLatin1String("M50Hz")) {
+        const qint64 hz = typed.toLongLong(&ok); // FM deviation, stored as 50 Hz steps
+        raw = qRound64(hz / 50.0);
+    } else {
+        raw = typed.toLongLong(&ok);
+    }
+    return ok ? std::optional<qint64>(raw) : std::nullopt;
+}
+} // namespace
+
+std::optional<int> rawFromTyped(const MenuItem &item, const QString &typed) {
+    const std::optional<qint64> stored = toStored(item, typed);
+    if (!stored)
+        return std::nullopt;
+    qint64 raw = *stored;
+    if (item.step > 1) // onto the item's own grid, counted from its minimum
+        raw = item.minValue + qRound64(double(raw - item.minValue) / item.step) * item.step;
+    if (raw < item.minValue || raw > item.maxValue)
+        return std::nullopt;
+    return int(raw);
+}
+
+bool withinTypingBounds(const MenuItem &item, const QString &typed) {
+    const std::optional<qint64> stored = toStored(item, typed);
+    if (!stored)
+        return true; // "-" or "0." on the way to a number
+    return *stored <= item.maxValue && *stored >= (std::min)(item.minValue, 0);
+}
+
+} // namespace MenuValueEntry

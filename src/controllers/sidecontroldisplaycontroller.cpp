@@ -41,10 +41,6 @@ SideControlDisplayController::SideControlDisplayController(RadioState *radioStat
     connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode) { onModeChanged(); });
 }
 
-SideControlDisplayController::~SideControlDisplayController() {
-    disconnect(this);
-}
-
 void SideControlDisplayController::refreshFilterDisplay() {
     // WHY: when BSET is on, the side-panel BW/SHFT numbers track VFO B
     // (sub RX filter) rather than VFO A — matches which VFO the filter

@@ -1,49 +1,73 @@
 #include <QApplication>
+#include "logging/logcategories.h"
+#include "logging/logpaths.h"
+#include "logging/logsession.h"
+#include "logging/logsink.h"
+#include <QDir>
+#include <QScreen>
 #include <QCommandLineParser>
 #include <QDebug>
 #include <QSysInfo>
 #include <QGuiApplication>
 #include <QFontDatabase>
 #include <QMessageBox>
-#include <QSettings>
-#include <QSslSocket>
 #include <rhi/qrhi.h>
 #ifdef Q_OS_MACOS
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/qpa/qplatformintegration.h>
 #include <cstdlib>
-#include <QDir>
-#include <QFileInfo>
 #endif
 #include <QTextStream>
+#include "network/tlsbackend.h"
 #include "settings/radiosettings.h"
 #include "mainwindow.h"
 #include "settings/interfacescale.h"
+#include "utils/rtscheduling.h"
 #include "ui/styling/k4styles.h"
 // WHY: last, after every project header. windows.h defines SendMessage, ERROR and a long tail of
 // other unqualified macros, and anything it reaches first it rewrites - a header that later
 // declares a member called SendMessage or an enumerator called ERROR fails in a way that names
-// neither. WIN32_LEAN_AND_MEAN and NOMINMAX cut most of it; include order handles the rest.
+// neither. WIN32_LEAN_AND_MEAN and NOMINMAX (defined for every target in CMakeLists.txt) cut most of
+// it; include order handles the rest.
 #ifdef Q_OS_WIN
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
 #include <windows.h>
 #include <cstdio>
 #endif
 
-// Filter out known benign Qt warnings on macOS
-// QSocketNotifier::Exception is not supported by kqueue (macOS's event system)
-// This warning comes from Qt's internal socket code and doesn't affect functionality
-static QtMessageHandler originalHandler = nullptr;
-void messageFilter(QtMsgType type, const QMessageLogContext &context, const QString &msg) {
+static QString packagingDescription() {
+    if (qEnvironmentVariableIsSet("FLATPAK_ID"))
+        return QStringLiteral("Flatpak ") + qEnvironmentVariable("FLATPAK_ID");
 #ifdef Q_OS_MACOS
-    if (msg.contains("QSocketNotifier::Exception is not supported")) {
-        return; // Suppress this known benign warning
-    }
+    return QCoreApplication::applicationDirPath().contains(QLatin1String(".app/Contents/MacOS"))
+               ? QStringLiteral("macOS app bundle")
+               : QStringLiteral("macOS executable");
+#elif defined(Q_OS_WIN)
+    return QStringLiteral("Windows");
+#else
+    return QStringLiteral("Linux executable");
 #endif
-    if (originalHandler) {
-        originalHandler(type, context, msg);
+}
+
+// The environment a log was written in, at the top of every log file.
+static QStringList sessionHeader() {
+    QStringList lines;
+    lines << QStringLiteral("QK4 %1").arg(QStringLiteral(QK4_VERSION));
+    lines << QStringLiteral("Qt build %1, runtime %2")
+                 .arg(QStringLiteral(QT_VERSION_STR), QString::fromLatin1(qVersion()));
+    lines << QStringLiteral("OS %1 (%2 %3, %4)")
+                 .arg(QSysInfo::prettyProductName(), QSysInfo::kernelType(), QSysInfo::kernelVersion(),
+                      QSysInfo::currentCpuArchitecture());
+    lines << QStringLiteral("Packaging %1").arg(packagingDescription());
+    lines
+        << QStringLiteral("TLS backend %1, %2").arg(QSslSocket::activeBackend(), QSslSocket::sslLibraryVersionString());
+    for (const QScreen *screen : QGuiApplication::screens()) {
+        lines << QStringLiteral("Screen %1 %2x%3 at %4x")
+                     .arg(screen->name())
+                     .arg(screen->size().width())
+                     .arg(screen->size().height())
+                     .arg(screen->devicePixelRatio());
     }
+    return lines;
 }
 
 // Load embedded fonts and set application defaults
@@ -56,13 +80,13 @@ void setupFonts() {
 
     // Verify fonts loaded (only warn on failure)
     if (interRegular < 0 || interMedium < 0) {
-        qWarning() << "Failed to load Inter font - using system default";
+        qCWarning(lcApp) << "Failed to load Inter font - using system default";
     }
 
     // Set Inter Medium as the default application font (crisper than Regular)
     // Use setPixelSize() for consistent sizing across macOS (72 PPI) and Windows (96 PPI)
     QFont defaultFont(K4Styles::Fonts::Primary);
-    defaultFont.setPixelSize(K4Styles::Dimensions::FontSizeLarge);
+    defaultFont.setPixelSize(K4Styles::Dimensions::FontSizeBody);
     defaultFont.setWeight(QFont::Medium);
     defaultFont.setHintingPreference(QFont::PreferFullHinting);
     defaultFont.setStyleStrategy(QFont::PreferAntialias);
@@ -156,66 +180,15 @@ static void reportToOperator(const QString &text, QMessageBox::Icon icon) {
     box.exec();
 }
 
-// WHY: Windows ships both the Schannel and OpenSSL TLS backends, and Qt may activate
-// Schannel — which has no TLS-PSK support at all, so the K4's port-9204 PSK handshake can
-// never complete under it. Must run before the first QSslSocket is constructed (TcpClient
-// creates one in its constructor). No-op on macOS and Linux, where OpenSSL is already active.
-void selectTlsBackend() {
-    if (QSslSocket::activeBackend() == QLatin1String("openssl"))
-        return;
-
-    if (QSslSocket::availableBackends().contains(QLatin1String("openssl"))) {
-        if (!QSslSocket::setActiveBackend(QStringLiteral("openssl")))
-            qWarning() << "Failed to activate the OpenSSL TLS backend - TLS/PSK unavailable";
-    } else {
-        qWarning() << "OpenSSL TLS backend unavailable (active:" << QSslSocket::activeBackend()
-                   << ") - TLS/PSK connections will fail";
-    }
-}
-
 int main(int argc, char *argv[]) {
-    // Install message filter to suppress known benign Qt warnings
-    originalHandler = qInstallMessageHandler(messageFilter);
+    // First, so every message from here on goes through the log writer and none is written
+    // synchronously on the thread that raised it.
+    Logging::install();
+    struct LoggingSession {
+        ~LoggingSession() { Logging::shutdown(); }
+    } loggingSession;
 
-#ifdef Q_OS_MACOS
-    // Enable OpenSSL for TLS/PSK support
-    // Qt's OpenSSL backend dynamically loads libssl/libcrypto at runtime
-    // Check bundled location first (inside .app bundle), then Homebrew locations
-
-    // Get the path to the executable to find the Frameworks folder
-    QString execPath = QString::fromLocal8Bit(argv[0]);
-    QString bundledFrameworks;
-    if (execPath.contains(".app/Contents/MacOS/")) {
-        bundledFrameworks = QFileInfo(execPath).absolutePath() + "/../Frameworks";
-    }
-
-    QStringList opensslPaths;
-    if (!bundledFrameworks.isEmpty()) {
-        opensslPaths << bundledFrameworks; // Check bundled first
-    }
-    opensslPaths << "/opt/homebrew/opt/openssl@3/lib" // Homebrew on Apple Silicon
-                 << "/usr/local/opt/openssl@3/lib"    // Homebrew on Intel Mac
-                 << "/opt/homebrew/opt/openssl/lib"   // Homebrew openssl (latest)
-                 << "/usr/local/opt/openssl/lib";     // Homebrew openssl on Intel
-
-    QString currentPath = QString::fromLocal8Bit(qgetenv("DYLD_LIBRARY_PATH"));
-    bool foundOpenSSL = false;
-
-    for (const QString &opensslPath : opensslPaths) {
-        // Check if libssl exists in this location
-        if (QFileInfo::exists(opensslPath + "/libssl.3.dylib") || QFileInfo::exists(opensslPath + "/libssl.dylib")) {
-            if (!currentPath.contains(opensslPath)) {
-                QString newPath = currentPath.isEmpty() ? opensslPath : QString("%1:%2").arg(opensslPath, currentPath);
-                qputenv("DYLD_LIBRARY_PATH", newPath.toLocal8Bit());
-            }
-            foundOpenSSL = true;
-            break;
-        }
-    }
-    Q_UNUSED(foundOpenSSL);
-#endif
-
-    // Enable HiDPI scaling for crisp rendering on Retina/4K displays
+    // PassThrough: fractional scale factors (125%, 150%) are used as-is, not rounded.
     QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
     // Must precede QApplication: Qt reads the scale factor once, when it is constructed.
@@ -225,22 +198,10 @@ int main(int argc, char *argv[]) {
     app.setApplicationName("QK4");
     app.setApplicationVersion(QK4_VERSION);
 
-    // WHY: call sign changed AI5QK->KF5O. Migrate existing QSettings forward once so saved
-    // window geometry, station profiles, and radio config survive the identity rename.
-    // Default-constructing QSettings under each identity reproduces Qt's per-platform path
-    // logic (macOS keys on the domain, Windows/Linux on the org name). The empty-check keeps
-    // it idempotent — no re-copy after the first launch.
-    app.setOrganizationName("AI5QK");
-    app.setOrganizationDomain("ai5qk.com");
-    QSettings oldSettings;
+    // Identity only. Settings do not depend on it: RadioSettings names its store "QK4"/"QK4"
+    // explicitly.
     app.setOrganizationName("KF5O");
     app.setOrganizationDomain("kf5o.com");
-    QSettings newSettings;
-    if (newSettings.allKeys().isEmpty() && !oldSettings.allKeys().isEmpty()) {
-        for (const QString &key : oldSettings.allKeys())
-            newSettings.setValue(key, oldSettings.value(key));
-        newSettings.sync();
-    }
 
     // Load embedded Inter font family
     setupFonts();
@@ -249,7 +210,7 @@ int main(int argc, char *argv[]) {
     app.setStyleSheet(K4Styles::applicationStyleSheet());
 
     // Must precede MainWindow — its controllers construct the first QSslSocket
-    selectTlsBackend();
+    TlsBackend::selectOpenSsl();
 
     // --connect <name> opens one particular saved radio, overriding the list's auto-connect tick,
     // so one install can carry a desktop shortcut per K4.
@@ -268,6 +229,25 @@ int main(int argc, char *argv[]) {
         QStringLiteral("Connect at startup to the saved radio named <name>, whatever the list is set to."),
         QStringLiteral("name"));
     parser.addOption(connectOption);
+    const QCommandLineOption tlsSelfCheckOption(
+        QStringLiteral("tls-self-check"),
+        QStringLiteral("Report the TLS backend and OpenSSL library in use, then exit (0 = TLS-PSK available)."));
+    parser.addOption(tlsSelfCheckOption);
+    const QCommandLineOption logFileOption(
+        QStringLiteral("log-file"),
+        QStringLiteral("Write a log file for this session, whatever the Diagnostics page says. It goes in ") +
+            QDir::toNativeSeparators(Logging::logDirectory(Logging::currentPathInputs())) + QStringLiteral("."));
+    parser.addOption(logFileOption);
+    const QCommandLineOption logStderrOption(
+        QStringLiteral("log-stderr"),
+        QStringLiteral("Also print log messages to the console while a log file is being written."));
+    parser.addOption(logStderrOption);
+    const QCommandLineOption logRulesOption(
+        QStringLiteral("log-rules"),
+        QStringLiteral("Logging rules applied after the Diagnostics page's, separated by ';' - for example "
+                       "\"qk4.cw.*.debug=true;qk4.cat.tx.debug=true\". QT_LOGGING_RULES still wins."),
+        QStringLiteral("rules"));
+    parser.addOption(logRulesOption);
     const QStringList arguments = QCoreApplication::arguments();
     const bool parsedCleanly = parser.parse(arguments);
     // WHY: not showHelp()/showVersion() - both call ::exit(), which ends the process without
@@ -277,17 +257,17 @@ int main(int argc, char *argv[]) {
     // these two on the same footing as the --connect message below, which Qt's versions are not:
     // showHelp() decides on a message box by its own rules, in its own words.
     //
-    // WHY: --help-all is tested by name. addHelpOption() declares BOTH --help and --help-all, and
-    // advertises the second one in the text the first one prints, but the QCommandLineOption it
-    // returns covers only --help. Nothing handled --help-all, and because parse() ignores what it
-    // cannot place rather than exiting, `QK4 --help-all` opened the full GUI - the app advertising
-    // an option that silently does something else entirely. Qt's own listing of its generic
+    // WHY: --help-all is tested by name. addHelpOption() declares both --help and --help-all but
+    // returns an option covering only --help, and parse() ignores the rest, so --help-all would
+    // open the GUI. Qt's own listing of its generic
     // options is not reachable without showHelp()'s ::exit(), so this answers with the same text
     // --help gives rather than pretending to more.
     if (parser.isSet(helpOption) || parser.isSet(QStringLiteral("help-all"))) {
         reportToOperator(parser.helpText(), QMessageBox::Information);
         return 0;
     }
+    if (parser.isSet(tlsSelfCheckOption))
+        return TlsBackend::runSelfCheck();
     if (parser.isSet(versionOption)) {
         reportToOperator(QCoreApplication::applicationName() + QStringLiteral(" ") +
                              QCoreApplication::applicationVersion() + QStringLiteral("\n"),
@@ -308,10 +288,8 @@ int main(int argc, char *argv[]) {
     // carry a bare --connect too and exiting silently there is indistinguishable from the app
     // being broken.
     //
-    // WHY: matching the bare strings alone let `--connect=` through. Qt parses an explicit but
-    // empty value as the option being set to nothing, `arguments.contains("--connect")` is false
-    // for it, and the guard below never fired - so the operator got the GUI and no complaint. An
-    // explicit empty value is the same mistake as a bare --connect and has to be caught with it.
+    // WHY: `--connect=` too. Qt parses an explicit empty value as the option set to nothing, which
+    // is the same mistake as a bare --connect.
     bool askedToConnect = false;
     for (const QString &argument : arguments) {
         if (argument == QStringLiteral("-c") || argument == QStringLiteral("--connect") ||
@@ -346,8 +324,25 @@ int main(int argc, char *argv[]) {
     // in its own words. Anything still unparsed at this point is an option QK4 never
     // declared, which is ignored on purpose.
     if (!parsedCleanly) {
-        qWarning() << "Ignoring command line:" << parser.errorText();
+        qCWarning(lcApp) << "Ignoring command line:" << parser.errorText();
     }
+
+    Logging::CommandLine logCommandLine;
+    logCommandLine.extraRules = parser.value(logRulesOption);
+    logCommandLine.forceFile = parser.isSet(logFileOption);
+    logCommandLine.stderrRequested = parser.isSet(logStderrOption);
+    Logging::setCommandLine(logCommandLine);
+    Logging::setSessionHeader(sessionHeader());
+    auto applyLogging = [] {
+        const RadioSettings *settings = RadioSettings::instance();
+        Logging::apply(settings->logFileEnabled(), settings->logConfig());
+    };
+    applyLogging();
+    QObject::connect(RadioSettings::instance(), &RadioSettings::loggingChanged, RadioSettings::instance(),
+                     applyLogging);
+    Logging::sink()->start();
+    if (const char *throttling = RtScheduling::optOutOfPowerThrottling())
+        qCInfo(lcApp) << "Windows:" << throttling;
 
     int exitCode = 0;
     bool relaunch = false;
@@ -370,7 +365,10 @@ int main(int argc, char *argv[]) {
     }
     // WHY: only after MainWindow is destroyed. Its teardown closes the CAT and TCI listeners and
     // releases the USB devices; a new instance started any earlier would race this one for them.
-    if (relaunch)
+    if (relaunch) {
+        // Before the new instance starts, so it finds this one's log closed and rotates it.
+        Logging::shutdown();
         InterfaceScale::relaunch();
+    }
     return exitCode;
 }

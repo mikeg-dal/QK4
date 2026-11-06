@@ -1,4 +1,5 @@
 #include "controllers/tcicontroller.h"
+#include "logging/logcategories.h"
 
 #include <QMetaEnum>
 
@@ -15,13 +16,16 @@
 #include "dsp/spectrumscale.h"
 #include "network/tciaudiobridge.h"
 #include "network/tciserver.h"
+#include "utils/radioutils.h"
+#include "utils/threadshutdown.h"
+#include <chrono>
 
 namespace {
 
-// How long to wait for the TCI thread to finish at shutdown. Long enough for an audio callback in
-// flight; short enough that a wedged thread does not hold up quitting. Exceeding it is handled
-// rather than ignored - see the destructor.
-constexpr int kThreadShutdownMs = 2000;
+// How long the TCI thread gets at shutdown, for the server's stop() and the join together. Long
+// enough for an audio callback in flight; short enough that a wedged thread does not hold up
+// quitting. Exceeding it is handled rather than ignored - see the destructor.
+constexpr std::chrono::milliseconds kThreadShutdownTimeout{2000};
 
 // K4 mode -> TCI modulation name. Only the modes in modulations_list are legal on the wire; an
 // unknown one is reported as usb rather than invented, because a client that cannot parse the
@@ -75,9 +79,8 @@ bool k4ModeFor(const QString &modulation, RadioState::Mode *out) {
     return true;
 }
 
-// K4 AGC speed -> TCI AGC mode. TCI defines exactly three: normal, fast, off. QK4 previously
-// answered "med", which is not one of them, so a client matching the documented vocabulary could
-// not parse it.
+// K4 AGC speed -> TCI AGC mode. TCI defines exactly three: normal, fast, off; anything else (such
+// as "med") cannot be parsed by a client matching the documented vocabulary.
 QString tciAgcModeFor(RadioState::AGCSpeed speed) {
     switch (speed) {
     case RadioState::AGC_Off:
@@ -100,10 +103,10 @@ QString tciAgcModeFor(RadioState::AGCSpeed speed) {
 // to invent either.
 //
 // Reporting that value directly is what keeps the three displays agreeing: the K4 front panel,
-// QK4's own PWR button, and a TCI client all show the same number. An earlier version of this
-// scaled to a percentage of the range, which is arguably the tidier reading of a protocol field
-// documented as "0 to 100" - and it made a client read 82 while the radio said 90 W. Agreement
-// with the radio in front of the operator wins.
+// QK4's own PWR button, and a TCI client all show the same number. Scaling to a percentage of the
+// range is arguably the tidier reading of a protocol field documented as "0 to 100" - but it
+// makes a client read 82 while the radio says 90 W. Agreement with the radio in front of the
+// operator wins.
 //
 // The one place this loses: QRO runs to 110 W and the protocol field stops at 100, so 101-110 W
 // all report 100. Nothing can be done about that without normalising, which costs more than it
@@ -195,6 +198,8 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     m_bridge->moveToThread(m_tciThread);
     m_tciThread->start();
 
+    connect(m_server, &TciServer::listeningChanged, this, &TciController::onServerListeningChanged);
+
     // The wiring lives in helpers rather than one block - see each for what it covers.
     wireAudioAndClients();
     wireTransmit();
@@ -202,17 +207,15 @@ TciController::TciController(AudioController *audioController, ConnectionControl
     wireSnapshot();
 
     // LAST, because it can START THE LISTENER. Every handler above must already be connected or a
-    // client arriving in that window would have its commands dropped. MainWindow had the same
-    // ordering for the same reason.
+    // client arriving in that window would have its commands dropped.
     wireSettings();
 }
 
 // The enable/port/audio settings, which this controller owns rather than the main window.
 //
-// MOVED OUT OF MainWindow: new feature wiring there is banned shape #1 in
-// src/controllers/README.md, and there is nothing about a TCI listen port that a window needs to
-// know. Order is preserved exactly as MainWindow had it - the audio flag is applied BEFORE the
-// listener starts, so a server that comes up at construction is never briefly running with the
+// Not in MainWindow: new feature wiring there is banned shape #1 in src/controllers/README.md, and
+// there is nothing about a TCI listen port that a window needs to know. The audio flag is applied
+// BEFORE the listener starts, so a server that comes up at construction is never briefly running with the
 // wrong audio setting.
 void TciController::wireSettings() {
     RadioSettings *settings = RadioSettings::instance();
@@ -239,9 +242,7 @@ void TciController::wireSettings() {
     }
 }
 
-// RX audio into the server, and the client roster back out. Split from the constructor,
-// which had 46 connect() calls in one 287-line block - banned shape #3 in
-// src/controllers/README.md, and the shape the other controllers avoid.
+// RX audio into the server, and the client roster back out.
 void TciController::wireAudioAndClients() {
     // RX audio is NOT wired here. It is the one connection in this class that costs something per
     // received packet whether or not TCI is in use, so it is connected in start() and dropped in
@@ -250,7 +251,8 @@ void TciController::wireAudioAndClients() {
     // A listener arriving after an idle stretch must not hear samples from before the gap: the
     // bridge skips work entirely while nobody is subscribed, so the filter history is stale.
     connect(
-        m_server, &TciServer::audioStartRequested, m_bridge, [this](int) { m_bridge->reset(); }, Qt::QueuedConnection);
+        m_server, &TciServer::audioStartRequested, m_bridge, [bridge = m_bridge](int) { bridge->reset(); },
+        Qt::QueuedConnection);
 
     // Queued (m_server is on the TCI thread, this is not), so the cache is written on the main
     // thread and read there too. Re-emitted rather than forwarded directly so no consumer can
@@ -275,17 +277,14 @@ void TciController::wireAudioAndClients() {
 void TciController::wireTransmit() {
     // THE TRANSMITTER CHANGED HANDS - whoever took it, and by whatever route.
     //
-    // This is the seam TransmitController::ownerChanged was built for and never had: its own doc
-    // comment said TciController consumed it, and until now nothing did. The gap it left was a
-    // local takeover from a TCI client, where the operator correctly gets the microphone but the
-    // TCI layer is never told - the roster keeps showing trx:true, TX_CHRONO keeps running, and
+    // A local takeover from a TCI client gives the operator the microphone, and the TCI layer must
+    // be told too, or the roster keeps showing trx:true, TX_CHRONO keeps running, and the server's
     // m_pttOwner stays set so no OTHER client can key either.
     //
     // WHY pttActiveChanged cannot carry it: PttButton and TciClient both engage with
     // Route::StreamedFromHere, so the gate does not move across that takeover and there is no PTT
     // edge to emit. That is correct at the arbiter level and test_transmitowner's
-    // localTakesItFromRemote asserts it. The defect was the missing consumer, not the arbiter,
-    // which is why the fix sits here rather than there.
+    // localTakesItFromRemote asserts it.
     //
     // ownerChanged carries the PREVIOUS owner, which is the whole reason it can answer this: only
     // the transition away from TciClient is ours to act on.
@@ -300,7 +299,7 @@ void TciController::wireTransmit() {
                     // holds PTT, which is exactly the case when the client unkeyed itself through
                     // setPtt and the roster was already told. It does not re-emit pttRequested, so
                     // this cannot recurse back into the handler below.
-                    QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+                    releaseClientPtt();
                 });
     }
 
@@ -320,10 +319,10 @@ void TciController::wireTransmit() {
             if (active) {
                 // Ask rather than write. The arbiter applies the source and the gate in the order
                 // described above - it carries that ordering rule itself - and, crucially, it then
-                // KNOWS the gate is open. It could not know that while this handler wrote the gate
-                // directly, so a radio-side RX (a fault, a tune timeout, RX at the front panel)
-                // left a TCI client streaming into a radio that had stopped transmitting, and the
-                // arriving audio re-keyed it. The arbiter cannot close a gate it did not open.
+                // KNOWS the gate is open, so a radio-side RX (a fault, a tune timeout, RX at the
+                // front panel) closes it instead of leaving a TCI client streaming into a radio that
+                // has stopped transmitting, which the arriving audio would re-key. The arbiter
+                // cannot close a gate it did not open.
                 transmitting = m_transmitController->engage(TransmitOwner::Owner::TciClient,
                                                             TransmitOwner::Route::StreamedFromHere);
                 if (!transmitting) {
@@ -333,47 +332,39 @@ void TciController::wireTransmit() {
                     // right call because it broadcasts trx:false WITHOUT re-emitting pttRequested,
                     // which is what stops this recursing. TransmitController logs the refusal and
                     // who holds it, so this does not log again.
-                    QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+                    releaseClientPtt();
                 }
             } else {
                 m_transmitController->release(TransmitOwner::Owner::TciClient);
             }
             m_drivingPtt = false;
-            emit transmittingChanged(transmitting);
         });
 
-        // QK4 ITSELF KEYED OR UNKEYED - Esc, the PTT button, the HaliKey PTT line, the side panel,
-        // CatServer. All of them funnel through AudioController::setPttActive.
+        // QK4 ITSELF KEYED OR UNKEYED - Esc, the PTT button, XMIT, CatServer. All of them funnel
+        // through TransmitController into AudioController::setPttActive.
         //
-        // Before this, none of them told the TCI side, so the server went on believing the client
-        // held the transmitter until the client's own transmit period ended - up to ~15 s for FT8.
-        // Pressing QK4's PTT inside that window sent the client's tones instead of the operator's
-        // microphone, because AudioEngine discards mic audio unless the source is Microphone.
+        // Without this the server would go on believing the client held the transmitter until the
+        // client's own transmit period ended - up to ~15 s for FT8 - and QK4's PTT inside that
+        // window would send the client's tones instead of the operator's microphone, because
+        // TxAudioPipeline discards mic audio unless the source is Microphone.
         //
         // WHY TAKE OVER RATHER THAN REFUSE, for a local PRESS while a client holds PTT: the
-        // operator is at the radio and the client is not. Refusing would repeat the defect being
-        // fixed here in the other direction - the operator acts, nothing happens, and nothing
-        // anywhere says why. Taking over is also the only option that leaves the audio path
-        // matching what the operator can hear.
-        connect(m_audioController, &AudioController::pttActiveChanged, this, [this](bool active) {
+        // operator is at the radio and the client is not. Refusing would leave the operator acting
+        // with nothing happening and nothing anywhere saying why. Taking over is also the only
+        // option that leaves the audio path matching what the operator can hear.
+        connect(m_audioController, &AudioController::pttActiveChanged, this, [this]() {
             if (m_drivingPtt) {
                 return; // this controller asked for it, not the operator
             }
-            QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
+            releaseClientPtt();
             // WHY no TX source write here: TransmitController is the only thing that moves the gate,
             // and its apply() already sets the source on both edges in the one order that is safe -
             // before the gate on a press, queued behind the close on a release. A second writer here
             // is what put the room microphone on the air in #161: it switched the source while the
             // queued gate close was still in flight.
-            emit transmittingChanged(active);
         });
 
-        // Queued: decoding lands on the TCI thread, the encode pipeline lives on the audio thread.
-        connect(m_server, &TciServer::txAudioReceived, this, [this](const QByteArray &mono48k) {
-            if (m_audioEnabled) {
-                m_audioController->feedTciTxAudio(mono48k);
-            }
-        });
+        // TX audio itself is routed in setAudioEnabled: TCI thread -> TX thread, not through here.
     }
 }
 
@@ -392,8 +383,7 @@ void TciController::wireCatSets() {
         connect(m_connectionController, &ConnectionController::connectionStateChanged, this,
                 [this](TcpClient::ConnectionState state) {
                     if (state == TcpClient::Disconnected) {
-                        QMetaObject::invokeMethod(m_server, "releaseLocalPtt", Qt::QueuedConnection);
-                        emit transmittingChanged(false);
+                        releaseClientPtt();
                     }
                 });
 
@@ -415,7 +405,7 @@ void TciController::wireCatSets() {
                 return;
             }
             // The whole reason the Sub RX is a receiver rather than a channel: modulation has no
-            // channel argument, so this could not be addressed at all before.
+            // channel argument, so it can only be addressed per receiver.
             applyCat(receiver == TciRadio::SUB_RECEIVER ? CatFrames::modeB(mode) : CatFrames::modeA(mode));
         });
         connect(m_server, &TciServer::setSplitRequested, this,
@@ -455,8 +445,8 @@ void TciController::wireCatSets() {
                 // receiver moves both - the same shape as the shared RIT/XIT offset.
                 applyCat(CatFrames::setMenuValue(kAgcGainMenuId, qBound(kAgcGainMin, value, kAgcGainMax)));
             } else if (name == QLatin1String("tune_drive")) {
-                // MENU ITEM 69, "TUNE LP (Low power TUNE)", 1-50 W - NOT PC. Sending PC here is
-                // the bug this branch exists to prevent: it changes the operating power.
+                // MENU ITEM 69, "TUNE LP (Low power TUNE)", 1-50 W - NOT PC. Sending PC here would
+                // change the operating power.
                 const int watts = qBound(kTuneDriveMinW, value, kTuneDriveMaxW);
                 applyCat(CatFrames::setMenuValue(kTuneDriveMenuId, watts));
                 // No optimistic write: MenuModel is updated by the ME echo the radio sends back,
@@ -464,9 +454,9 @@ void TciController::wireCatSets() {
             } else if (name == QLatin1String("drive")) {
                 // drive ONLY - tune_drive is handled above and must not fall through to PC.
                 // PCnnnr, with the range letter - the same form QK4's UI sends. The PCX variant
-                // is the extended QUERY and the radio ignores it as a set, which is why drive
-                // failed on the bench until this changed.
-                applyCat(CatFrames::setRfPower(value, m_radioState && m_radioState->isQrpMode()));
+                // is the extended QUERY and the radio ignores it as a set.
+                applyCat(CatFrames::setRfPower(value, m_radioState ? m_radioState->powerRange()
+                                                                   : LevelsState::PowerRange::Qro));
             }
         });
 
@@ -538,6 +528,8 @@ void TciController::wireSnapshot() {
         // interval the client asked for, so a fast radio cannot flood the link.
         connect(m_radioState, &RadioState::sMeterChanged, this, [this](double) { publishSensors(); });
         connect(m_radioState, &RadioState::sMeterBChanged, this, [this](double) { publishSensors(); });
+        connect(m_radioState, &RadioState::sMeterDbmChanged, this, [this](int) { publishSensors(); });
+        connect(m_radioState, &RadioState::sMeterDbmBChanged, this, [this](int) { publishSensors(); });
         connect(m_radioState, &RadioState::swrChanged, this, [this](double) { publishSensors(); });
         connect(m_radioState, &RadioState::txMeterChanged, this,
                 [this](int, int, double, double) { publishSensors(); });
@@ -554,16 +546,15 @@ void TciController::wireSnapshot() {
                 Qt::QueuedConnection);
             publishSnapshot();
         });
-        // RadioState has no per-field AGC signal; processingChanged is the coarse one it emits from
-        // handleGT, and it also covers the NB/NR fields when those get wired.
+        // RadioState has no per-field AGC signal; processingChanged (GT, NB, NR, PA, RA for Main)
+        // is the coarse one.
         connect(m_radioState, &RadioState::processingChanged, this, [this]() { publishSnapshot(); });
 
         // EVERY snapshot field needs a signal, or it reports a value that can change and never
-        // announces the change. That gap is not theoretical: vfo_lock moved on the radio and in
-        // QK4's own UI while TCI kept reporting false, because nothing here listened for it.
+        // announces the change.
         //
-        // The DSP flags are spread across three state files with separate signals, which is why
-        // subscribing to processingChanged alone was not enough:
+        // The DSP flags are spread across three state files with separate signals, so
+        // processingChanged alone is not enough:
         //   processingstate  -> processingChanged, processingChangedB, notchChanged, notchBChanged
         //   audioeffectsstate -> apfChanged, apfBChanged
         //   frequencyvfostate -> lockAChanged, lockBChanged
@@ -595,8 +586,8 @@ void TciController::setAudioEnabled(bool enabled) {
     // TURNING AUDIO OFF UNDER A TRANSMITTING CLIENT HAS TO END THE TRANSMISSION.
     //
     // A TCI client keys with Route::StreamedFromHere - the audio stream IS the keying mechanism,
-    // there is no TX; behind it - and the flag just written is what gates that stream, at the
-    // txAudioReceived handler in wireTransmit. So switching audio off starves the transmitter
+    // there is no TX; behind it - and the transmit audio route, cut below, is what carries that
+    // stream. So switching audio off starves the transmitter
     // while leaving the gate asserted and the arbiter still recording TciClient as the holder.
     // That is the worst of the three states: keyed, no audio reaching the radio, and the
     // microphone locked out because the source is still Tci.
@@ -610,6 +601,16 @@ void TciController::setAudioEnabled(bool enabled) {
     // same value, which is what construction does, must not touch anyone's transmitter.
     if (was && !enabled) {
         releaseClientTransmitter();
+    }
+
+    // The transmit audio route IS the audio gate. Connected straight from the server (TCI thread) to
+    // the TX pipeline (TX thread), so transmit audio never waits on this thread's event loop.
+    // Disconnecting is thread-safe and takes effect for every frame emitted after it returns.
+    if (enabled && !m_txAudioRoute && m_audioController) {
+        m_txAudioRoute = m_audioController->routeTciTxAudio(m_server);
+    } else if (!enabled && m_txAudioRoute) {
+        disconnect(m_txAudioRoute);
+        m_txAudioRoute = {};
     }
 
     // The bridge lives on the TCI thread; its flag is a plain bool read on that thread only.
@@ -628,18 +629,22 @@ void TciController::releaseClientTransmitter() {
     // Guarded for the same reason as the client's own key/unkey: release() drives
     // AudioController::setPttActive, whose pttActiveChanged is emitted synchronously on this
     // thread. Unguarded, the handler in wireTransmit would read this controller's own release as
-    // the operator taking the transmitter - and would write the TX source DIRECTLY, which is the
-    // ordering bug de6ad9a fixed. The arbiter's apply() already sequences the gate and the source
-    // correctly; it must be left to do it.
+    // the operator taking the transmitter - and would write the TX source DIRECTLY, out of order
+    // with the gate. The arbiter's apply() already sequences the gate and the source correctly; it
+    // must be left to do it.
     m_drivingPtt = true;
     m_transmitController->release(TransmitOwner::Owner::TciClient);
     m_drivingPtt = false;
 
     // The roster is NOT told from here. release() above moves the arbiter off TciClient, which
-    // emits ownerChanged, which is now wired in wireTransmit and does exactly that - for this path
-    // and for a local takeover alike. Telling it here as well would be a second route to the same
-    // state, and two routes are how the takeover case came to be missed in the first place.
-    emit transmittingChanged(false);
+    // emits ownerChanged, whose handler in wireTransmit tells it - for this path and for a local
+    // takeover alike. Telling it here as well would be a second route to the same state.
+}
+
+// WHY queued: the server lives on the TCI thread. releaseLocalPtt broadcasts trx:false without
+// re-emitting pttRequested, so no caller here can recurse through it.
+void TciController::releaseClientPtt() {
+    QMetaObject::invokeMethod(m_server, &TciServer::releaseLocalPtt, Qt::QueuedConnection);
 }
 
 void TciController::sendCwMacro(const QVector<CwMacroSegment> &segments) {
@@ -656,9 +661,9 @@ void TciController::sendCwMacro(const QVector<CwMacroSegment> &segments) {
     // surprising side effect of a text command; and in the DATA modes the radio sends the text as
     // data, which is a legitimate use this must not refuse.
     if (m_radioState && !CatFrames::modeKeysCwText(m_radioState->mode())) {
-        qWarning() << "TCI: CW text sent while the radio is in"
-                   << QMetaEnum::fromType<RadioState::Mode>().valueToKey(m_radioState->mode())
-                   << "- the K4 keys KY only in CW and DATA modes, so this will be silently ignored";
+        qCWarning(lcTci) << "TCI: CW text sent while the radio is in"
+                         << QMetaEnum::fromType<RadioState::Mode>().valueToKey(m_radioState->mode())
+                         << "- the K4 keys KY only in CW and DATA modes, so this will be silently ignored";
     }
 
     // What to send is decided in CwMacro::plan, which is tested; this only carries it out.
@@ -679,7 +684,12 @@ void TciController::sendCwMacro(const QVector<CwMacroSegment> &segments) {
 void TciController::applyCat(const QByteArray &frame) {
     const QString command = QString::fromLatin1(frame);
 
-    // Mirrors what CatServer's wiring does for an external client (mainwindow.cpp:352-375): send it,
+    // A TCI client cannot move a locked VFO either. TciServer has already confirmed the request with
+    // the held frequency, so the client is told the truth without anything sent.
+    if (m_radioState && RadioUtils::catMovesLockedVfo(command, m_radioState->lockA(), m_radioState->lockB()))
+        return;
+
+    // Mirrors what CatServer's wiring does for an external client (MainWindow::setupCatServer): send it,
     // then parse it locally so the panadapter passband tracks immediately. K4 spectrum packets
     // arrive BEFORE the CAT echo, so without the optimistic parse the passband goes off-screen
     // until the echo lands.
@@ -689,10 +699,9 @@ void TciController::applyCat(const QByteArray &frame) {
     // on the main thread already, but the queue keeps that true if the signal is ever reconnected
     // from the TCI thread.
     if (m_radioState) {
-        // The CONTEXT OBJECT IS m_radioState, so the capture must be too. Capturing `this` here
-        // anchored the call's lifetime to the wrong object: RadioState outlives TciController, so
-        // a call still queued when the controller is destroyed would run and dereference a dead
-        // `this` to reach a pointer the lambda could simply have carried itself.
+        // The CONTEXT OBJECT IS m_radioState, so the capture must be too. Capturing `this` would
+        // anchor the call's lifetime to the wrong object: RadioState outlives TciController, so a
+        // call still queued when the controller is destroyed would run and dereference a dead `this`.
         QMetaObject::invokeMethod(
             m_radioState, [state = m_radioState, command]() { state->parseCATCommand(command); }, Qt::QueuedConnection);
     }
@@ -704,10 +713,12 @@ void TciController::publishSensors() {
     }
     TciSensorReadings readings;
 
-    // The protocol wants an absolute level in dBm. RadioState carries the K4's S-meter in its own
-    // encoding, so the conversion goes through the one place that owns the S-unit convention.
-    readings.sMeterDbm[TciRadio::MAIN_RECEIVER] = SpectrumScale::dbmForSMeterReading(m_radioState->sMeter());
-    readings.sMeterDbm[TciRadio::SUB_RECEIVER] = SpectrumScale::dbmForSMeterReading(m_radioState->sMeterB());
+    // The protocol wants an absolute level in dBm: the radio's own SMH / SMH$, falling back to the
+    // SM bar estimate only until the first SMH arrives.
+    readings.sMeterDbm[TciRadio::MAIN_RECEIVER] =
+        SpectrumScale::rxLevelDbm(m_radioState->sMeterDbm(), m_radioState->sMeter());
+    readings.sMeterDbm[TciRadio::SUB_RECEIVER] =
+        SpectrumScale::rxLevelDbm(m_radioState->sMeterDbmB(), m_radioState->sMeterB());
 
     readings.forwardPowerW = m_radioState->forwardPower();
     // The K4 reports ONE forward-power figure, not an RMS/peak pair. Reporting it as both is the
@@ -751,8 +762,8 @@ void TciController::publishSnapshot() {
                    &main.filterHighHz);
 
     // SUB receiver: the K4's VFO B side. Every one of these has a *B counterpart in RadioState,
-    // and none of them could be expressed at all while the Sub RX was modelled as a channel -
-    // modulation, rx_filter_band and agc_mode carry no channel argument. See tciradiostate.h.
+    // and it has to be a receiver rather than a channel - modulation, rx_filter_band and agc_mode
+    // carry no channel argument. See tciradiostate.h.
     TciReceiverState &sub = snapshot.rx[TciRadio::SUB_RECEIVER];
     sub.vfoHz = static_cast<qint64>(m_radioState->vfoB());
     sub.modulation = tciModulationFor(m_radioState->modeB());
@@ -807,8 +818,7 @@ void TciController::publishSnapshot() {
 
     // mic_level is not in the published 2.0 spec - it is an ExpertSDR3 extension real clients
     // expect - so there is no documented range to map onto. RadioState::micGain is the K4's own
-    // 0-80 MG value; reporting it directly beats the constant that was here before. -1 is the
-    // not-read-yet sentinel.
+    // 0-80 MG value, reported directly. -1 is the not-read-yet sentinel.
     const int mic = m_radioState->micGain();
     snapshot.micLevel = (mic >= 0) ? mic : 0;
 
@@ -838,65 +848,46 @@ void TciController::shutdown() {
 }
 
 TciController::~TciController() {
-    // Rule 11: drop queued signals before partial destruction, then stop producers before consumers.
-    disconnect(this);
+    // WHY AudioController is cut first: shutdown() below calls its setPttActive, which emits
+    // pttActiveChanged synchronously into this object's handler - mid-destructor - and Qt would
+    // only drop that connection in ~QObject, after this body. No other sender can fire into this
+    // during the body: TciServer's signals are queued from the TCI thread and nothing here runs an
+    // event loop to deliver them (~QObject discards what is still posted).
+    if (m_audioController) {
+        m_audioController->disconnect(this);
+    }
 
     // UNKEY FROM HERE, because the unkey the server is about to ask for cannot arrive.
     //
     // TciServer::stop releases a held PTT and emits pttRequested(false) - but that signal is
-    // queued to this controller on the main thread, and the disconnect above has just severed it.
-    // Below it is worse still: stop is called with a BlockingQueuedConnection, so the main thread
-    // is sitting inside that call and the queue it would be delivered to is never drained again.
-    // Either way, a client holding the transmitter when QK4 quit left the radio keyed with the
-    // audio path still gated to the TCI source.
-    //
-    // Done HERE, ahead of both teardown paths, because the no-thread path has the same hole: it
-    // deletes the server outright, and ~TciServer calls the same stop() into the same severed
-    // signal. It is also safe to unkey this early precisely BECAUSE disconnect has run - nothing
-    // can key again between here and the end of this destructor.
+    // queued to this controller on the main thread, and the main thread is blocked waiting for
+    // stop to finish (ThreadShutdown::callBlocking), and the event is
+    // discarded unprocessed when this object is destroyed. A client holding the transmitter at
+    // quit would leave the radio keyed with the audio path still gated to the TCI source.
     //
     // Releases the transmitter if shutdown() has not already done it. The QPointer is what makes
     // this safe: on the normal quit path AudioController is destroyed BEFORE this controller, and
-    // the release has to be skipped rather than performed against freed memory. Doing it here as a
-    // raw-pointer call is what segfaulted on every quit-while-connected.
+    // the release has to be skipped rather than performed against freed memory.
     shutdown();
 
-    if (!m_tciThread) {
-        delete m_bridge;
-        delete m_server;
-        return;
-    }
-
-    QMetaObject::invokeMethod(m_server, "stop", Qt::BlockingQueuedConnection);
+    const QDeadlineTimer deadline(kThreadShutdownTimeout);
+    TciServer *server = m_server;
+    ThreadShutdown::callBlocking(server, [server]() { server->stop(); }, deadline);
 
     // DESTROYED ON THEIR OWN THREAD, not from here.
     //
     // Both objects live on m_tciThread. Deleting one from another thread is undefined - it may be
-    // inside a slot at the time - and this destructor used to do exactly that whenever the join
-    // below timed out, because it deleted them regardless of the result. A deferred delete posted
-    // to a thread is run when that thread's event loop finishes (Qt guarantees it even for a thread
-    // with no loop left running), so these are gone before the thread exits, and nothing here
-    // touches the pointers again either way.
+    // inside a slot at the time, which is exactly the case when the join below times out. "If deleteLater() is
+    // called on an object that lives in a thread with no running event loop, the object will be
+    // destroyed when the thread finishes" (QObject::deleteLater), and a thread processes deferred
+    // deletions after its loop has stopped (QThread::finished). So these are gone before the thread
+    // exits - or stay with a thread that never does, which is then disowned, not destroyed.
     m_bridge->deleteLater();
     m_server->deleteLater();
     m_bridge = nullptr;
     m_server = nullptr;
 
-    m_tciThread->quit();
-    if (m_tciThread->wait(kThreadShutdownMs)) {
-        return;
-    }
-
-    // THE TIMEOUT PATH, which is the one that crashed.
-    //
-    // m_tciThread is a child of this controller, so simply returning would have ~QObject destroy a
-    // QThread that is still running - which aborts. Disown it instead. The thread, and whatever it
-    // still holds, is leaked; at application exit that costs nothing, where the abort cost the user
-    // a crash on every quit slow enough to reach this line.
-    qWarning() << "TCI thread did not stop within" << kThreadShutdownMs
-               << "ms - leaving it running rather than destroying it underneath itself";
-    m_tciThread->setParent(nullptr);
-    m_tciThread = nullptr;
+    ThreadShutdown::retire(m_tciThread, deadline, lcTci());
 }
 
 // The RX audio fan-out, connected only while the server is up.
@@ -924,40 +915,43 @@ void TciController::disconnectRxAudioFanout() {
 }
 
 void TciController::start(quint16 port, bool loopbackOnly) {
-    // BEFORE the listener comes up, not after. The ordering rule from f5e669a applies to this the
+    // BEFORE the listener comes up, not after. The constructor's ordering rule applies to this the
     // same as to every other handler: anything a client can reach has to be connected before a
     // client can arrive, or the first audio subscription races the wiring that serves it.
     connectRxAudioFanout();
 
-    bool ok = false;
-    QMetaObject::invokeMethod(m_server, "start", Qt::BlockingQueuedConnection, Q_RETURN_ARG(bool, ok),
-                              Q_ARG(quint16, port), Q_ARG(bool, loopbackOnly));
-
-    // A listener that failed to bind serves nobody, so it should not be left paying for the
-    // fan-out either.
-    if (!ok) {
-        disconnectRxAudioFanout();
-    }
-    // Blocking, so the result is authoritative by the time it lands here.
-    m_listening = ok;
-    emit listeningChanged(ok, ok ? port : quint16(0));
+    // WHY queued, not blocking: this runs on the main thread whenever the TCI setting or port
+    // changes, and a blocking call would freeze the window for as long as the TCI thread is busy,
+    // with no limit. The result comes back as TciServer::listeningChanged.
+    ++m_serverRequestsInFlight;
+    TciServer *server = m_server;
+    QMetaObject::invokeMethod(
+        server, [server, port, loopbackOnly]() { server->start(port, loopbackOnly); }, Qt::QueuedConnection);
 }
 
 void TciController::stop() {
-    QMetaObject::invokeMethod(m_server, "stop", Qt::BlockingQueuedConnection);
+    ++m_serverRequestsInFlight;
+    QMetaObject::invokeMethod(m_server, &TciServer::stop, Qt::QueuedConnection);
+}
 
-    // AFTER the server is down, mirroring the order in start(). Dropping it first would leave a
-    // still-subscribed client silent for the width of the blocking call above rather than
-    // disconnected.
-    disconnectRxAudioFanout();
+// The TCI thread's answer to one start() or stop(). Queued to this thread; a request still in
+// flight when this controller is destroyed is dropped with it (~QObject removes pending events).
+void TciController::onServerListeningChanged(bool listening, quint16 port) {
+    if (m_serverRequestsInFlight > 0 && --m_serverRequestsInFlight > 0) {
+        return; // a later request is still coming; its answer is the one that counts
+    }
 
-    m_listening = false;
-    // The server emits clientDisconnected for each session it tears down, so the queued
-    // clientCountChanged would converge on its own - but not before this function returns, and a
-    // page repainting on listeningChanged would show a listener that is down with clients still
-    // attached to it.
-    m_clientCount = 0;
-    m_clients.clear();
-    emit clientsChanged(m_clients);
-    emit listeningChanged(false, 0);
+    if (!listening) {
+        // AFTER the server is down, mirroring the order in start(). A listener that failed to
+        // bind serves nobody either, so it should not be left paying for the fan-out.
+        disconnectRxAudioFanout();
+        // The server emits clientDisconnected for each session it tears down, so the queued
+        // clientCountChanged would converge on its own - but a page repainting on listeningChanged
+        // would show a listener that is down with clients still attached to it.
+        m_clientCount = 0;
+        m_clients.clear();
+        emit clientsChanged(m_clients);
+    }
+    m_listening = listening;
+    emit listeningChanged(listening, port);
 }

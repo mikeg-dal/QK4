@@ -19,7 +19,7 @@ class StatusBarController;
 // OptionsDialog for the KPA tab, and (2) two task-level calls —
 // connectIfEnabled() on K4 auth success, and disconnectFromHost() on K4
 // disconnect — because KPA connectivity is intentionally gated on K4
-// connectivity (see setupKpa1500 comment block).
+// connectivity.
 //
 // See PATTERNS.md → Controller Pattern.
 class KPA1500UiController : public QObject {
@@ -28,9 +28,7 @@ class KPA1500UiController : public QObject {
 public:
     // RightSidePanel is the host for the mini panel widget — the
     // controller constructs Kpa1500MiniPanel itself and hands it to
-    // RightSidePanel::embedKpa1500Panel() for layout placement. This
-    // removes the Rule 2 reach-in that previously had MainWindow pull
-    // the mini panel widget out of RightSidePanel.
+    // RightSidePanel::embedKpa1500Panel() for layout placement.
     explicit KPA1500UiController(StatusBarController *statusBar, RightSidePanel *rightSidePanel,
                                  QObject *parent = nullptr);
     ~KPA1500UiController() override;
@@ -51,6 +49,7 @@ public:
 
 private:
     StatusBarController *m_statusBar;  // injected, not owned
+    RightSidePanel *m_rightSidePanel;  // injected, not owned
     Kpa1500MiniPanel *m_miniPanel;     // constructed here, parent-owned by RightSidePanel
     KPA1500Client *m_client = nullptr; // owned via Qt parent (this)
 
@@ -59,6 +58,7 @@ private:
     void onError(const QString &error);
     void onEnabledChanged(bool enabled);
     void onSettingsChanged();
+    void onPollIntervalChanged(int intervalMs);
     void updateStatus();
 };
 

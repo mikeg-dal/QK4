@@ -2,13 +2,18 @@
 #define AUDIOCONTROLLER_H
 
 #include <QObject>
+#include <QPointer>
 #include <QThread>
+#include <QTimer>
 
+#include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 
 class AudioEngine;
-class OpusDecoder;
+class TxAudioPipeline;
+class TciServer;
 class ConnectionController;
 class RadioState;
 
@@ -19,11 +24,13 @@ class RadioState;
  *
  * Threading:
  *   - AudioEngine is moved to `m_audioThread` (single moveToThread at construction).
- *   - OpusDecoder keeps main-thread affinity but is only called from the IO-thread lambda
- *     wired to Protocol::audioDataReady — effectively single-threaded on the IO thread.
- *   - The TX encode pipeline (OpusEncoder + packet framing) lives on AudioEngine and runs
- *     fully on the audio thread (PR 12). AudioController only forwards PTT toggles and SL
- *     tier changes; the audio thread emits txPacketReady straight to TcpClient::sendRaw.
+ *   - OpusDecoder (a plain class) is owned by the RX decode handler connected to
+ *     Protocol::audioDataReady, which runs on the I/O thread, and lives exactly as long as that
+ *     connection. Nothing else can reach it.
+ *   - The TX pipeline (microphone, TCI audio, OpusEncoder, packet framing) is TxAudioPipeline on
+ *     `m_txThread` ("AudioTX"), so opening the microphone at PTT never stalls RX playback.
+ *     AudioController forwards PTT toggles and SL tier changes; the TX thread emits
+ *     txPacketReady straight to TcpClient::sendRaw.
  *   Public AudioController methods are safe to call from the main thread (they dispatch via
  *   QMetaObject::invokeMethod / atomics).
  */
@@ -39,11 +46,11 @@ public:
     void stopAudio();
     void shutdown();
 
-    // PTT control — forwards to AudioEngine (runs on the audio thread).
+    // PTT control — forwards to TxAudioPipeline (runs on the TX thread).
     void setPttActive(bool active);
 
-    // Which source feeds the transmitter. Mirrors AudioEngine::TxSource so callers need not reach
-    // through to the engine (CONVENTIONS.md rule 2).
+    // Which source feeds the transmitter. Mirrors TxAudioPipeline::TxSource so callers need not reach
+    // through to the pipeline (CONVENTIONS.md rule 2).
     //
     // WHY a remote PTT must set this first: setPttActive() opens the microphone, so keying without
     // selecting the source would transmit the room.
@@ -59,8 +66,14 @@ public:
     // released yet.
     void setTxSourceAfterPtt(TxSource source);
 
-    // One block of TCI transmit audio, 48 kHz mono Float32. Ignored unless the source is Tci.
-    void feedTciTxAudio(const QByteArray &f32Mono48k);
+    // Route a TCI server's transmit audio straight to the TX thread, queued, without passing
+    // through the main thread. Returns the connection; disconnecting it stops the audio.
+    //
+    // WHY a direct sender-to-pipeline connection rather than a hop through a controller: the server
+    // lives on the TCI thread and the encoder on the TX thread, and a busy GUI (a resize, a
+    // full-rate panadapter) used to delay transmit audio that had no business waiting on it. Qt
+    // removes the connection itself if either end is destroyed, so no lifetime rule rides on it.
+    QMetaObject::Connection routeTciTxAudio(TciServer *server);
     bool isPttActive() const;
 
     // Volume/mix controls (atomic — safe from any thread)
@@ -82,19 +95,19 @@ public:
     void setSubMuted(bool muted);
 
     // Device selection + mic gain — used by Options dialog tabs. Each dispatches via
-    // QMetaObject::invokeMethod to the audio thread internally. Task-level API only —
+    // QMetaObject::invokeMethod to the audio or TX thread internally. Task-level API only —
     // per CONVENTIONS.md Rule 2, callers do not get direct access to AudioEngine.
     void setMicDevice(const QString &deviceId);
     void setOutputDevice(const QString &deviceId);
     void setMicGain(float gain); // 0.0 to 1.0
 
     // Transmit level for audio from a TCI client. Separate from setMicGain because the two sources
-    // sit in completely different parts of the same cubic curve — see AudioEngine::feedTciTxAudio.
+    // sit in completely different parts of the same cubic curve — see TxAudioPipeline::feedTciTxAudio.
     void setTciTxGain(float gain); // 0.0 to 1.0
 
 signals:
     // PTT changed by SOMEBODY - this says nothing about who. Every local unkey in QK4 (the Esc
-    // shortcut, the PTT button, the HaliKey PTT line, the side panel, CatServer) funnels through
+    // shortcut, the PTT button, XMIT, CatServer — all via TransmitController) funnels through
     // setPttActive, so one signal here reaches all of them; the TCI side needs to know because it
     // otherwise goes on believing a client still holds the transmitter.
     void pttActiveChanged(bool active);
@@ -111,16 +124,61 @@ signals:
     // control stream.
     void rxAudioAvailable(const QByteArray &pcm12kStereo);
 
+    // Microphone trouble the OPERATOR has to see, relayed from TxAudioPipeline on the TX thread.
+    //
+    // WHY IT HAS TO REACH THE SCREEN: a local PTT press keys the K4 by streaming audio, so a
+    // microphone QK4 cannot use is a PTT button that does nothing whatever. Every cause already
+    // writes a qCWarning and has for some time, and the field reports still arrive as "PTT does not
+    // work" - because nobody runs QK4 from a terminal.
+    void micUnavailable(const QString &reason);
+
 private slots:
     void onStreamingLatencyChanged(int tier);
+    // Main thread, on m_metricsTimer: reads the audio thread's counters and hands them to
+    // NetworkMetrics. Sampling replaces events pushed from the audio thread.
+    void sampleAudioMetrics();
 
 private:
+    // stop() on the worker's own thread, then the thread retired, within one deadline. With
+    // `stopMissed` (shutdown() already waited out this worker's stop) neither is waited for again:
+    // the stop is still queued there, and the thread is disowned at once if it is still busy.
+    template <typename Worker>
+    void stopThread(QThread *&thread, Worker *worker, std::chrono::milliseconds timeout, bool stopMissed);
+
+    // Set by shutdown() when a worker's stop() missed its deadline, so quitting waits for a stuck
+    // thread once, not again in the destructor.
+    bool m_txStopMissed = false;
+    bool m_rxStopMissed = false;
+
+    // Hands the OS microphone permission to the TX pipeline. With `askIfUndetermined`, also asks
+    // the OS - on the main thread, the only one Qt allows, and asynchronously, so the prompt never
+    // blocks the TX thread. Asked on the first microphone PTT, not at startup (Qt's guidance:
+    // "Request permissions in response to specific actions by the user").
+    void updateMicAccess(bool askIfUndetermined);
+    bool m_micPermissionRequestPending = false;
+
     ConnectionController *m_connectionController;
     RadioState *m_radioState;
 
     AudioEngine *m_audioEngine;
     QThread *m_audioThread = nullptr;
-    OpusDecoder *m_opusDecoder;
+    TxAudioPipeline *m_txPipeline;
+    QThread *m_txThread = nullptr;
+
+    QTimer *m_metricsTimer = nullptr;
+    // RX packets decoded, counted on the I/O thread; the sampler turns an increase into "audio is
+    // arriving" for NetworkMetrics instead of an event per packet.
+    std::atomic<quint32> m_rxPacketsDecoded{0};
+    quint32 m_sampledRxPackets = 0;
+    int m_ticksSinceRxPacket = 1000;
+    // Counter values at the last RX playout log line, and ticks since it.
+    quint32 m_loggedUnderruns = 0;
+    quint32 m_loggedDrops = 0;
+    int m_ticksSinceRxLog = 0;
+    // The RX decode handler, which owns the decoder. Its context is Protocol, not this, so Qt
+    // never drops it when this object is destroyed; the destructor has to, on the I/O thread.
+    QMetaObject::Connection m_rxDecodeConnection;
+    QPointer<QObject> m_rxDecodeContext;
 
     // Orders the two ways the TX source is written. Every write takes the next generation; a
     // setTxSourceAfterPtt() switch still in the queue applies only if no write has happened since

@@ -21,11 +21,10 @@ void MouseVfoIndicator::paintEvent(QPaintEvent *) {
 
     QColor vfoColor = m_isB ? QColor(K4Styles::Colors::VfoBGreen) : QColor(K4Styles::Colors::VfoACyan);
     QColor borderColor(K4Styles::Colors::AccentAmber);
-    QColor bgColor(0x1A, 0x1A, 0x1A);
+    QColor bgColor(K4Styles::Colors::Background);
 
     QRectF r(1, 1, width() - 2, height() - 2);
 
-    // Background fill with rounder corners
     QPainterPath path;
     path.addRoundedRect(r, 8, 8);
     p.fillPath(path, bgColor);
@@ -54,7 +53,7 @@ void MouseVfoIndicator::paintEvent(QPaintEvent *) {
     p.drawRoundedRect(QRectF(blobX, blobY, blobW, blobH), 1, 1);
 
     // VFO letter below mouse
-    QFont font = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizePopup);
+    QFont font = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeHeading);
     p.setFont(font);
     p.setPen(vfoColor);
     QRectF textRect(0, mouseY + mouseH, width(), height() - mouseY - mouseH - 1);

@@ -4,46 +4,16 @@
 
 #include <QtGlobal>
 
-void ProcessingState::reset() {
-    // Main RX
-    noiseBlankerLevel = 0;
-    noiseBlankerEnabled = false;
-    noiseBlankerFilterWidth = 0;
-    noiseReductionLevel = 0;
-    noiseReductionEnabled = false;
-    ssnrLevel = 0;
-    ssnrEnabled = false;
-    autoNotchEnabled = false;
-    manualNotchEnabled = false;
-    manualNotchPitch = 1000;
-    preamp = 0;
-    preampEnabled = false;
-    attenuatorLevel = 0;
-    attenuatorEnabled = false;
-    agcSpeed = RadioState::AGC_Slow;
+#include <algorithm>
 
-    // Sub RX
-    noiseBlankerLevelB = 0;
-    noiseBlankerEnabledB = false;
-    noiseBlankerFilterWidthB = 0;
-    noiseReductionLevelB = 0;
-    noiseReductionEnabledB = false;
-    ssnrLevelB = 0;
-    ssnrEnabledB = false;
-    autoNotchEnabledB = false;
-    manualNotchEnabledB = false;
-    manualNotchPitchB = 1000;
-    preampB = 0;
-    preampEnabledB = false;
-    attenuatorLevelB = 0;
-    attenuatorEnabledB = false;
-    agcSpeedB = RadioState::AGC_Slow;
+void ProcessingState::reset() {
+    *this = ProcessingState();
 }
 
 namespace ProcessingHandlers {
 
 void handleNB(ProcessingState &state, RadioState &owner, const QString &cmd) {
-    // NBnnm or NBnnmf : nn=level 00-15, m=on/off, f=filter 0/1/2
+    // NBnnm or NBnnmf : nn=level, m=on/off, f=filter (ranges: ProcessingLimits)
     if (cmd.length() < 4)
         return;
     const QString nbStr = cmd.mid(2);
@@ -54,20 +24,19 @@ void handleNB(ProcessingState &state, RadioState &owner, const QString &cmd) {
     const int enabled = nbStr.mid(2, 1).toInt(&ok2);
     if (!ok1 || !ok2)
         return;
-    const int newLevel = qMin(level, 15);
+    const int newLevel = (std::min)(level, ProcessingLimits::NbLevelMax);
     const bool newEnabled = (enabled == 1);
     int newFilter = state.noiseBlankerFilterWidth;
     if (nbStr.length() >= 4) {
         bool ok3;
         const int filter = nbStr.mid(3, 1).toInt(&ok3);
         if (ok3)
-            newFilter = qMin(filter, 2);
+            newFilter = (std::min)(filter, ProcessingLimits::NbFilterMax);
     }
-    if (newLevel == state.noiseBlankerLevel && newEnabled == state.noiseBlankerEnabled &&
-        newFilter == state.noiseBlankerFilterWidth)
+    const bool enabledChanged = state.noiseBlankerEnabled.set(newEnabled);
+    if (!enabledChanged && newLevel == state.noiseBlankerLevel && newFilter == state.noiseBlankerFilterWidth)
         return;
     state.noiseBlankerLevel = newLevel;
-    state.noiseBlankerEnabled = newEnabled;
     state.noiseBlankerFilterWidth = newFilter;
     emit owner.processingChanged();
 }
@@ -83,20 +52,19 @@ void handleNBSub(ProcessingState &state, RadioState &owner, const QString &cmd) 
     const int enabled = nbStr.mid(2, 1).toInt(&ok2);
     if (!ok1 || !ok2)
         return;
-    const int newLevel = qMin(level, 15);
+    const int newLevel = (std::min)(level, ProcessingLimits::NbLevelMax);
     const bool newEnabled = (enabled == 1);
     int newFilter = state.noiseBlankerFilterWidthB;
     if (nbStr.length() >= 4) {
         bool ok3;
         const int filter = nbStr.mid(3, 1).toInt(&ok3);
         if (ok3)
-            newFilter = qMin(filter, 2);
+            newFilter = (std::min)(filter, ProcessingLimits::NbFilterMax);
     }
-    if (newLevel == state.noiseBlankerLevelB && newEnabled == state.noiseBlankerEnabledB &&
-        newFilter == state.noiseBlankerFilterWidthB)
+    const bool enabledChanged = state.noiseBlankerEnabledB.set(newEnabled);
+    if (!enabledChanged && newLevel == state.noiseBlankerLevelB && newFilter == state.noiseBlankerFilterWidthB)
         return;
     state.noiseBlankerLevelB = newLevel;
-    state.noiseBlankerEnabledB = newEnabled;
     state.noiseBlankerFilterWidthB = newFilter;
     emit owner.processingChangedB();
 }
@@ -113,10 +81,10 @@ void handleNR(ProcessingState &state, RadioState &owner, const QString &cmd) {
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.noiseReductionLevel && newEnabled == state.noiseReductionEnabled)
+    const bool enabledChanged = state.noiseReductionEnabled.set(newEnabled);
+    if (!enabledChanged && level == state.noiseReductionLevel)
         return;
     state.noiseReductionLevel = level;
-    state.noiseReductionEnabled = newEnabled;
     emit owner.processingChanged();
 }
 
@@ -132,15 +100,15 @@ void handleNRSub(ProcessingState &state, RadioState &owner, const QString &cmd) 
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.noiseReductionLevelB && newEnabled == state.noiseReductionEnabledB)
+    const bool enabledChanged = state.noiseReductionEnabledB.set(newEnabled);
+    if (!enabledChanged && level == state.noiseReductionLevelB)
         return;
     state.noiseReductionLevelB = level;
-    state.noiseReductionEnabledB = newEnabled;
     emit owner.processingChangedB();
 }
 
 void handleNRS(ProcessingState &state, RadioState &owner, const QString &cmd) {
-    // NRSnnm : nn=level 00-10, m=on/off (peer to LMS NR, mutually exclusive on K4)
+    // NRSnnm : nn=SSNR level, m=on/off (peer to LMS NR, mutually exclusive on K4)
     if (cmd.length() < 4)
         return;
     const QString nrStr = cmd.mid(3);
@@ -152,10 +120,10 @@ void handleNRS(ProcessingState &state, RadioState &owner, const QString &cmd) {
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.ssnrLevel && newEnabled == state.ssnrEnabled)
+    const bool enabledChanged = state.ssnrEnabled.set(newEnabled);
+    if (!enabledChanged && level == state.ssnrLevel)
         return;
     state.ssnrLevel = level;
-    state.ssnrEnabled = newEnabled;
     emit owner.processingChanged();
 }
 
@@ -172,10 +140,10 @@ void handleNRSSub(ProcessingState &state, RadioState &owner, const QString &cmd)
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.ssnrLevelB && newEnabled == state.ssnrEnabledB)
+    const bool enabledChanged = state.ssnrEnabledB.set(newEnabled);
+    if (!enabledChanged && level == state.ssnrLevelB)
         return;
     state.ssnrLevelB = level;
-    state.ssnrEnabledB = newEnabled;
     emit owner.processingChangedB();
 }
 
@@ -191,10 +159,10 @@ void handlePA(ProcessingState &state, RadioState &owner, const QString &cmd) {
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.preamp && newEnabled == state.preampEnabled)
+    const bool enabledChanged = state.preampEnabled.set(newEnabled);
+    if (!enabledChanged && level == state.preamp)
         return;
     state.preamp = level;
-    state.preampEnabled = newEnabled;
     emit owner.processingChanged();
 }
 
@@ -210,10 +178,10 @@ void handlePASub(ProcessingState &state, RadioState &owner, const QString &cmd) 
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.preampB && newEnabled == state.preampEnabledB)
+    const bool enabledChanged = state.preampEnabledB.set(newEnabled);
+    if (!enabledChanged && level == state.preampB)
         return;
     state.preampB = level;
-    state.preampEnabledB = newEnabled;
     emit owner.processingChangedB();
 }
 
@@ -229,10 +197,10 @@ void handleRA(ProcessingState &state, RadioState &owner, const QString &cmd) {
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.attenuatorLevel && newEnabled == state.attenuatorEnabled)
+    const bool enabledChanged = state.attenuatorEnabled.set(newEnabled);
+    if (!enabledChanged && level == state.attenuatorLevel)
         return;
     state.attenuatorLevel = level;
-    state.attenuatorEnabled = newEnabled;
     emit owner.processingChanged();
 }
 
@@ -248,10 +216,10 @@ void handleRASub(ProcessingState &state, RadioState &owner, const QString &cmd) 
     if (!ok1 || !ok2)
         return;
     const bool newEnabled = (enabled == 1);
-    if (level == state.attenuatorLevelB && newEnabled == state.attenuatorEnabledB)
+    const bool enabledChanged = state.attenuatorEnabledB.set(newEnabled);
+    if (!enabledChanged && level == state.attenuatorLevelB)
         return;
     state.attenuatorLevelB = level;
-    state.attenuatorEnabledB = newEnabled;
     emit owner.processingChangedB();
 }
 
@@ -313,16 +281,14 @@ void handleNM(ProcessingState &state, RadioState &owner, const QString &cmd) {
             state.manualNotchPitch = pitch;
             changed = true;
         }
-        if (state.manualNotchEnabled != enabled) {
-            state.manualNotchEnabled = enabled;
+        if (state.manualNotchEnabled.set(enabled)) {
             changed = true;
         }
         if (changed)
             emit owner.notchChanged();
     } else if (data.length() >= 1) {
         const bool enabled = (data.at(0) == '1');
-        if (state.manualNotchEnabled != enabled) {
-            state.manualNotchEnabled = enabled;
+        if (state.manualNotchEnabled.set(enabled)) {
             emit owner.notchChanged();
         }
     }
@@ -341,37 +307,37 @@ void handleNMSub(ProcessingState &state, RadioState &owner, const QString &cmd) 
             state.manualNotchPitchB = pitch;
             changed = true;
         }
-        if (state.manualNotchEnabledB != enabled) {
-            state.manualNotchEnabledB = enabled;
+        if (state.manualNotchEnabledB.set(enabled)) {
             changed = true;
         }
         if (changed)
             emit owner.notchBChanged();
     } else if (data.length() >= 1) {
         const bool enabled = (data.at(0) == '1');
-        if (state.manualNotchEnabledB != enabled) {
-            state.manualNotchEnabledB = enabled;
+        if (state.manualNotchEnabledB.set(enabled)) {
             emit owner.notchBChanged();
         }
     }
 }
 
 void setNoiseBlankerLevel(ProcessingState &state, RadioState &owner, int level) {
+    level = std::clamp(level, 0, ProcessingLimits::NbLevelMax);
     if (state.noiseBlankerLevel != level) {
-        state.noiseBlankerLevel = qMin(level, 15);
+        state.noiseBlankerLevel = level;
         emit owner.processingChanged();
     }
 }
 
 void setNoiseBlankerLevelB(ProcessingState &state, RadioState &owner, int level) {
+    level = std::clamp(level, 0, ProcessingLimits::NbLevelMax);
     if (state.noiseBlankerLevelB != level) {
-        state.noiseBlankerLevelB = qMin(level, 15);
+        state.noiseBlankerLevelB = level;
         emit owner.processingChangedB();
     }
 }
 
 void setNoiseBlankerFilter(ProcessingState &state, RadioState &owner, int filter) {
-    filter = qBound(0, filter, 2);
+    filter = std::clamp(filter, 0, ProcessingLimits::NbFilterMax);
     if (state.noiseBlankerFilterWidth != filter) {
         state.noiseBlankerFilterWidth = filter;
         emit owner.processingChanged();
@@ -379,7 +345,7 @@ void setNoiseBlankerFilter(ProcessingState &state, RadioState &owner, int filter
 }
 
 void setNoiseBlankerFilterB(ProcessingState &state, RadioState &owner, int filter) {
-    filter = qBound(0, filter, 2);
+    filter = std::clamp(filter, 0, ProcessingLimits::NbFilterMax);
     if (state.noiseBlankerFilterWidthB != filter) {
         state.noiseBlankerFilterWidthB = filter;
         emit owner.processingChangedB();
@@ -387,29 +353,33 @@ void setNoiseBlankerFilterB(ProcessingState &state, RadioState &owner, int filte
 }
 
 void setNoiseReductionLevel(ProcessingState &state, RadioState &owner, int level) {
+    level = std::clamp(level, 0, ProcessingLimits::NrLevelMax);
     if (state.noiseReductionLevel != level) {
-        state.noiseReductionLevel = qMin(level, 10);
+        state.noiseReductionLevel = level;
         emit owner.processingChanged();
     }
 }
 
 void setNoiseReductionLevelB(ProcessingState &state, RadioState &owner, int level) {
+    level = std::clamp(level, 0, ProcessingLimits::NrLevelMax);
     if (state.noiseReductionLevelB != level) {
-        state.noiseReductionLevelB = qMin(level, 10);
+        state.noiseReductionLevelB = level;
         emit owner.processingChangedB();
     }
 }
 
 void setSsnrLevel(ProcessingState &state, RadioState &owner, int level) {
+    level = std::clamp(level, 0, ProcessingLimits::SsnrLevelMax);
     if (state.ssnrLevel != level) {
-        state.ssnrLevel = qMin(level, 20);
+        state.ssnrLevel = level;
         emit owner.processingChanged();
     }
 }
 
 void setSsnrLevelB(ProcessingState &state, RadioState &owner, int level) {
+    level = std::clamp(level, 0, ProcessingLimits::SsnrLevelMax);
     if (state.ssnrLevelB != level) {
-        state.ssnrLevelB = qMin(level, 20);
+        state.ssnrLevelB = level;
         emit owner.processingChangedB();
     }
 }

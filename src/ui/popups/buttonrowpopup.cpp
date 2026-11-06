@@ -60,30 +60,31 @@ void RxMenuButton::paintEvent(QPaintEvent *event) {
     if (hasAlternate) {
         // Dual-line mode: Primary text (white) - top
         QFont primaryFont = font();
-        primaryFont.setPixelSize(K4Styles::Dimensions::FontSizeButton);
+        primaryFont.setPixelSize(K4Styles::Dimensions::FontSizeReadout);
         primaryFont.setBold(false);
         painter.setFont(primaryFont);
-        painter.setPen(Qt::white);
+        painter.setPen(QColor(K4Styles::Colors::TextPrimary));
 
         QRect primaryRect(0, 4, width(), height() / 2 - 2);
         painter.drawText(primaryRect, Qt::AlignCenter, m_primaryText);
 
         // Alternate text - bottom (amber if has alternate function, white if just label)
         QFont altFont = font();
-        altFont.setPixelSize(K4Styles::Dimensions::FontSizeMedium);
+        altFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
         altFont.setBold(false);
         painter.setFont(altFont);
-        painter.setPen(m_hasAlternateFunction ? QColor(K4Styles::Colors::AccentAmber) : Qt::white);
+        painter.setPen(m_hasAlternateFunction ? QColor(K4Styles::Colors::AccentAmber)
+                                              : QColor(K4Styles::Colors::TextPrimary));
 
         QRect altRect(0, height() / 2, width(), height() / 2 - 4);
         painter.drawText(altRect, Qt::AlignCenter, m_alternateText);
     } else {
         // Single-line mode: Center the primary text
         QFont primaryFont = font();
-        primaryFont.setPixelSize(K4Styles::Dimensions::FontSizeButton);
+        primaryFont.setPixelSize(K4Styles::Dimensions::FontSizeReadout);
         primaryFont.setBold(true);
         painter.setFont(primaryFont);
-        painter.setPen(Qt::white);
+        painter.setPen(QColor(K4Styles::Colors::TextPrimary));
 
         painter.drawText(rect(), Qt::AlignCenter, m_primaryText);
     }
@@ -147,15 +148,7 @@ void ButtonRowPopup::setupUi() {
 
     mainLayout->addLayout(rowLayout);
 
-    // Initialize popup size from base class
     initPopup();
-}
-
-void ButtonRowPopup::setButtonLabels(const QStringList &labels) {
-    for (int i = 0; i < qMin(labels.size(), m_buttons.size()); ++i) {
-        m_buttons[i]->setPrimaryText(labels[i]);
-        m_buttons[i]->setAlternateText(QString()); // Clear alternate
-    }
 }
 
 void ButtonRowPopup::setButtonLabel(int index, const QString &primary, const QString &alternate,
@@ -165,18 +158,4 @@ void ButtonRowPopup::setButtonLabel(int index, const QString &primary, const QSt
         m_buttons[index]->setAlternateText(alternate);
         m_buttons[index]->setHasAlternateFunction(hasAlternateFunction);
     }
-}
-
-QString ButtonRowPopup::buttonLabel(int index) const {
-    if (index >= 0 && index < m_buttons.size()) {
-        return m_buttons[index]->primaryText();
-    }
-    return QString();
-}
-
-QString ButtonRowPopup::buttonAlternateLabel(int index) const {
-    if (index >= 0 && index < m_buttons.size()) {
-        return m_buttons[index]->alternateText();
-    }
-    return QString();
 }

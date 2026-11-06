@@ -267,6 +267,48 @@ private slots:
         QCOMPARE(CatFrames::keyerSpeed(0), QByteArray("KS008;"));
         QCOMPARE(CatFrames::keyerSpeed(-30), QByteArray("KS008;"));
     }
+
+    void thePanadapterNoiseBlankerFrameIsWhatRadioStateParses() {
+        // #NB$n, not the receiver's NB: what the DISPLAY popup's NB key sends.
+        QCOMPARE(CatFrames::ddcNoiseBlanker(0), QByteArray("#NB$0;"));
+        QCOMPARE(CatFrames::ddcNoiseBlanker(2), QByteArray("#NB$2;"));
+        QCOMPARE(CatFrames::ddcNoiseBlanker(7), QByteArray("#NB$2;"));
+        QCOMPARE(CatFrames::ddcNoiseBlanker(-1), QByteArray("#NB$0;"));
+        for (int mode : {1, 2, 0}) {
+            RadioState rs;
+            rs.parseCATCommand(QString::fromLatin1(CatFrames::ddcNoiseBlanker(mode)));
+            QCOMPARE(rs.ddcNbMode(), mode);
+        }
+    }
+
+    void theAveragingFrameIsTwoDigitsAndWhatRadioStateParses() {
+        // #AVGnn, 01..20 (K4 reference). What the DISPLAY popup's AVG +/- sends, so the radio keeps
+        // the value and its connection dump no longer resets QK4's averaging.
+        QCOMPARE(CatFrames::averaging(1), QByteArray("#AVG01;"));
+        QCOMPARE(CatFrames::averaging(20), QByteArray("#AVG20;"));
+        QCOMPARE(CatFrames::averaging(0), QByteArray("#AVG01;"));
+        QCOMPARE(CatFrames::averaging(21), QByteArray("#AVG20;"));
+        for (int frames : {3, 1, 20}) {
+            RadioState rs;
+            rs.parseCATCommand(QString::fromLatin1(CatFrames::averaging(frames)));
+            QCOMPARE(rs.averaging(), frames);
+        }
+    }
+
+    void theNoiseFramesClampToTheK4Ranges() {
+        // Programmer's Reference D12: NR$ "nn = NR level (0-10)", NB$ "nn is NB level (0-15)" and
+        // filter 0-2. The NR builder used to accept up to 99.
+        QCOMPARE(CatFrames::noiseReduction(10, true), QByteArray("NR101;"));
+        QCOMPARE(CatFrames::noiseReduction(15, true), QByteArray("NR101;"));
+        QCOMPARE(CatFrames::noiseReduction(-3, false), QByteArray("NR000;"));
+        QCOMPARE(CatFrames::setNoiseBlanker(20, true, 5), QByteArray("NB1512;"));
+    }
+
+    void theKeyerPaddleFrameCarriesAllThreeFields() {
+        QCOMPARE(CatFrames::keyerPaddle('B', 'R', 95), QByteArray("KPBR095;"));
+        QCOMPARE(CatFrames::keyerPaddle('A', 'N', 125), QByteArray("KPAN125;"));
+        QCOMPARE(CatFrames::keyerPaddle(QChar(), QChar(), -1), QByteArray("KPAN100;"));
+    }
 };
 
 QTEST_MAIN(TestCwMacro)

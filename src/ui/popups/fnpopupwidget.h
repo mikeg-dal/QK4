@@ -20,7 +20,6 @@ public:
 
     void setPrimaryText(const QString &text);
     void setAlternateText(const QString &text);
-    QString primaryText() const { return m_primaryText; }
     QString alternateText() const { return m_alternateText; }
 
     void setPrimaryFunctionId(const QString &id) { m_primaryFunctionId = id; }

@@ -38,8 +38,8 @@ void AntennaCfgPopupWidget::setupUi() {
                                       "  stop:0 %3, stop:1 %4);"
                                       "padding: 4px 10px;"
                                       "border-radius: 3px;")
-                                  .arg(K4Styles::Colors::TextWhite)
-                                  .arg(K4Styles::Dimensions::FontSizeButton)
+                                  .arg(K4Styles::Colors::TextPrimary)
+                                  .arg(K4Styles::Dimensions::FontSizeReadout)
                                   .arg(K4Styles::Colors::GradientTop)
                                   .arg(K4Styles::Colors::GradientBottom));
     mainLayout->addWidget(titleLabel);
@@ -55,7 +55,7 @@ void AntennaCfgPopupWidget::setupUi() {
     m_displayAllBtn->setFixedHeight(24);
     m_displayAllBtn->setStyleSheet(
         K4Styles::radioButton() +
-        QString("QPushButton { font-size: %1px; padding: 4px 8px; }").arg(K4Styles::Dimensions::FontSizeSmall));
+        QString("QPushButton { font-size: %1px; padding: 4px 8px; }").arg(K4Styles::Dimensions::FontSizeCaption));
     connect(m_displayAllBtn, &QPushButton::clicked, this, &AntennaCfgPopupWidget::onDisplayAllClicked);
     modeLayout->addWidget(m_displayAllBtn);
 
@@ -74,7 +74,7 @@ void AntennaCfgPopupWidget::setupUi() {
     m_useSubsetBtn->setFixedHeight(24);
     m_useSubsetBtn->setStyleSheet(
         K4Styles::radioButton() +
-        QString("QPushButton { font-size: %1px; padding: 4px 8px; }").arg(K4Styles::Dimensions::FontSizeSmall));
+        QString("QPushButton { font-size: %1px; padding: 4px 8px; }").arg(K4Styles::Dimensions::FontSizeCaption));
     connect(m_useSubsetBtn, &QPushButton::clicked, this, &AntennaCfgPopupWidget::onUseSubsetClicked);
     subsetLayout->addWidget(m_useSubsetBtn);
 
@@ -92,8 +92,8 @@ void AntennaCfgPopupWidget::setupUi() {
         auto *label = new QLabel(labels[i], this);
         label->setAlignment(Qt::AlignCenter);
         label->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                 .arg(K4Styles::Colors::TextWhite)
-                                 .arg(K4Styles::Dimensions::FontSizeTiny));
+                                 .arg(K4Styles::Colors::TextPrimary)
+                                 .arg(K4Styles::Dimensions::FontSizeCaption));
         m_labels.append(label);
         antLayout->addWidget(label);
 
@@ -118,8 +118,8 @@ void AntennaCfgPopupWidget::setupUi() {
     if (m_variant != AntennaCfgVariant::Tx) {
         m_noteLabel = new QLabel("Requires ATU: set TX>ANT CFG for 2-antenna subset", this);
         m_noteLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
-                                       .arg(K4Styles::Colors::TextGray)
-                                       .arg(K4Styles::Dimensions::FontSizeSmall));
+                                       .arg(K4Styles::Colors::TextSecondary)
+                                       .arg(K4Styles::Dimensions::FontSizeCaption));
         m_noteLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         m_noteLabel->setContentsMargins(0, 0, 0, 0);
         mainLayout->addWidget(m_noteLabel);
@@ -149,7 +149,7 @@ void AntennaCfgPopupWidget::paintContent(QPainter &painter, const QRect &content
     const int topY = lastBox.bottom() + 2;
     const int leftX = textRightX + 3;
 
-    QPen pen{QColor(K4Styles::Colors::TextGray)};
+    QPen pen{QColor(K4Styles::Colors::TextSecondary)};
     pen.setWidth(1);
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing, false);
@@ -164,11 +164,11 @@ QSize AntennaCfgPopupWidget::contentSize() const {
     int width, height;
 
     if (m_variant == AntennaCfgVariant::Tx) {
-        // TX: 3 antennas — 50% larger than the pre-bracket sizing
+        // TX: 3 antennas
         width = 390 + 2 * cm;
         height = 135 + 2 * cm;
     } else {
-        // RX: 7 antennas — 50% larger to give the helper text and bracket room
+        // RX: 7 antennas, plus room for the note and its bracket line
         width = 630 + 2 * cm;
         height = 158 + 2 * cm;
     }
@@ -182,14 +182,6 @@ void AntennaCfgPopupWidget::setDisplayAll(bool displayAll) {
         m_displayAllBtn->setChecked(displayAll);
         m_useSubsetBtn->setChecked(!displayAll);
         updateCheckboxStates();
-    }
-}
-
-void AntennaCfgPopupWidget::setAntennaEnabled(int index, bool enabled) {
-    if (index >= 0 && index < m_checkboxes.size()) {
-        m_checkboxes[index]->blockSignals(true);
-        m_checkboxes[index]->setChecked(enabled);
-        m_checkboxes[index]->blockSignals(false);
     }
 }
 

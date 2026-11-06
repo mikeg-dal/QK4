@@ -1,8 +1,9 @@
 #include "opusdecoder.h"
-#include "audio/audiologging.h"
+#include "logging/logcategories.h"
 #include <QDebug>
+#include <QtEndian>
 
-OpusDecoder::OpusDecoder(QObject *parent) : QObject(parent), m_decoder(nullptr), m_sampleRate(12000), m_channels(2) {}
+OpusDecoder::OpusDecoder() : m_decoder(nullptr), m_sampleRate(12000), m_channels(2) {}
 
 OpusDecoder::~OpusDecoder() {
     if (m_decoder) {
@@ -18,7 +19,7 @@ bool OpusDecoder::initialize(int sampleRate, int channels) {
     m_decoder = opus_decoder_create(sampleRate, channels, &error);
 
     if (error != OPUS_OK) {
-        qCWarning(qk4Audio) << "OpusDecoder: Failed to create decoder:" << opus_strerror(error);
+        qCWarning(lcAudio) << "OpusDecoder: Failed to create decoder:" << opus_strerror(error);
         return false;
     }
 
@@ -49,8 +50,8 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
 
     unsigned char encodeMode = static_cast<unsigned char>(packet[3]);
 
-    // Extract audio data starting at byte 7
-    QByteArray audioData = packet.mid(7);
+    // Audio data starts at byte 7. A view, not a copy: it is read once, within this call.
+    const QByteArray audioData = QByteArray::fromRawData(packet.constData() + 7, packet.size() - 7);
 
     if (audioData.isEmpty()) {
         return QByteArray();
@@ -61,8 +62,12 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
     switch (encodeMode) {
     case 0x00: // EM0 - 24-bit payload in an S32LE container
     {
-        const qint32 *stereoSamples = reinterpret_cast<const qint32 *>(audioData.constData());
-        int totalSamples = audioData.size() / sizeof(qint32);
+        // WHY qFromLittleEndian and not a qint32 pointer: the payload starts at byte 7 of the
+        // packet, so its samples are never 4-byte aligned, and reading them through a qint32 * is
+        // undefined behaviour (UBSan: "load of misaligned address"). qFromLittleEndian has no
+        // alignment constraint and also states the wire's byte order instead of assuming the host's.
+        const char *src = audioData.constData();
+        const int totalSamples = static_cast<int>(audioData.size() / sizeof(qint32));
 
         QByteArray out(totalSamples * sizeof(float), Qt::Uninitialized);
         float *dst = reinterpret_cast<float *>(out.data());
@@ -70,15 +75,17 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
         // integers carrying 24-bit audio, so full scale is 2^23 and the same 32× every other
         // mode gets applies here too. See the class comment for the measurement.
         for (int i = 0; i < totalSamples; i++) {
-            dst[i] = static_cast<float>(stereoSamples[i]) * NORMALIZE_K4_RAW * K4_GAIN_BOOST;
+            const qint32 sample = qFromLittleEndian<qint32>(src + i * sizeof(qint32));
+            dst[i] = static_cast<float>(sample) * NORMALIZE_K4_RAW * K4_GAIN_BOOST;
         }
         return out;
     }
 
     case 0x01: // EM1 - RAW 16-bit S16LE stereo PCM
     {
-        const qint16 *stereoSamples = reinterpret_cast<const qint16 *>(audioData.constData());
-        int totalSamples = audioData.size() / sizeof(qint16);
+        // Same misalignment as EM0 (byte 7 is odd), so the same byte-wise little-endian read.
+        const char *src = audioData.constData();
+        const int totalSamples = static_cast<int>(audioData.size() / sizeof(qint16));
 
         QByteArray out(totalSamples * sizeof(float), Qt::Uninitialized);
         float *dst = reinterpret_cast<float *>(out.data());
@@ -86,7 +93,8 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
         // identical level (16.78 / 16.71 / 16.72 on a 2^15 scale, same signal). The old 16×
         // here was tuned to match an EM0 that was itself 6 dB hot, so it inherited that error.
         for (int i = 0; i < totalSamples; i++) {
-            dst[i] = static_cast<float>(stereoSamples[i]) * NORMALIZE_16BIT * K4_GAIN_BOOST;
+            const qint16 sample = qFromLittleEndian<qint16>(src + i * sizeof(qint16));
+            dst[i] = static_cast<float>(sample) * NORMALIZE_16BIT * K4_GAIN_BOOST;
         }
         return out;
     }
@@ -128,7 +136,7 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
     }
 
     default:
-        qCWarning(qk4Audio) << "OpusDecoder: Unknown encode mode:" << encodeMode;
+        qCWarning(lcAudio) << "OpusDecoder: Unknown encode mode:" << encodeMode;
         return QByteArray();
     }
 }
@@ -141,12 +149,16 @@ QByteArray OpusDecoder::decode(const QByteArray &opusData) {
                               m_pcmIntScratch.data(), MAX_FRAME_SAMPLES_PER_CHANNEL, 0);
 
     if (samples < 0) {
-        qCWarning(qk4Audio) << "OpusDecoder: decode failed:" << opus_strerror(samples);
+        qCWarning(lcAudio) << "OpusDecoder: decode failed:" << opus_strerror(samples);
         return QByteArray();
     }
 
+    // WHY the widening: samples and m_channels are both int, so the byte count was computed as int
+    // and only then widened to QByteArray's qsizetype. 1440 samples x 2 channels cannot overflow,
+    // but the cast says so independently of MAX_FRAME_SAMPLES_PER_CHANNEL, and it is what CodeQL's
+    // cpp/integer-multiplication-cast-to-long asks for.
     return QByteArray(reinterpret_cast<const char *>(m_pcmIntScratch.data()),
-                      samples * m_channels * sizeof(opus_int16));
+                      static_cast<qsizetype>(samples) * m_channels * static_cast<qsizetype>(sizeof(opus_int16)));
 }
 
 QByteArray OpusDecoder::decodeFloat(const QByteArray &opusData) {
@@ -157,9 +169,11 @@ QByteArray OpusDecoder::decodeFloat(const QByteArray &opusData) {
                                     opusData.size(), m_pcmFloatScratch.data(), MAX_FRAME_SAMPLES_PER_CHANNEL, 0);
 
     if (samples < 0) {
-        qCWarning(qk4Audio) << "OpusDecoder: decodeFloat failed:" << opus_strerror(samples);
+        qCWarning(lcAudio) << "OpusDecoder: decodeFloat failed:" << opus_strerror(samples);
         return QByteArray();
     }
 
-    return QByteArray(reinterpret_cast<const char *>(m_pcmFloatScratch.data()), samples * m_channels * sizeof(float));
+    // Widened for the same reason as decode() above.
+    return QByteArray(reinterpret_cast<const char *>(m_pcmFloatScratch.data()),
+                      static_cast<qsizetype>(samples) * m_channels * static_cast<qsizetype>(sizeof(float)));
 }

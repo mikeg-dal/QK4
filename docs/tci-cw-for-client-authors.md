@@ -1,5 +1,14 @@
 # CW by CAT over TCI — what a client author needs to know
 
+> **Status (2026-10-29).** A dated hand-off letter, written for TR4W on 2026-09-16/17 and extended
+> on 09-17. Its claims about QK4 were re-checked against the code on 2026-10-29 and still hold.
+> Its TR4W source citations (`uRadioTCI.pas`, `uRadioElecraftBase.pas`, `uCWKeyerCAT.pas`) were
+> not re-checked. The `device:QK4 0.7.0` sample in §6a is a capture: CI builds advertise the full
+> version with any prerelease suffix (`QK4_VERSION_FULL`). This file is the one home for the
+> chunking, padding and `KYW` rules (§3–§4) and for `cw_macros_speed` SET semantics (§2.2a); other
+> documents link here. For what the TCI server implements today, see
+> [tci-command-coverage.md](tci-command-coverage.md).
+
 Written for the TR4W side of the conversation, from a bench session on 2026-09-16/17 that put
 CW through TCI to a real Elecraft K4 and watched what came out. Everything here was observed, not
 inferred; the raw traces are in [cw-by-cat-bench-log.md](cw-by-cat-bench-log.md).
@@ -284,10 +293,9 @@ QK4 logs every TCI command it does not implement. Across three clients — QLog,
 harness — over a full session, that log is **empty**. Nothing requested `cw_msg`, `cw_terminal`,
 `keyer` or `callsign_send`.
 
-`CW_MSG`'s editable-callsign protocol and `KEYER`'s element timing exist because ExpertSDR3
-generates CW in its own DSP and can splice into a message already sending. The K4 keys from a
-firmware buffer; reproducing that means abort-and-restart, which stutters. Three clients have now
-declined to contradict that reasoning, which is weak evidence but is the only evidence there is.
+Why QK4 leaves `CW_MSG`, `KEYER` and `CALLSIGN_SEND` unimplemented is recorded in
+[tci-command-coverage.md](tci-command-coverage.md) §5.3. Three clients have now declined to
+contradict that reasoning, which is weak evidence but is the only evidence there is.
 
 ---
 
@@ -308,9 +316,9 @@ ready;                        (76 commands in the burst overall)
 ```
 
 **Do not identify QK4 by `protocol:`.** It says `ExpertSDR3,1.5` — deliberately, and it is not
-going to change: WSJT-X matches on that string and a different one makes it halve transmit
-amplitude (`tciserver_internal.h:20`). So `protocol:` identifies the dialect QK4 speaks, not the
-program. Match on it and you will both misidentify QK4 as ExpertSDR3 *and* misidentify a real
+going to change; the reason is recorded in [tci-command-coverage.md](tci-command-coverage.md) §6.5
+(`kProtocolIdentity` in `tciserver_internal.h`). So `protocol:` identifies the dialect QK4 speaks,
+not the program. Match on it and you will both misidentify QK4 as ExpertSDR3 *and* misidentify a real
 ExpertSDR3 as whatever you decided `ExpertSDR3,1.5` meant.
 
 **`device:` is the discriminator, and it carries the version.** `device:QK4 0.7.0;` — the program

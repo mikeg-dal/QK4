@@ -20,7 +20,9 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
     connect(m_mainRxPopup, &AntennaCfgPopupWidget::configChanged, this, [this](bool displayAll, QVector<bool> mask) {
         if (!m_connection->isConnected())
             return;
-        // ACMzabcdefg;  z=displayAll, a..g=per-antenna enable
+        // ACMzabcdefg;  z=displayAll, a..g=per-antenna enable. Applied here too: the K4 does not
+        // echo a client's own SET at AI4 (RadioState::setMainRxAntConfig).
+        m_radioState->setMainRxAntConfig(displayAll, mask);
         m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACM", displayAll, mask, 7)));
     });
 
@@ -28,6 +30,7 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
     connect(m_subRxPopup, &AntennaCfgPopupWidget::configChanged, this, [this](bool displayAll, QVector<bool> mask) {
         if (!m_connection->isConnected())
             return;
+        m_radioState->setSubRxAntConfig(displayAll, mask);
         m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACS", displayAll, mask, 7)));
     });
 
@@ -35,12 +38,12 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
     connect(m_txPopup, &AntennaCfgPopupWidget::configChanged, this, [this](bool displayAll, QVector<bool> mask) {
         if (!m_connection->isConnected())
             return;
+        m_radioState->setTxAntConfig(displayAll, mask);
         m_connection->sendCAT(QString::fromLatin1(CatFrames::setAntennaConfig("ACT", displayAll, mask, 3)));
     });
 
-    // RadioState → popup state updates. MainWindow's own label-update slot
-    // for antennaChanged / antennaNameChanged stays in place; these
-    // observers are independent.
+    // RadioState → popup state. The VFO-row labels are updated separately
+    // by AntennaDisplayController.
     connect(m_radioState, &RadioState::mainRxAntCfgChanged, this, [this]() {
         m_mainRxPopup->setDisplayAll(m_radioState->mainRxDisplayAll());
         m_mainRxPopup->setAntennaMask(m_radioState->mainRxAntMask());
@@ -66,25 +69,23 @@ AntennaConfigController::AntennaConfigController(RadioState *radioState, Connect
     });
 }
 
-AntennaConfigController::~AntennaConfigController() {
-    // Architecture Rule 11 — disconnect first to prevent queued signals
-    // from arriving during partial destruction.
-    disconnect(this);
-}
-
 void AntennaConfigController::showMainRxPopupAbove(QWidget *trigger) {
-    if (trigger)
-        m_mainRxPopup->showAboveWidget(trigger);
+    toggleAbove(m_mainRxPopup, trigger);
 }
 
 void AntennaConfigController::showSubRxPopupAbove(QWidget *trigger) {
-    if (trigger)
-        m_subRxPopup->showAboveWidget(trigger);
+    toggleAbove(m_subRxPopup, trigger);
 }
 
 void AntennaConfigController::showTxPopupAbove(QWidget *trigger) {
-    if (trigger)
-        m_txPopup->showAboveWidget(trigger);
+    toggleAbove(m_txPopup, trigger);
+}
+
+void AntennaConfigController::toggleAbove(AntennaCfgPopupWidget *popup, QWidget *anchor) {
+    // The ANT CFG key's press reaches the popup's click-away filter first and closes it; reading
+    // isVisible() would reopen it, so a second press on the key would never close it.
+    if (!popup->closeIfOpenForToggle() && anchor)
+        popup->showAboveWidget(anchor);
 }
 
 void AntennaConfigController::closeAll() {

@@ -4,8 +4,6 @@
 #include <QPainter>
 
 namespace {
-const int ContentHeight = 52;
-const int ContentMargin = 12;
 const int TitleWidthFront = 180; // "MIC CONFIG, FRONT"
 const int TitleWidthRear = 170;  // "MIC CONFIG, REAR"
 } // namespace
@@ -18,7 +16,7 @@ MicConfigPopupWidget::MicConfigPopupWidget(QWidget *parent) : K4PopupBase(parent
 void MicConfigPopupWidget::setupUi() {
     int sm = K4Styles::Dimensions::ShadowMargin;
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(sm + ContentMargin, sm + 8, sm + ContentMargin, sm + 8);
+    layout->setContentsMargins(sm + CompactRowContentMargin, sm + 8, sm + CompactRowContentMargin, sm + 8);
     layout->setSpacing(6);
 
     m_titleLabel = new QPushButton("MIC CONFIG, FRONT", this);
@@ -84,13 +82,13 @@ void MicConfigPopupWidget::setupUi() {
 
 QSize MicConfigPopupWidget::contentSize() const {
     const int titleWidth = (m_micType == Front) ? TitleWidthFront : TitleWidthRear;
-    int contentWidth = ContentMargin + titleWidth + 6 + K4Styles::Dimensions::PopupButtonWidth + 6 +
+    int contentWidth = CompactRowContentMargin + titleWidth + 6 + K4Styles::Dimensions::PopupButtonWidth + 6 +
                        K4Styles::Dimensions::PopupButtonWidth;
     if (m_micType == Front) {
         contentWidth += 6 + K4Styles::Dimensions::PopupButtonWidth;
     }
-    contentWidth += 6 + K4Styles::Dimensions::NavButtonWidth + ContentMargin;
-    return QSize(contentWidth, ContentHeight);
+    contentWidth += 6 + K4Styles::Dimensions::NavButtonWidth + CompactRowContentMargin;
+    return QSize(contentWidth, CompactRowContentHeight);
 }
 
 void MicConfigPopupWidget::setMicType(MicType type) {
@@ -168,29 +166,7 @@ void MicConfigPopupWidget::setButtons(int buttons) {
 }
 
 void MicConfigPopupWidget::paintContent(QPainter &painter, const QRect &contentRect) {
-    QLinearGradient grad = K4Styles::buttonGradient(contentRect.top(), contentRect.bottom());
-    painter.setBrush(grad);
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    painter.drawRoundedRect(contentRect, K4Styles::Dimensions::BorderRadiusLarge,
-                            K4Styles::Dimensions::BorderRadiusLarge);
-
-    painter.setPen(QPen(K4Styles::borderColor(), 1));
-    int lineTop = contentRect.top() + 7;
-    int lineBottom = contentRect.bottom() - 7;
-
-    auto drawDelimiter = [&](QWidget *widget) {
-        if (widget && widget->isVisible()) {
-            int x = widget->geometry().right() + 3;
-            painter.drawLine(x, lineTop, x, lineBottom);
-        }
-    };
-
-    drawDelimiter(m_titleLabel);
-    // Delimiter after the last input-affecting button (BUTTONS for Front,
-    // PREAMP for Rear since BUTTONS is hidden).
-    if (m_micType == Front) {
-        drawDelimiter(m_buttonsBtn);
-    } else {
-        drawDelimiter(m_preampBtn);
-    }
+    // The delimiter follows the last input-affecting button: BUTTONS for Front, PREAMP for Rear (where
+    // BUTTONS is hidden).
+    paintCompactRowFrame(painter, contentRect, {m_titleLabel, m_micType == Front ? m_buttonsBtn : m_preampBtn});
 }

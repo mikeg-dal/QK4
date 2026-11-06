@@ -6,7 +6,7 @@
 // this existed, two different and disagreeing implementations of it.
 //
 // Pure logic with no Qt, no hidapi and no libusb, so it can be unit-tested without a device present
-// — mirroring hardware/halikey_edge.h, network/connect_failure.h and models/transmitowner.h.
+// — mirroring network/connect_failure.h and models/transmitowner.h.
 //
 // WHY this exists at all. Three defects, all from the same root:
 //
@@ -39,16 +39,14 @@ enum class Event {
     ShuttingDown, // the application is quitting
 };
 
+// WHY three flags: present, enabled and open are three different states, and only open means the
+// device is doing its job, the only sense in which it can be said to "own" anything. The Options
+// page conflating them is what told an operator the KPOD+ keyer was active while it was switched
+// off.
 struct State {
     bool present = false; // enumerated on the bus
     bool open = false;    // we hold a handle and are polling it
     bool enabled = false; // the operator's setting
-
-    /// True when the device is actually doing its job — which is the only sense in which it can be
-    /// said to "own" anything. Detected, enabled and live are three different states, and the
-    /// Options page conflating them is what told an operator the KPOD+ keyer was active while it
-    /// was switched off.
-    bool live() const { return open; }
 };
 
 // What the caller must do. Every field defaults to "do nothing", so a decision nobody wrote cannot

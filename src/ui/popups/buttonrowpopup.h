@@ -6,7 +6,7 @@
 
 /**
  * RxMenuButton - Dual-line button with white primary text and amber secondary text.
- * Similar to FnMenuButton but for MAIN RX / SUB RX popup buttons.
+ * Similar to FnMenuButton but for the MAIN RX / SUB RX / TX row buttons.
  */
 class RxMenuButton : public QWidget {
     Q_OBJECT
@@ -18,8 +18,6 @@ public:
     void setPrimaryText(const QString &text);
     void setAlternateText(const QString &text);
     void setHasAlternateFunction(bool has); // If false, alternate text is white (just label), not amber
-    QString primaryText() const { return m_primaryText; }
-    QString alternateText() const { return m_alternateText; }
     bool hasAlternateFunction() const { return m_hasAlternateFunction; }
 
 signals:
@@ -46,7 +44,6 @@ private:
  * Used for MAIN RX, SUB RX, and TX bottom menu popups.
  * Features:
  * - 7 buttons in a horizontal row with primary/alternate text
- * - Gray bottom strip with triangle indicator pointing to trigger button
  * - Customizable button labels (primary white, alternate amber)
  */
 class ButtonRowPopup : public K4PopupBase {
@@ -55,15 +52,10 @@ class ButtonRowPopup : public K4PopupBase {
 public:
     explicit ButtonRowPopup(QWidget *parent = nullptr);
 
-    // Configure button labels (primary text only, clears alternate)
-    void setButtonLabels(const QStringList &labels);
-
     // Configure individual button (primary and alternate text)
     // If hasAlternateFunction is false, alternate text is white (just a label, no right-click function)
     void setButtonLabel(int index, const QString &primary, const QString &alternate = QString(),
                         bool hasAlternateFunction = true);
-    QString buttonLabel(int index) const;
-    QString buttonAlternateLabel(int index) const;
 
 signals:
     void buttonClicked(int index);      // Emits 0-6 for left-click

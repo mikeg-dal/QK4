@@ -5,8 +5,8 @@
 #include "ui/styling/k4styles.h"
 
 #include <QColor>
-#include <QFrame>
-#include <QHBoxLayout>
+#include "ui/pages/optionspagelayout.h"
+#include <QFormLayout>
 #include <QHeaderView>
 #include <QVBoxLayout>
 
@@ -27,78 +27,38 @@ constexpr QChar kFromClient = QChar(0x2190); // left arrow
 constexpr int kVisibleRows = 4;
 constexpr int kRowHeight = 22;
 
-// Not in K4Styles: this is the only table in the app, and k4styles.cpp is at 782 of its 800-line
-// budget (CONVENTIONS.md rule 7). It moves there when a second table needs it.
+// Not in K4Styles: this is the only table in the app, and k4styles.cpp is already over CONVENTIONS.md
+// rule 7's 800 lines. It moves there when a second table needs it.
 QString clientTableStyle() {
     return QString("QTableWidget { background-color: %1; color: %2; border: 1px solid %3; "
                    "               font-size: %4px; gridline-color: %3; }"
                    "QTableWidget::item { padding: 2px 6px; }"
                    "QHeaderView::section { background-color: %5; color: %6; border: 0px; "
                    "               border-bottom: 1px solid %3; padding: 2px 6px; font-size: %4px; }")
-        .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
-        .arg(K4Styles::Dimensions::FontSizeLarge)
-        .arg(K4Styles::Colors::Background, K4Styles::Colors::TextGray);
+        .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextPrimary, K4Styles::Colors::DialogBorder)
+        .arg(K4Styles::Dimensions::FontSizeReadout)
+        .arg(K4Styles::Colors::Background, K4Styles::Colors::TextSecondary);
 }
 
 } // namespace
 
 TciServerPage::TciServerPage(TciController *tciController, AudioController *audioController, QWidget *parent)
     : QWidget(parent), m_tciController(tciController), m_audioController(audioController) {
-    setStyleSheet(K4Styles::Dialog::pageBackground());
+    auto *layout = OptionsPageLayout::createPage(this);
+    OptionsPageLayout::addTitle(layout, this, "TCI Server");
+    OptionsPageLayout::addDescription(layout, this,
+                                      "Enable the TCI server to let WSJT-X and other TCI clients reach the K4 for both "
+                                      "control and audio over one connection. No loopback sound card is needed.");
 
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
-                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
-    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
-
-    auto *titleLabel = new QLabel("TCI Server", this);
-    titleLabel->setStyleSheet(K4Styles::Dialog::titleLabel());
-    layout->addWidget(titleLabel);
-
-    auto *descLabel = new QLabel("Enable the TCI server to let WSJT-X and other TCI clients reach the K4 for both "
-                                 "control and audio over one connection. No loopback sound card is needed.",
-                                 this);
-    descLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                 .arg(K4Styles::Colors::TextGray)
-                                 .arg(K4Styles::Dimensions::FontSizeButton));
-    descLabel->setWordWrap(true);
-    layout->addWidget(descLabel);
-
-    auto *line = new QFrame(this);
-    line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet(K4Styles::Dialog::separator());
-    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line);
-
-    // Status
-    auto *statusLayout = new QHBoxLayout();
-    auto *statusTitleLabel = new QLabel("Status:", this);
-    statusTitleLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    statusTitleLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
-
+    auto *form = OptionsPageLayout::addForm(layout);
     m_statusLabel = new QLabel("Not running", this);
-    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::ErrorRed));
-
-    statusLayout->addWidget(statusTitleLabel);
-    statusLayout->addWidget(m_statusLabel);
-    statusLayout->addStretch();
-    layout->addLayout(statusLayout);
-
-    // Clients
-    auto *clientsLayout = new QHBoxLayout();
-    auto *clientsTitleLabel = new QLabel("Clients:", this);
-    clientsTitleLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    clientsTitleLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
+    OptionsPageLayout::addRow(form, this, "Status", m_statusLabel);
 
     m_clientsLabel = new QLabel("0 connected", this);
-    m_clientsLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                      .arg(K4Styles::Colors::TextWhite)
-                                      .arg(K4Styles::Dimensions::FontSizePopup));
-
-    clientsLayout->addWidget(clientsTitleLabel);
-    clientsLayout->addWidget(m_clientsLabel);
-    clientsLayout->addStretch();
-    layout->addLayout(clientsLayout);
+    m_clientsLabel->setStyleSheet(
+        K4Styles::Dialog::labelText(K4Styles::Colors::TextPrimary, K4Styles::Dimensions::FontSizeHeading));
+    OptionsPageLayout::addRow(form, this, "Clients", m_clientsLabel);
 
     // Who is connected, and whether they are still talking.
     //
@@ -124,94 +84,49 @@ TciServerPage::TciServerPage(TciController *tciController, AudioController *audi
     m_clientsTable->setAlternatingRowColors(false);
     m_clientsTable->setStyleSheet(clientTableStyle());
     m_clientsTable->setFixedHeight(kRowHeight * kVisibleRows + m_clientsTable->horizontalHeader()->height() + 4);
-    layout->addWidget(m_clientsTable);
+    form->addRow(m_clientsTable);
 
-    auto *line2 = new QFrame(this);
-    line2->setFrameShape(QFrame::HLine);
-    line2->setStyleSheet(K4Styles::Dialog::separator());
-    line2->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line2);
-
-    auto *sectionLabel = new QLabel("Settings", this);
-    sectionLabel->setStyleSheet(K4Styles::Dialog::sectionHeader());
-    layout->addWidget(sectionLabel);
-
-    // Port
-    auto *portLayout = new QHBoxLayout();
-    auto *portLabel = new QLabel("Port:", this);
-    portLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    portLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
-
-    m_portEdit = new QLineEdit(this);
-    m_portEdit->setPlaceholderText("50001");
-    m_portEdit->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
-    m_portEdit->setStyleSheet(K4Styles::Dialog::lineEdit());
-    m_portEdit->setText(QString::number(RadioSettings::instance()->tciServerPort()));
-
-    auto *portHint = new QLabel("(default: 50001)", this);
-    portHint->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                .arg(K4Styles::Colors::TextGray)
-                                .arg(K4Styles::Dimensions::FontSizeLarge));
-
-    portLayout->addWidget(portLabel);
-    portLayout->addWidget(m_portEdit);
-    portLayout->addWidget(portHint);
-    portLayout->addStretch();
-    layout->addLayout(portLayout);
-
-    auto *line3 = new QFrame(this);
-    line3->setFrameShape(QFrame::HLine);
-    line3->setStyleSheet(K4Styles::Dialog::separator());
-    line3->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
-    layout->addWidget(line3);
+    OptionsPageLayout::addSection(form, this, "Settings");
 
     m_enableCheckbox = new QCheckBox("Enable TCI server", this);
     m_enableCheckbox->setStyleSheet(K4Styles::Dialog::checkBox());
     m_enableCheckbox->setChecked(RadioSettings::instance()->tciServerEnabled());
-    layout->addWidget(m_enableCheckbox);
+    form->addRow(QString(), m_enableCheckbox);
 
     m_audioCheckbox = new QCheckBox("Carry audio over TCI", this);
     m_audioCheckbox->setStyleSheet(K4Styles::Dialog::checkBox());
     m_audioCheckbox->setChecked(RadioSettings::instance()->tciAudioEnabled());
-    layout->addWidget(m_audioCheckbox);
+    form->addRow(QString(), m_audioCheckbox);
+
+    m_portEdit = new QLineEdit(this);
+    m_portEdit->setPlaceholderText("50001");
+    m_portEdit->setStyleSheet(K4Styles::Dialog::lineEdit());
+    m_portEdit->setText(QString::number(RadioSettings::instance()->tciServerPort()));
+    OptionsPageLayout::capWidth(m_portEdit, K4Styles::Dimensions::OptionsShortFieldWidth);
+    OptionsPageLayout::addRow(form, this, "Port", m_portEdit);
+    OptionsPageLayout::addFieldHelp(form, this,
+                                    "Default 50001, which is also AetherSDR's default — if you run both, "
+                                    "change one.");
 
     // TCI transmit level. Same shape as Mic Gain on the Audio Input page, and deliberately so -
     // it is the same kind of control doing the same job for the other transmit source.
-    auto *txGainLayout = new QHBoxLayout();
-    auto *txGainLabel = new QLabel("TX Level:", this);
-    txGainLabel->setStyleSheet(K4Styles::Dialog::formLabel());
-    txGainLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
-    txGainLayout->addWidget(txGainLabel);
-
     m_txGainSlider = new QSlider(Qt::Horizontal, this);
     m_txGainSlider->setRange(0, 100);
     m_txGainSlider->setValue(RadioSettings::instance()->tciTxGain());
     m_txGainSlider->setStyleSheet(
-        K4Styles::sliderHorizontal(K4Styles::Colors::TextDark, K4Styles::Colors::AccentAmber));
+        K4Styles::sliderHorizontal(K4Styles::Colors::DialogBorder, K4Styles::Colors::AccentAmber));
     connect(m_txGainSlider, &QSlider::valueChanged, this, &TciServerPage::onTciTxGainChanged);
-    txGainLayout->addWidget(m_txGainSlider, 1);
+    m_txGainValueLabel = OptionsPageLayout::sliderValue(QString("%1%").arg(m_txGainSlider->value()), this);
+    OptionsPageLayout::addRow(form, this, "TX Level",
+                              OptionsPageLayout::sliderField(m_txGainSlider, m_txGainValueLabel, this));
 
-    m_txGainValueLabel = new QLabel(QString("%1%").arg(m_txGainSlider->value()), this);
-    m_txGainValueLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                          .arg(K4Styles::Colors::TextWhite)
-                                          .arg(K4Styles::Dimensions::FontSizePopup));
-    m_txGainValueLabel->setFixedWidth(K4Styles::Dimensions::SliderValueLabelWidth);
-    m_txGainValueLabel->setAlignment(Qt::AlignRight);
-    txGainLayout->addWidget(m_txGainValueLabel);
-
-    layout->addLayout(txGainLayout);
-
-    auto *helpLabel =
-        new QLabel("In WSJT-X choose rig \"TCI Client RX1\", set the TCI server to 127.0.0.1 and the port above, "
-                   "and set both audio devices to \"TCI audio\". TX Level above sets how hard a TCI client drives "
-                   "the transmitter — it is separate from Mic Gain, which now affects the microphone only. Set it "
-                   "by watching the radio: ALC should not go above 5. The K4 has no line-in level for LAN audio, "
-                   "so this and your client's own output level are the only adjustments in the chain. Note that "
-                   "50001 is also AetherSDR's default — if you run both, change one.",
-                   this);
-    helpLabel->setStyleSheet(K4Styles::Dialog::helpText());
-    helpLabel->setWordWrap(true);
-    layout->addWidget(helpLabel);
+    OptionsPageLayout::addHelp(
+        layout, this,
+        "In WSJT-X choose rig \"TCI Client RX1\", set the TCI server to 127.0.0.1 and the port above, "
+        "and set both audio devices to \"TCI audio\". TX Level above sets how hard a TCI client drives "
+        "the transmitter — it is separate from Mic Gain, which now affects the microphone only. Set it "
+        "by watching the radio: ALC should not go above 5. The K4 has no line-in level for LAN audio, "
+        "so this and your client's own output level are the only adjustments in the chain.");
 
     connect(m_portEdit, &QLineEdit::editingFinished, this, [this]() {
         bool ok = false;
@@ -223,7 +138,7 @@ TciServerPage::TciServerPage(TciController *tciController, AudioController *audi
         }
     });
 
-    // The settings object owns the decision; MainWindow watches it and starts or stops the
+    // The settings object owns the decision; TciController watches it and starts or stops the
     // listener. This page never drives the controller directly, so the toggle behaves the same
     // whether it is changed here or restored at startup.
     connect(m_enableCheckbox, &QCheckBox::toggled, this,
@@ -279,10 +194,10 @@ void TciServerPage::updateStatus() {
     const bool listening = m_tciController && m_tciController->isListening();
     if (listening) {
         m_statusLabel->setText(QString("Listening on port %1").arg(RadioSettings::instance()->tciServerPort()));
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
     } else {
         m_statusLabel->setText("Not running");
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::ErrorRed));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
     }
 
     const int clients = m_tciController ? m_tciController->clientCount() : 0;
@@ -303,7 +218,7 @@ void TciServerPage::updateClients(const QVector<TciClientInfo> &clients) {
         // One row saying so, rather than an empty box that reads as broken.
         m_clientsTable->setRowCount(1);
         auto *item = new QTableWidgetItem("No clients connected");
-        item->setForeground(QColor(K4Styles::Colors::TextGray));
+        item->setForeground(QColor(K4Styles::Colors::TextSecondary));
         m_clientsTable->setItem(0, ColAddress, item);
         m_clientsTable->setItem(0, ColLastSeen, new QTableWidgetItem(QString()));
         m_clientsTable->setItem(0, ColLastMessage, new QTableWidgetItem(QString()));
@@ -316,10 +231,11 @@ void TciServerPage::updateClients(const QVector<TciClientInfo> &clients) {
         m_clientsTable->setItem(row, ColAddress, new QTableWidgetItem(c.address));
         // Wall-clock time, not "12 s ago": the row is only repainted when something happens, so a
         // relative age would freeze at whatever it read when the client last spoke and quietly lie.
-        m_clientsTable->setItem(row, ColLastSeen,
-                                new QTableWidgetItem(c.lastMessageTime.isValid()
-                                                         ? c.lastMessageTime.toString(QStringLiteral("HH:mm:ss"))
-                                                         : QString()));
+        m_clientsTable->setItem(
+            row, ColLastSeen,
+            new QTableWidgetItem(c.lastMessageTime.isValid()
+                                     ? c.lastMessageTime.toLocalTime().toString(QStringLiteral("HH:mm:ss"))
+                                     : QString()));
         auto *messageItem =
             new QTableWidgetItem(QString("%1 %2").arg(c.lastMessageOutbound ? kToClient : kFromClient, c.lastMessage));
         // The arrow is the only thing distinguishing an echo from the command that caused it, and a

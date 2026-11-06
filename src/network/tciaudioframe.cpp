@@ -74,11 +74,10 @@ bool looksLikeLiveAudio(const float *f, int count) {
     return matched >= (probe * kStereoMatchPercent) / 100;
 }
 
-int liveWindowOffset(const char *body, int availableFloats, int validFloats) {
+int liveWindowOffset(const float *f, int availableFloats, int validFloats) {
     if (availableFloats < validFloats * 2) {
         return 0; // no second window to choose from
     }
-    const float *f = reinterpret_cast<const float *>(body);
     if (looksLikeLiveAudio(f, validFloats)) {
         return 0;
     }
@@ -88,6 +87,20 @@ int liveWindowOffset(const char *body, int availableFloats, int validFloats) {
     // Neither window carries audio: genuine silence, or a layout we have not seen. The first window
     // is what the reference server reads, so it is the safe default.
     return 0;
+}
+
+// Reads `count` little-endian Float32 values from `src` into naturally aligned storage.
+//
+// WHY not a float pointer into the payload: the samples sit at a byte offset inside a buffer the
+// WebSocket layer built, whose alignment nothing promises, and reading a float through a
+// misaligned pointer is undefined behaviour. qFromLittleEndian has no alignment constraint on its
+// source (it is not defined for float, hence the quint32 and the memcpy for the bit pattern), and
+// it makes the wire's byte order explicit, as the Int16 path already does.
+void readFloatsLE(const char *src, int count, float *dest) {
+    for (int i = 0; i < count; ++i) {
+        const quint32 bits = qFromLittleEndian<quint32>(src + i * 4);
+        std::memcpy(dest + i, &bits, sizeof(float));
+    }
 }
 
 void appendU32(QByteArray &out, quint32 v) {
@@ -244,10 +257,16 @@ bool decodeTxAudioToMono(const QByteArray &payload, std::vector<float> *out, Hea
         if (valid <= 0) {
             return false;
         }
-        const float *window = reinterpret_cast<const float *>(body) + liveWindowOffset(body, available, valid);
-
-        std::vector<float> samples(static_cast<size_t>(valid));
-        std::memcpy(samples.data(), window, static_cast<size_t>(valid) * sizeof(float));
+        // Both candidate windows, when the payload holds two; liveWindowOffset only looks at the
+        // second when there is room for it.
+        const int readable = valid * 2 <= available ? valid * 2 : valid;
+        std::vector<float> samples(static_cast<size_t>(readable));
+        readFloatsLE(body, readable, samples.data());
+        const int offset = liveWindowOffset(samples.data(), available, valid);
+        if (offset > 0) {
+            samples.erase(samples.begin(), samples.begin() + offset);
+        }
+        samples.resize(static_cast<size_t>(valid));
         toMono(std::move(samples), out, layoutHint);
         return true;
     }

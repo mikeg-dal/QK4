@@ -3,7 +3,6 @@
 
 #include <QObject>
 #include <QPointer>
-#include <QString>
 #include <QVector>
 
 #include "network/tciclientinfo.h"
@@ -31,6 +30,8 @@ class TransmitController;
  *   - RX audio arrives from AudioController::rxAudioAvailable on the I/O thread and crosses to the
  *     TCI thread by queued connection, so resampling is paid off the I/O thread - which also
  *     carries the K4 control stream.
+ *   - TX audio goes from TciServer (TCI thread) straight to the TX pipeline (TX thread) on a queued
+ *     connection made by AudioController::routeTciTxAudio, never through the main thread.
  *   - RadioState is NOT read from the TCI thread. It is main-thread-only and CI-enforced
  *     (CONVENTIONS.md rule 4); the server keeps its own snapshot instead.
  *
@@ -52,29 +53,27 @@ public:
 
     // Hand the transmitter back BEFORE the owning objects start being destroyed. Idempotent.
     //
-    // WHY this cannot wait for the destructor, which is where it used to live: both this controller
-    // and AudioController are MainWindow children, and QObjectPrivate::deleteChildren() destroys
-    // children in CONSTRUCTION order. AudioController is constructed first, so by the time
-    // ~TciController ran, m_audioController was a dangling pointer - and the `if (m_audioController)`
-    // guard could not see it, because the pointer was non-null, just freed. Quitting while
-    // connected segfaulted in AudioController::pttActiveChanged every time.
+    // WHY this cannot wait for the destructor: both this controller and AudioController are
+    // MainWindow children, and QObjectPrivate::deleteChildren() destroys children in CONSTRUCTION
+    // order. AudioController is constructed first, so by the time ~TciController runs,
+    // AudioController is already gone.
     //
     // MainWindow::closeEvent calls this while everything is still alive, alongside the audio and
     // sidetone teardown that is there for the same class of reason.
     void shutdown();
 
-    // Both marshal to the TCI thread. start() is idempotent.
+    // Both post to the TCI thread and return at once; listeningChanged reports the result once
+    // every request posted so far has finished. start() is idempotent.
     void start(quint16 port, bool loopbackOnly = true);
     void stop();
 
     // Both answer from a MAIN-THREAD CACHE, never by reaching into the server.
     //
-    // WHY: the server and its sessions live on the TCI thread. clientCount() used to return
-    // WebSocketServer::m_sessions.size(), and the options page calls it from the main thread while
-    // that QHash is being inserted into and erased from by socket events on the TCI thread. That is
-    // a data race, not a stale read - QHash::size() dereferences d, and an insert that rehashes
-    // frees the old d. The cache is fed by clientCountChanged, which is the same signal that
-    // prompted the re-read, so it carries no less information.
+    // WHY: the server and its sessions live on the TCI thread, and the options page calls these
+    // from the main thread while socket events on the TCI thread insert into and erase from the
+    // server's session QHash. Reading it from here would be a data race, not a stale read -
+    // QHash::size() dereferences d, and an insert that rehashes frees the old d. The cache is fed
+    // by clientCountChanged, so it carries no less information.
     bool isListening() const { return m_listening; }
     int clientCount() const { return m_clientCount; }
 
@@ -82,32 +81,30 @@ public:
     // QHash from here.
     QVector<TciClientInfo> clients() const { return m_clients; }
 
-    // Carrying audio is separable from carrying CAT. Off means no RX frames are sent and no TX
-    // audio is accepted; the control half keeps working.
     // Call when QK4's own audio levels move. rx_volume reports QK4's mix, and nothing in
     // RadioState changes when a slider does, so there is no radio event to ride on.
     void audioLevelsChanged();
 
+    // Carrying audio is separable from carrying CAT. Off means no RX frames are sent and no TX
+    // audio is accepted; the control half keeps working.
     void setAudioEnabled(bool enabled);
-    bool audioEnabled() const { return m_audioEnabled; }
 
 signals:
     void listeningChanged(bool listening, quint16 port);
     void clientCountChanged(int count);
     void clientsChanged(const QVector<TciClientInfo> &clients);
 
-    // A TCI client keyed or unkeyed the transmitter, so the UI can follow it the way it already
-    // follows CatServer::pttRequested.
-    void transmittingChanged(bool transmitting);
-
 private:
-    // Constructor wiring, in four groups rather than one 287-line block with 46 connect() calls
-    // (banned shape #3, src/controllers/README.md). Called in this order; each is independent.
+    // Constructor wiring, in five groups (banned shape #3, src/controllers/README.md). Called in
+    // this order; each is independent.
     void wireAudioAndClients();
     void wireSettings();
     void wireTransmit();
     void wireCatSets();
     void wireSnapshot();
+
+    // Tell the server that whichever client held PTT no longer does.
+    void releaseClientPtt();
 
     // Reads RadioState on the MAIN thread and pushes a whole snapshot across to the TCI thread.
     // RadioState is main-thread-only and CI-enforced with no locking on its getters, so the TCI
@@ -136,6 +133,7 @@ private:
     // TCI do not pay a queued cross-thread event per received audio packet.
     void connectRxAudioFanout();
     void disconnectRxAudioFanout();
+    void onServerListeningChanged(bool listening, quint16 port);
     QMetaObject::Connection m_rxAudioFanout;
 
     // Set once the transmitter has been handed back, so closeEvent and the destructor cannot do it
@@ -151,6 +149,9 @@ private:
     QPointer<TransmitController> m_transmitController;
     ConnectionController *m_connectionController;
     bool m_audioEnabled = true;
+    // TCI transmit audio, server (TCI thread) -> TX pipeline (TX thread), never through main. Held
+    // only while audio is enabled: disconnecting it is the gate. See AudioController::routeTciTxAudio.
+    QMetaObject::Connection m_txAudioRoute;
     RadioState *m_radioState;
     TciServer *m_server;
     TciAudioBridge *m_bridge;
@@ -158,13 +159,17 @@ private:
 
     MenuController *m_menuController;
 
-    // Main-thread only. See isListening()/clientCount().
     // Set while THIS controller is driving PTT, so the pttActiveChanged that comes back is not
     // mistaken for the operator acting. Without it a client's own key would be read as a local
     // takeover and cancel itself immediately.
     bool m_drivingPtt = false;
 
+    // Main-thread only. See isListening()/clientCount().
     bool m_listening = false;
+    // start()/stop() calls posted to the TCI thread whose listeningChanged has not come back yet.
+    // Only the answer that brings this to 0 is applied, so a stop+start (a port change) or a quick
+    // off/on lands on the last request instead of flickering through the ones before it.
+    int m_serverRequestsInFlight = 0;
     int m_clientCount = 0;
     QVector<TciClientInfo> m_clients;
 };

@@ -51,13 +51,13 @@ void SoftwareListPopupWidget::setupUi() {
     m_titleLabel->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
     m_titleLabel->setFixedHeight(TitleHeight);
     m_titleLabel->setStyleSheet(
-        K4Styles::Dialog::labelTextBold(K4Styles::Colors::TextWhite, K4Styles::Dimensions::FontSizePopup));
+        K4Styles::Dialog::labelTextBold(K4Styles::Colors::TextPrimary, K4Styles::Dimensions::FontSizeHeading));
     outer->addWidget(m_titleLabel);
 
     const QString labelStyle =
-        K4Styles::Dialog::labelText(K4Styles::Colors::TextGray, K4Styles::Dimensions::FontSizeButton);
+        K4Styles::Dialog::labelText(K4Styles::Colors::TextSecondary, K4Styles::Dimensions::FontSizeReadout);
     const QString valueStyle =
-        K4Styles::Dialog::labelText(K4Styles::Colors::TextWhite, K4Styles::Dimensions::FontSizeButton);
+        K4Styles::Dialog::labelText(K4Styles::Colors::TextPrimary, K4Styles::Dimensions::FontSizeReadout);
 
     auto *columns = new QHBoxLayout();
     columns->setContentsMargins(0, 0, 0, 0);

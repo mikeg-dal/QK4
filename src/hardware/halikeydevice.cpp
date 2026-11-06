@@ -1,76 +1,67 @@
 #include "halikeydevice.h"
-#include "halikey_edge.h"
+#include "logging/logcategories.h"
+#include "logging/logsink.h"
 #include "halikeymidiworker.h"
 #include "halikeyv14worker.h"
 #include "halikeyworkerbase.h"
+#include "utils/threadshutdown.h"
 #include <QDebug>
+#include <QSerialPortInfo>
 #include <RtMidi.h>
+#include <chrono>
 
-Q_LOGGING_CATEGORY(hwHalikey, "hw.halikey")
+namespace {
+// WHY 1 s: the serial worker sees its stop request within one 1 ms poll, and prepareShutdown() has
+// already closed a MIDI port before the join. The rest is closing the port handle.
+constexpr std::chrono::milliseconds kWorkerStopTimeout{1000};
+} // namespace
 
-// WHY: HalikeyDevice no longer runs a time-window debounce. Each worker is authoritative for
-// clean edges — the V1.4 serial worker confirms across ≥2 reads (≥500 µs apart on Linux/macOS,
-// ~1 ms apart on Windows, where the poll cadence sets the spacing) before emitting; the MIDI
-// worker delivers already-debounced firmware events. The previous 3 ms
-// processing-time gate silently dropped real MIDI releases on Windows when WinMM delivered
-// press+release in a single burst (see docs/halikey-midi-windows-debounce-bug.md), and also
-// harbored a latent bug where a rejected edge left `confirmed` stale. acceptEdge() (extracted
-// into halikey_edge.h for isolated testing) now does just same-direction dedupe.
-using HalikeyEdge::acceptEdge;
+HalikeyDevice::HalikeyDevice(int deviceType, QObject *parent)
+    : QObject(parent), m_midiSink(std::make_shared<HaliKeyMidiSink>()), m_deviceType(deviceType) {}
 
-HalikeyDevice::HalikeyDevice(int deviceType, QObject *parent) : QObject(parent), m_deviceType(deviceType) {}
+void HalikeyDevice::setMidiSink(std::function<void(int, int, int, double)> sink) {
+    m_midiSink->set(std::move(sink));
+}
+
+void HalikeyDevice::setStraightKey(bool straight) {
+    m_straightKey.store(straight, std::memory_order_release);
+    if (m_worker)
+        m_worker->setStraightKey(straight);
+}
 
 HalikeyDevice::~HalikeyDevice() {
     closePort();
 }
 
-void HalikeyDevice::onRawLines(bool dit, bool dah, bool ptt) {
-    // Per-line same-direction dedupe is kept exactly as it was — it is the regression gate for the
-    // Windows MIDI stuck-paddle bug (see docs/halikey-midi-windows-debounce-bug.md). What changed
-    // is only that the confirmed lines leave here as ONE sample: a dedupe that drops a redundant
-    // edge on one line must not also drop the other lines' fresh values.
-    const bool ditNew = acceptEdge(dit, m_confirmedDitState);
-    const bool dahNew = acceptEdge(dah, m_confirmedDahState);
-    const bool pttNew = acceptEdge(ptt, m_confirmedPttState);
-    if (!ditNew && !dahNew && !pttNew)
-        return;
-
-    emit lineStateChanged(m_confirmedDitState.load(std::memory_order_acquire),
-                          m_confirmedDahState.load(std::memory_order_acquire),
-                          m_confirmedPttState.load(std::memory_order_acquire));
-}
-
 bool HalikeyDevice::openPort(const QString &portName) {
-    if (m_connected) {
-        closePort();
-    }
+    // Unconditionally, not only when connected: a worker still opening has not reported
+    // portOpened yet, and replacing it without a teardown would orphan its thread.
+    closePort();
 
     m_portName = portName;
-    m_confirmedDitState.store(false, std::memory_order_relaxed);
-    m_confirmedDahState.store(false, std::memory_order_relaxed);
-    m_confirmedPttState.store(false, std::memory_order_relaxed);
 
     // Create worker based on injected device type (0 = V1.4, 1 = MIDI)
     if (m_deviceType == 1) {
-        m_worker = new HaliKeyMidiWorker(portName);
+        m_worker = new HaliKeyMidiWorker(portName, m_midiSink);
     } else {
         m_worker = new HaliKeyV14Worker(portName);
     }
 
     m_workerThread = new QThread(this);
+    m_workerThread->setObjectName(QStringLiteral("HaliKey"));
+    Logging::markRealtimeOnStart(m_workerThread);
     m_worker->moveToThread(m_workerThread);
 
-    // DirectConnection: onRawLines runs on whatever worker thread delivered the event (RtMidi
-    // callback for MIDI, monitor thread for V1.4). It updates the confirmed atomics and re-emits
-    // from that thread. Downstream connections are independently safe (CwController's handler only
-    // touches atomics and queues to the keyer thread).
-    connect(m_worker, &HaliKeyWorkerBase::lineStateChanged, this, &HalikeyDevice::onRawLines, Qt::DirectConnection);
+    // Straight through, on the worker thread: the keyer stamps the edge on arrival.
+    connect(m_worker, &HaliKeyWorkerBase::paddleChanged, this, &HalikeyDevice::paddleChanged, Qt::DirectConnection);
+    m_worker->setStraightKey(m_straightKey.load(std::memory_order_acquire));
     connect(m_worker, &HaliKeyWorkerBase::portOpened, this, [this]() {
+        qCInfo(lcCwHalikey) << "HaliKey opened on" << m_portName << (m_deviceType == 1 ? "(MIDI)" : "(V1.4 serial)");
         m_connected = true;
         emit connected();
     });
     connect(m_worker, &HaliKeyWorkerBase::errorOccurred, this, [this](const QString &error) {
-        qCWarning(hwHalikey) << "HalikeyDevice: Worker error -" << error;
+        qCWarning(lcCwHalikey) << "HalikeyDevice: Worker error -" << error;
         closePort();
         emit connectionError(error);
     });
@@ -94,20 +85,13 @@ void HalikeyDevice::closePort() {
         m_worker->prepareShutdown();
     }
 
-    if (m_workerThread) {
-        m_workerThread->quit();
-        m_workerThread->wait(2000);
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    m_worker = nullptr; // Deleted by QThread::finished -> deleteLater
+    // The worker goes with its thread (finished -> deleteLater), or stays on it if the thread is
+    // disowned; its paddle line into this object was cut above either way.
+    ThreadShutdown::retire(m_workerThread, QDeadlineTimer(kWorkerStopTimeout), lcCwHalikey());
+    m_worker = nullptr;
 
     bool wasConnected = m_connected;
     m_connected = false;
-    m_confirmedDitState.store(false, std::memory_order_relaxed);
-    m_confirmedDahState.store(false, std::memory_order_relaxed);
-    m_confirmedPttState.store(false, std::memory_order_relaxed);
 
     if (wasConnected) {
         emit disconnected();
@@ -164,7 +148,8 @@ QStringList HalikeyDevice::availableMidiDevices() {
             }
         }
     } catch (RtMidiError &error) {
-        qCWarning(hwHalikey) << "HalikeyDevice: MIDI enumeration failed:" << QString::fromStdString(error.getMessage());
+        qCWarning(lcCwHalikey) << "HalikeyDevice: MIDI enumeration failed:"
+                               << QString::fromStdString(error.getMessage());
     }
     return devices;
 }

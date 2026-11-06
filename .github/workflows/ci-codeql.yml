@@ -55,13 +55,14 @@ jobs:
           sudo apt-get install -y libgl1-mesa-dev \
             libopus-dev libhidapi-dev libusb-1.0-0-dev libssl-dev libudev-dev libasound2-dev
 
+      - name: Read Qt version
+        # WHY: .github/qt-version is the one Qt version every runner uses (scripts/check-qt-version.sh).
+        run: echo "QT_VERSION=$(tr -d '[:space:]' < .github/qt-version)" >> "$GITHUB_ENV"
+
       - name: Install Qt
-        # The distro Qt is too old to build the full app (the GPU panadapter
-        # needs Qt 6.7+), and analyzing only the test targets would leave the
-        # app sources unscanned.
-        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
         with:
-          version: '6.10.*'
+          version: ${{ env.QT_VERSION }}
           host: 'linux'
           target: 'desktop'
           modules: 'qtmultimedia qtshadertools qtserialport'
@@ -74,9 +75,16 @@ jobs:
           build-mode: manual
 
       - name: Build
+        # WHY the app target only: CodeQL extracts every compile, and the ~80 test executables
+        # recompile the app sources they test (324 compiles of 110 files), so building them
+        # multiplied the extraction for code it had already seen; the test files themselves are
+        # not what this scan is for. Serially the full build passed the 60-minute limit (46 min,
+        # then two timeouts on 2026-11-01); with --parallel 4 it still took 31 min.
+        # WHY 4: the runner's cores; a bare --parallel is an unlimited `make -j`, which ran a
+        # runner out of memory (ci-checks.yml).
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
+          cmake --build build --target QK4 --parallel 4
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2

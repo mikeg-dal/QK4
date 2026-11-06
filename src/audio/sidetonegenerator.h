@@ -1,70 +1,123 @@
 #ifndef SIDETONEGENERATOR_H
 #define SIDETONEGENERATOR_H
 
-#include <QObject>
+#include <QAudioFormat>
 #include <QAudioSink>
 #include <QIODevice>
-#include <QByteArray>
 #include <QMediaDevices>
-#include <QtMath>
+#include <QObject>
 #include <atomic>
+#include <optional>
+#include <vector>
+
+#include "hardware/keyertiming.h"
+#include "utils/rtsan.h"
+
+class SidetoneScheduler;
 
 /**
- * @brief Local CW sidetone synth. Lives on its own thread (HardwareController's m_sidetoneThread)
- *        so audio output never blocks the keyer or UI. IambicKeyer drives `playSingleDit/Dah` per
- *        element for both HaliKey transports (V1.4 serial and MIDI); when the KPOD+ owns the CW
- *        path, CwController suppresses this local sidetone entirely. Each element is written as a
- *        complete PCM block (tone + inter-element space) and always plays to completion.
- *        All public slots are Q_INVOKABLE and expected to be posted via QueuedConnection.
+ * @brief Local CW sidetone output for the HaliKey keyer. Lives on its own real-time thread
+ *        (HardwareController's m_sidetoneThread).
+ *
+ * A push-mode QAudioSink topped up on a 1 ms timer, one 4 ms block at a time, only while less than
+ * kTargetQueueSeconds is waiting in it, so the sidetone itself decides how far ahead it renders.
+ * SidetoneScheduler says where in each block a key edge falls, against the block's play-out time
+ * (time of render plus the audio already queued ahead of it). That places every edge on an
+ * exact frame, so each tone sounds its true length with a fixed delay. Envelope and tone follow
+ * K4-Companion's mix_sidetone (Dale Farnsworth, GPL-3.0): 4 ms raised-cosine rise and fall, an
+ * exact-period sine table, continuous phase.
+ *
+ * WHY its own sink for now rather than mixed into the RX output: the RX path is being reworked.
+ * Phase 2 of docs/cw-keyer-port-plan.md moves this render into AudioEngine's output, so the tone
+ * shares the RX device and clock. The scheduler is already the seam that move needs.
+ *
+ * All public slots are Q_INVOKABLE and expected to be posted via QueuedConnection.
  */
 class SidetoneGenerator : public QObject {
     Q_OBJECT
+
 public:
-    explicit SidetoneGenerator(QObject *parent = nullptr);
-    ~SidetoneGenerator();
+    SidetoneGenerator(SidetoneScheduler &scheduler, CwKeying::Clock &clock, QObject *parent = nullptr);
+    ~SidetoneGenerator() override;
 
     Q_INVOKABLE void setFrequency(int hz);
     Q_INVOKABLE void setVolume(float volume);
-    Q_INVOKABLE void setKeyerSpeed(int wpm);
 
-    // Initialize/shutdown audio (called on sidetone thread via invokeMethod)
+    // start() promotes the sidetone thread; stop() closes the stream. Both on the sidetone thread
+    // via invokeMethod.
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
+    // Open the output stream and run the pump only while CW keying can happen (CwGate). While it
+    // is closed nothing runs on this thread and the scheduler refuses sidetone, as it does with no
+    // output device.
+    Q_INVOKABLE void setStreamWanted(bool wanted);
     Q_INVOKABLE void setOutputDevice(const QString &deviceId);
 
-    // Play a single element (one per IambicKeyer::elementStarted)
-    Q_INVOKABLE void playSingleDit();
-    Q_INVOKABLE void playSingleDah();
-
-signals:
+    // The sidetone's own clock, as the scheduler sees it: the keyer clock while a stream is open,
+    // nullopt otherwise. Thread-safe.
+    std::optional<double> streamTime() const;
 
 private:
     void initAudio();
-    void playElement(int durationMs);
-    int ditDurationMs() const;
-    int dahDurationMs() const;
-    // WHY: when the user leaves the speaker on "System Default" (empty device id),
-    // follow the OS default live instead of caching it for the session — same
-    // pattern as AudioEngine. Without this, a default-device change (or hot-unplug)
-    // left the sink on a stale/dead device and the sidetone went silent.
+    void closeAudio();
     void onSystemDefaultOutputChanged();
+    void rebuildTone();
+    // The per-block work on the real-time sidetone thread (CONVENTIONS Rule 16). pump() is not
+    // marked: its QAudioSink calls are Qt's, which RTSan would report and this code cannot vouch
+    // for. It logs nothing per block; dropouts are counted and reported when the stream closes.
+    void renderBlock(float *out, int frames, double dacTime, double now) noexcept QK4_NONBLOCKING;
+    void convert(const float *in, int frames, char *dst) const noexcept QK4_NONBLOCKING;
+    void pump();
+    void reportStreamDropouts();
+
+    SidetoneScheduler &m_scheduler;
+    CwKeying::Clock &m_clock;
 
     QAudioSink *m_audioSink = nullptr;
     QIODevice *m_pushDevice = nullptr;
+    class QTimer *m_pumpTimer = nullptr;
     QString m_selectedOutputDeviceId;
     QString m_activeOutputDeviceId;          // id of the device the sink was actually opened on
     QMediaDevices *m_mediaDevices = nullptr; // OS device/default-change monitor
+    QAudioFormat m_format;
+    bool m_streamWanted = false; // sidetone thread only
+
+    std::atomic<bool> m_streamActive{false};
     std::atomic<int> m_frequency{600};
     std::atomic<float> m_volume{0.3f};
-    std::atomic<int> m_keyerWpm{20};
-    double m_phase = 0.0;
 
-    // Pre-allocated PCM scratch buffer. Worst case is 5 WPM dah (720 ms tone +
-    // 240 ms inter-element space) at 48 kHz × 2 bytes = ~92 kB. Sized to
-    // 128 kB so a future slower-keyer mode doesn't realloc. Previously
-    // playElement() allocated a fresh QByteArray per CW element (7+ allocs/sec
-    // during keying). resize() against the pre-sized capacity is alloc-free.
-    QByteArray m_elementBuffer;
+    // Render state (sidetone thread only).
+    int m_rate = 0;
+    int m_blockFrames = 0;
+    double m_riseStep = 0;
+    double m_fallStep = 0;
+    bool m_keyed = false;
+    double m_envelope = 0.0;
+    // One exact period of the tone at unit amplitude. Reserved for the longest period (one second)
+    // when the stream opens, so a pitch change never allocates.
+    std::vector<float> m_cycle;
+    size_t m_cycleIndex = 0;
+    int m_toneFrequency = 0;
+    qint64 m_framesWritten = 0;
+    double m_targetQueue = 0; // adapts upward from kTargetQueueSeconds; see pump()
+    // One block each, sized when the stream opens.
+    QByteArray m_bytes;
+    std::vector<float> m_scratch;
+    std::vector<float> m_positions;
+    // Counted by pump(), reported by closeAudio().
+    int m_dryRuns = 0;
+    int m_dryRunsAtCapacity = 0;
+    int m_shortWrites = 0;
+
+    static constexpr double kRiseSeconds = .004;
+    static constexpr double kFallSeconds = .004;
+    static constexpr double kBlockSeconds = .004;
+    // The sink's capacity, and the queue the pump starts from. The queue is the local delay between
+    // "keyed" and "heard" on top of the device's own latency, so it starts low (8 ms) and rises one
+    // block at a time only when the device actually runs dry (pump()). Pull mode, letting Qt
+    // decide, came to ~100 ms on a Mac mini. The capacity bounds how far it can rise.
+    static constexpr double kBufferSeconds = .040;
+    static constexpr double kTargetQueueSeconds = .008;
 };
 
 #endif // SIDETONEGENERATOR_H
