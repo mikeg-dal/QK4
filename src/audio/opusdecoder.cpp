@@ -153,8 +153,12 @@ QByteArray OpusDecoder::decode(const QByteArray &opusData) {
         return QByteArray();
     }
 
+    // WHY the widening: samples and m_channels are both int, so the byte count was computed as int
+    // and only then widened to QByteArray's qsizetype. 1440 samples x 2 channels cannot overflow,
+    // but the cast says so independently of MAX_FRAME_SAMPLES_PER_CHANNEL, and it is what CodeQL's
+    // cpp/integer-multiplication-cast-to-long asks for.
     return QByteArray(reinterpret_cast<const char *>(m_pcmIntScratch.data()),
-                      samples * m_channels * sizeof(opus_int16));
+                      static_cast<qsizetype>(samples) * m_channels * static_cast<qsizetype>(sizeof(opus_int16)));
 }
 
 QByteArray OpusDecoder::decodeFloat(const QByteArray &opusData) {
@@ -169,5 +173,7 @@ QByteArray OpusDecoder::decodeFloat(const QByteArray &opusData) {
         return QByteArray();
     }
 
-    return QByteArray(reinterpret_cast<const char *>(m_pcmFloatScratch.data()), samples * m_channels * sizeof(float));
+    // Widened for the same reason as decode() above.
+    return QByteArray(reinterpret_cast<const char *>(m_pcmFloatScratch.data()),
+                      static_cast<qsizetype>(samples) * m_channels * static_cast<qsizetype>(sizeof(float)));
 }

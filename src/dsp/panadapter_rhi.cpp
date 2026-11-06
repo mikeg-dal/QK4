@@ -555,8 +555,11 @@ void PanadapterRhiWidget::initializeResources(QRhi *current, QRhiCommandBuffer *
     m_textureWidth = BASE_TEXTURE_WIDTH;
     m_waterfallHistory = MAX_WATERFALL_HISTORY;
 
-    // Allocate waterfall data buffer
-    m_waterfallData.resize(m_textureWidth * m_waterfallHistory);
+    // Allocate waterfall data buffer. WHY the qsizetype widening here and at every row offset below:
+    // both operands are int, so the product is computed as int and only then widened to the buffer's
+    // index type. 4096 x 2048 cannot overflow today, but the cast is what makes that independent of
+    // the constants, and it is what CodeQL's cpp/integer-multiplication-cast-to-long asks for.
+    m_waterfallData.resize(static_cast<qsizetype>(m_textureWidth) * m_waterfallHistory);
     m_waterfallData.fill(0);
     m_rowTierSpanHz.resize(m_waterfallHistory);
     m_rowTierSpanHz.fill(0.0f);
@@ -945,7 +948,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         if (++m_framesInRow >= m_framesPerRow) {
             m_framesInRow = 0;
             QRhiTextureSubresourceUploadDescription rowUpload(
-                m_waterfallData.constData() + m_waterfallWriteRow * m_textureWidth, m_textureWidth);
+                m_waterfallData.constData() + static_cast<qsizetype>(m_waterfallWriteRow) * m_textureWidth,
+                m_textureWidth);
             rowUpload.setDestinationTopLeft(QPoint(0, m_waterfallWriteRow));
             rowUpload.setSourceSize(QSize(m_textureWidth, 1));
             rub->uploadTexture(m_gpu.waterfallTexture.get(), QRhiTextureUploadEntry(0, 0, rowUpload));
@@ -1419,7 +1423,7 @@ void PanadapterRhiWidget::updateWaterfallData() {
         m_framesInRow = 0;
     m_rowSpecSize = specSize;
     if (!folding) // clear row (zeros outside bin region = no signal)
-        std::memset(&m_waterfallData[row * m_textureWidth], 0, m_textureWidth);
+        std::memset(&m_waterfallData[static_cast<qsizetype>(row) * m_textureWidth], 0, m_textureWidth);
 
     // Record which tier this row holds. The renderer applies one tierSpanHz to every row, so this
     // is what makes it measurable how many on-screen rows are being windowed at the wrong scale.
@@ -1431,7 +1435,7 @@ void PanadapterRhiWidget::updateWaterfallData() {
     // on every ~1 dB AutoRef step, which read as a flicker over the history.
     const WaterfallGeometry::ColorWindow window =
         WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_scale, m_waterfallColorRange);
-    quint8 *dst = m_waterfallData.data() + row * m_textureWidth + offset;
+    quint8 *dst = m_waterfallData.data() + static_cast<qsizetype>(row) * m_textureWidth + offset;
     for (int i = 0; i < specSize; ++i) {
         const quint8 byte = WaterfallGeometry::capturedByteFor(source[i], window);
         if (folding)
