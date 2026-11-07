@@ -11,6 +11,7 @@ class NetworkMetrics;
 class PowerStatusButton;
 class QLabel;
 class QTimer;
+class QToolButton;
 class QWidget;
 class RadioState;
 
@@ -40,6 +41,7 @@ public:
 
     // Task-level API.
     void setTitle(const QString &text);
+    void setHalikeyConnected(bool connected);
     void clearReadings();
     // Close the power-off confirmation and the network-metrics popup (disconnect reset).
     void closePopups();
@@ -55,6 +57,9 @@ public:
     void showConnected();                        // green bold
     void showError(const QString &errorMessage); // red bold "K4" (the message goes to the notification
                                                  // banner) — survives the disconnect that follows
+
+signals:
+    void halikeyConnectionToggleRequested();
 
 private:
     void onPowerButtonClicked();
@@ -75,6 +80,7 @@ private:
     IconTextLabel *m_lpaTempField;
     IconTextLabel *m_paTempField;
     IconTextLabel *m_voltageField;
+    QToolButton *m_cwKeyBtn;
     QLabel *m_connectionStatusLabel;
     QLabel *m_kpa1500StatusLabel;
     NetHealthWidget *m_netHealthWidget;

@@ -17,6 +17,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QTimer>
+#include <QToolButton>
 #include <QWidget>
 
 namespace {
@@ -143,6 +144,21 @@ StatusBarController::StatusBarController(RadioState *radioState, ConnectionContr
     m_kpa1500StatusLabel->setStyleSheet(K4Styles::kpa1500StatusLabel());
     m_kpa1500StatusLabel->hide(); // Hidden when not enabled
     layout->addWidget(m_kpa1500StatusLabel);
+
+    m_cwKeyBtn = new QToolButton(m_container);
+    m_cwKeyBtn->setText(QStringLiteral("CW KEY"));
+    m_cwKeyBtn->setAutoRaise(true);
+    m_cwKeyBtn->setFocusPolicy(Qt::NoFocus);
+    m_cwKeyBtn->setCursor(Qt::PointingHandCursor);
+    m_cwKeyBtn->setStyleSheet(
+        QString("QToolButton { background: transparent; border: none; color: %1; font-size: %2px; } "
+                "%3 { color: %4; font-weight: bold; }")
+            .arg(K4Styles::Colors::TextSecondary)
+            .arg(K4Styles::Dimensions::FontSizeReadout)
+            .arg(K4Styles::whenFlag("QToolButton", K4Styles::SelectedProperty), K4Styles::Colors::StatusGreen));
+    setHalikeyConnected(false);
+    layout->addWidget(m_cwKeyBtn);
+    connect(m_cwKeyBtn, &QToolButton::clicked, this, &StatusBarController::halikeyConnectionToggleRequested);
 
     // K4 connection status
     m_connectionStatusLabel = new QLabel("K4", m_container);
@@ -330,4 +346,10 @@ void StatusBarController::onPowerButtonClicked() {
     }
 
     m_confirmPopup->showAboveWidget(m_powerButton);
+}
+
+void StatusBarController::setHalikeyConnected(bool connected) {
+    K4Styles::setSelected(m_cwKeyBtn, connected);
+    m_cwKeyBtn->setToolTip(connected ? QStringLiteral("HaliKey connected — click to disconnect")
+                                     : QStringLiteral("Connect HaliKey using the port saved in Settings"));
 }

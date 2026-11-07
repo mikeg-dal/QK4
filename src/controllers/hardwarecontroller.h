@@ -69,6 +69,7 @@ public:
     /// The order inside is load-bearing: HaliKey stops paddle events first, then the keyer (which
     /// produces KZ), then the sidetone (which consumes them). Producers before consumers.
     void shutdownDevices();
+    void toggleHalikeyConnection();
 
 private:
     /// "HaliKey V1.4" or "HaliKey MIDI", matching the Options dropdown, so a notification and the
@@ -113,6 +114,7 @@ signals:
     // A MIDI device was plugged in, removed or changed (macOS; never emitted elsewhere, where every
     // MIDI enumeration is already current). The HaliKey page rescans its list on it.
     void midiDevicesChanged();
+    void halikeyConnectionChanged(bool connected);
 
 private slots:
     void onKpodEncoderRotated(int ticks);

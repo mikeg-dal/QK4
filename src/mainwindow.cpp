@@ -345,6 +345,10 @@ void MainWindow::setupSpectrumDataRouting() {
 void MainWindow::setupHardwareController() {
     // Hardware controller owns KPOD, HaliKey, PaddleKeyer, SidetoneGenerator and their threads
     m_hardwareController = new HardwareController(m_radioState, m_connectionController, this);
+    connect(m_statusBarController, &StatusBarController::halikeyConnectionToggleRequested, m_hardwareController,
+            &HardwareController::toggleHalikeyConnection);
+    connect(m_hardwareController, &HardwareController::halikeyConnectionChanged, m_statusBarController,
+            &StatusBarController::setHalikeyConnected);
 
     // CW controller wires the CW signal graph across the HardwareController-owned
     // devices. Constructed immediately after so the devices exist; takes them by

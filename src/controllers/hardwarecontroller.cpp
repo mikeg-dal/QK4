@@ -133,6 +133,8 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     // itself doesn't reach into RadioSettings.
     // =========================================================================
     m_halikeyDevice = new HalikeyDevice(RadioSettings::instance()->halikeyDeviceType(), this);
+    connect(m_halikeyDevice, &HalikeyDevice::connected, this, [this]() { emit halikeyConnectionChanged(true); });
+    connect(m_halikeyDevice, &HalikeyDevice::disconnected, this, [this]() { emit halikeyConnectionChanged(false); });
     connect(RadioSettings::instance(), &RadioSettings::halikeyDeviceTypeChanged, m_halikeyDevice,
             &HalikeyDevice::setDeviceType);
 
@@ -452,4 +454,19 @@ void HardwareController::onKpodPollError(const QString &error) {
     // repeat at the poll rate, so a popup per occurrence would bury the screen. The operator hears
     // that the device is gone once, from applyKpod() / applyKpodPlus().
     qCWarning(lcHardware) << "KPOD/KPOD+ poll error:" << error;
+}
+
+void HardwareController::toggleHalikeyConnection() {
+    if (m_devicesShutDown)
+        return;
+    if (m_halikeyDevice->isConnected()) {
+        m_halikeyDevice->closePort();
+        return;
+    }
+    const QString portName = RadioSettings::instance()->halikeyPortName();
+    if (portName.isEmpty()) {
+        emit hardwareError(QStringLiteral("HaliKey: select a port and connect once in Settings → HaliKey first."));
+        return;
+    }
+    m_halikeyDevice->openPort(portName);
 }
