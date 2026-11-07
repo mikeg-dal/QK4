@@ -13,13 +13,14 @@ class TestCwGate : public QObject {
 
 private slots:
     void everyCase() {
-        for (int bits = 0; bits < 16; ++bits) {
+        for (int bits = 0; bits < 32; ++bits) {
             CwGate::Inputs in;
             in.radioReady = bits & 1;
             in.inCwMode = bits & 2;
             in.kpodPlusOwnsCw = bits & 4;
             in.halikeyOpen = bits & 8;
-            const bool keyable = in.radioReady && in.inCwMode && !in.kpodPlusOwnsCw;
+            in.keyingArmed = bits & 16;
+            const bool keyable = in.radioReady && in.inCwMode && !in.kpodPlusOwnsCw && in.halikeyOpen && in.keyingArmed;
             QCOMPARE(CwGate::keyerInhibited(in), !keyable);
             QCOMPARE(CwGate::sidetoneStreamWanted(in), keyable && in.halikeyOpen);
         }

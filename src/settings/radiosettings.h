@@ -164,6 +164,8 @@ public:
     void setMacro(const QString &functionId, const QString &label, const QString &command);
 
     // HaliKey CW Keyer settings
+    bool halikeyAutoConnect() const;
+    void setHalikeyAutoConnect(bool enabled);
     QString halikeyPortName() const;
     void setHalikeyPortName(const QString &portName);
     int halikeyDeviceType() const;
@@ -280,6 +282,7 @@ signals:
     void tciServerPortChanged(quint16 port);
     void tciAudioEnabledChanged(bool enabled);
     void macrosChanged();
+    void halikeyAutoConnectChanged(bool enabled);
     void halikeyDeviceTypeChanged(int type);
     void sidetoneVolumeChanged(int value);
     void halikeyKeyerModeChanged(int mode);
@@ -321,6 +324,7 @@ private:
     bool m_tciAudioEnabled = true;
 
     // HaliKey settings
+    bool m_halikeyAutoConnect = false;
     QString m_halikeyPortName;
     int m_halikeyDeviceType = 0; // 0=V14, 1=MiDi
     int m_sidetoneVolume = 30;   // Default 30%

@@ -5,6 +5,7 @@
 #include "audio/sidetonescheduler.h"
 #include "connectioncontroller.h"
 #include "hardware/halikeydevice.h"
+#include "hardware/halikeyportscan.h"
 #include "hardware/keyerruntime.h"
 #include "hardware/paddlekeyer.h"
 #include "hardware/kpoddevice.h"
@@ -235,6 +236,35 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     connect(m_halikeyDevice, &HalikeyDevice::connectionError, this, [this](const QString &error) {
         emit hardwareError(QStringLiteral("%1: %2 — paddle keying has stopped.").arg(halikeyName(), error));
     });
+
+    // Keep discovery outside the Options page and off the GUI thread. Recheck settings
+    // when a scan completes: the user may have disabled auto connect or changed ports.
+    auto *autoScan = new HaliKeyPortScan(this);
+    auto canAutoConnect = [this]() {
+        const auto *settings = RadioSettings::instance();
+        return !m_devicesShutDown && settings->halikeyAutoConnect() &&
+               settings->halikeyDeviceType() == HaliKeyPortScan::kMidiType && !settings->halikeyPortName().isEmpty() &&
+               !m_halikeyDevice->isConnected() && !m_halikeyDevice->isOpening();
+    };
+    auto checkAutoConnect = [autoScan, canAutoConnect]() {
+        if (canAutoConnect() && !autoScan->isScanning())
+            autoScan->request(HaliKeyPortScan::kMidiType, &HalikeyDevice::availableMidiDevices);
+    };
+    connect(autoScan, &HaliKeyPortScan::finished, this, [this, canAutoConnect](int, const QStringList &ports) {
+        if (!canAutoConnect())
+            return;
+        const QString savedPort = RadioSettings::instance()->halikeyPortName();
+        // Exact identity: never fall back to a different MIDI input.
+        if (ports.contains(savedPort))
+            m_halikeyDevice->openPort(savedPort);
+    });
+    auto *autoTimer = new QTimer(this);
+    autoTimer->setInterval(2000);
+    connect(autoTimer, &QTimer::timeout, this, checkAutoConnect);
+    connect(RadioSettings::instance(), &RadioSettings::halikeyAutoConnectChanged, this, checkAutoConnect);
+    connect(m_midiWatcher, &MidiDeviceWatcher::devicesChanged, this, checkAutoConnect);
+    autoTimer->start();
+    QTimer::singleShot(0, this, checkAutoConnect);
 
     // The KPOD/KPOD+ notifications are raised by applyKpod()/applyKpodPlus() from the policy's
     // Effects, not from deviceDisconnected. That signal cannot distinguish a pulled cable from our

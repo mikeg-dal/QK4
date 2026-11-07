@@ -120,3 +120,29 @@ debounce needs.
 
 The V1.4 pin map: `CTS` = dit lever (and a foot pedal, indistinguishable — which is why footswitch
 PTT is withdrawn), `DCD ∥ DSR` = dah lever.
+
+## Connection safety guard bench checks
+
+HaliKey keying starts disabled for each device/radio connection. Once the radio is ready and the
+HaliKey port is open, a prompt offers Enable or Keep disabled (the default). Approval is kept only
+for that connection. Serial waits for released input samples; MIDI consumes releases for both
+paddles, or note 20 alone for a straight key. The MIDI arming actions never transmit. The dialog
+and Options → HaliKey show when keying is enabled. Enable keying in Options can reopen the prompt
+after a decline.
+
+Verify with both serial and MIDI hardware before release:
+
+| Scenario | Expected result |
+| --- | --- |
+| HaliKey opens before the radio is ready | No keying; one prompt once the radio is ready. |
+| HaliKey opens after the radio is ready | One prompt on arrival; discovery scans do not repeat it. |
+| Keep disabled, Escape, or close the prompt | No keying; no repeat prompt while the connection stays up. |
+| Hold a paddle/key during connection and click Enable | No transmission while held. |
+| Serial: release the held input | Arms after released inputs are sampled; the next press transmits. |
+| MIDI: release only one of two paddles | Remains disabled until both inputs are known released. |
+| MIDI: tap/release both paddles (dit only for straight key) | Arming actions send no KZD/KZU; the next press transmits normally. |
+| Press one paddle again while the other still needs its arming release | Remains disabled until both are released together. |
+| Cancel while waiting for release | Keying stays disabled; Options can reopen the prompt. |
+| Disconnect/reconnect the radio or HaliKey, including while a dialog is open | Old dialog closes, keying disarms, a fresh connection prompts again. |
+| Change between straight key and paddles | Disarms and requires a new approval/release check. |
+| Enable with KPOD+ owning CW, or outside CW mode | Existing keyer inhibition still applies. |

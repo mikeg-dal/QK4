@@ -81,6 +81,8 @@ public:
     // ---- device threads ----
     void paddleEvent(Event event, double deltaTime,
                      std::optional<double> timestamp = std::nullopt) noexcept QK4_NONBLOCKING;
+    // Call on the MIDI device thread before the first message of a new approval epoch.
+    void resetMidiInput() noexcept QK4_NONBLOCKING;
     void midiMessage(int status, int note, int velocity, double rtmidiDelta) noexcept QK4_NONBLOCKING;
     void serialSignalChanged(Signal signal, bool asserted, double deltaTime) noexcept QK4_NONBLOCKING;
 

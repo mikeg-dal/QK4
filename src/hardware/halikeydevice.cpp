@@ -24,7 +24,8 @@ void HalikeyDevice::setMidiSink(std::function<void(int, int, int, double)> sink)
 }
 
 void HalikeyDevice::setStraightKey(bool straight) {
-    m_straightKey.store(straight, std::memory_order_release);
+    if (m_straightKey.exchange(straight, std::memory_order_acq_rel) != straight)
+        disarmKeying();
     if (m_worker)
         m_worker->setStraightKey(straight);
 }
@@ -47,6 +48,7 @@ bool HalikeyDevice::openPort(const QString &portName) {
         m_worker = new HaliKeyV14Worker(portName);
     }
 
+    m_worker->setSafety(m_safety);
     m_workerThread = new QThread(this);
     m_workerThread->setObjectName(QStringLiteral("HaliKey"));
     Logging::markRealtimeOnStart(m_workerThread);
@@ -77,6 +79,7 @@ bool HalikeyDevice::openPort(const QString &portName) {
 }
 
 void HalikeyDevice::closePort() {
+    disarmKeying();
     // Disconnect worker signals FIRST — prevent stale queued events
     // from reaching slots after state reset
     if (m_worker) {

@@ -81,11 +81,35 @@ CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, C
     OptionsPageLayout::capWidth(portField, D::OptionsFieldMaxWidth);
     OptionsPageLayout::addRow(form, this, "Port", portField);
 
+    auto *autoConnect = new QCheckBox("Auto connect enabled", this);
+    autoConnect->setStyleSheet(K4Styles::Dialog::checkBox());
+    autoConnect->setChecked(RadioSettings::instance()->halikeyAutoConnect());
+    autoConnect->setEnabled(RadioSettings::instance()->halikeyDeviceType() == HaliKeyPortScan::kMidiType);
+    connect(autoConnect, &QCheckBox::toggled, RadioSettings::instance(), &RadioSettings::setHalikeyAutoConnect);
+    connect(RadioSettings::instance(), &RadioSettings::halikeyAutoConnectChanged, autoConnect, &QCheckBox::setChecked);
+    connect(RadioSettings::instance(), &RadioSettings::halikeyDeviceTypeChanged, autoConnect,
+            [autoConnect](int type) { autoConnect->setEnabled(type == HaliKeyPortScan::kMidiType); });
+    form->addRow(QString(), autoConnect);
+    OptionsPageLayout::addFieldHelp(
+        form, this,
+        "Automatically connect to the saved MIDI device at startup and check every two seconds while QK4 runs. "
+        "Disconnect turns off auto connect.");
+
     m_cwKeyerConnectBtn = new QPushButton("Connect", this);
     m_cwKeyerConnectBtn->setStyleSheet(K4Styles::Dialog::actionButtonSmall());
     m_cwKeyerConnectBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     connect(m_cwKeyerConnectBtn, &QPushButton::clicked, this, &CwKeyerPage::onCwKeyerConnectClicked);
     form->addRow(QString(), m_cwKeyerConnectBtn);
+
+    auto *keyingStatus = new QLabel(m_cwController->keyingStatus(), this);
+    keyingStatus->setWordWrap(true);
+    keyingStatus->setStyleSheet(K4Styles::Dialog::statusLabelByState());
+    OptionsPageLayout::addRow(form, this, "Keying", keyingStatus);
+    connect(m_cwController, &CwController::keyingStatusChanged, keyingStatus, &QLabel::setText);
+    auto *enableKeying = new QPushButton("Enable keying…", this);
+    enableKeying->setStyleSheet(K4Styles::Dialog::actionButtonSmall());
+    connect(enableKeying, &QPushButton::clicked, m_cwController, &CwController::requestKeyingEnable);
+    form->addRow(QString(), enableKeying);
 
     // Keyer section: the PaddleKeyer settings (port of K4-Companion's keyer).
     OptionsPageLayout::addSection(form, this, "Keyer");
@@ -337,6 +361,7 @@ void CwKeyerPage::onCwKeyerConnectClicked() {
         return;
 
     if (m_halikeyDevice->isConnected()) {
+        RadioSettings::instance()->setHalikeyAutoConnect(false);
         m_halikeyDevice->closePort();
     } else {
         QString portName = m_cwKeyerPortCombo->currentData().toString();
