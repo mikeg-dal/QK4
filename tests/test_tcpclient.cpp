@@ -102,6 +102,7 @@ private slots:
         QVERIFY(radio.listen());
         TcpClient client;
         QSignalSpy errors(&client, &TcpClient::errorOccurred);
+        QSignalSpy gracefulDisconnects(&client, &TcpClient::aboutToDisconnect);
         QSignalSpy states(&client, &TcpClient::stateChanged);
 
         client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
@@ -112,6 +113,7 @@ private slots:
         QTest::qWait(100);
         QVERIFY2(errors.isEmpty(), qPrintable(errors.isEmpty() ? QString() : errors.first().first().toString()));
         QCOMPARE(states.last().first().value<TcpClient::ConnectionState>(), TcpClient::Disconnected);
+        QVERIFY(gracefulDisconnects.isEmpty());
     }
 
     // TRN-002. A radio that accepts the connection and never answers is one failure, reported once.
@@ -122,6 +124,7 @@ private slots:
         QVERIFY(radio.listen());
         TcpClient client;
         QSignalSpy errors(&client, &TcpClient::errorOccurred);
+        QSignalSpy gracefulDisconnects(&client, &TcpClient::aboutToDisconnect);
 
         client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
         QTRY_COMPARE(client.connectionState(), TcpClient::Authenticating);
@@ -130,6 +133,7 @@ private slots:
         QTest::qWait(200);
         QCOMPARE(errors.size(), 1);
         QVERIFY(errors.first().first().toString().contains(QStringLiteral("sent no data")));
+        QVERIFY(gracefulDisconnects.isEmpty());
     }
 
     // The radio closing the connection before answering is still reported, once.
@@ -138,6 +142,7 @@ private slots:
         QVERIFY(radio.listen());
         TcpClient client;
         QSignalSpy errors(&client, &TcpClient::errorOccurred);
+        QSignalSpy gracefulDisconnects(&client, &TcpClient::aboutToDisconnect);
 
         client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
         QTRY_COMPARE(client.connectionState(), TcpClient::Authenticating);
@@ -146,6 +151,53 @@ private slots:
         QTRY_COMPARE(client.connectionState(), TcpClient::Disconnected);
         QTest::qWait(100);
         QCOMPARE(errors.size(), 1);
+        QVERIFY(gracefulDisconnects.isEmpty());
+    }
+
+    void gracefulDisconnectRestoresWhileConnectedBeforeGoodbye() {
+        FakeRadio radio;
+        QVERIFY(radio.listen());
+        TcpClient client;
+        QSignalSpy gracefulDisconnects(&client, &TcpClient::aboutToDisconnect);
+        bool connectedWhenRestoring = false;
+        connect(&client, &TcpClient::aboutToDisconnect, &client, [&client, &connectedWhenRestoring]() {
+            connectedWhenRestoring = client.isConnected();
+            client.sendCAT(QStringLiteral("ML0025;"));
+        });
+
+        client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
+        QTRY_COMPARE(radio.connectionCount(), 1);
+        radio.answer(0);
+        QTRY_COMPARE(client.connectionState(), TcpClient::Connected);
+        client.disconnectFromHost();
+        client.disconnectFromHost();
+        QTRY_COMPARE(radio.socket(0)->state(), QAbstractSocket::UnconnectedState);
+        const auto restore = Protocol::buildCATPacket(QStringLiteral("ML0025;"));
+        const auto goodbye = Protocol::buildCATPacket(K4Protocol::Commands::DISCONNECT);
+        QTRY_VERIFY(radio.received(0).contains(goodbye));
+        const auto received = radio.received(0);
+        QCOMPARE(gracefulDisconnects.size(), 1);
+        QVERIFY(connectedWhenRestoring);
+        QCOMPARE(received.count(restore), 1);
+        QVERIFY(received.indexOf(restore) < received.indexOf(goodbye));
+    }
+
+    void lostAuthenticatedSessionDoesNotRunGracefulRestoration() {
+        FakeRadio radio;
+        QVERIFY(radio.listen());
+        TcpClient client;
+        QSignalSpy errors(&client, &TcpClient::errorOccurred);
+        QSignalSpy gracefulDisconnects(&client, &TcpClient::aboutToDisconnect);
+
+        client.connectToHost(kHost, radio.port(), QStringLiteral("pw"));
+        QTRY_COMPARE(radio.connectionCount(), 1);
+        radio.answer(0);
+        QTRY_COMPARE(client.connectionState(), TcpClient::Connected);
+        radio.socket(0)->close();
+        QTRY_COMPARE(client.connectionState(), TcpClient::Disconnected);
+        QCOMPARE(errors.size(), 1);
+        QVERIFY(gracefulDisconnects.isEmpty());
+        QVERIFY(!radio.received(0).contains(Protocol::buildCATPacket(K4Protocol::Commands::DISCONNECT)));
     }
 
     // TRN-012. The socket is connected from the TCP handshake on, before the radio has accepted the
