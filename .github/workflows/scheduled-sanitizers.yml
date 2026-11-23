@@ -87,7 +87,9 @@ jobs:
         env:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
           ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1
-          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+          # tests/tsan.supp documents every suppressed cycle and why it cannot close.
+          # An absolute path is required; a path TSan cannot open aborts every test.
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:suppressions=${{ github.workspace }}/tests/tsan.supp
         # Capture the exit code instead of failing here so the reporting steps
         # below always run; the final step restores the red status.
         run: |
@@ -99,14 +101,34 @@ jobs:
         if: steps.run.outputs.exit_code != '0'
         id: report
         shell: bash
+        # A sanitizer report runs from its WARNING/ERROR banner to its SUMMARY line, so
+        # it has to be read forwards from the banner. Anchoring on SUMMARY instead put
+        # the 80 lines of ctest output that FOLLOW the report in the issue and left every
+        # stack frame out of it.
+        #
         # 45KB cap keeps the report under the issue-body size limit.
         run: |
-          grep -A 80 "SUMMARY: " sanitizer.log | head -c 45000 > report.txt || true
-          if [ ! -s report.txt ]; then
-            tail -c 45000 sanitizer.log > report.txt
+          awk '/(WARNING|ERROR): (Thread|Address|Undefined|Leak)Sanitizer/,/^SUMMARY: /' \
+            sanitizer.log > reports.txt || true
+          if [ ! -s reports.txt ]; then
+            tail -c 45000 sanitizer.log > reports.txt
           fi
-          FIRST_SUMMARY=$(grep -m1 "SUMMARY: " sanitizer.log || echo "no-summary-line")
-          echo "fingerprint=$(printf '%s' "$FIRST_SUMMARY" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          {
+            echo "Failing tests:"
+            grep -E '\*\*\*[A-Z]' sanitizer.log || echo "  (ctest named no failing test)"
+            echo
+            echo "Sanitizer report(s):"
+            cat reports.txt
+          } > report-full.txt
+          head -c 45000 report-full.txt > report.txt
+          # WHY the SUMMARY line is normalised before hashing: scripts/build-qtbase-tsan.sh
+          # builds Qt in a `mktemp -d` directory, and that random path is baked into Qt's
+          # debug info and so into every SUMMARY line. Hashing it raw gave one identical
+          # failure four different fingerprints across 2026-11-02..23, which defeated the
+          # whole point of printing one.
+          FIRST_SUMMARY=$(grep -m1 "^SUMMARY: " sanitizer.log || echo "no-summary-line")
+          STABLE=$(printf '%s' "$FIRST_SUMMARY" | sed -E 's#/tmp/tmp\.[A-Za-z0-9]+/#/qtbase-src/#g')
+          echo "fingerprint=$(printf '%s' "$STABLE" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
 
       - name: Upload full log
         if: steps.run.outputs.exit_code != '0'

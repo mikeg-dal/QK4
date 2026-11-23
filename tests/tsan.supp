@@ -1,0 +1,28 @@
+# ThreadSanitizer suppressions for the weekly `scheduled-sanitizers.yml` run.
+#
+# Every entry here must name a cycle or race that lives entirely in a dependency's
+# own code, with the file and version it was observed in and why it cannot deadlock
+# in practice. Nothing in src/ belongs in this file: a finding in QK4's own locking
+# is the thing this job exists to catch.
+#
+# Revisit the whole file at every Qt bump (.github/qt-version) — a fixed upstream
+# cycle leaves a suppression that then hides the next one.
+
+# Qt 6.10.3: lock-order inversion between QSslSocketPrivate's TLS-backend mutex
+# (qsslsocket.cpp:3100) and the QApplicationStatic guard protecting the TLS plugin's
+# QFactoryLoader (qapplicationstatic.h:54/69). Both orders run on the main thread:
+#
+#   backend -> static   constructing any QSslSocket, via tlsBackendInUse() ->
+#                       QTlsBackend::availableBackendNames() -> tryPopulateCollection
+#   static  -> backend  in ~QCoreApplication, via QApplicationStatic::reset() ->
+#                       ~QFactoryLoader -> ~QTlsBackendOpenSSL -> QObject::destroyed
+#                       -> the lambda at qsslsocket.cpp:3115
+#
+# The second order exists only while QCoreApplication is being destroyed, with no
+# other thread left to hold either mutex, so the cycle cannot close. TSan's deadlock
+# detector is order-based and reports it anyway. First seen 2026-11-02, in
+# TcpClientTests, after tests/test_tcpclient.cpp began constructing a TcpClient
+# (and so a QSslSocket) in a process that also destroys its QCoreApplication.
+deadlock:QSslSocketPrivate::tlsBackendInUse
+deadlock:QTlsBackend::availableBackendNames
+deadlock:QTlsBackend::~QTlsBackend

@@ -118,6 +118,41 @@ cmake --build build-rtsan --target qk4_tests && ctest --test-dir build-rtsan --o
 
 `RTSAN_OPTIONS=halt_on_error=0` lists every violation in a run instead of stopping at the first.
 
+## ThreadSanitizer
+
+`scheduled-sanitizers.yml` runs weekly against a TSan-instrumented qtbase it builds and caches
+itself. Two things about reading its failures:
+
+**Suppressions live in `tests/tsan.supp`.** TSan's deadlock detector is order-based: it reports a
+cycle in the lock graph whether or not the cycle can ever close. Qt 6.10.3 has one such cycle
+between `QSslSocketPrivate`'s TLS-backend mutex and the `QApplicationStatic` guard around the TLS
+plugin's `QFactoryLoader`, taken in one order when any `QSslSocket` is constructed and in the other
+during `~QCoreApplication` — on the main thread both times, so nothing can hold either mutex
+against the other. That made every run red from 2026-11-02 (when `tests/test_tcpclient.cpp` first
+put a `QSslSocket` and a destroyed `QCoreApplication` in the same process) and is suppressed with
+its reasoning in that file. Nothing from `src/` belongs there; re-read the file at every Qt bump.
+
+**The sticky issue carries the stacks and a stable fingerprint.** A sanitizer report runs from its
+`WARNING:`/`ERROR:` banner *to* its `SUMMARY:` line, so the extract step reads forwards from the
+banner. The fingerprint is the first `SUMMARY:` line with the `mktemp -d` path that
+`scripts/build-qtbase-tsan.sh` builds Qt in normalised away — that random path is baked into Qt's
+debug info, so hashing the line raw gave one identical failure a different fingerprint every week.
+
+Reproducing a finding locally means a TSan-instrumented Qt; a distro or official Qt is not
+instrumented and reports every queued cross-thread call as a race (#172):
+
+```bash
+scripts/build-qtbase-tsan.sh "$HOME/qt-tsan"
+CXXFLAGS='-fsanitize=thread -g -fno-omit-frame-pointer' LDFLAGS='-fsanitize=thread' \
+  cmake -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQK4_TESTS_ONLY=ON \
+  -DCMAKE_PREFIX_PATH="$HOME/qt-tsan"
+cmake --build build-tsan --target qk4_tests
+TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1:suppressions=$PWD/tests/tsan.supp" \
+  ctest --test-dir build-tsan --output-on-failure
+```
+
+Drop the `suppressions=` to see what is being suppressed.
+
 ## Renaming a workflow
 
 A rename starts a new entry in the Actions sidebar; the old file's runs stay under the old name.
