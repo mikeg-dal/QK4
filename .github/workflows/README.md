@@ -30,7 +30,7 @@ or `development: <commit subject>`.
 | `ci-packaging.yml` | Builds and packages all four platforms, unsigned, through the same `_build-*.yml` builders a release uses. Skips docs-only changes. Its `Packaging result` job is the one to require |
 | `build-signed.yml` | Signed, notarized artifacts for every platform, one run page, kept 90 days. Dispatch it on `development` for a tester build (see Tester builds). No Release, no gh-pages |
 | `release.yml` | The same builders, then the GitHub Release and gh-pages. Refuses a tag unless an on-demand `build-signed.yml` run succeeded on the same shipped code, so what testers approved is what ships |
-| `scheduled-sanitizers.yml` | Weekly ThreadSanitizer over every ctest suite (no list to keep up to date); failures go to a sticky issue. Builds and caches its own TSan-instrumented qtbase (`scripts/build-qtbase-tsan.sh`) and configures the tests with `-DQK4_TESTS_ONLY=ON`: a distro Qt hides its locking from TSan (#172) |
+| `scheduled-sanitizers.yml` | ThreadSanitizer over every ctest suite (no list to keep up to date), Monday and Thursday — weekly raced the cache eviction window, see Build time; failures go to a sticky issue. Builds and caches its own TSan-instrumented qtbase (`scripts/build-qtbase-tsan.sh`) and configures the tests with `-DQK4_TESTS_ONLY=ON`: a distro Qt hides its locking from TSan (#172) |
 | `scheduled-qt611-canary.yml` | Monthly: is there an aqtinstall release newer than 3.3.0, and does it install Qt 6.11 for Windows (red if not)? A control job installs 6.11 with aqtinstall from its fix commit, so a broken probe is red too. Delete once the 6.11 bump lands |
 | `repo-issue-triage.yml` | First-pass triage of new issues |
 | `repo-comment-guard.yml` | Hides disguised-download spam from non-maintainers |
@@ -120,8 +120,8 @@ cmake --build build-rtsan --target qk4_tests && ctest --test-dir build-rtsan --o
 
 ## ThreadSanitizer
 
-`scheduled-sanitizers.yml` runs weekly against a TSan-instrumented qtbase it builds and caches
-itself. Two things about reading its failures:
+`scheduled-sanitizers.yml` runs Monday and Thursday against a TSan-instrumented qtbase it builds
+and caches itself. Two things about reading its failures:
 
 **Suppressions live in `tests/tsan.supp`.** TSan's deadlock detector is order-based: it reports a
 cycle in the lock graph whether or not the cycle can ever close. Qt 6.10.3 has one such cycle
@@ -168,6 +168,15 @@ memory. Built serially, the CodeQL job's build reached 46 min and then passed it
 (2026-11-01), and the unit and ASAN builds took 12 and 15 min. CodeQL builds only the `QK4`
 target: with 4 jobs the full build still took 31 min, because the test executables recompile
 the app sources they test and CodeQL extracts each of those compiles again.
+
+`scheduled-sanitizers.yml` runs twice a week rather than weekly because of its cache, not because
+of its coverage. GitHub evicts a cache that has gone 7 days without being accessed, so a weekly
+cron and a 7-day window cancelled out exactly: the TSan-instrumented qtbase was saved at the end of
+every run, expired before the next one touched it, and was rebuilt from source every time. The runs
+on 2026-11-09, 11-16 and 11-23 each logged `Cache not found` for a byte-identical key, so the cache
+had never been used once since the compiler bump. Rebuilding Qt was ~50 minutes of the 53-minute
+2026-11-23 run; two warm runs cost less than one cold one, so the second run is free coverage.
+Keep the gap between crons under 7 days if either one moves.
 
 The unit, ASAN + UBSAN and RTSan jobs keep a ccache per job (`hendrikmuhs/ccache-action`, saved
 in its post step), so a push recompiles only what changed. `ci-codeql.yml` does not: CodeQL

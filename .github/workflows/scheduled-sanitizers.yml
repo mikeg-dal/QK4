@@ -16,7 +16,15 @@ name: Scheduled · Sanitizers
 
 on:
   schedule:
-    - cron: '0 7 * * 1'
+    # Monday and Thursday, NOT weekly. GitHub drops a cache that has gone 7 days
+    # without being accessed, so a once-a-week job and a 7-day eviction window
+    # raced every time: the cached TSan qtbase was saved, expired untouched, and
+    # rebuilt from source on the very next run. Every run from 2026-11-09 to
+    # 2026-11-23 logged "Cache not found" for a byte-identical key
+    # (qtbase-tsan-Linux-gcc15.2.0-21ac602c...), so the cache had never once been
+    # used. Gaps of 3 and 4 days keep it alive, and two warm runs cost less than
+    # one cold one: ~50 min of the 53-min 2026-11-23 run was rebuilding Qt.
+    - cron: '0 7 * * 1,4'
   workflow_dispatch:
 
 permissions:
