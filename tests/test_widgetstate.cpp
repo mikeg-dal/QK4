@@ -345,11 +345,15 @@ private slots:
         lmsReset->click();
         QCOMPARE(spy.count(), 1);
 
-        // A hidden key is dropped from the row, so the SSNR bar is the wider one.
+        // The bar must NOT resize when the engine changes: switching LMS <-> SSNR used to shift
+        // every key sideways under the cursor. The card keeps its widest width and the value label
+        // absorbs the space the hidden RESET key leaves.
         const int ssnrWidth = bar->width();
         bar->setNrEngine(FeatureMenuBar::Lms);
         QVERIFY(!lmsReset->isVisible());
-        QVERIFY(bar->width() < ssnrWidth);
+        QCOMPARE(bar->width(), ssnrWidth);
+        bar->setNrEngine(FeatureMenuBar::Ssnr);
+        QCOMPARE(bar->width(), ssnrWidth);
 
         // Every other feature: no RESET on screen.
         for (const auto feature : {FeatureMenuBar::Attenuator, FeatureMenuBar::NbLevel, FeatureMenuBar::ManualNotch}) {

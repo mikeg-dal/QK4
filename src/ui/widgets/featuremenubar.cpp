@@ -60,6 +60,8 @@ void FeatureMenuBar::setupUi() {
     m_valueLabel = new QPushButton("0", this);
     m_valueLabel->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
     m_valueLabel->setMinimumWidth(80);
+    // The one item that may grow: it absorbs the space a hidden RESET key leaves behind (fitToRow).
+    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_valueLabel->setFocusPolicy(Qt::NoFocus);
     m_valueLabel->setStyleSheet(K4Styles::popupValueLabel(K4Styles::Colors::TextPrimary));
 
@@ -117,8 +119,25 @@ void FeatureMenuBar::fitToRow() {
     // invalidate() drops the row's cached size hint, which may still hold the last feature's keys.
     const int sm = K4Styles::Dimensions::ShadowMargin;
     layout()->invalidate();
-    m_cardSize =
-        QSize(layout()->sizeHint().width() - 2 * sm, K4Styles::Dimensions::ButtonHeightMedium + 2 * CardPaddingV);
+    int rowWidth = layout()->sizeHint().width();
+
+    // WHY the RESET key is paid for even while hidden: switching LMS <-> SSNR would otherwise
+    // resize the whole bar and shift every key sideways under the operator's cursor. The card keeps
+    // the width of its widest state and the value label (the one expanding item) takes the slack,
+    // so only the number's field grows when RESET goes away.
+    //
+    // WHY isHidden() and not isVisible(): this runs before the bar is shown, where every child
+    // reports invisible, and WHY the row is measured with the key put back rather than its width
+    // added: the layout's own arithmetic is the only thing that gets the spacing right.
+    if (m_currentFeature == NrAdjust && m_resetBtn->isHidden()) {
+        m_resetBtn->setVisible(true);
+        layout()->invalidate();
+        rowWidth = layout()->sizeHint().width();
+        m_resetBtn->hide();
+        layout()->invalidate();
+    }
+
+    m_cardSize = QSize(rowWidth - 2 * sm, K4Styles::Dimensions::ButtonHeightMedium + 2 * CardPaddingV);
     initPopup();
 }
 
