@@ -340,6 +340,16 @@ target_include_directories(test_menumodel PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_menumodel Qt6::Core Qt6::Test)
 add_test(NAME MenuModelTests COMMAND test_menumodel)
 
+# Frequency memories (MCDF/MC). Qt6::Gui comes in through BandPlan, which the MEM/GEN page split
+# uses for its ham-band test and which returns QColor for the strip.
+add_executable(test_memorymodel test_memorymodel.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/memorymodel.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/bandplan.cpp
+)
+target_include_directories(test_memorymodel PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_memorymodel Qt6::Core Qt6::Gui Qt6::Test)
+add_test(NAME MemoryModelTests COMMAND test_memorymodel)
+
 # Menu overlay across disconnect/reconnect (#124) — the overlay against a real MenuModel, offscreen.
 add_executable(test_menuoverlay test_menuoverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/models/menumodel.cpp

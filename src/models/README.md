@@ -7,6 +7,10 @@ Radio state model. One `QObject` façade (`RadioState`) over plain-struct subsys
 - `radiostate.{cpp,h}` — `RadioState` façade: CAT handler registry (longest-prefix-first), public getters/setters/signals.
 - `radiostate/` — subsystem structs. One `.h` + `.cpp` pair per subsystem. See `radiostate/README.md` for the inventory.
 - `menumodel.{cpp,h}` — `MenuModel`, a `QObject` holding the K4 MEDF menu tree. Used by `MenuController`.
+- `memorymodel.{cpp,h}` — `MemoryModel`, the K4's 200 frequency memories from `MCDF` plus the
+  selected channel from `MC`. Same shape as `MenuModel`: the radio is the only source and the model
+  is cleared on disconnect. The wire format is measured, not documented — see the header and
+  `docs/k4-protocol-quirks.md`.
 - `transmitowner.h` — Header-only transmit arbiter: who owns the transmitter (`Owner`), how the radio was keyed (`Route`), and the `Effects` needed to move between states. Pure logic, no Qt — `test_transmitowner` links it alone. Route is the load-bearing idea: `TX;` keys the K4 expecting its OWN mic input, while streamed packets carry a tunnel header, so recording which mechanism was used is what lets a release be the exact inverse of its engage.
 
 ## Pattern C — plain-struct subsystems
