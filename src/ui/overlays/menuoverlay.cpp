@@ -246,21 +246,10 @@ void MenuOverlayWidget::setupUi() {
 
     m_backBtn = new QPushButton("\xE2\x86\xA9", navPanel); // ↩
     m_backBtn->setFixedSize(smallNavBtnWidth, K4Styles::Dimensions::PopupButtonHeight);
-    m_backBtn->setStyleSheet(QString("QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                                     "stop:0 %1, stop:0.4 %2, stop:0.6 %3, stop:1 %4);"
-                                     "color: %5; border: %6px solid %7; border-radius: %8px; "
-                                     "font-size: %9px; font-weight: bold; }"
-                                     "QPushButton:pressed { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                                     "stop:0 %4, stop:0.4 %3, stop:0.6 %2, stop:1 %1); }")
-                                 .arg(K4Styles::Colors::GradientTop)      // %1
-                                 .arg(K4Styles::Colors::GradientMid1)     // %2
-                                 .arg(K4Styles::Colors::GradientMid2)     // %3
-                                 .arg(K4Styles::Colors::GradientBottom)   // %4
-                                 .arg(K4Styles::Colors::TextPrimary)      // %5
-                                 .arg(K4Styles::Dimensions::BorderWidth)  // %6
-                                 .arg(K4Styles::Colors::BorderNormal)     // %7
-                                 .arg(K4Styles::Dimensions::BorderRadius) // %8
-                                 .arg(K4Styles::Dimensions::FontSizeIndicator));
+    // WHY the plain nav sheet: this key wore the raised main-window gradient with a border while
+    // every other key in the column is flat, so it read as belonging to a different panel. The
+    // memory list's key column is flat throughout and is the look to match.
+    m_backBtn->setStyleSheet(buttonStyle);
     connect(m_backBtn, &QPushButton::clicked, this, &MenuOverlayWidget::closeOverlay);
     row3->addWidget(m_backBtn);
 
