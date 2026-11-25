@@ -20,6 +20,12 @@ public:
                             QPushButton *m4, QPushButton *rec, QPushButton *store, QPushButton *rcl,
                             QObject *parent = nullptr);
 
+signals:
+    // STORE and RCL open QK4's own channel list rather than pressing the radio's keys; MainWindow
+    // connects these to MemoryController.
+    void storeRequested();
+    void recallRequested();
+
 protected:
     // Catches right-clicks on REC / STORE / RCL — sends the alternate SW
     // command. Other events fall through unmodified.

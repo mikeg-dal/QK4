@@ -360,6 +360,17 @@ target_link_libraries(test_menuoverlay Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test
 add_test(NAME MenuOverlayTests COMMAND test_menuoverlay)
 set_tests_properties(MenuOverlayTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# The RCL / STO memory list overlay against a real MemoryModel, offscreen — including the
+# disconnect/reconnect path that #124 made a rule about.
+add_executable(test_memoryoverlay test_memoryoverlay.cpp
+    ${CMAKE_SOURCE_DIR}/src/models/memorymodel.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/overlays/memoryoverlay.cpp)
+target_link_libraries(test_memoryoverlay qk4_test_widgets)
+target_include_directories(test_memoryoverlay PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_memoryoverlay Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+add_test(NAME MemoryOverlayTests COMMAND test_memoryoverlay)
+set_tests_properties(MemoryOverlayTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # RX playout: sink size per SL tier and the jitter policy, with a simulated network and device.
 add_executable(test_rxplayout test_rxplayout.cpp)
 target_link_libraries(test_rxplayout qk4_test_common)

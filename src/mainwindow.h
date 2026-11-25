@@ -15,6 +15,7 @@ class StatusBarController;
 class SideControlPanel;
 class RightSidePanel;
 class BottomMenuBar;
+class MemoryController;
 class MenuController;
 class PopupManager;
 class BandNavigationController;
@@ -174,6 +175,7 @@ private:
 
     // Menu system — owned by MenuController (src/controllers/).
     MenuController *m_menuController = nullptr;
+    MemoryController *m_memoryController = nullptr;
     PopupManager *m_popupManager = nullptr;
     BandNavigationController *m_bandNavController = nullptr;
     MacroController *m_macroController = nullptr;

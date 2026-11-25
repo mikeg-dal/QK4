@@ -17,8 +17,12 @@ MemoryButtonsController::MemoryButtonsController(ConnectionController *connectio
     connect(m3, &QPushButton::clicked, this, [this]() { m_connection->sendCAT("SW18;"); });
     connect(m4, &QPushButton::clicked, this, [this]() { m_connection->sendCAT("SW52;"); });
     connect(rec, &QPushButton::clicked, this, [this]() { m_connection->sendCAT("SW19;"); });
-    connect(store, &QPushButton::clicked, this, [this]() { m_connection->sendCAT("SW20;"); });
-    connect(rcl, &QPushButton::clicked, this, [this]() { m_connection->sendCAT("SW34;"); });
+
+    // WHY not SW20 / SW34: those press the radio's own STORE and RCL keys, which open the channel
+    // list on the K4's front panel — where an operator sitting at a remote client cannot see it,
+    // let alone choose from it. QK4 shows the list itself (MemoryController).
+    connect(store, &QPushButton::clicked, this, &MemoryButtonsController::storeRequested);
+    connect(rcl, &QPushButton::clicked, this, &MemoryButtonsController::recallRequested);
 
     // Right-click alt actions handled by event filter — REC=BANK,
     // STORE=AF REC, RCL=AF PLAY.

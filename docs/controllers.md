@@ -43,6 +43,7 @@ Count the controllers with `ls src/controllers/*.h | wc -l`.
 | "B-SET label visibility wrong (still showing SPLIT when B-SET on)" | VfoRowIndicatorController | `src/controllers/vforowindicatorcontroller.cpp` |
 | "Side panel BW/SHFT color wrong on Sub-RX active (B-SET)" | SideControlDisplayController | `src/controllers/sidecontroldisplaycontroller.cpp` |
 | "Menu overlay / MEDF system not working" | MenuController | `src/controllers/menucontroller.cpp` |
+| "STO / RCL do nothing, or the memory list is empty, or a recalled channel does not arrive" | MemoryController | `src/controllers/memorycontroller.cpp` |
 | "Feature menu bar (ATTN/NB/NR/NOTCH) not working" | FeatureMenuController | `src/controllers/featuremenucontroller.cpp` |
 | "Text decode window not opening / updating" | TextDecodeController | `src/controllers/textdecodecontroller.cpp` |
 | "Band/Display/Fn/Main RX/Sub RX/TX popup won't open or close" | PopupManager | `src/controllers/popupmanager.cpp` |
@@ -104,6 +105,10 @@ Grouped by concern:
 ### Popup-family
 - **PopupManager** — owns 16 popups and the `MacroDialog`: band, display, Fn, macro dialog, 3 button rows (Main/Sub/Tx), RX EQ, TX EQ, line in/out, mic input/config, VOX, SSB BW, keying weight, software list. Also wires RX-row button label state observers.
 - **ModePopupController** — mode selector popup
+- **MemoryController** — the K4's 200 frequency memories: owns `MemoryModel` and the RCL / STO list
+  overlay over the panadapter, asks for `MCDF` and `MC` once the radio is ready (neither is in the
+  RDY dump), and sends `MCR` / `MC`+`MCS`. STO and RCL open QK4's own list rather than pressing the
+  radio's keys, which would open it on the front panel where a remote operator cannot see it.
 - **FeatureMenuController** — ATTN/NB/NR/NOTCH feature menu bar (`FeatureMenuBar`, a `K4PopupBase` popup)
 - **AntennaConfigController** — three antenna-config popups (Main RX, Sub RX, TX)
 - **MenuController** — K4 MEDF menu system + overlay

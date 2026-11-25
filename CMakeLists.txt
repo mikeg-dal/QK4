@@ -131,6 +131,7 @@ set(SOURCES
     src/controllers/textdecodecontroller.cpp
     src/controllers/statusbarcontroller.cpp
     src/controllers/menucontroller.cpp
+    src/controllers/memorycontroller.cpp
     src/controllers/tcicontroller.cpp
     src/controllers/antennaconfigcontroller.cpp
     src/controllers/featuremenucontroller.cpp
@@ -216,6 +217,7 @@ set(SOURCES
     src/models/radiostate/textdecodestate.cpp
     src/models/radiostate/xvtrbandstate.cpp
     src/models/menumodel.cpp
+    src/models/memorymodel.cpp
     src/ui/dialogs/radiomanagerdialog.cpp
     src/ui/widgets/dualcontrolbutton.cpp
     src/ui/widgets/sidecontrolpanel.cpp
@@ -223,6 +225,7 @@ set(SOURCES
     src/ui/widgets/memorykeyrow.cpp
     src/ui/widgets/bottommenubar.cpp
     src/ui/overlays/menuoverlay.cpp
+    src/ui/overlays/memoryoverlay.cpp
     src/ui/overlays/mousevfoindicator.cpp
     src/ui/widgets/vfowidget.cpp
     src/ui/widgets/frequencydisplaywidget.cpp
@@ -320,6 +323,7 @@ set(HEADERS
     src/controllers/textdecodecontroller.h
     src/controllers/statusbarcontroller.h
     src/controllers/menucontroller.h
+    src/controllers/memorycontroller.h
     src/controllers/antennaconfigcontroller.h
     src/controllers/featuremenucontroller.h
     src/controllers/popupmanager.h
@@ -388,6 +392,7 @@ set(HEADERS
     src/models/radiostate/textdecodestate.h
     src/models/radiostate/xvtrbandstate.h
     src/models/menumodel.h
+    src/models/memorymodel.h
     src/utils/macroids.h
     src/ui/dialogs/radiomanagerdialog.h
     src/ui/widgets/dualcontrolbutton.h
@@ -396,6 +401,7 @@ set(HEADERS
     src/ui/widgets/memorykeyrow.h
     src/ui/widgets/bottommenubar.h
     src/ui/overlays/menuoverlay.h
+    src/ui/overlays/memoryoverlay.h
     src/ui/overlays/mousevfoindicator.h
     src/ui/widgets/vfowidget.h
     src/ui/widgets/frequencydisplaywidget.h

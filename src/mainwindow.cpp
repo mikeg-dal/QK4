@@ -36,6 +36,7 @@
 #include "controllers/antennaconfigcontroller.h"
 #include "controllers/antennadisplaycontroller.h"
 #include "controllers/textdecodecontroller.h"
+#include "controllers/memorycontroller.h"
 #include "controllers/menucontroller.h"
 #include "controllers/dxclustercontroller.h"
 #include "controllers/spectrumcontroller.h"
@@ -78,6 +79,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // controllers. VFO widgets are late-injected into PopupManager via
     // setVfos() after setupUi() creates them.
     m_menuController = new MenuController(m_connectionController, m_radioState, m_spectrumController, this, this);
+    m_memoryController = new MemoryController(m_connectionController, m_spectrumController, this, this);
     connect(m_menuController, &MenuController::overlayClosed, this, [this]() {
         if (m_bottomMenuBar)
             m_bottomMenuBar->setMenuActive(false);
@@ -951,8 +953,12 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     centerLayout->addLayout(MemoryKeyRow::create(
         centerWidget, centerWidget->maximumWidth() - centerMargins.left() - centerMargins.right(), memoryKeys));
 
-    new MemoryButtonsController(m_connectionController, memoryKeys.m1, memoryKeys.m2, memoryKeys.m3, memoryKeys.m4,
-                                memoryKeys.rec, memoryKeys.store, memoryKeys.rcl, this);
+    auto *memoryButtons =
+        new MemoryButtonsController(m_connectionController, memoryKeys.m1, memoryKeys.m2, memoryKeys.m3, memoryKeys.m4,
+                                    memoryKeys.rec, memoryKeys.store, memoryKeys.rcl, this);
+    connect(memoryButtons, &MemoryButtonsController::storeRequested, m_memoryController, &MemoryController::openStore);
+    connect(memoryButtons, &MemoryButtonsController::recallRequested, m_memoryController,
+            &MemoryController::openRecall);
 
     centerLayout->addStretch(); // Balance below
     layout->addWidget(centerWidget);
@@ -1187,6 +1193,8 @@ void MainWindow::onRadioReady() {
     m_connectionController->sendCAT("SMH1;");
     m_connectionController->sendCAT("SMH;");
     m_connectionController->sendCAT("SMH$;");
+    // The channel list and the selected channel are in neither the RDY dump nor any push.
+    m_memoryController->requestMemories();
     // Note: ML and KP commands come in RDY; dump - no need to query
 
     // Create synthetic "Display FPS" menu item (will update from radio echo)
@@ -1225,6 +1233,13 @@ void MainWindow::onCatResponse(const QString &response) {
             m_menuController->ingestMedf(cmd + ";");
         } else if (cmd.startsWith("ME")) {
             m_menuController->ingestMe(cmd + ";");
+        } else if (cmd.startsWith("MCDF")) {
+            // Frequency memories — MemoryController encapsulates the MemoryModel. MC must be
+            // tested after MCDF: it is a prefix of it, and a channel list would read as a
+            // selection.
+            m_memoryController->ingestMcdf(cmd + ";");
+        } else if (cmd.startsWith("MCNF") || cmd.startsWith("MCNU") || cmd.startsWith("MC")) {
+            m_memoryController->ingestSelection(cmd + ";");
         }
     }
 }
@@ -1264,6 +1279,7 @@ void MainWindow::resetUiForDisconnect() {
     m_filterBWidget->resetToDefaults();
     m_statusBarController->clearReadings();
     m_menuController->clearModel();
+    m_memoryController->clearModel();
     m_kpa1500UiController->disconnectFromHost();
 
     m_modeLabelController->reset();
