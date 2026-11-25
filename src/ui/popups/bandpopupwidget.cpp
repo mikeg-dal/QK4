@@ -1,4 +1,5 @@
 #include "ui/popups/bandpopupwidget.h"
+#include "models/memorymodel.h"
 #include "models/radiostate.h"
 #include "ui/styling/k4styles.h"
 #include "utils/radioutils.h"
@@ -13,6 +14,9 @@ const int ButtonSpacing = K4Styles::Dimensions::PopupButtonSpacing;
 // WHY the column gap: one gutter on both axes reads as one grid of keys. At 2 px the rows nearly
 // touched and read as two separate strips (most noticeable at 150 % interface scale).
 const int RowSpacing = ButtonSpacing;
+
+// The MEM and GEN pages hold twelve memories in the six columns the band labels occupy, two deep.
+constexpr int MemoryCellCount = 12;
 
 // K4 Band Number mapping (BN command)
 // Band number -> button label
@@ -105,12 +109,86 @@ void BandPopupWidget::setMode(Mode mode) {
     }
     m_mode = mode;
     clearGrid();
-    if (mode == Mode::Hf) {
+    switch (mode) {
+    case Mode::Hf:
         buildHfGrid();
-    } else {
+        break;
+    case Mode::Xvtr:
         buildXvtrGrid();
+        break;
+    case Mode::Mem:
+    case Mode::Gen:
+        buildMemoryGrid(mode);
+        break;
     }
     updateButtonStyles();
+}
+
+void BandPopupWidget::setMemoryModel(MemoryModel *model) {
+    m_memoryModel = model;
+    if (!m_memoryModel)
+        return;
+    // The channel list arrives after the connection comes up, and is cleared on disconnect, so a
+    // page left open has to follow it.
+    connect(m_memoryModel, &MemoryModel::channelChanged, this, [this]() {
+        if (m_mode == Mode::Mem || m_mode == Mode::Gen) {
+            const Mode mode = m_mode;
+            m_mode = Mode::Hf; // force setMode to rebuild
+            setMode(mode);
+        }
+    });
+}
+
+void BandPopupWidget::buildMemoryGrid(Mode mode) {
+    // The radio fills its cells column-major: the first memory top-left, the second below it.
+    const QList<int> channels = m_memoryModel
+                                    ? (mode == Mode::Mem ? m_memoryModel->firstInHamBands(MemoryCellCount)
+                                                         : m_memoryModel->firstOutsideHamBands(MemoryCellCount))
+                                    : QList<int>();
+
+    auto *row1Layout = new QHBoxLayout();
+    auto *row2Layout = new QHBoxLayout();
+    row1Layout->setSpacing(ButtonSpacing);
+    row2Layout->setSpacing(ButtonSpacing);
+    for (int column = 0; column < MemoryCellCount / 2; ++column) {
+        const int top = column * 2;
+        row1Layout->addWidget(createMemoryCell(top < channels.size() ? channels.at(top) : 0));
+        row2Layout->addWidget(createMemoryCell(top + 1 < channels.size() ? channels.at(top + 1) : 0));
+    }
+
+    // The mode's own key stays lit in the corner, with HF under it to flip back — as on the radio.
+    const QString modeName = (mode == Mode::Mem) ? QStringLiteral("MEM") : QStringLiteral("GEN");
+    QPushButton *modeBtn = createBandButton(modeName);
+    m_buttonMap[modeName] = modeBtn;
+    row1Layout->addWidget(modeBtn);
+
+    QPushButton *hfBtn = createBandButton("HF");
+    m_buttonMap["HF"] = hfBtn;
+    row2Layout->addWidget(hfBtn);
+
+    m_rootLayout->addLayout(row1Layout);
+    m_rootLayout->addLayout(row2Layout);
+}
+
+QPushButton *BandPopupWidget::createMemoryCell(int channel) {
+    // Two-line label: the memory's name over its frequency, or "--" where there is no memory.
+    QString text = QStringLiteral("--");
+    const MemoryChannel *memory = (m_memoryModel && channel > 0) ? m_memoryModel->channel(channel) : nullptr;
+    if (memory)
+        text = QStringLiteral("%1\n%2").arg(memory->displayLabel(), memory->a.frequencyMhz);
+
+    auto *btn = new QPushButton(text, this);
+    btn->setFixedSize(ButtonWidth, ButtonHeight);
+    btn->setFocusPolicy(Qt::NoFocus);
+    btn->setEnabled(memory != nullptr);
+    btn->setStyleSheet(K4Styles::popupButton());
+    if (memory) {
+        connect(btn, &QPushButton::clicked, this, [this, channel]() {
+            emit memoryRecallRequested(channel);
+            hidePopup();
+        });
+    }
+    return btn;
 }
 
 void BandPopupWidget::buildHfGrid() {
@@ -253,8 +331,20 @@ void BandPopupWidget::onBandButtonClicked() {
         QMetaObject::invokeMethod(this, [this] { setMode(Mode::Xvtr); }, Qt::QueuedConnection);
         return;
     }
-    if (bandName == "HF" && m_mode == Mode::Xvtr) {
+    if (bandName == "HF" && m_mode != Mode::Hf) {
         QMetaObject::invokeMethod(this, [this] { setMode(Mode::Hf); }, Qt::QueuedConnection);
+        return;
+    }
+    // MEM and GEN replace the band labels with frequency memories (R40). Tapping the lit key again
+    // goes back to the bands, the way HF does from the XVTR page.
+    if (bandName == "MEM") {
+        const Mode next = (m_mode == Mode::Mem) ? Mode::Hf : Mode::Mem;
+        QMetaObject::invokeMethod(this, [this, next] { setMode(next); }, Qt::QueuedConnection);
+        return;
+    }
+    if (bandName == "GEN") {
+        const Mode next = (m_mode == Mode::Gen) ? Mode::Hf : Mode::Gen;
+        QMetaObject::invokeMethod(this, [this, next] { setMode(next); }, Qt::QueuedConnection);
         return;
     }
 

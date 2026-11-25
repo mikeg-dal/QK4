@@ -127,6 +127,7 @@ PopupManager::PopupManager(RadioState *radioState, ConnectionController *connect
 
     // --- Band popup ---
     connect(m_bandPopup, &BandPopupWidget::bandSelected, this, &PopupManager::bandSelected);
+    connect(m_bandPopup, &BandPopupWidget::memoryRecallRequested, this, &PopupManager::memoryRecallRequested);
     connect(m_bandPopup, &BandPopupWidget::closed, this, [this]() {
         if (m_bottomMenuBar)
             m_bottomMenuBar->setBandActive(false);
@@ -188,6 +189,10 @@ PopupManager::PopupManager(RadioState *radioState, ConnectionController *connect
 
 void PopupManager::setBottomMenuBar(BottomMenuBar *bottomMenuBar) {
     m_bottomMenuBar = bottomMenuBar;
+}
+
+void PopupManager::setMemoryModel(MemoryModel *model) {
+    m_bandPopup->setMemoryModel(model);
 }
 
 void PopupManager::setVfos(VFOWidget *vfoA, VFOWidget *vfoB) {

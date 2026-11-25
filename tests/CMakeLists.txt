@@ -364,8 +364,11 @@ set_tests_properties(MenuOverlayTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=of
 # disconnect/reconnect path that #124 made a rule about.
 add_executable(test_memoryoverlay test_memoryoverlay.cpp
     ${CMAKE_SOURCE_DIR}/src/models/memorymodel.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/overlays/memoryoverlay.cpp)
-target_link_libraries(test_memoryoverlay qk4_test_widgets)
+    ${CMAKE_SOURCE_DIR}/src/ui/overlays/memoryoverlay.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/bandpopupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/k4popupbase.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/radioutils.cpp)
+target_link_libraries(test_memoryoverlay qk4_test_widgets qk4_test_radiostate)
 target_include_directories(test_memoryoverlay PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_memoryoverlay Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
 add_test(NAME MemoryOverlayTests COMMAND test_memoryoverlay)

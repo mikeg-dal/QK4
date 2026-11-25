@@ -8,6 +8,7 @@ class ConnectionController;
 class SpectrumController;
 class VFOWidget;
 class BottomMenuBar;
+class MemoryModel;
 class BandPopupWidget;
 class DisplayPopupWidget;
 class FnPopupWidget;
@@ -49,6 +50,8 @@ public:
     // that call PopupManager, so PopupManager must exist before setupUi() runs.
     void setBottomMenuBar(BottomMenuBar *bottomMenuBar);
     void setVfos(VFOWidget *vfoA, VFOWidget *vfoB);
+    // The memories behind the band popup's MEM and GEN pages (MemoryController owns the model).
+    void setMemoryModel(MemoryModel *model);
 
     // Task-level toggles (called from BottomMenuBar button clicks).
     void toggleBand();
@@ -108,6 +111,8 @@ signals:
     // User picked a band from the band popup. BandNavigationController::onBandSelected
     // handles the band-switch logic (CAT commands).
     void bandSelected(const QString &bandName);
+    // A cell on the band popup's MEM or GEN page: recall that frequency memory.
+    void memoryRecallRequested(int channel);
 
     // Fn popup invoked a macro binding. MacroController::onFunctionTriggered resolves
     // the binding to its CAT command and sends it.

@@ -1,4 +1,5 @@
-// The RCL / STO list overlay against a real MemoryModel, offscreen.
+// The memory UI against a real MemoryModel, offscreen: the RCL / STO list overlay and the band
+// popup's MEM and GEN pages.
 //
 // The shape of these cases follows test_menuoverlay.cpp: the model is cleared on every disconnect
 // and the rows outlive it, so the rows hold channel numbers rather than pointers into the model.
@@ -7,9 +8,11 @@
 
 #include "models/memorymodel.h"
 #include "ui/overlays/memoryoverlay.h"
+#include "ui/popups/bandpopupwidget.h"
 
 #include <QApplication>
 #include <QLabel>
+#include <QLayout>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTest>
@@ -160,6 +163,87 @@ private slots:
 
         QTest::keyClick(&overlay, Qt::Key_Escape);
         QVERIFY(!overlay.isVisible());
+    }
+
+    // --- The band popup's MEM and GEN pages ---------------------------------------------------
+
+    void memAndGenPagesShowTheMemoriesColumnMajor() {
+        MemoryModel model;
+        model.parseMCDF(kChannel1);  // 14.227, in a ham band
+        model.parseMCDF(kChannel21); // 5.3305, 60 m - also a ham band
+        model.parseMCDF("MCDF022,*60m Ch2,,0,5.3465,USB,,,,,0,5.348,CW,,,;");
+        model.parseMCDF("MCDF030,,2.8,1.5,9.58,AM,9.58,50,100,,,,,,,;"); // shortwave: a GEN entry
+
+        BandPopupWidget popup;
+        popup.setMemoryModel(&model);
+
+        // The band grid is showing until MEM is tapped.
+        QVERIFY(buttonWithText(&popup, "14"));
+        buttonWithText(&popup, "MEM")->click();
+        QTest::qWait(1); // setMode is queued: the tap deletes the button that is delivering it
+        QCoreApplication::processEvents();
+
+        // The twelve cells replace the band labels; MEM stays lit with HF under it.
+        QVERIFY(!buttonWithText(&popup, "14"));
+        QVERIFY(buttonWithText(&popup, "MEM"));
+        QVERIFY(buttonWithText(&popup, "HF"));
+        QVERIFY(buttonWithText(&popup, "#001\n14.227"));
+        QVERIFY(buttonWithText(&popup, "*60m Ch1\n5.3305"));
+        QVERIFY(buttonWithText(&popup, "*60m Ch2\n5.3465"));
+        QVERIFY(!buttonWithText(&popup, "#030\n9.58")); // that one belongs to GEN
+
+        // Column-major: #001 top-left, the next memory directly below it. The layout has to have
+        // run for the cells to have real positions.
+        popup.adjustSize();
+        popup.layout()->activate();
+        QPushButton *first = buttonWithText(&popup, "#001\n14.227");
+        QPushButton *second = buttonWithText(&popup, "*60m Ch1\n5.3305");
+        QVERIFY(second->y() > first->y());
+        QCOMPARE(second->x(), first->x());
+
+        // Tapping a cell recalls that channel.
+        QSignalSpy recalls(&popup, &BandPopupWidget::memoryRecallRequested);
+        first->click();
+        QCOMPARE(recalls.count(), 1);
+        QCOMPARE(recalls.at(0).at(0).toInt(), 1);
+    }
+
+    void genPageHoldsWhatIsOutsideTheHamBands() {
+        MemoryModel model;
+        model.parseMCDF(kChannel1);
+        model.parseMCDF("MCDF030,,2.8,1.5,9.58,AM,9.58,50,100,,,,,,,;");
+
+        BandPopupWidget popup;
+        popup.setMemoryModel(&model);
+        buttonWithText(&popup, "GEN")->click();
+        QCoreApplication::processEvents();
+
+        QVERIFY(buttonWithText(&popup, "#030\n9.58"));
+        QVERIFY(!buttonWithText(&popup, "#001\n14.227"));
+        QVERIFY(buttonWithText(&popup, "GEN"));
+        QVERIFY(buttonWithText(&popup, "HF"));
+
+        // HF flips back to the bands.
+        buttonWithText(&popup, "HF")->click();
+        QCoreApplication::processEvents();
+        QVERIFY(buttonWithText(&popup, "14"));
+    }
+
+    void aPageWithNoMemoriesShowsEmptyCells() {
+        MemoryModel model; // the radio has reported nothing yet
+        BandPopupWidget popup;
+        popup.setMemoryModel(&model);
+        buttonWithText(&popup, "MEM")->click();
+        QCoreApplication::processEvents();
+
+        int empty = 0;
+        for (QPushButton *b : popup.findChildren<QPushButton *>()) {
+            if (b->text() == "--") {
+                QVERIFY(!b->isEnabled()); // nothing to recall
+                ++empty;
+            }
+        }
+        QCOMPARE(empty, 12);
     }
 
     void aDisconnectEmptiesTheRowsWithoutTouchingFreedChannels() {

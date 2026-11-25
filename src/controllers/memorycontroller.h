@@ -36,6 +36,10 @@ public:
     // Drop every channel — the radio is the only source, so a reconnect starts empty.
     void clearModel();
 
+    // Recall a channel by number: the overlay's RCL key, and a cell on the band popup's MEM or
+    // GEN page.
+    void recallChannel(int channel);
+
     void openRecall();
     void openStore();
     void closeOverlay();
@@ -44,7 +48,6 @@ public:
     MemoryModel *model() const { return m_memoryModel; }
 
 private:
-    void recall(int channel);
     void store(int channel);
 
     ConnectionController *m_connection; // injected, not owned

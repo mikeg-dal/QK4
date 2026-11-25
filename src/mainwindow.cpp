@@ -86,6 +86,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     });
     m_popupManager =
         new PopupManager(m_radioState, m_connectionController, m_spectrumController, nullptr, nullptr, this, this);
+    // The band popup's MEM and GEN pages are the memories, and a cell on them recalls its channel.
+    m_popupManager->setMemoryModel(m_memoryController->model());
+    connect(m_popupManager, &PopupManager::memoryRecallRequested, m_memoryController, &MemoryController::recallChannel);
     m_bandNavController = new BandNavigationController(m_radioState, m_connectionController, m_popupManager, this);
     m_macroController = new MacroController(m_connectionController, m_popupManager, /*dialogParent=*/this, this);
     connect(m_macroController, &MacroController::macroDialogRequested, this, [this]() {

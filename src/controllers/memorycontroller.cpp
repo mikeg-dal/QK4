@@ -13,7 +13,7 @@ MemoryController::MemoryController(ConnectionController *connection, SpectrumCon
     : QObject(parent), m_connection(connection), m_spectrum(spectrum), m_parentWidget(parentWidget),
       m_memoryModel(new MemoryModel(this)), m_overlay(new MemoryOverlayWidget(m_memoryModel, parentWidget)) {
     m_overlay->hide();
-    connect(m_overlay, &MemoryOverlayWidget::recallRequested, this, &MemoryController::recall);
+    connect(m_overlay, &MemoryOverlayWidget::recallRequested, this, &MemoryController::recallChannel);
     connect(m_overlay, &MemoryOverlayWidget::storeRequested, this, &MemoryController::store);
 }
 
@@ -62,7 +62,7 @@ void MemoryController::repositionOverlay() {
                            m_spectrum->spectrumContainer()->height());
 }
 
-void MemoryController::recall(int channel) {
+void MemoryController::recallChannel(int channel) {
     if (!m_connection->isConnected())
         return;
     // The radio applies the channel and reports the frequency, mode and the rest as its own
