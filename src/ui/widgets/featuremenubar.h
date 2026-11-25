@@ -41,7 +41,8 @@ signals:
     void incrementRequested();
     void decrementRequested();
     void extraButtonClicked();
-    void nrEngineToggleRequested(); // LMS/NR+ engine button clicked (NR ADJUST only)
+    void nrEngineToggleRequested(); // LMS/SSNR engine button clicked (NR ADJUST only)
+    void ssnrResetRequested();      // RESET key — SSNR noise-floor reset (NR ADJUST + SSNR only)
 
 protected:
     QSize contentSize() const override;
@@ -60,6 +61,7 @@ private:
     QPushButton *m_nrEngineBtn; // Shown only for NrAdjust — toggles LMS / SSNR
     QPushButton *m_extraBtn;
     QPushButton *m_valueLabel;
+    QPushButton *m_resetBtn; // Shown only for NrAdjust with SSNR selected, as the K4 shows it
     QPushButton *m_decrementBtn;
     QPushButton *m_incrementBtn;
 

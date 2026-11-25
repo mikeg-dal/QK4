@@ -325,6 +325,39 @@ private slots:
         QVERIFY(!buttonWithText(bar, "FILTER\nNONE"));
     }
 
+    // --- FeatureMenuBar SSNR RESET (R40) ---
+
+    void ssnrResetKeyShownOnlyForSsnr() {
+        // The K4 shows RESET in the NR ADJUST group for SSNR and not for LMS; QK4 mirrors that, and
+        // the key must not leak into the other features' bars.
+        QWidget host;
+        auto *bar = new FeatureMenuBar(&host);
+        bar->setNrEngine(FeatureMenuBar::Lms);
+        bar->showForFeature(FeatureMenuBar::NrAdjust, &host);
+        QPushButton *lmsReset = buttonWithText(bar, "RESET");
+        QVERIFY(lmsReset);
+        QVERIFY(!lmsReset->isVisible()); // present in the row, hidden in LMS
+
+        QSignalSpy spy(bar, &FeatureMenuBar::ssnrResetRequested);
+        bar->setNrEngine(FeatureMenuBar::Ssnr);
+        QVERIFY(lmsReset->isVisible());
+        lmsReset->click();
+        QCOMPARE(spy.count(), 1);
+
+        // A hidden key is dropped from the row, so the SSNR bar is the wider one.
+        const int ssnrWidth = bar->width();
+        bar->setNrEngine(FeatureMenuBar::Lms);
+        QVERIFY(!lmsReset->isVisible());
+        QVERIFY(bar->width() < ssnrWidth);
+
+        // Every other feature: no RESET on screen.
+        for (const auto feature : {FeatureMenuBar::Attenuator, FeatureMenuBar::NbLevel, FeatureMenuBar::ManualNotch}) {
+            bar->showForFeature(feature, &host);
+            QPushButton *key = buttonWithText(bar, "RESET");
+            QVERIFY(key && !key->isVisible());
+        }
+    }
+
     // --- LineOutPopupWidget ---
 
     void lineOutRightRefusedWhileLinked() {

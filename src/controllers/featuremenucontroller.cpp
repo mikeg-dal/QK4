@@ -106,6 +106,14 @@ FeatureMenuController::FeatureMenuController(RadioState *radioState, ConnectionC
         m_connection->sendCAT(prefix + "/;");
     });
 
+    connect(m_bar, &FeatureMenuBar::ssnrResetRequested, this, [this]() {
+        // NRS~; re-measures the SSNR noise floor (R40). WHY no optimistic state: it changes nothing
+        // QK4 displays — not the level, not the on/off — so there is nothing to predict or undo.
+        if (!m_connection->isConnected())
+            return;
+        m_connection->sendCAT(m_radioState->bSetEnabled() ? "NRS$~;" : "NRS~;");
+    });
+
     // === RadioState echoes → refresh the bar while it's visible ===
     connect(m_radioState, &RadioState::processingChanged, this, &FeatureMenuController::refreshCurrentFeature);
     connect(m_radioState, &RadioState::processingChangedB, this, &FeatureMenuController::refreshCurrentFeature);

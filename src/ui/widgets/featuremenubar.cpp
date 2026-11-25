@@ -38,7 +38,9 @@ void FeatureMenuBar::setupUi() {
     m_toggleBtn->setCursor(Qt::PointingHandCursor);
     m_toggleBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
 
-    // NR engine toggle — only shown for NrAdjust. Tapping flips LMS <-> NR+ (SSNR).
+    // NR engine toggle — only shown for NrAdjust. Tapping flips LMS <-> SSNR. WHY "SSNR" and not
+    // "NR+": that is what the K4's own NR ADJUST group calls the engine. NR+ is the name of the
+    // VFO indicator (VFOWidget::setNR), which the radio also shows that way.
     m_nrEngineBtn = new QPushButton("LMS", this);
     m_nrEngineBtn->setMinimumWidth(60);
     m_nrEngineBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
@@ -61,6 +63,16 @@ void FeatureMenuBar::setupUi() {
     m_valueLabel->setFocusPolicy(Qt::NoFocus);
     m_valueLabel->setStyleSheet(K4Styles::popupValueLabel(K4Styles::Colors::TextPrimary));
 
+    // SSNR noise-floor reset — only shown for NrAdjust with SSNR selected. WHY after the value:
+    // that is where the K4 puts it (NR ADJUST | ON | SSNR | n | RESET | - | +), and the bar mirrors
+    // the radio's own control group.
+    m_resetBtn = new QPushButton("RESET", this);
+    m_resetBtn->setMinimumWidth(60);
+    m_resetBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
+    m_resetBtn->setCursor(Qt::PointingHandCursor);
+    m_resetBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
+    m_resetBtn->hide();
+
     // Decrement button
     m_decrementBtn = new QPushButton("-", this);
     m_decrementBtn->setFixedSize(K4Styles::Dimensions::ButtonHeightLarge, K4Styles::Dimensions::ButtonHeightMedium);
@@ -79,6 +91,7 @@ void FeatureMenuBar::setupUi() {
     layout->addWidget(m_nrEngineBtn, 0, Qt::AlignVCenter);
     layout->addWidget(m_extraBtn, 0, Qt::AlignVCenter);
     layout->addWidget(m_valueLabel, 0, Qt::AlignVCenter);
+    layout->addWidget(m_resetBtn, 0, Qt::AlignVCenter);
     layout->addWidget(m_decrementBtn, 0, Qt::AlignVCenter);
     layout->addWidget(m_incrementBtn, 0, Qt::AlignVCenter);
 
@@ -88,6 +101,7 @@ void FeatureMenuBar::setupUi() {
     connect(m_incrementBtn, &QPushButton::clicked, this, &FeatureMenuBar::incrementRequested);
     connect(m_extraBtn, &QPushButton::clicked, this, &FeatureMenuBar::extraButtonClicked);
     connect(m_nrEngineBtn, &QPushButton::clicked, this, &FeatureMenuBar::nrEngineToggleRequested);
+    connect(m_resetBtn, &QPushButton::clicked, this, &FeatureMenuBar::ssnrResetRequested);
 }
 
 void FeatureMenuBar::showForFeature(Feature feature, QWidget *anchor) {
@@ -138,6 +152,7 @@ void FeatureMenuBar::updateForFeature() {
         m_titleLabel->setText("ATTENUATOR");
         m_extraBtn->hide();
         m_nrEngineBtn->hide();
+        m_resetBtn->hide();
         m_valueUnit = " dB";
         break;
     case NbLevel:
@@ -145,19 +160,24 @@ void FeatureMenuBar::updateForFeature() {
         m_extraBtn->setText(nbFilterText(m_nbFilter));
         m_extraBtn->show();
         m_nrEngineBtn->hide();
+        m_resetBtn->hide();
         m_valueUnit = "";
         break;
     case NrAdjust:
         m_titleLabel->setText("NR ADJUST");
         m_extraBtn->hide();
-        m_nrEngineBtn->setText(m_nrEngine == Ssnr ? "NR+" : "LMS");
+        m_nrEngineBtn->setText(m_nrEngine == Ssnr ? "SSNR" : "LMS");
         m_nrEngineBtn->show();
+        // The noise-floor reset belongs to SSNR; LMS has nothing to reset, and the K4 shows no
+        // RESET key in LMS either.
+        m_resetBtn->setVisible(m_nrEngine == Ssnr);
         m_valueUnit = "";
         break;
     case ManualNotch:
         m_titleLabel->setText("MANUAL NOTCH");
         m_extraBtn->hide();
         m_nrEngineBtn->hide();
+        m_resetBtn->hide();
         m_valueUnit = " Hz";
         break;
     }
@@ -171,8 +191,9 @@ void FeatureMenuBar::setNrEngine(NrEngine engine) {
         return;
     m_nrEngine = engine;
     if (m_currentFeature == NrAdjust) {
-        m_nrEngineBtn->setText(m_nrEngine == Ssnr ? "NR+" : "LMS");
-        refitWhileShown();
+        m_nrEngineBtn->setText(m_nrEngine == Ssnr ? "SSNR" : "LMS");
+        m_resetBtn->setVisible(m_nrEngine == Ssnr);
+        refitWhileShown(); // the RESET key appearing/leaving changes the row's width
     }
 }
 
@@ -199,6 +220,6 @@ QString FeatureMenuBar::nbFilterText(int filter) {
 
 void FeatureMenuBar::paintContent(QPainter &painter, const QRect &contentRect) {
     // Delimiters after each group; none after the +/- pair at the end. Hidden keys draw none.
-    paintCompactRowFrame(painter, contentRect, {m_titleLabel, m_toggleBtn, m_nrEngineBtn, m_extraBtn, m_valueLabel},
-                         RowSpacing);
+    paintCompactRowFrame(painter, contentRect,
+                         {m_titleLabel, m_toggleBtn, m_nrEngineBtn, m_extraBtn, m_valueLabel, m_resetBtn}, RowSpacing);
 }
