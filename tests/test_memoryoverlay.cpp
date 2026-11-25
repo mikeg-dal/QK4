@@ -276,6 +276,47 @@ private slots:
         QCOMPARE(empty, 12);
     }
 
+    void aSecondClickOnAStoredChannelNamesIt() {
+        MemoryModel model;
+        model.parseMCDF(kChannel1); // in use, unnamed
+        MemoryOverlayWidget overlay(&model);
+        overlay.showForMode(MemoryOverlayWidget::Recall);
+
+        QSignalSpy renames(&overlay, &MemoryOverlayWidget::renameRequested);
+        MemoryRowWidget *row = rowFor(&overlay, 1);
+        MemoryRowWidget *blank = rowFor(&overlay, 2);
+
+        // The layout has to have run for the columns to have real geometry.
+        overlay.resize(1200, 500);
+        overlay.layout()->activate();
+        const QPoint inFrequencies(overlay.width() - 300, row->height() / 2);
+        const QPoint inNameCell(20, row->height() / 2);
+
+        // A click in the frequency columns selects and must NOT open an editor.
+        QTest::mouseClick(row, Qt::LeftButton, Qt::NoModifier, inFrequencies);
+        QCOMPARE(overlay.selectedChannel(), 1);
+        QVERIFY(!row->isRenaming());
+
+        // A click in the name cell opens it.
+        QTest::mouseClick(row, Qt::LeftButton, Qt::NoModifier, inNameCell);
+        QVERIFY(row->isRenaming());
+        QLineEdit *editor = row->findChild<QLineEdit *>();
+        QVERIFY(editor);
+
+        editor->setText("Net");
+        QTest::keyClick(editor, Qt::Key_Return);
+        QCOMPARE(renames.count(), 1);
+        QCOMPARE(renames.at(0).at(0).toInt(), 1);
+        QCOMPARE(renames.at(0).at(1).toString(), QString("Net"));
+        QVERIFY(!row->isRenaming());
+
+        // A blank channel cannot be named: there is nothing to store the name against.
+        QTest::mouseClick(blank, Qt::LeftButton, Qt::NoModifier, inNameCell);
+        QVERIFY(!blank->isRenaming());
+        QCOMPARE(renames.count(), 1);
+        overlay.hide();
+    }
+
     void searchFiltersTheListAndClearsOnClose() {
         MemoryModel model;
         model.parseMCDF(kChannel1);  // #001, 14.227

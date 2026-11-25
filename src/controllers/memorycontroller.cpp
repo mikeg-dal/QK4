@@ -15,6 +15,7 @@ MemoryController::MemoryController(ConnectionController *connection, SpectrumCon
     m_overlay->hide();
     connect(m_overlay, &MemoryOverlayWidget::recallRequested, this, &MemoryController::recallChannel);
     connect(m_overlay, &MemoryOverlayWidget::storeRequested, this, &MemoryController::store);
+    connect(m_overlay, &MemoryOverlayWidget::renameRequested, this, &MemoryController::rename);
 }
 
 void MemoryController::ingestMcdf(const QString &cmd) {
@@ -77,6 +78,26 @@ void MemoryController::recallChannel(int channel) {
     // The radio applies the channel and reports the frequency, mode and the rest as its own
     // changes, so nothing is predicted here.
     m_connection->sendCAT(QStringLiteral("MCR%1;").arg(channel, 3, 10, QChar('0')));
+}
+
+void MemoryController::rename(int channel, const QString &label) {
+    const MemoryChannel *existing = m_memoryModel->channel(channel);
+    if (!m_connection->isConnected() || !existing || existing->isBlank())
+        return;
+    if (existing->label == label)
+        return;
+
+    // WHY every field and not just the label: a write is MCDFnnn followed by the channel's fields,
+    // and what a short write does to the fields left out is not documented - D12 lists MC as
+    // pending. Sending the channel back exactly as the radio reported it, with only the label
+    // changed, cannot drop what it holds. MemoryChannel::fields() keeps the two we do not
+    // interpret (the eighth of each group) verbatim for this.
+    MemoryChannel updated = *existing;
+    updated.label = label;
+    const QString number = QStringLiteral("%1").arg(channel, 3, 10, QChar('0'));
+    m_connection->sendCAT(QStringLiteral("MCDF%1,%2;").arg(number, updated.fields().join(QLatin1Char(','))));
+    // The write is silent (measured), so the list only learns what landed by reading it back.
+    m_connection->sendCAT(QStringLiteral("MCDF%1;").arg(number));
 }
 
 void MemoryController::store(int channel) {

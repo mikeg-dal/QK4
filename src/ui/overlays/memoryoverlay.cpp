@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QRegularExpressionValidator>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
@@ -85,6 +86,47 @@ void MemoryRowWidget::updateDisplay() {
     m_vfoBLabel->setText(sideText(QStringLiteral("B"), channel->b));
 }
 
+void MemoryRowWidget::beginRename() {
+    const MemoryChannel *channel = m_model ? m_model->channel(m_channel) : nullptr;
+    if (!channel || channel->isBlank())
+        return; // nothing stored here to name
+
+    if (!m_nameEdit) {
+        m_nameEdit = new QLineEdit(this);
+        m_nameEdit->setStyleSheet(QString("QLineEdit { background: %1; color: %2; border: none; font-size: %3px; }")
+                                      .arg(QLatin1StringView(K4Styles::Colors::OverlayContentBg),
+                                           QLatin1StringView(K4Styles::Colors::TextPrimary))
+                                      .arg(K4Styles::Dimensions::FontSizeReadout));
+        // The radio's own field separators: a label carrying either would not survive the wire.
+        m_nameEdit->setValidator(new QRegularExpressionValidator(QRegularExpression("[^,;]*"), m_nameEdit));
+        auto *rowLayout = qobject_cast<QHBoxLayout *>(layout());
+        rowLayout->insertWidget(0, m_nameEdit, 1);
+        connect(m_nameEdit, &QLineEdit::editingFinished, this, [this]() {
+            if (!m_nameEdit->isVisible())
+                return;
+            const QString label = m_nameEdit->text().trimmed();
+            endRename();
+            emit renamed(m_channel, label);
+        });
+    }
+    m_nameEdit->setText(channel->label);
+    m_nameLabel->hide();
+    m_nameEdit->show();
+    m_nameEdit->setFocus(Qt::OtherFocusReason);
+    m_nameEdit->selectAll();
+}
+
+void MemoryRowWidget::endRename() {
+    if (!m_nameEdit)
+        return;
+    m_nameEdit->hide();
+    m_nameLabel->show();
+}
+
+bool MemoryRowWidget::isRenaming() const {
+    return m_nameEdit && m_nameEdit->isVisible();
+}
+
 bool MemoryRowWidget::matches(const QString &needle) const {
     const QString haystack =
         m_nameLabel->text() + QLatin1Char(' ') + m_vfoALabel->text() + QLatin1Char(' ') + m_vfoBLabel->text();
@@ -114,15 +156,31 @@ void MemoryRowWidget::paintEvent(QPaintEvent *event) {
     // WHY the label's own edge and not a fraction of the width: a fraction put the boundary
     // through the middle of "A:", cutting the letter in half. The split belongs where the layout
     // actually ends the name column - half the gap past it, so neither column's text touches it.
-    const int demarcX = m_nameLabel->geometry().right() + RowSpacing / 2;
+    const int demarcX = nameColumnRight();
     painter.fillRect(QRect(0, 0, demarcX, height()), QColor(K4Styles::Colors::SelectionLight));
     painter.fillRect(QRect(demarcX, 0, width() - demarcX, height()), QColor(K4Styles::Colors::SelectionDark));
 }
 
+void MemoryRowWidget::keyPressEvent(QKeyEvent *event) {
+    if (event->key() == Qt::Key_Escape && isRenaming()) {
+        endRename(); // abandons: editingFinished does not fire for a hidden editor
+        return;
+    }
+    QWidget::keyPressEvent(event);
+}
+
 void MemoryRowWidget::mousePressEvent(QMouseEvent *event) {
-    if (event->button() == Qt::LeftButton)
-        emit clicked();
+    if (event->button() == Qt::LeftButton) {
+        if (event->position().x() <= nameColumnRight())
+            emit nameAreaClicked();
+        else
+            emit clicked();
+    }
     QWidget::mousePressEvent(event);
+}
+
+int MemoryRowWidget::nameColumnRight() const {
+    return m_nameLabel->geometry().right() + RowSpacing / 2;
 }
 
 // =============================================================================
@@ -269,6 +327,14 @@ void MemoryOverlayWidget::buildRows() {
     for (int channel = MemoryModel::MinChannel; channel <= MemoryModel::MaxChannel; ++channel) {
         auto *row = new MemoryRowWidget(channel, m_model, m_listContainer);
         connect(row, &MemoryRowWidget::clicked, this, [this, channel]() { selectChannel(channel); });
+        connect(row, &MemoryRowWidget::nameAreaClicked, this, [this, channel, row]() {
+            // The name cell is where a name goes, so clicking it is how one is written. Clicking
+            // the rest of the row only selects. A blank channel has nothing to name, and
+            // beginRename() refuses it.
+            selectChannel(channel);
+            row->beginRename();
+        });
+        connect(row, &MemoryRowWidget::renamed, this, &MemoryOverlayWidget::renameRequested);
         m_listLayout->addWidget(row);
         m_rows.append(row);
     }

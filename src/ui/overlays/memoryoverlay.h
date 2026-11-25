@@ -23,6 +23,10 @@ public:
     MemoryRowWidget(int channel, const MemoryModel *model, QWidget *parent = nullptr);
 
     int channel() const { return m_channel; }
+    // Edit this channel's name in place. Enter commits, Escape abandons. Only a channel the radio
+    // holds something for can be named: a name on a blank channel would be stored with nothing.
+    void beginRename();
+    bool isRenaming() const;
     void setSelected(bool selected);
     bool isSelected() const { return m_selected; }
     void updateDisplay();
@@ -36,17 +40,27 @@ public:
 
 signals:
     void clicked();
+    // A press in the name cell — the part of the row a name is written in. That is the gesture
+    // that opens the editor; a press anywhere else only selects.
+    void nameAreaClicked();
+    void renamed(int channel, const QString &label);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     void updateLabelColors();
+    void endRename();
+    // The x past which the row's frequency columns start: the seam the selection is painted at and
+    // the edge the name-cell hit test uses, so the two can never disagree.
+    int nameColumnRight() const;
 
     int m_channel;
     const MemoryModel *m_model;
     QLabel *m_nameLabel;
+    QLineEdit *m_nameEdit = nullptr;
     QLabel *m_vfoALabel;
     QLabel *m_vfoBLabel;
     bool m_selected = false;
@@ -73,6 +87,7 @@ public:
 signals:
     void recallRequested(int channel);
     void storeRequested(int channel);
+    void renameRequested(int channel, const QString &label);
     void closed();
 
 protected:

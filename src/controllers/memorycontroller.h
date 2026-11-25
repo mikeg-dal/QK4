@@ -48,6 +48,8 @@ public:
     MemoryModel *model() const { return m_memoryModel; }
 
 private:
+    // Write a channel back with a new name, keeping every other field the radio reported.
+    void rename(int channel, const QString &label);
     // Reposition over the panadapter and re-read the channel list, so the list on screen is what
     // the radio holds now rather than what it held at connect.
     void refreshBeforeShowing();
