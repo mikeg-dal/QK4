@@ -15,10 +15,13 @@ BandNavigationController::BandNavigationController(RadioState *radioState, Conne
     connect(m_popupManager, &PopupManager::bandSelected, this, &BandNavigationController::onBandSelected);
     connect(m_radioState, &RadioState::bandNumberChanged, this, [this](int band) {
         refreshSelectedBand();
+        requestTxPower();
         emit currentBandChanged(band, /*forVfoB=*/false);
     });
     connect(m_radioState, &RadioState::bandNumberBChanged, this, [this](int band) {
         refreshSelectedBand();
+        // In split the TX VFO is B, so B's band decides which stored power applies.
+        requestTxPower();
         emit currentBandChanged(band, /*forVfoB=*/true);
     });
     // BSet switches which VFO the popup targets, so the indicator follows it.
@@ -33,6 +36,24 @@ void BandNavigationController::refreshSelectedBand() {
     const int band = currentBand(/*forVfoB=*/m_radioState->bSetEnabled());
     if (band >= 0)
         m_popupManager->setSelectedBandByNumber(band);
+}
+
+void BandNavigationController::requestTxPower() {
+    // WHY ask at all: the K4 stores TX power per band and never volunteers it when the band moves.
+    // Measured on R41.FT1 (2026-11-25, tools/probe_xvtr_power.py): entering and leaving a
+    // transverter band pushes BN / XV / BN$ / XV$ and no PC frame in either direction.
+    //
+    // WHY the RDY dump is not enough: a dump captured while the radio sat on XVTR5 carried exactly
+    // one power frame, `PC000L;` — the HF range — while `PC;` asked at that same moment answered
+    // `PC010X;`. So reconnecting onto a transverter band leaves QK4 showing watts where the radio
+    // shows milliwatts, which is the bug this fixes. The dump's PC also arrives long before its BN,
+    // so even a correct dump value could not be interpreted band-first.
+    //
+    // WHY PCX: D12 documents `PCX;` as always answering in the K4 format `PCnnnr`, even where the
+    // K3 legacy format is in effect — which a user's startup macro could turn on with `K40;`.
+    if (!m_connection->isConnected())
+        return;
+    m_connection->sendCAT(QStringLiteral("PCX;"));
 }
 
 void BandNavigationController::onBandSelected(const QString &bandName) {

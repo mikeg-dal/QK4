@@ -38,6 +38,11 @@ private:
     // Show the band of the VFO the popup targets (A when !BSet, B when BSet) as selected.
     void refreshSelectedBand();
 
+    // Ask the radio for its TX power. The K4 keeps power per band and never reports it on a band
+    // change, so the displayed value goes stale until something asks. See the definition for why
+    // the RDY dump cannot be trusted for this.
+    void requestTxPower();
+
 private:
     RadioState *m_radioState;           // injected, not owned
     ConnectionController *m_connection; // injected, not owned

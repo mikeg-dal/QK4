@@ -385,6 +385,42 @@ converts them with `SpectrumScale::K4_MINIPAN_DBM_OFFSET`.
 
 ---
 
+## 16. TX power `PC` is per band, never pushed, and wrong in the `RDY` dump on a transverter band
+
+**Symptom.** Reconnecting to a radio already sitting on a transverter band left QK4 showing the HF
+power in watts while the radio's own front panel showed the transverter power in milliwatts — three
+orders of magnitude out. Changing to the transverter band while already connected looked right, so
+the fault appeared only after a disconnect/reconnect cycle.
+
+**K4 behavior.** Captured on a K4D at R41.FT1 on 2026-11-25 (`tools/probe_xvtr_numbering.py`,
+`tools/probe_xvtr_power.py`), on the plain CAT port with `K41;` and `ER1;` set:
+
+- Power is reported as `PCnnnr`, `r` being the range: `L` QRP watts, `H` QRO watts, `X`
+  milliwatts for transverters (D12, PC). On XVTR5 the radio answers `PC;` with `PC010X;` — 1.0 mW.
+- **The radio never pushes `PC` when the band changes.** On a live AI4 link, entering a transverter
+  band pushed `BN15; XV05; BN$15; XV$05;` and leaving it pushed `BN05; XV00; BN$05;` — no power
+  frame in either direction. The same is true between HF bands, where the K4 also keeps power per
+  band (D12, PP).
+- **The `RDY` dump reports the wrong range on a transverter band.** A dump captured while parked on
+  XVTR5 contained exactly one power frame, `PC000L;`, byte-identical to the HF dump and positioned
+  near the top — while `PC;` asked at that same moment answered `PC010X;`. The dump's `PC` also
+  precedes its `BN` by some 80 frames, so even a correct value could not be read band-first.
+
+**Where QK4 relies on it:** `BandNavigationController::requestTxPower()` sends `PCX;` whenever
+`RadioState` reports a band change on either VFO, which covers both the reconnect case (the dump's
+`BN` triggers it) and a front-panel band change. `PCX;` is used rather than `PC;` because D12
+documents it as always answering in the K4 format `PCnnnr`, even where the K3 legacy format is in
+effect. The reply parses through `LevelsHandlers::handlePC`, which already decodes all three ranges.
+
+**Also measured, same session.** Transverter band numbering is `BN11`–`BN22` for XVTR1–12
+(`XV01;` → `BN11`, `XV05;` → `BN15`), confirming `RadioUtils::isXvtrBandNumber`. D12's `BN$` entry
+claiming "16-25 = transverter bands (11-15 reserved)" contradicts its own `XV$` entry and the radio;
+do not "correct" the code to match it. The radio also reports `XV` / `XV$` (the active transverter
+band, `XV05;` pushed, `XV5;` in a GET reply, `XV0`/`XV00` when not on one), which QK4 does not
+parse — harmless today because `BN` carries the same information.
+
+---
+
 ## How to extend this document
 
 Add a new section only when a behavior satisfies **all** of:
