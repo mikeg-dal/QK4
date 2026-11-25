@@ -53,9 +53,10 @@ protected:
 private:
     void updateLabelColors();
     void endRename();
-    // The x past which the row's frequency columns start: the seam the selection is painted at and
-    // the edge the name-cell hit test uses, so the two can never disagree.
+    // The x each column ends at: the seams the selection and its rules are painted at, and - for
+    // the name - the edge the name-cell hit test uses, so the two can never disagree.
     int nameColumnRight() const;
+    int vfoAColumnRight() const;
 
     int m_channel;
     const MemoryModel *m_model;
@@ -97,7 +98,9 @@ protected:
 
 private:
     void buildRows();
-    // Show or hide the search field; hiding it clears the filter so the whole list comes back.
+    void createSearchPopup();
+    // Show or hide the search box. It is a Qt::Popup under the search key, as the MENU overlay's
+    // is, so both lists are searched the same way.
     void toggleSearch();
     // Hide every row whose number, name or frequency does not contain @p text.
     void applyFilter(const QString &text);
@@ -115,6 +118,7 @@ private:
     QWidget *m_listContainer = nullptr;
     QVBoxLayout *m_listLayout = nullptr;
     QLabel *m_titleLabel = nullptr;
+    QWidget *m_searchPopup = nullptr;
     QLineEdit *m_searchEdit = nullptr;
     QPushButton *m_actionBtn = nullptr;
     QPushButton *m_upBtn = nullptr;

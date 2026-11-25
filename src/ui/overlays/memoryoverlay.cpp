@@ -23,6 +23,11 @@ namespace {
 constexpr int RowPaddingH = 15;
 constexpr int RowPaddingV = 5;
 constexpr int RowSpacing = 10;
+// Column rules stop short of the row edges so they read as rules, not as a grid.
+constexpr int SeparatorInset = 4;
+// The search box hangs this far under its key, in a box with this margin (MENU's numbers).
+constexpr int SearchPopupGap = 4;
+constexpr int SearchPopupMargin = 6;
 
 QString sideText(const QString &prefix, const MemoryChannel::Side &side) {
     if (!side.isSet())
@@ -93,10 +98,19 @@ void MemoryRowWidget::beginRename() {
 
     if (!m_nameEdit) {
         m_nameEdit = new QLineEdit(this);
-        m_nameEdit->setStyleSheet(QString("QLineEdit { background: %1; color: %2; border: none; font-size: %3px; }")
+        // The same text-entry recipe the MENU overlay's search box uses, so typing looks the same
+        // wherever it happens in an overlay: a bounded cell with a cyan focus edge.
+        m_nameEdit->setStyleSheet(QString("QLineEdit { background-color: %1; color: %2; "
+                                          "border: %3px solid %4; border-radius: %5px; padding: 2px 4px; "
+                                          "font-size: %6px; }"
+                                          "QLineEdit:focus { border-color: %7; }")
                                       .arg(QLatin1StringView(K4Styles::Colors::OverlayContentBg),
                                            QLatin1StringView(K4Styles::Colors::TextPrimary))
-                                      .arg(K4Styles::Dimensions::FontSizeReadout));
+                                      .arg(K4Styles::Dimensions::SeparatorHeight)
+                                      .arg(QLatin1StringView(K4Styles::Colors::OverlayNavButton))
+                                      .arg(K4Styles::Dimensions::BorderRadius)
+                                      .arg(K4Styles::Dimensions::FontSizeReadout)
+                                      .arg(QLatin1StringView(K4Styles::Colors::VfoACyan)));
         // The radio's own field separators: a label carrying either would not survive the wire.
         m_nameEdit->setValidator(new QRegularExpressionValidator(QRegularExpression("[^,;]*"), m_nameEdit));
         auto *rowLayout = qobject_cast<QHBoxLayout *>(layout());
@@ -149,16 +163,31 @@ void MemoryRowWidget::updateLabelColors() {
 
 void MemoryRowWidget::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event)
-    if (!m_selected)
-        return;
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    // WHY the label's own edge and not a fraction of the width: a fraction put the boundary
-    // through the middle of "A:", cutting the letter in half. The split belongs where the layout
-    // actually ends the name column - half the gap past it, so neither column's text touches it.
-    const int demarcX = nameColumnRight();
-    painter.fillRect(QRect(0, 0, demarcX, height()), QColor(K4Styles::Colors::SelectionLight));
-    painter.fillRect(QRect(demarcX, 0, width() - demarcX, height()), QColor(K4Styles::Colors::SelectionDark));
+
+    // WHY the labels' own edges and not fractions of the width: a fraction put the boundary
+    // through the middle of "A:", cutting the letter in half. The seams belong where the layout
+    // actually ends each column - half the gap past it, so no column's text touches one.
+    const int nameSeam = nameColumnRight();
+    const int vfoSeam = vfoAColumnRight();
+
+    if (m_selected) {
+        painter.fillRect(QRect(0, 0, nameSeam, height()), QColor(K4Styles::Colors::SelectionLight));
+        painter.fillRect(QRect(nameSeam, 0, width() - nameSeam, height()), QColor(K4Styles::Colors::SelectionDark));
+
+        // Rule the selected row into its three fields - name, VFO A, VFO B - the way the radio
+        // does. Only the selected row: ruling all 200 would be a grid, and the radio does not.
+        // OverlayDividerLight is the token the MENU overlay already uses for an in-row seam.
+        painter.setPen(QPen(QColor(K4Styles::Colors::OverlayDividerLight), K4Styles::Dimensions::SeparatorHeight));
+        for (const int x : {nameSeam, vfoSeam})
+            painter.drawLine(x, SeparatorInset, x, height() - SeparatorInset);
+    }
+
+    // Every row carries the between-rows line the MENU overlay draws, so the two lists read as
+    // the same kind of list.
+    painter.setPen(QPen(QColor(K4Styles::Colors::OverlayDivider), K4Styles::Dimensions::SeparatorHeight));
+    painter.drawLine(0, height() - 1, width(), height() - 1);
 }
 
 void MemoryRowWidget::keyPressEvent(QKeyEvent *event) {
@@ -181,6 +210,10 @@ void MemoryRowWidget::mousePressEvent(QMouseEvent *event) {
 
 int MemoryRowWidget::nameColumnRight() const {
     return m_nameLabel->geometry().right() + RowSpacing / 2;
+}
+
+int MemoryRowWidget::vfoAColumnRight() const {
+    return m_vfoALabel->geometry().right() + RowSpacing / 2;
 }
 
 // =============================================================================
@@ -221,17 +254,6 @@ MemoryOverlayWidget::MemoryOverlayWidget(MemoryModel *model, QWidget *parent) : 
                                     .arg(K4Styles::Colors::TextSecondary)
                                     .arg(K4Styles::Dimensions::FontSizeReadout));
     contentLayout->addWidget(m_titleLabel);
-
-    m_searchEdit = new QLineEdit(content);
-    m_searchEdit->setPlaceholderText(QStringLiteral("Search name, number or frequency"));
-    m_searchEdit->setStyleSheet(QString("QLineEdit { background-color: %1; color: %2; border: none; "
-                                        "font-size: %3px; padding: 6px 15px; }")
-                                    .arg(K4Styles::Colors::OverlayHeaderBg)
-                                    .arg(K4Styles::Colors::TextPrimary)
-                                    .arg(K4Styles::Dimensions::FontSizeReadout));
-    m_searchEdit->hide();
-    connect(m_searchEdit, &QLineEdit::textChanged, this, &MemoryOverlayWidget::applyFilter);
-    contentLayout->addWidget(m_searchEdit);
 
     m_scrollArea = new QScrollArea(content);
     m_scrollArea->setWidgetResizable(true);
@@ -308,6 +330,8 @@ MemoryOverlayWidget::MemoryOverlayWidget(MemoryModel *model, QWidget *parent) : 
     navLayout->addLayout(bottomRow);
     mainLayout->addWidget(navPanel);
 
+    createSearchPopup();
+
     m_scrollArea->installEventFilter(this);
     m_scrollArea->viewport()->installEventFilter(this);
 
@@ -353,15 +377,46 @@ void MemoryOverlayWidget::refreshAllRows() {
         row->updateDisplay();
 }
 
+void MemoryOverlayWidget::createSearchPopup() {
+    // The MENU overlay's search box, built the same way so the two lists are searched the same
+    // way: a Qt::Popup hanging under the search key, as wide as the key column.
+    m_searchPopup = new QWidget(this, Qt::Popup);
+    m_searchPopup->setFixedWidth(K4Styles::Dimensions::NavPanelWidth);
+
+    auto *layout = new QVBoxLayout(m_searchPopup);
+    layout->setContentsMargins(SearchPopupMargin, SearchPopupMargin, SearchPopupMargin, SearchPopupMargin);
+
+    m_searchEdit = new QLineEdit(m_searchPopup);
+    m_searchEdit->setPlaceholderText(QStringLiteral("Search..."));
+    m_searchEdit->setStyleSheet(QString("QLineEdit { background-color: %1; color: %2; border: %3px solid %4; "
+                                        "border-radius: %5px; padding: 6px; font-size: %6px; }"
+                                        "QLineEdit:focus { border-color: %7; }")
+                                    .arg(QLatin1StringView(K4Styles::Colors::OverlayContentBg),
+                                         QLatin1StringView(K4Styles::Colors::TextPrimary))
+                                    .arg(K4Styles::Dimensions::SeparatorHeight)
+                                    .arg(QLatin1StringView(K4Styles::Colors::OverlayNavButton))
+                                    .arg(K4Styles::Dimensions::BorderRadius)
+                                    .arg(K4Styles::Dimensions::FontSizeCaption)
+                                    .arg(QLatin1StringView(K4Styles::Colors::VfoACyan)));
+    layout->addWidget(m_searchEdit);
+    m_searchPopup->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::OverlayHeaderBg));
+
+    connect(m_searchEdit, &QLineEdit::textChanged, this, &MemoryOverlayWidget::applyFilter);
+
+    // Sees the press that closes the box (see eventFilter).
+    m_searchPopup->installEventFilter(this);
+    m_searchPopup->hide();
+}
+
 void MemoryOverlayWidget::toggleSearch() {
-    const bool show = !m_searchEdit->isVisible();
-    m_searchEdit->setVisible(show);
-    if (show) {
-        m_searchEdit->setFocus(Qt::OtherFocusReason);
-    } else {
-        m_searchEdit->clear(); // clears the filter through textChanged
-        setFocus(Qt::OtherFocusReason);
+    if (m_searchPopup->isVisible()) {
+        m_searchPopup->hide();
+        return;
     }
+    m_searchPopup->move(m_searchBtn->mapToGlobal(QPoint(0, m_searchBtn->height() + SearchPopupGap)));
+    m_searchPopup->show();
+    m_searchEdit->setFocus();
+    m_searchEdit->selectAll();
 }
 
 void MemoryOverlayWidget::applyFilter(const QString &text) {
@@ -440,6 +495,18 @@ void MemoryOverlayWidget::keyPressEvent(QKeyEvent *event) {
 }
 
 bool MemoryOverlayWidget::eventFilter(QObject *watched, QEvent *event) {
+    // WHY: on platforms that replay the press which closes a popup (Windows, X11; not macOS), the
+    // press that dismissed the search box was replayed to the key under it - the search key - which
+    // opened the box straight back up. Suppressing the replay for that one press is what makes a
+    // second press on the key close the box. Qt clears the attribute before each new mouse event,
+    // so it only ever covers this press, and a press anywhere else is still replayed.
+    if (watched == m_searchPopup && event->type() == QEvent::MouseButtonPress) {
+        const QPoint globalPos = static_cast<QMouseEvent *>(event)->globalPosition().toPoint();
+        const QRect searchKey(m_searchBtn->mapToGlobal(QPoint(0, 0)), m_searchBtn->size());
+        if (searchKey.contains(globalPos))
+            m_searchPopup->setAttribute(Qt::WA_NoMouseReplay);
+        return false; // the popup still handles the press: it closes itself
+    }
     if (event->type() == QEvent::Wheel && (watched == m_scrollArea || watched == m_scrollArea->viewport())) {
         // The wheel scrolls the list rather than moving the selection: the selection is what the
         // action key acts on, and a wheel nudge must not arm a recall of the wrong channel.
@@ -449,6 +516,11 @@ bool MemoryOverlayWidget::eventFilter(QObject *watched, QEvent *event) {
 }
 
 void MemoryOverlayWidget::hideEvent(QHideEvent *event) {
+    // Leave no filter behind for the next open, exactly as the MENU overlay does.
+    if (m_searchPopup)
+        m_searchPopup->hide();
+    if (m_searchEdit)
+        m_searchEdit->clear();
     QWidget::hideEvent(event);
     emit closed();
 }

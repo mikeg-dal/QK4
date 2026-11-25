@@ -317,39 +317,97 @@ private slots:
         overlay.hide();
     }
 
-    void searchFiltersTheListAndClearsOnClose() {
+    void searchFiltersTheListTheWayTheMenuOverlayDoes() {
         MemoryModel model;
         model.parseMCDF(kChannel1);  // #001, 14.227
         model.parseMCDF(kChannel21); // *60m Ch1, 5.3305
         MemoryOverlayWidget overlay(&model);
+        overlay.resize(900, 500);
         overlay.showForMode(MemoryOverlayWidget::Recall);
 
         QPushButton *search = buttonWithText(&overlay, QString::fromUtf8("\xF0\x9F\x94\x8D"));
         QVERIFY(search);
-        QLineEdit *field = overlay.findChild<QLineEdit *>();
-        QVERIFY(field && !field->isVisible());
+
+        // The box is a Qt::Popup hanging under the search key, as the MENU overlay's is - not a
+        // field in the list itself.
+        QWidget *box = nullptr;
+        for (QWidget *w : overlay.findChildren<QWidget *>()) {
+            if (w->windowType() == Qt::Popup)
+                box = w;
+        }
+        QVERIFY(box);
+        QVERIFY(!box->isVisible());
 
         search->click();
-        QVERIFY(field->isVisible());
+        QVERIFY(box->isVisible());
+        QLineEdit *field = box->findChild<QLineEdit *>();
+        QVERIFY(field);
 
-        // By name.
+        // By name, by frequency, and by channel number.
         field->setText("60m");
         QVERIFY(rowFor(&overlay, 21)->isVisibleTo(&overlay));
         QVERIFY(!rowFor(&overlay, 1)->isVisibleTo(&overlay));
         QVERIFY(!rowFor(&overlay, 2)->isVisibleTo(&overlay)); // a blank channel matches nothing
-
-        // By frequency, and by channel number.
         field->setText("14.227");
         QVERIFY(rowFor(&overlay, 1)->isVisibleTo(&overlay));
         QVERIFY(!rowFor(&overlay, 21)->isVisibleTo(&overlay));
         field->setText("021");
         QVERIFY(rowFor(&overlay, 21)->isVisibleTo(&overlay));
 
-        // Closing the search brings the whole list back.
+        // Closing the box leaves the filter in place - the MENU overlay behaves the same way, and
+        // the filtered list is what the operator was looking at.
         search->click();
-        QVERIFY(!field->isVisible());
+        QVERIFY(!box->isVisible());
+        QVERIFY(rowFor(&overlay, 21)->isVisibleTo(&overlay));
+
+        // Leaving the list is what clears it, so the next open starts whole.
+        overlay.hide();
+        QVERIFY(field->text().isEmpty());
+        overlay.showForMode(MemoryOverlayWidget::Recall);
         QVERIFY(rowFor(&overlay, 1)->isVisibleTo(&overlay));
         QVERIFY(rowFor(&overlay, 2)->isVisibleTo(&overlay));
+        overlay.hide();
+    }
+
+    void pressingTheSearchKeyAgainClosesTheBox() {
+        // The same hazard the MENU overlay documents: where Qt replays the press that closed a
+        // popup (Windows, X11), the replay lands on the search key and reopens the box. The
+        // offscreen platform cannot grab the mouse for a popup, so the reopen itself cannot be
+        // seen here; what is checked is the attribute that decides the replay, read as the box
+        // closes - the same technique as TestMenuOverlay::searchKeyPressedAgainClosesTheSearchBox.
+        MemoryModel model;
+        MemoryOverlayWidget overlay(&model);
+        overlay.resize(900, 500);
+        overlay.showForMode(MemoryOverlayWidget::Recall);
+        QPushButton *search = buttonWithText(&overlay, QString::fromUtf8("\xF0\x9F\x94\x8D"));
+        QWidget *box = nullptr;
+        for (QWidget *w : overlay.findChildren<QWidget *>()) {
+            if (w->windowType() == Qt::Popup)
+                box = w;
+        }
+        QVERIFY(search && box);
+
+        struct ReplayAtClose : QObject {
+            bool closed = false;
+            bool noReplay = false;
+            bool eventFilter(QObject *watched, QEvent *event) override {
+                if (event->type() == QEvent::Hide) {
+                    closed = true;
+                    noReplay = static_cast<QWidget *>(watched)->testAttribute(Qt::WA_NoMouseReplay);
+                }
+                return false;
+            }
+        };
+
+        search->click();
+        QVERIFY(box->isVisible());
+        ReplayAtClose onKey;
+        box->installEventFilter(&onKey);
+        const QPoint keyCentre = search->mapToGlobal(search->rect().center());
+        QTest::mousePress(box, Qt::LeftButton, {}, box->mapFromGlobal(keyCentre));
+        box->removeEventFilter(&onKey);
+        QVERIFY(onKey.closed);
+        QVERIFY2(onKey.noReplay, "the press on the search key would be replayed to it and reopen the box");
         overlay.hide();
     }
 
