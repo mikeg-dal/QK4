@@ -48,6 +48,9 @@ public:
     MemoryModel *model() const { return m_memoryModel; }
 
 private:
+    // Reposition over the panadapter and re-read the channel list, so the list on screen is what
+    // the radio holds now rather than what it held at connect.
+    void refreshBeforeShowing();
     void store(int channel);
 
     ConnectionController *m_connection; // injected, not owned

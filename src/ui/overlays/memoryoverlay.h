@@ -6,6 +6,7 @@
 
 class MemoryModel;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QScrollArea;
 class QVBoxLayout;
@@ -25,6 +26,10 @@ public:
     void setSelected(bool selected);
     bool isSelected() const { return m_selected; }
     void updateDisplay();
+
+    // True when @p needle appears in this row's number, name, frequency or mode — what the
+    // search field filters on. Case-insensitive.
+    bool matches(const QString &needle) const;
 
     // "5.330.5" — the K4's grouping, megahertz then kilohertz then the hundreds digit.
     static QString formatFrequency(qint64 hz);
@@ -77,6 +82,10 @@ protected:
 
 private:
     void buildRows();
+    // Show or hide the search field; hiding it clears the filter so the whole list comes back.
+    void toggleSearch();
+    // Hide every row whose number, name or frequency does not contain @p text.
+    void applyFilter(const QString &text);
     void selectChannel(int channel, bool scrollIntoView = true);
     void step(int delta);
     void actOnSelection();
@@ -91,7 +100,11 @@ private:
     QWidget *m_listContainer = nullptr;
     QVBoxLayout *m_listLayout = nullptr;
     QLabel *m_titleLabel = nullptr;
+    QLineEdit *m_searchEdit = nullptr;
     QPushButton *m_actionBtn = nullptr;
+    QPushButton *m_upBtn = nullptr;
+    QPushButton *m_downBtn = nullptr;
+    QPushButton *m_searchBtn = nullptr;
     QPushButton *m_backBtn = nullptr;
     QList<MemoryRowWidget *> m_rows;
 };

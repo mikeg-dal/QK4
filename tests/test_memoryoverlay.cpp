@@ -14,6 +14,7 @@
 #include <QApplication>
 #include <QLabel>
 #include <QLayout>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTest>
@@ -273,6 +274,59 @@ private slots:
             }
         }
         QCOMPARE(empty, 12);
+    }
+
+    void searchFiltersTheListAndClearsOnClose() {
+        MemoryModel model;
+        model.parseMCDF(kChannel1);  // #001, 14.227
+        model.parseMCDF(kChannel21); // *60m Ch1, 5.3305
+        MemoryOverlayWidget overlay(&model);
+        overlay.showForMode(MemoryOverlayWidget::Recall);
+
+        QPushButton *search = buttonWithText(&overlay, QString::fromUtf8("\xF0\x9F\x94\x8D"));
+        QVERIFY(search);
+        QLineEdit *field = overlay.findChild<QLineEdit *>();
+        QVERIFY(field && !field->isVisible());
+
+        search->click();
+        QVERIFY(field->isVisible());
+
+        // By name.
+        field->setText("60m");
+        QVERIFY(rowFor(&overlay, 21)->isVisibleTo(&overlay));
+        QVERIFY(!rowFor(&overlay, 1)->isVisibleTo(&overlay));
+        QVERIFY(!rowFor(&overlay, 2)->isVisibleTo(&overlay)); // a blank channel matches nothing
+
+        // By frequency, and by channel number.
+        field->setText("14.227");
+        QVERIFY(rowFor(&overlay, 1)->isVisibleTo(&overlay));
+        QVERIFY(!rowFor(&overlay, 21)->isVisibleTo(&overlay));
+        field->setText("021");
+        QVERIFY(rowFor(&overlay, 21)->isVisibleTo(&overlay));
+
+        // Closing the search brings the whole list back.
+        search->click();
+        QVERIFY(!field->isVisible());
+        QVERIFY(rowFor(&overlay, 1)->isVisibleTo(&overlay));
+        QVERIFY(rowFor(&overlay, 2)->isVisibleTo(&overlay));
+        overlay.hide();
+    }
+
+    void theNavigationKeysStepTheSelection() {
+        MemoryModel model;
+        MemoryOverlayWidget overlay(&model);
+        overlay.showForMode(MemoryOverlayWidget::Recall);
+
+        QPushButton *down = buttonWithText(&overlay, QString::fromUtf8("\xE2\x96\xBC"));
+        QPushButton *up = buttonWithText(&overlay, QString::fromUtf8("\xE2\x96\xB2"));
+        QVERIFY(down && up);
+
+        const int start = overlay.selectedChannel();
+        down->click();
+        QCOMPARE(overlay.selectedChannel(), start + 1);
+        up->click();
+        QCOMPARE(overlay.selectedChannel(), start);
+        overlay.hide();
     }
 
     void aDisconnectEmptiesTheRowsWithoutTouchingFreedChannels() {

@@ -39,13 +39,22 @@ void MemoryController::clearModel() {
 }
 
 void MemoryController::openRecall() {
-    repositionOverlay();
+    refreshBeforeShowing();
     m_overlay->showForMode(MemoryOverlayWidget::Recall);
 }
 
 void MemoryController::openStore() {
-    repositionOverlay();
+    refreshBeforeShowing();
     m_overlay->showForMode(MemoryOverlayWidget::Store);
+}
+
+void MemoryController::refreshBeforeShowing() {
+    repositionOverlay();
+    // WHY ask every time: the radio never pushes MCDF. A channel named or stored on the front
+    // panel, or by another client, while QK4 was connected would otherwise never reach the list -
+    // it would show whatever was true when the connection came up. The answer is a handful of
+    // lines, one per channel in use.
+    requestMemories();
 }
 
 void MemoryController::closeOverlay() {

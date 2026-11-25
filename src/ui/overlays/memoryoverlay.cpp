@@ -5,6 +5,7 @@
 
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
@@ -18,7 +19,6 @@ namespace {
 
 // The row's three zones. The light selection panel covers the number and label; the frequencies
 // sit on the dark panel, as on the radio.
-constexpr double NameZoneFraction = 0.35;
 constexpr int RowPaddingH = 15;
 constexpr int RowPaddingV = 5;
 constexpr int RowSpacing = 10;
@@ -85,6 +85,12 @@ void MemoryRowWidget::updateDisplay() {
     m_vfoBLabel->setText(sideText(QStringLiteral("B"), channel->b));
 }
 
+bool MemoryRowWidget::matches(const QString &needle) const {
+    const QString haystack =
+        m_nameLabel->text() + QLatin1Char(' ') + m_vfoALabel->text() + QLatin1Char(' ') + m_vfoBLabel->text();
+    return haystack.contains(needle, Qt::CaseInsensitive);
+}
+
 void MemoryRowWidget::setSelected(bool selected) {
     if (m_selected == selected)
         return;
@@ -105,7 +111,10 @@ void MemoryRowWidget::paintEvent(QPaintEvent *event) {
         return;
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    const int demarcX = static_cast<int>(width() * NameZoneFraction);
+    // WHY the label's own edge and not a fraction of the width: a fraction put the boundary
+    // through the middle of "A:", cutting the letter in half. The split belongs where the layout
+    // actually ends the name column - half the gap past it, so neither column's text touches it.
+    const int demarcX = m_nameLabel->geometry().right() + RowSpacing / 2;
     painter.fillRect(QRect(0, 0, demarcX, height()), QColor(K4Styles::Colors::SelectionLight));
     painter.fillRect(QRect(demarcX, 0, width() - demarcX, height()), QColor(K4Styles::Colors::SelectionDark));
 }
@@ -123,10 +132,23 @@ void MemoryRowWidget::mousePressEvent(QMouseEvent *event) {
 MemoryOverlayWidget::MemoryOverlayWidget(MemoryModel *model, QWidget *parent) : QWidget(parent), m_model(model) {
     setFocusPolicy(Qt::StrongFocus);
     setAutoFillBackground(true);
-    setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::OverlayContentBg));
+    // WA_StyledBackground: without it a plain QWidget ignores the border in its style sheet, and
+    // the list reads as a slab dropped on the spectrum rather than a panel sitting over it.
+    // PanelBorder is the frame the panadapter and VFO panels already wear, so the list sits in
+    // the same family of surfaces rather than inventing an edge of its own.
+    setAttribute(Qt::WA_StyledBackground, true);
+    setStyleSheet(QString("QWidget#memoryOverlay { background-color: %1; border: %2px solid %3; "
+                          "border-radius: %4px; }")
+                      .arg(K4Styles::Colors::OverlayContentBg)
+                      .arg(K4Styles::Dimensions::BorderWidth)
+                      .arg(QLatin1StringView(K4Styles::Colors::PanelBorder))
+                      .arg(K4Styles::Dimensions::BorderRadiusLarge));
+    setObjectName("memoryOverlay");
 
     auto *mainLayout = new QHBoxLayout(this);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
+    // Inside the border, and clear of it at the corners.
+    const int frame = K4Styles::Dimensions::BorderWidth + 2;
+    mainLayout->setContentsMargins(frame, frame, frame, frame);
     mainLayout->setSpacing(0);
 
     auto *content = new QWidget(this);
@@ -141,6 +163,17 @@ MemoryOverlayWidget::MemoryOverlayWidget(MemoryModel *model, QWidget *parent) : 
                                     .arg(K4Styles::Colors::TextSecondary)
                                     .arg(K4Styles::Dimensions::FontSizeReadout));
     contentLayout->addWidget(m_titleLabel);
+
+    m_searchEdit = new QLineEdit(content);
+    m_searchEdit->setPlaceholderText(QStringLiteral("Search name, number or frequency"));
+    m_searchEdit->setStyleSheet(QString("QLineEdit { background-color: %1; color: %2; border: none; "
+                                        "font-size: %3px; padding: 6px 15px; }")
+                                    .arg(K4Styles::Colors::OverlayHeaderBg)
+                                    .arg(K4Styles::Colors::TextPrimary)
+                                    .arg(K4Styles::Dimensions::FontSizeReadout));
+    m_searchEdit->hide();
+    connect(m_searchEdit, &QLineEdit::textChanged, this, &MemoryOverlayWidget::applyFilter);
+    contentLayout->addWidget(m_searchEdit);
 
     m_scrollArea = new QScrollArea(content);
     m_scrollArea->setWidgetResizable(true);
@@ -186,13 +219,35 @@ MemoryOverlayWidget::MemoryOverlayWidget(MemoryModel *model, QWidget *parent) : 
     m_actionBtn->setStyleSheet(keyStyle);
     connect(m_actionBtn, &QPushButton::clicked, this, &MemoryOverlayWidget::actOnSelection);
     navLayout->addWidget(m_actionBtn);
+
+    // The same navigation keys the MENU overlay carries, in the same order and sizes. No NORM:
+    // there is no default to restore a memory to.
+    auto *stepRow = new QHBoxLayout();
+    stepRow->setSpacing(8);
+    m_upBtn = new QPushButton("\xE2\x96\xB2", navPanel);   // ▲
+    m_downBtn = new QPushButton("\xE2\x96\xBC", navPanel); // ▼
+    for (QPushButton *btn : {m_upBtn, m_downBtn}) {
+        btn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::PopupButtonHeight);
+        btn->setStyleSheet(keyStyle);
+        stepRow->addWidget(btn);
+    }
+    connect(m_upBtn, &QPushButton::clicked, this, [this]() { step(-1); });
+    connect(m_downBtn, &QPushButton::clicked, this, [this]() { step(1); });
+    navLayout->addLayout(stepRow);
     navLayout->addStretch();
 
-    m_backBtn = new QPushButton("\xE2\x86\xA9", navPanel); // ↩
-    m_backBtn->setFixedHeight(K4Styles::Dimensions::PopupButtonHeight);
-    m_backBtn->setStyleSheet(keyStyle);
+    auto *bottomRow = new QHBoxLayout();
+    bottomRow->setSpacing(8);
+    m_searchBtn = new QPushButton("\xF0\x9F\x94\x8D", navPanel); // 🔍
+    m_backBtn = new QPushButton("\xE2\x86\xA9", navPanel);       // ↩
+    for (QPushButton *btn : {m_searchBtn, m_backBtn}) {
+        btn->setFixedSize(K4Styles::Dimensions::NavButtonWidth, K4Styles::Dimensions::PopupButtonHeight);
+        btn->setStyleSheet(keyStyle);
+        bottomRow->addWidget(btn);
+    }
+    connect(m_searchBtn, &QPushButton::clicked, this, &MemoryOverlayWidget::toggleSearch);
     connect(m_backBtn, &QPushButton::clicked, this, &QWidget::hide);
-    navLayout->addWidget(m_backBtn);
+    navLayout->addLayout(bottomRow);
     mainLayout->addWidget(navPanel);
 
     m_scrollArea->installEventFilter(this);
@@ -230,6 +285,31 @@ void MemoryOverlayWidget::refreshRow(int channel) {
 void MemoryOverlayWidget::refreshAllRows() {
     for (MemoryRowWidget *row : m_rows)
         row->updateDisplay();
+}
+
+void MemoryOverlayWidget::toggleSearch() {
+    const bool show = !m_searchEdit->isVisible();
+    m_searchEdit->setVisible(show);
+    if (show) {
+        m_searchEdit->setFocus(Qt::OtherFocusReason);
+    } else {
+        m_searchEdit->clear(); // clears the filter through textChanged
+        setFocus(Qt::OtherFocusReason);
+    }
+}
+
+void MemoryOverlayWidget::applyFilter(const QString &text) {
+    const QString needle = text.trimmed();
+    for (MemoryRowWidget *row : m_rows) {
+        if (needle.isEmpty()) {
+            row->show();
+            continue;
+        }
+        row->setVisible(row->matches(needle));
+    }
+    // Keep the selection on screen if it survived the filter.
+    if (m_rows.at(m_selectedChannel - MemoryModel::MinChannel)->isVisibleTo(this))
+        selectChannel(m_selectedChannel);
 }
 
 void MemoryOverlayWidget::showForMode(Mode mode) {
