@@ -41,6 +41,12 @@ struct AntennaState {
 
 namespace AntennaHandlers {
 
+// The name an antenna carries with no custom name set, which is what the K4 shows once a custom
+// name is cleared (R40 release note: "Clearing an antenna name restore the original antenna name,
+// e.g. ANT1 or RX1"). Indexes 4 and 5 are the receive antennas: measured on a K4D at R41.FT1, whose
+// RDY dump reports ACN1..ACN3 as ANT1..ANT3 and ACN5 as RX2.
+QString defaultAntennaName(int index);
+
 // CAT handlers.
 void handleAN(AntennaState &state, RadioState &owner, const QString &cmd);
 void handleAR(AntennaState &state, RadioState &owner, const QString &cmd);    // AR (2-char prefix)

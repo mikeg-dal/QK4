@@ -64,18 +64,30 @@ void handleAT(AntennaState &state, RadioState &owner, const QString &cmd) {
     }
 }
 
+QString defaultAntennaName(int index) {
+    if (index == 4 || index == 5)
+        return QStringLiteral("RX%1").arg(index - 3);
+    return QStringLiteral("ANT%1").arg(index);
+}
+
 void handleACN(AntennaState &state, RadioState &owner, const QString &cmd) {
     if (cmd.length() < 4)
         return;
     bool ok;
     const int index = cmd.mid(3, 1).toInt(&ok);
-    if (ok && index >= 1 && index <= 7) {
-        const QString name = cmd.mid(4).trimmed();
-        if (!name.isEmpty() && name != state.antennaNames.value(index)) {
-            state.antennaNames[index] = name;
-            emit owner.antennaNameChanged(index, name);
-        }
-    }
+    if (!ok || index < 1 || index > 7)
+        return;
+
+    // WHY an empty name is a clear, not a no-op: `ACNn~;` clears a custom name, and the radio then
+    // reports the antenna with no name at all. Ignoring that left the cleared custom name on screen
+    // for the rest of the session. R40 made the radio report the restored default instead, so this
+    // path only matters on older firmware — but both forms must land on the same displayed name.
+    const QString name = cmd.mid(4).trimmed();
+    const QString effective = name.isEmpty() ? defaultAntennaName(index) : name;
+    if (effective == state.antennaNames.value(index))
+        return;
+    state.antennaNames[index] = effective;
+    emit owner.antennaNameChanged(index, effective);
 }
 
 void handleACM(AntennaState &state, RadioState &owner, const QString &cmd) {

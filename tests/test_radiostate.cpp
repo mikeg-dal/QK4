@@ -1177,11 +1177,35 @@ private slots:
         QCOMPARE(spy.at(0).at(1).toString(), QString("BEAM"));
     }
 
-    void testAntennaNameEmptyRejected() {
+    void testAntennaNameEmptyRestoresTheDefault() {
+        // WAS "empty rejected": an ACN with no name text was ignored, so a custom name cleared on
+        // the radio (ACNn~;) stayed on QK4's screen for the rest of the session. The R40 note
+        // "Clearing an antenna name restore the original antenna name, e.g. ANT1 or RX1" says what
+        // the right answer is; older firmware reports the empty name instead, and both must land on
+        // the same displayed text.
         RadioState rs;
+        rs.parseCATCommand("ACN3BEAM;");
+        QCOMPARE(rs.antennaName(3), QString("BEAM"));
+
         QSignalSpy spy(&rs, &RadioState::antennaNameChanged);
-        rs.parseCATCommand("ACN3;"); // no name text
-        QCOMPARE(spy.count(), 0);
+        rs.parseCATCommand("ACN3;"); // the clear
+        QCOMPARE(rs.antennaName(3), QString("ANT3"));
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(1).toString(), QString("ANT3"));
+
+        // Already default: nothing changed, so nothing is emitted.
+        rs.parseCATCommand("ACN3;");
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void testAntennaDefaultNamesFollowTheRadios() {
+        // Measured on a K4D at R41.FT1: the RDY dump reports ACN1..ACN3 as ANT1..ANT3 and ACN5 as
+        // RX2, so 4 and 5 are the receive antennas and must not default to "ANT4" / "ANT5".
+        RadioState rs;
+        QCOMPARE(rs.antennaName(1), QString("ANT1"));
+        QCOMPARE(rs.antennaName(3), QString("ANT3"));
+        QCOMPARE(rs.antennaName(4), QString("RX1"));
+        QCOMPARE(rs.antennaName(5), QString("RX2"));
     }
 
     void testAntennaNameOutOfRangeIndex() {

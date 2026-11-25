@@ -242,7 +242,7 @@ public:
     int rxAntennaMain() const { return m_antennaState.receiveAntenna; }
     int rxAntennaSub() const { return m_antennaState.receiveAntennaSub; }
     QString antennaName(int index) const {
-        return m_antennaState.antennaNames.value(index, QString("ANT%1").arg(index));
+        return m_antennaState.antennaNames.value(index, AntennaHandlers::defaultAntennaName(index));
     }
 
     // RIT/XIT — backed by m_frequencyVfoState.
