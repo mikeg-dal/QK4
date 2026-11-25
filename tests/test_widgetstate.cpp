@@ -32,6 +32,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSettings>
+#include <QSlider>
 #include <QSignalSpy>
 #include <QStackedWidget>
 #include <QTemporaryDir>
@@ -356,6 +357,54 @@ private slots:
             QPushButton *key = buttonWithText(bar, "RESET");
             QVERIFY(key && !key->isVisible());
         }
+    }
+
+    // --- SideControlPanel mute ---
+
+    void clickingAReceiverNameMutesItAndKeepsTheSlider() {
+        SideControlPanel panel;
+        QLabel *mainName = nullptr;
+        QLabel *subName = nullptr;
+        for (QLabel *l : panel.findChildren<QLabel *>()) {
+            if (l->text() == "MAIN")
+                mainName = l;
+            else if (l->text() == "SUB")
+                subName = l;
+        }
+        QVERIFY(mainName && subName);
+
+        // The badge starts hidden and is a child of the slider, not of the panel.
+        QList<QLabel *> badges;
+        for (QLabel *l : panel.findChildren<QLabel *>())
+            if (l->text() == "MUTED")
+                badges.append(l);
+        QCOMPARE(badges.size(), 2);
+        for (QLabel *b : badges) {
+            QVERIFY(!b->isVisible());
+            QVERIFY(qobject_cast<QSlider *>(b->parentWidget()));
+            // The slider underneath stays usable while the badge is over it.
+            QVERIFY(b->testAttribute(Qt::WA_TransparentForMouseEvents));
+        }
+
+        const int volumeBefore = panel.volume();
+        QSignalSpy mainSpy(&panel, &SideControlPanel::mainMuteToggled);
+        QSignalSpy subSpy(&panel, &SideControlPanel::subMuteToggled);
+
+        QTest::mouseClick(mainName, Qt::LeftButton);
+        QCOMPARE(mainSpy.count(), 1);
+        QCOMPARE(mainSpy.at(0).at(0).toBool(), true);
+        QCOMPARE(subSpy.count(), 0); // one receiver at a time
+        QCOMPARE(panel.volume(), volumeBefore);
+
+        QTest::mouseClick(mainName, Qt::LeftButton);
+        QCOMPARE(mainSpy.count(), 2);
+        QCOMPARE(mainSpy.at(1).at(0).toBool(), false);
+        QCOMPARE(panel.volume(), volumeBefore);
+
+        QTest::mouseClick(subName, Qt::LeftButton);
+        QCOMPARE(subSpy.count(), 1);
+        QCOMPARE(subSpy.at(0).at(0).toBool(), true);
+        QCOMPARE(mainSpy.count(), 2);
     }
 
     // --- LineOutPopupWidget ---

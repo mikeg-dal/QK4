@@ -79,6 +79,19 @@ public:
     // Volume/mix controls (atomic — safe from any thread)
     void setMainVolume(float vol);
     void setSubVolume(float vol);
+
+    // Mute gates the volume without disturbing it: the slider's value is remembered while muted
+    // (and a slider moved while muted is remembered too), so unmuting restores exactly what the
+    // operator had. GUI thread only — the stored levels are plain floats; what reaches the engine
+    // is its atomics.
+    //
+    // WHY not AudioEngine::setSubMuted: that one belongs to the radio — it follows SUB RX on/off
+    // and starts muted because SUB RX starts off. The operator's mute has to compose with it
+    // rather than fight it, so it rides on the volume instead and the two are independent.
+    void setMainMuted(bool muted);
+    void setSubMuted(bool muted);
+    bool isMainMuted() const { return m_mainMuted; }
+    bool isSubMuted() const { return m_subMuted; }
     void setRxBoostDb(int db); // 0 to +12 dB above the sliders; see RxOutputStage
 
     // Read-through to the engine's atomics. READS ONLY - these change nothing. Safe from any
@@ -92,7 +105,6 @@ public:
     void setBalanceMode(int mode);
     void setBalanceOffset(int offset);
     void setAudioMix(int left, int right);
-    void setSubMuted(bool muted);
 
     // Device selection + mic gain — used by Options dialog tabs. Each dispatches via
     // QMetaObject::invokeMethod to the audio or TX thread internally. Task-level API only —
@@ -149,6 +161,11 @@ private:
     // thread once, not again in the destructor.
     bool m_txStopMissed = false;
     bool m_rxStopMissed = false;
+    // The levels the operator has set, which is not what the engine is running while muted.
+    float m_mainVolume = 1.0f;
+    float m_subVolume = 1.0f;
+    bool m_mainMuted = false;
+    bool m_subMuted = false;
 
     // Hands the OS microphone permission to the TX pipeline. With `askIfUndetermined`, also asks
     // the OS - on the main thread, the only one Qt allows, and asynchronously, so the prompt never

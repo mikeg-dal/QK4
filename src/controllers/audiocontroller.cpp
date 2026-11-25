@@ -224,9 +224,11 @@ void AudioController::startAudio(float mainVolume, float subVolume, float micGai
     QMetaObject::invokeMethod(m_audioEngine, &AudioEngine::start, Qt::QueuedConnection);
     m_metricsTimer->start();
 
-    // Volume setters are atomic — safe as direct calls from any thread
-    m_audioEngine->setMainVolume(mainVolume);
-    m_audioEngine->setSubVolume(subVolume);
+    // Volume setters are atomic — safe as direct calls from any thread. Through the controller so
+    // the levels are remembered for mute, and so a stream muted before the engine started stays
+    // muted when it does.
+    setMainVolume(mainVolume);
+    setSubVolume(subVolume);
     // Atomic stores in the TX pipeline - safe as direct calls.
     m_txPipeline->setMicGain(micGain);
 
@@ -405,13 +407,27 @@ float AudioController::subVolume() const {
 }
 
 void AudioController::setMainVolume(float vol) {
-    if (m_audioEngine)
+    m_mainVolume = vol; // remembered even while muted, so unmuting restores the operator's level
+    if (m_audioEngine && !m_mainMuted)
         m_audioEngine->setMainVolume(vol);
 }
 
 void AudioController::setSubVolume(float vol) {
-    if (m_audioEngine)
+    m_subVolume = vol;
+    if (m_audioEngine && !m_subMuted)
         m_audioEngine->setSubVolume(vol);
+}
+
+void AudioController::setMainMuted(bool muted) {
+    m_mainMuted = muted;
+    if (m_audioEngine)
+        m_audioEngine->setMainVolume(muted ? 0.0f : m_mainVolume);
+}
+
+void AudioController::setSubMuted(bool muted) {
+    m_subMuted = muted;
+    if (m_audioEngine)
+        m_audioEngine->setSubVolume(muted ? 0.0f : m_subVolume);
 }
 
 void AudioController::setRxBoostDb(int db) {
@@ -432,11 +448,6 @@ void AudioController::setBalanceOffset(int offset) {
 void AudioController::setAudioMix(int left, int right) {
     if (m_audioEngine)
         m_audioEngine->setAudioMix(left, right);
-}
-
-void AudioController::setSubMuted(bool muted) {
-    if (m_audioEngine)
-        m_audioEngine->setSubMuted(muted);
 }
 
 void AudioController::setMicDevice(const QString &deviceId) {

@@ -643,6 +643,22 @@ void MainWindow::setupUi() {
         }
     });
 
+    // Clicking a receiver's MAIN / SUB name mutes it. AudioController keeps the level the slider
+    // holds, so unmuting restores it; the slider stays live while muted. Nothing is sent to the
+    // radio: this mutes what QK4 plays, not the K4's own audio, which other clients still hear.
+    connect(m_sideControlPanel, &SideControlPanel::mainMuteToggled, this, [this](bool muted) {
+        m_audioController->setMainMuted(muted);
+        if (m_tciController) {
+            m_tciController->audioLevelsChanged();
+        }
+    });
+    connect(m_sideControlPanel, &SideControlPanel::subMuteToggled, this, [this](bool muted) {
+        m_audioController->setSubMuted(muted);
+        if (m_tciController) {
+            m_tciController->audioLevelsChanged();
+        }
+    });
+
     // Connect sub volume slider to AudioController (Sub RX / VFO B)
     // In BAL mode, this slider controls L/R balance offset instead of sub volume
     connect(m_sideControlPanel, &SideControlPanel::subVolumeChanged, this, [this](int value) {

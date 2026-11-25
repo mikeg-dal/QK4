@@ -208,6 +208,7 @@ void SideControlPanel::setupUi() {
 
     m_volumeSlider = createVolumeSlider(RadioSettings::instance()->volume(), K4Styles::Colors::VfoACyan);
     layout->addLayout(createVolumeRow(m_volumeLabel, m_volumeSlider));
+    m_volumeMutedBadge = createMutedBadge(m_volumeSlider);
 
     connect(m_volumeSlider, &QSlider::valueChanged, this, &SideControlPanel::volumeChanged);
 
@@ -216,8 +217,17 @@ void SideControlPanel::setupUi() {
 
     m_subVolumeSlider = createVolumeSlider(RadioSettings::instance()->subVolume(), K4Styles::Colors::VfoBGreen);
     layout->addLayout(createVolumeRow(m_subVolumeLabel, m_subVolumeSlider));
+    m_subVolumeMutedBadge = createMutedBadge(m_subVolumeSlider);
 
     connect(m_subVolumeSlider, &QSlider::valueChanged, this, &SideControlPanel::subVolumeChanged);
+
+    // The receiver names are the mute keys. An event filter rather than a QPushButton: these are
+    // measured and width-matched as labels above, and a button would bring its own frame and
+    // padding into a row whose geometry the layout tests pin.
+    for (QLabel *name : {m_volumeLabel, m_subVolumeLabel}) {
+        name->setCursor(Qt::PointingHandCursor);
+        name->installEventFilter(this);
+    }
 
     // WHY stretch 1: the status group sits on the panel's bottom edge, level with the bottom of the
     // panadapter. A factor above 0 gives this spacer every spare pixel before any item, whatever
@@ -704,6 +714,46 @@ QSlider *SideControlPanel::createVolumeSlider(int value, const char *color) {
     return slider;
 }
 
+QLabel *SideControlPanel::createMutedBadge(QSlider *slider) {
+    // A child of the slider, centred by a layout so it tracks every resize without a resizeEvent.
+    // Transparent to the mouse: the slider underneath stays draggable while muted, so the operator
+    // can set the level they want to come back to.
+    auto *badge = new QLabel(QStringLiteral("MUTED"), slider);
+    badge->setAttribute(Qt::WA_TransparentForMouseEvents);
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setStyleSheet(QString("QLabel {"
+                                 "  color: %1;"
+                                 "  background: %2;"
+                                 "  font-size: %3px;"
+                                 "  font-weight: bold;"
+                                 "  border-radius: %4px;"
+                                 "  padding: 0px 6px;"
+                                 "}")
+                             .arg(K4Styles::Colors::TextPrimary)
+                             .arg(K4Styles::Colors::PopupBackground)
+                             .arg(K4Styles::Dimensions::FontSizeCaption)
+                             .arg(K4Styles::Dimensions::BorderRadius));
+    auto *overlay = new QHBoxLayout(slider);
+    overlay->setContentsMargins(0, 0, 0, 0);
+    overlay->addWidget(badge, 0, Qt::AlignCenter);
+    badge->hide();
+    return badge;
+}
+
+void SideControlPanel::setReceiverMuted(bool sub, bool muted) {
+    bool &flag = sub ? m_subMuted : m_mainMuted;
+    if (flag == muted)
+        return;
+    flag = muted;
+    QLabel *badge = sub ? m_subVolumeMutedBadge : m_volumeMutedBadge;
+    if (badge)
+        badge->setVisible(muted);
+    if (sub)
+        emit subMuteToggled(muted);
+    else
+        emit mainMuteToggled(muted);
+}
+
 QHBoxLayout *SideControlPanel::createVolumeRow(QLabel *name, QSlider *slider) {
     auto *row = new QHBoxLayout();
     row->setContentsMargins(0, 0, 0, 0);
@@ -754,6 +804,18 @@ void SideControlPanel::updateBalance(int mode, int offset) {
 }
 
 bool SideControlPanel::eventFilter(QObject *watched, QEvent *event) {
+    // A left click on a receiver's name toggles its mute.
+    if (event->type() == QEvent::MouseButtonPress && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+        if (watched == m_volumeLabel) {
+            setReceiverMuted(/*sub=*/false, !m_mainMuted);
+            return true;
+        }
+        if (watched == m_subVolumeLabel) {
+            setReceiverMuted(/*sub=*/true, !m_subMuted);
+            return true;
+        }
+    }
+
     // Handle right-click on TX function buttons
     if (event->type() == QEvent::MouseButtonPress) {
         auto *mouseEvent = static_cast<QMouseEvent *>(event);

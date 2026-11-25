@@ -122,6 +122,11 @@ signals:
     void volumeChanged(int value);    // 0-100 (Main RX / VFO A)
     void subVolumeChanged(int value); // 0-100 (Sub RX / VFO B)
 
+    // Clicking the MAIN / SUB name beside a volume slider mutes that receiver and shows a MUTED
+    // badge over its slider; clicking again unmutes. The slider keeps its value throughout.
+    void mainMuteToggled(bool muted);
+    void subMuteToggled(bool muted);
+
     // SW command signals (MON/NORM/BAL buttons)
     void swCommandRequested(const QString &command);
 
@@ -165,6 +170,10 @@ private:
     QLabel *createVolumeName(const QString &text, const char *color);
     QSlider *createVolumeSlider(int value, const char *color);
     static QHBoxLayout *createVolumeRow(QLabel *name, QSlider *slider);
+    // The MUTED badge centred over @p slider, hidden until that receiver is muted.
+    static QLabel *createMutedBadge(QSlider *slider);
+    // Apply mute to one receiver: badge, flag and the signal that carries it to AudioController.
+    void setReceiverMuted(bool sub, bool muted);
     QWidget *createTxFunctionButton(const QString &mainText, const QString &subText, QPushButton *&btnOut);
 
     // Track mode (CW shows WPM/PTCH, Voice shows MIC/CMP)
@@ -225,6 +234,12 @@ private:
     QLabel *m_volumeLabel;
     QSlider *m_subVolumeSlider;
     QLabel *m_subVolumeLabel;
+    // MUTED badges, children of their slider and transparent to the mouse so the slider stays
+    // draggable underneath. Hidden unless that receiver is muted.
+    QLabel *m_volumeMutedBadge = nullptr;
+    QLabel *m_subVolumeMutedBadge = nullptr;
+    bool m_mainMuted = false;
+    bool m_subMuted = false;
 
     // MON/NORM/BAL buttons (above volume sliders)
     QPushButton *m_monBtn;
