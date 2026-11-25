@@ -308,12 +308,11 @@ void BandPopupWidget::updateButtonStyles() {
 }
 
 void BandPopupWidget::setSelectedBand(const QString &bandName) {
-    if (m_buttonMap.contains(bandName)) {
-        m_selectedBand = bandName;
-        updateButtonStyles();
-    } else {
-        m_selectedBand = bandName;
-    }
+    m_selectedBand = bandName;
+    // WHY unconditionally: this used to repaint only when the band had a key on the page being
+    // shown. Landing on a transverter band from the HF page therefore left the previous band's key
+    // lit - the popup went on claiming 20 m while the radio sat on XVTR5.
+    updateButtonStyles();
 }
 
 void BandPopupWidget::onBandButtonClicked() {
@@ -368,8 +367,17 @@ QString BandPopupWidget::getBandName(int bandNum) const {
 }
 
 void BandPopupWidget::setSelectedBandByNumber(int bandNum) {
-    QString bandName = getBandName(bandNum);
-    if (!bandName.isEmpty()) {
-        setSelectedBand(bandName);
+    const QString bandName = getBandName(bandNum);
+    if (bandName.isEmpty())
+        return;
+
+    // Open on the page that can show this band, so pressing BAND on a transverter band shows the
+    // transverter keys with the current one lit rather than the HF keys with nothing lit.
+    // Only while closed: yanking the page out from under someone who is browsing MEM, GEN or the
+    // transverter keys would be worse than leaving their page alone.
+    if (!isVisible()) {
+        const Mode wanted = RadioUtils::isXvtrBandNumber(bandNum) ? Mode::Xvtr : Mode::Hf;
+        setMode(wanted); // no-op when already there
     }
+    setSelectedBand(bandName);
 }

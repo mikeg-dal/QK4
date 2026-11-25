@@ -7,6 +7,7 @@
 // the same way.
 
 #include "models/memorymodel.h"
+#include "models/radiostate.h"
 #include "ui/overlays/memoryoverlay.h"
 #include "ui/popups/bandpopupwidget.h"
 
@@ -206,6 +207,34 @@ private slots:
         first->click();
         QCOMPARE(recalls.count(), 1);
         QCOMPARE(recalls.at(0).at(0).toInt(), 1);
+    }
+
+    void theBandPopupOpensOnThePageHoldingTheCurrentBand() {
+        // On a transverter band the popup showed the HF keys with the PREVIOUS band still lit -
+        // it claimed 20 m while the radio sat on XVTR5 (BN15).
+        RadioState radio;
+        radio.parseCATCommand("XVN5;");
+        radio.parseCATCommand("XVM1;");
+        radio.parseCATCommand("XVR10368;");
+        BandPopupWidget popup(&radio);
+
+        popup.setSelectedBandByNumber(5); // 20 m
+        QCoreApplication::processEvents();
+        QPushButton *twenty = buttonWithText(&popup, "14");
+        QVERIFY(twenty && twenty->property("selected").toBool());
+
+        popup.setSelectedBandByNumber(15); // XVTR5
+        QCoreApplication::processEvents();
+        // The transverter page is showing, its cell is lit, and 20 m is not on screen claiming to
+        // be the current band.
+        QVERIFY(!buttonWithText(&popup, "14"));
+        QPushButton *xvtr5 = buttonWithText(&popup, "XVTR5\n10368");
+        QVERIFY(xvtr5 && xvtr5->property("selected").toBool());
+
+        popup.setSelectedBandByNumber(5); // back to an HF band
+        QCoreApplication::processEvents();
+        twenty = buttonWithText(&popup, "14");
+        QVERIFY(twenty && twenty->property("selected").toBool());
     }
 
     void genPageHoldsWhatIsOutsideTheHamBands() {
