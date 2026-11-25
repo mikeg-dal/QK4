@@ -170,8 +170,6 @@ private:
     QLabel *createVolumeName(const QString &text, const char *color);
     QSlider *createVolumeSlider(int value, const char *color);
     static QHBoxLayout *createVolumeRow(QLabel *name, QSlider *slider);
-    // The MUTED badge centred over @p slider, hidden until that receiver is muted.
-    static QLabel *createMutedBadge(QSlider *slider);
     // Apply mute to one receiver: badge, flag and the signal that carries it to AudioController.
     void setReceiverMuted(bool sub, bool muted);
     QWidget *createTxFunctionButton(const QString &mainText, const QString &subText, QPushButton *&btnOut);
@@ -234,10 +232,6 @@ private:
     QLabel *m_volumeLabel;
     QSlider *m_subVolumeSlider;
     QLabel *m_subVolumeLabel;
-    // MUTED badges, children of their slider and transparent to the mouse so the slider stays
-    // draggable underneath. Hidden unless that receiver is muted.
-    QLabel *m_volumeMutedBadge = nullptr;
-    QLabel *m_subVolumeMutedBadge = nullptr;
     bool m_mainMuted = false;
     bool m_subMuted = false;
 

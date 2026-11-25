@@ -377,18 +377,14 @@ private slots:
         }
         QVERIFY(mainName && subName);
 
-        // The badge starts hidden and is a child of the slider, not of the panel.
-        QList<QLabel *> badges;
-        for (QLabel *l : panel.findChildren<QLabel *>())
-            if (l->text() == "MUTED")
-                badges.append(l);
-        QCOMPARE(badges.size(), 2);
-        for (QLabel *b : badges) {
-            QVERIFY(!b->isVisible());
-            QVERIFY(qobject_cast<QSlider *>(b->parentWidget()));
-            // The slider underneath stays usable while the badge is over it.
-            QVERIFY(b->testAttribute(Qt::WA_TransparentForMouseEvents));
-        }
+        // Nothing is drawn over the sliders: the name goes red and its slider greys out, both
+        // through the muted style flag.
+        QSlider *mainSlider = nullptr;
+        for (QSlider *s : panel.findChildren<QSlider *>())
+            if (!mainSlider)
+                mainSlider = s;
+        QVERIFY(mainSlider);
+        QVERIFY(panel.findChildren<QLabel *>().isEmpty() || !mainName->property(K4Styles::MutedProperty).toBool());
 
         const int volumeBefore = panel.volume();
         QSignalSpy mainSpy(&panel, &SideControlPanel::mainMuteToggled);
@@ -399,11 +395,17 @@ private slots:
         QCOMPARE(mainSpy.at(0).at(0).toBool(), true);
         QCOMPARE(subSpy.count(), 0); // one receiver at a time
         QCOMPARE(panel.volume(), volumeBefore);
+        QVERIFY(mainName->property(K4Styles::MutedProperty).toBool());
+        QVERIFY(mainSlider->property(K4Styles::MutedProperty).toBool());
+        QVERIFY(!subName->property(K4Styles::MutedProperty).toBool());
+        QVERIFY(mainSlider->isEnabled()); // still draggable while muted
 
         QTest::mouseClick(mainName, Qt::LeftButton);
         QCOMPARE(mainSpy.count(), 2);
         QCOMPARE(mainSpy.at(1).at(0).toBool(), false);
         QCOMPARE(panel.volume(), volumeBefore);
+        QVERIFY(!mainName->property(K4Styles::MutedProperty).toBool());
+        QVERIFY(!mainSlider->property(K4Styles::MutedProperty).toBool());
 
         QTest::mouseClick(subName, Qt::LeftButton);
         QCOMPARE(subSpy.count(), 1);

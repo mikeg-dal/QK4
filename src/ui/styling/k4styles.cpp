@@ -361,6 +361,17 @@ QString sliderHorizontal(const QString &grooveColor, const QString &handleColor)
         .arg(Dimensions::SliderHandleHeight);
 }
 
+QString volumeSlider(const QString &grooveColor, const QString &handleColor) {
+    // WHY grey rather than a badge over the groove: text laid over a slider reads as a broken
+    // control. Greying the fill and the handle says "not live" without hiding the position the
+    // operator will come back to.
+    return sliderHorizontal(grooveColor, handleColor) + QString("%1::handle:horizontal { background: %3; }"
+                                                                "%2::sub-page:horizontal { background: %3; }")
+                                                            .arg(whenFlag("QSlider", MutedProperty),
+                                                                 whenFlag("QSlider", MutedProperty),
+                                                                 QLatin1StringView(Colors::TextSecondary));
+}
+
 QString checkboxButton(int size) {
     // Checkbox shows ✓ when checked, empty when unchecked
     // Uses dark gradient unchecked, same dark gradient + white checkmark when checked

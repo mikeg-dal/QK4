@@ -45,6 +45,7 @@ QString popupButton();
 // which re-apply the sheet as Qt requires after a property change.
 inline constexpr char SelectedProperty[] = "selected"; ///< lit: the state this key or label shows is on
 inline constexpr char DimmedProperty[] = "dimmed";     ///< greyed: nothing to show, or it cannot act now
+inline constexpr char MutedProperty[] = "muted";       ///< this receiver is muted: nothing to hear
 inline constexpr char ErrorProperty[] = "error";       ///< the value is invalid or the thing is missing
 inline constexpr char StateProperty[] = "state";       ///< one of several named looks: `[state="tx"]`
 
@@ -107,6 +108,10 @@ QString menuBarButtonSmall();
  * @param handleColor Color for the handle and filled portion
  */
 QString sliderHorizontal(const QString &grooveColor, const QString &handleColor);
+
+/// A volume slider: sliderHorizontal() plus the greyed look its `muted` flag selects, so a muted
+/// receiver's fill and handle read as not-live without anything being drawn over the control.
+QString volumeSlider(const QString &grooveColor, const QString &handleColor);
 
 /**
  * @brief Checkbox-style toggle button stylesheet.

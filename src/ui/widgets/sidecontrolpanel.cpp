@@ -208,7 +208,6 @@ void SideControlPanel::setupUi() {
 
     m_volumeSlider = createVolumeSlider(RadioSettings::instance()->volume(), K4Styles::Colors::VfoACyan);
     layout->addLayout(createVolumeRow(m_volumeLabel, m_volumeSlider));
-    m_volumeMutedBadge = createMutedBadge(m_volumeSlider);
 
     connect(m_volumeSlider, &QSlider::valueChanged, this, &SideControlPanel::volumeChanged);
 
@@ -217,7 +216,6 @@ void SideControlPanel::setupUi() {
 
     m_subVolumeSlider = createVolumeSlider(RadioSettings::instance()->subVolume(), K4Styles::Colors::VfoBGreen);
     layout->addLayout(createVolumeRow(m_subVolumeLabel, m_subVolumeSlider));
-    m_subVolumeMutedBadge = createMutedBadge(m_subVolumeSlider);
 
     connect(m_subVolumeSlider, &QSlider::valueChanged, this, &SideControlPanel::subVolumeChanged);
 
@@ -698,9 +696,13 @@ void SideControlPanel::setServerManagerActive(bool active) {
 
 QLabel *SideControlPanel::createVolumeName(const QString &text, const char *color) {
     auto *label = new QLabel(text, this);
-    label->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                             .arg(color)
-                             .arg(K4Styles::Dimensions::FontSizeCaption));
+    // The name is the mute key, so it is also the mute indicator: red while that receiver is muted.
+    label->setStyleSheet(
+        QString("QLabel { color: %1; font-size: %2px; font-weight: bold; }"
+                "%3 { color: %4; }")
+            .arg(QLatin1StringView(color))
+            .arg(K4Styles::Dimensions::FontSizeCaption)
+            .arg(K4Styles::whenFlag("QLabel", K4Styles::MutedProperty), QLatin1StringView(K4Styles::Colors::TextRed)));
     label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     return label;
 }
@@ -710,34 +712,8 @@ QSlider *SideControlPanel::createVolumeSlider(int value, const char *color) {
     slider->setRange(0, 100);
     slider->setValue(value); // Restored from settings (default 45%)
     slider->setMinimumHeight(K4Styles::Dimensions::SliderMinHeight);
-    slider->setStyleSheet(K4Styles::sliderHorizontal(K4Styles::Colors::DarkBackground, color));
+    slider->setStyleSheet(K4Styles::volumeSlider(K4Styles::Colors::DarkBackground, color));
     return slider;
-}
-
-QLabel *SideControlPanel::createMutedBadge(QSlider *slider) {
-    // A child of the slider, centred by a layout so it tracks every resize without a resizeEvent.
-    // Transparent to the mouse: the slider underneath stays draggable while muted, so the operator
-    // can set the level they want to come back to.
-    auto *badge = new QLabel(QStringLiteral("MUTED"), slider);
-    badge->setAttribute(Qt::WA_TransparentForMouseEvents);
-    badge->setAlignment(Qt::AlignCenter);
-    badge->setStyleSheet(QString("QLabel {"
-                                 "  color: %1;"
-                                 "  background: %2;"
-                                 "  font-size: %3px;"
-                                 "  font-weight: bold;"
-                                 "  border-radius: %4px;"
-                                 "  padding: 0px 6px;"
-                                 "}")
-                             .arg(K4Styles::Colors::TextPrimary)
-                             .arg(K4Styles::Colors::PopupBackground)
-                             .arg(K4Styles::Dimensions::FontSizeCaption)
-                             .arg(K4Styles::Dimensions::BorderRadius));
-    auto *overlay = new QHBoxLayout(slider);
-    overlay->setContentsMargins(0, 0, 0, 0);
-    overlay->addWidget(badge, 0, Qt::AlignCenter);
-    badge->hide();
-    return badge;
 }
 
 void SideControlPanel::setReceiverMuted(bool sub, bool muted) {
@@ -745,9 +721,8 @@ void SideControlPanel::setReceiverMuted(bool sub, bool muted) {
     if (flag == muted)
         return;
     flag = muted;
-    QLabel *badge = sub ? m_subVolumeMutedBadge : m_volumeMutedBadge;
-    if (badge)
-        badge->setVisible(muted);
+    K4Styles::setStyleFlag(sub ? m_subVolumeLabel : m_volumeLabel, K4Styles::MutedProperty, muted);
+    K4Styles::setStyleFlag(sub ? m_subVolumeSlider : m_volumeSlider, K4Styles::MutedProperty, muted);
     if (sub)
         emit subMuteToggled(muted);
     else
