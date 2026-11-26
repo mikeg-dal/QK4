@@ -743,9 +743,15 @@ void TestWaterfallGeometry::scrollPhaseClosesOverTheRowInterval() {
     QCOMPARE(scrollPhaseFor(1, kStored, msPerRow, msPerRow), 0.0f);
     QCOMPARE(scrollPhaseFor(1, kStored, msPerRow * 4.0, msPerRow), 0.0f);
 
-    // Several rows at once (a burst after a stall) travel together, never more than they advanced.
-    QCOMPARE(scrollPhaseFor(3, kStored, 0.0, msPerRow), -3.0f / kStored);
-    QCOMPARE(scrollPhaseFor(3, kStored, msPerRow * 3.0, msPerRow), 0.0f);
+    // Several rows at once travel together, but never further back than the slack the shader
+    // reserves. Bench 2026-11-26: the caller accumulated a row per frame while restarting the clock,
+    // so the residual grew without bound, dragged V through the ring, and the tap clamp pinned every
+    // row to one - the waterfall drew as vertical streaks of a single spectrum. The cap means no
+    // caller can do that again.
+    QCOMPARE(scrollPhaseFor(2, kStored, 0.0, msPerRow), -2.0f / kStored);
+    QCOMPARE(scrollPhaseFor(2, kStored, msPerRow * 2.0, msPerRow), 0.0f);
+    for (const int runaway : {3, 17, 400, 100000})
+        QCOMPARE(scrollPhaseFor(runaway, kStored, 0.0, msPerRow), -float(MaxScrollLagRows) / kStored);
 
     // Nothing is animated against a guess: before a rate is measured, or with no advance, the
     // picture simply sits where the ring puts it.
@@ -910,7 +916,7 @@ void TestWaterfallGeometry::everyDisplayAndSplitSweep() {
                         QCOMPARE(scrollPhaseFor(1, kStored, msPerRow, msPerRow), 0.0f);
                         for (double ms = 0.0; ms < msPerRow; ms += msPerRow / 8.0) {
                             const float phase = scrollPhaseFor(1, kStored, ms, msPerRow);
-                            QVERIFY2(phase <= 0.0f && phase >= -1.0f / kStored, qPrintable(at));
+                            QVERIFY2(phase <= 0.0f && phase >= -float(MaxScrollLagRows) / kStored, qPrintable(at));
                         }
                     }
                 }

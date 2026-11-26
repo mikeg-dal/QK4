@@ -950,7 +950,15 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
             // The ring is about to jump a whole row. Start the clock that closes the picture's
             // remaining travel to zero over the row interval, so the jump is spread across the
             // display refreshes in between instead of landing in one lurch.
-            ++m_scrollRowsAdvanced;
+            //
+            // WHY this is set and not incremented: the clock restarts here too, so the residual
+            // always describes the travel of THIS advance, measured from the moment it happened.
+            // Incrementing accumulated a row per frame while the clock kept resetting, so the
+            // residual grew without bound, dragged V back through the whole ring, and the shader's
+            // tap clamp pinned every row to one - the waterfall became vertical streaks of a single
+            // spectrum (bench, 2026-11-26). At most one row is committed per render, so this is
+            // one advance by construction.
+            m_scrollRowsAdvanced = 1;
             m_scrollClock.restart();
             QRhiTextureSubresourceUploadDescription rowUpload(
                 m_waterfallData.constData() + static_cast<qsizetype>(m_waterfallWriteRow) * m_textureWidth,
@@ -1611,11 +1619,15 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     // against the panel, not against the framebuffer. Judging it against the old whole-number
     // devicePxPerRow reported "1:1 physical" in a fractional scaled mode where it was really 0.64 of
     // a panel pixel per row - the one case where the verdict mattered most.
-    const float perPhysical =
-        m_framebufferPerPanel > 0.0 ? pxPerRow / static_cast<float>(m_framebufferPerPanel) : pxPerRow;
-    const char *verdict = perPhysical <= 1.05f ? "1:1 panel"
-                          : perPhysical < 2.0f ? "above 1:1, clamped by stored rows"
-                                               : "well above 1:1, blur returning";
+    // Judged against what the current step ASKED for, not against one panel pixel: at SPEED 1/5 on
+    // a 2x panel a row is meant to be ten framebuffer pixels tall, and calling that "blur
+    // returning" reported the setting working as a fault.
+    const float wantedPxPerRow = static_cast<float>(m_framebufferPerPanel > 0.0 ? m_framebufferPerPanel : 1.0) *
+                                 (std::max)(1.0f, m_pixelRowsPerRow);
+    const float perPhysical = wantedPxPerRow > 0.0f ? pxPerRow / wantedPxPerRow : pxPerRow;
+    const char *verdict = perPhysical <= 1.05f ? "as asked"
+                          : perPhysical < 2.0f ? "above it, clamped by stored rows"
+                                               : "well above it, blur returning";
 
     // What limits how smoothly the picture moves at this step. The sub-row scroll spreads each row
     // advance across the display's refreshes, so drawing is no longer the constraint - but it cannot

@@ -164,6 +164,12 @@ int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr,
 // across every refresh in between, and the picture moves instead of lurching. Returns 0 before a
 // rate has been measured and during a pause, where animating against a guess would be worse than
 // not animating at all.
+//
+// Capped at MaxScrollLagRows because that is all the shader reserves below the oldest visible row.
+// A larger residual drags V past what the tap clamp allows, which pins every tap to one row and
+// draws the whole waterfall as vertical streaks of a single spectrum - seen on the bench on
+// 2026-11-26 when the caller accumulated a row per frame instead of replacing it.
+inline constexpr int MaxScrollLagRows = 2;
 float scrollPhaseFor(int rowsAdvanced, int storedRows, double elapsedMs, double msPerRow);
 
 // Folds one frame's row into the row being built: each byte the larger of the two, so the brightest

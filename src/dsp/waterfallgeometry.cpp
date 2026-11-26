@@ -144,8 +144,9 @@ int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr,
 float scrollPhaseFor(int rowsAdvanced, int storedRows, double elapsedMs, double msPerRow) {
     if (storedRows <= 0 || rowsAdvanced <= 0 || msPerRow <= 0.0)
         return 0.0f;
-    const double travelled = std::clamp(elapsedMs / msPerRow, 0.0, static_cast<double>(rowsAdvanced));
-    const double remaining = static_cast<double>(rowsAdvanced) - travelled;
+    const double rows = (std::min)(rowsAdvanced, MaxScrollLagRows);
+    const double travelled = std::clamp(elapsedMs / msPerRow, 0.0, rows);
+    const double remaining = rows - travelled;
     // Negative, like rowShiftFor: the ring has already advanced, so V has to be pulled back toward
     // the older rows and released to zero as the interval runs out.
     return static_cast<float>(-remaining / static_cast<double>(storedRows));
