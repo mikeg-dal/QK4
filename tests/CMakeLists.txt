@@ -362,6 +362,10 @@ add_executable(test_memorymodel test_memorymodel.cpp
 target_include_directories(test_memorymodel PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_memorymodel Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME MemoryModelTests COMMAND test_memorymodel)
+# Links Qt6::Gui, so it needs a platform plugin. On a developer's Mac it silently finds cocoa and
+# passes; CI's Linux container has no display and the test aborts with "no Qt platform plugin could
+# be initialized". Every other Gui-linking test here carries this line.
+set_tests_properties(MemoryModelTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # Menu overlay across disconnect/reconnect (#124) — the overlay against a real MenuModel, offscreen.
 add_executable(test_menuoverlay test_menuoverlay.cpp
