@@ -73,7 +73,12 @@ std::optional<int> nextSquelch(int current, int steps);
 // PC power limits (Programmer's Reference rev. D12): "L = low power (QRP, 0.1-10.0 W) ... H = high
 // power (QRO, 1-110 W) ... X = milliwatt range (for XVTRs, 0.1-10.0 mW)". QRP and XVTR are in tenths
 // of their unit, as the PC command carries them; QRO is in whole watts.
-constexpr int RF_POWER_TENTHS_MIN = 1;
+//
+// WHY the floor is 0 and not D12's 0.1: the radio holds and reports 0.0 - Mike's K4 sits at PC000
+// on the band it is on - so 0.1 was our reading of the manual keeping the operator off a setting
+// their radio has. The QRO floor is untouched and unreachable anyway: stepping down past 10 W
+// crosses into QRP tenths before it could be hit.
+constexpr int RF_POWER_TENTHS_MIN = 0;
 constexpr int RF_POWER_TENTHS_MAX = 100;
 constexpr int RF_POWER_QRO_MIN_W = 1;
 constexpr int RF_POWER_QRO_MAX_W = 110;

@@ -583,22 +583,37 @@ private slots:
         QVERIFY(next);
         QCOMPARE(next->value, 9.8);
         QCOMPARE(next->range, LevelsState::PowerRange::Qrp);
-        QVERIFY(!RadioUtils::nextRfPower(0.1, LevelsState::PowerRange::Qrp, -1));
+        // Down to zero, and no further: the radio holds PC000, so 0.1 is not the bottom.
+        const auto zero = RadioUtils::nextRfPower(0.1, LevelsState::PowerRange::Qrp, -1);
+        QVERIFY(zero);
+        QCOMPARE(zero->value, 0.0);
+        QCOMPARE(zero->range, LevelsState::PowerRange::Qrp);
+        QVERIFY(!RadioUtils::nextRfPower(0.0, LevelsState::PowerRange::Qrp, -1));
+        const auto backUp = RadioUtils::nextRfPower(0.0, LevelsState::PowerRange::Qrp, 1);
+        QVERIFY(backUp);
+        QCOMPARE(backUp->value, 0.1);
+    }
+    void testRfPower_xvtrReachesZero() {
+        const auto zero = RadioUtils::nextRfPower(0.1, LevelsState::PowerRange::Xvtr, -1);
+        QVERIFY(zero);
+        QCOMPARE(zero->value, 0.0);
+        QCOMPARE(zero->range, LevelsState::PowerRange::Xvtr);
+        QVERIFY(!RadioUtils::nextRfPower(0.0, LevelsState::PowerRange::Xvtr, -1));
     }
     void testRfPower_qroTopStops() { QVERIFY(!RadioUtils::nextRfPower(110.0, LevelsState::PowerRange::Qro, 1)); }
     void testRfPower_unknownSendsNothing() {
         QVERIFY(!RadioUtils::nextRfPower(-1.0, LevelsState::PowerRange::Qro, 1));
         QVERIFY(!RadioUtils::nextRfPower(-1.0, LevelsState::PowerRange::Qrp, -1));
     }
-    // Sweep: from every XVTR setting, any tick stays XVTR (mW) and inside 0.1-10.0 mW.
+    // Sweep: from every XVTR setting, any tick stays XVTR (mW) and inside 0.0-10.0 mW.
     void testRfPower_xvtrNeverLeavesXvtr() {
-        for (int tenths = 1; tenths <= 100; ++tenths) {
+        for (int tenths = 0; tenths <= 100; ++tenths) {
             for (int steps = -120; steps <= 120; ++steps) {
                 const auto next = RadioUtils::nextRfPower(tenths / 10.0, LevelsState::PowerRange::Xvtr, steps);
                 if (!next)
                     continue;
                 QCOMPARE(next->range, LevelsState::PowerRange::Xvtr);
-                QVERIFY(next->value >= 0.1 - 1e-9 && next->value <= 10.0 + 1e-9);
+                QVERIFY(next->value >= -1e-9 && next->value <= 10.0 + 1e-9);
             }
         }
     }
@@ -611,7 +626,8 @@ private slots:
             R range;
         };
         QVector<Start> starts;
-        for (int t = 1; t <= 100; ++t)
+        // From 0.0: the radio's own front panel goes there, so QK4's stepping has to reach it.
+        for (int t = 0; t <= 100; ++t)
             starts.append({t / 10.0, R::Qrp});
         for (int w = 1; w <= 110; ++w)
             starts.append({static_cast<double>(w), R::Qro});
@@ -623,7 +639,7 @@ private slots:
                 if (next->range == R::Qrp) {
                     const double tenths = next->value * 10.0;
                     QCOMPARE(tenths, static_cast<double>(qRound(tenths)));
-                    QVERIFY(tenths >= 1.0 && tenths <= 100.0);
+                    QVERIFY(tenths >= 0.0 && tenths <= 100.0);
                 } else {
                     QCOMPARE(next->range, R::Qro);
                     QCOMPARE(next->value, static_cast<double>(qRound(next->value)));
