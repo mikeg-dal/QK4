@@ -18,21 +18,24 @@ FeatureMenuBar::FeatureMenuBar(QWidget *parent) : K4PopupBase(parent) {
 }
 
 void FeatureMenuBar::setupUi() {
-    auto *layout = new QHBoxLayout(this);
-    // Card = the keys plus a thin frame; the base's shadow margin surrounds it.
-    const int sm = K4Styles::Dimensions::ShadowMargin;
-    layout->setContentsMargins(sm + CardPaddingH, sm + CardPaddingV, sm + CardPaddingH, sm + CardPaddingV);
+    // Every key is a child of the opaque panel, not of the popup: the value key's sheet is
+    // `background: transparent`, and over a popup that never erases its buffer that left the stray
+    // line under the value. See K4PopupBase::contentPanel().
+    QWidget *panel = contentPanel();
+    auto *layout = new QHBoxLayout(panel);
+    // Card = the keys plus a thin frame; the panel already starts inside the base's shadow margin.
+    layout->setContentsMargins(CardPaddingH, CardPaddingV, CardPaddingH, CardPaddingV);
     layout->setSpacing(RowSpacing);
 
     // Title — non-interactive label across all features.
-    m_titleLabel = new QPushButton("ATTENUATOR", this);
+    m_titleLabel = new QPushButton("ATTENUATOR", panel);
     m_titleLabel->setFixedSize(140, K4Styles::Dimensions::ButtonHeightMedium);
     m_titleLabel->setFocusPolicy(Qt::NoFocus);
     m_titleLabel->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // OFF/ON toggle button — use menuBarButtonSmall (no vertical padding, 12px font)
     // instead of menuBarButton (6px padding, 11px font) so text baseline matches labels
-    m_toggleBtn = new QPushButton("OFF", this);
+    m_toggleBtn = new QPushButton("OFF", panel);
     m_toggleBtn->setMinimumWidth(60);
     m_toggleBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
     m_toggleBtn->setCursor(Qt::PointingHandCursor);
@@ -41,7 +44,7 @@ void FeatureMenuBar::setupUi() {
     // NR engine toggle — only shown for NrAdjust. Tapping flips LMS <-> SSNR. WHY "SSNR" and not
     // "NR+": that is what the K4's own NR ADJUST group calls the engine. NR+ is the name of the
     // VFO indicator (VFOWidget::setNR), which the radio also shows that way.
-    m_nrEngineBtn = new QPushButton("LMS", this);
+    m_nrEngineBtn = new QPushButton("LMS", panel);
     m_nrEngineBtn->setMinimumWidth(60);
     m_nrEngineBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
     m_nrEngineBtn->setCursor(Qt::PointingHandCursor);
@@ -49,7 +52,7 @@ void FeatureMenuBar::setupUi() {
     m_nrEngineBtn->hide();
 
     // Extra button (only shown for NB LEVEL - "FILTER NONE/NARROW/WIDE")
-    m_extraBtn = new QPushButton(nbFilterText(m_nbFilter), this);
+    m_extraBtn = new QPushButton(nbFilterText(m_nbFilter), panel);
     m_extraBtn->setMinimumWidth(90);
     m_extraBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
     m_extraBtn->setCursor(Qt::PointingHandCursor);
@@ -57,7 +60,7 @@ void FeatureMenuBar::setupUi() {
     m_extraBtn->hide(); // Hidden by default
 
     // Value display — non-interactive QPushButton so text rendering matches buttons
-    m_valueLabel = new QPushButton("0", this);
+    m_valueLabel = new QPushButton("0", panel);
     m_valueLabel->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
     m_valueLabel->setMinimumWidth(80);
     // The one item that may grow: it absorbs the space a hidden RESET key leaves behind (fitToRow).
@@ -68,7 +71,7 @@ void FeatureMenuBar::setupUi() {
     // SSNR noise-floor reset — only shown for NrAdjust with SSNR selected. WHY after the value:
     // that is where the K4 puts it (NR ADJUST | ON | SSNR | n | RESET | - | +), and the bar mirrors
     // the radio's own control group.
-    m_resetBtn = new QPushButton("RESET", this);
+    m_resetBtn = new QPushButton("RESET", panel);
     m_resetBtn->setMinimumWidth(60);
     m_resetBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightMedium);
     m_resetBtn->setCursor(Qt::PointingHandCursor);
@@ -76,13 +79,13 @@ void FeatureMenuBar::setupUi() {
     m_resetBtn->hide();
 
     // Decrement button
-    m_decrementBtn = new QPushButton("-", this);
+    m_decrementBtn = new QPushButton("-", panel);
     m_decrementBtn->setFixedSize(K4Styles::Dimensions::ButtonHeightLarge, K4Styles::Dimensions::ButtonHeightMedium);
     m_decrementBtn->setCursor(Qt::PointingHandCursor);
     m_decrementBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
 
     // Increment button
-    m_incrementBtn = new QPushButton("+", this);
+    m_incrementBtn = new QPushButton("+", panel);
     m_incrementBtn->setFixedSize(K4Styles::Dimensions::ButtonHeightLarge, K4Styles::Dimensions::ButtonHeightMedium);
     m_incrementBtn->setCursor(Qt::PointingHandCursor);
     m_incrementBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
@@ -115,11 +118,12 @@ void FeatureMenuBar::showForFeature(Feature feature, QWidget *anchor) {
 }
 
 void FeatureMenuBar::fitToRow() {
-    // The row's own width — keys hidden for this feature drop out — without the shadow margins.
+    // The row's own width — keys hidden for this feature drop out. The row lives on the content
+    // panel, whose size hint is the card's, with no shadow margin in it.
     // invalidate() drops the row's cached size hint, which may still hold the last feature's keys.
-    const int sm = K4Styles::Dimensions::ShadowMargin;
-    layout()->invalidate();
-    int rowWidth = layout()->sizeHint().width();
+    QLayout *row = contentPanel()->layout();
+    row->invalidate();
+    int rowWidth = row->sizeHint().width();
 
     // WHY the RESET key is paid for even while hidden: switching LMS <-> SSNR would otherwise
     // resize the whole bar and shift every key sideways under the operator's cursor. The card keeps
@@ -131,13 +135,13 @@ void FeatureMenuBar::fitToRow() {
     // added: the layout's own arithmetic is the only thing that gets the spacing right.
     if (m_currentFeature == NrAdjust && m_resetBtn->isHidden()) {
         m_resetBtn->setVisible(true);
-        layout()->invalidate();
-        rowWidth = layout()->sizeHint().width();
+        row->invalidate();
+        rowWidth = row->sizeHint().width();
         m_resetBtn->hide();
-        layout()->invalidate();
+        row->invalidate();
     }
 
-    m_cardSize = QSize(rowWidth - 2 * sm, K4Styles::Dimensions::ButtonHeightMedium + 2 * CardPaddingV);
+    m_cardSize = QSize(rowWidth, K4Styles::Dimensions::ButtonHeightMedium + 2 * CardPaddingV);
     initPopup();
 }
 

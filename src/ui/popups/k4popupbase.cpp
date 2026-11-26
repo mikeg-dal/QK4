@@ -6,9 +6,54 @@
 #include <QHideEvent>
 #include <QKeyEvent>
 #include <QPainter>
+#include <QPainterPath>
+#include <QRegion>
+#include <QResizeEvent>
 #include <QScreen>
 
 #include <algorithm>
+#include <functional>
+#include <utility>
+
+namespace {
+
+// The opaque surface K4PopupBase::contentPanel() hands out. The WHY for its existence is on that
+// function; what matters here is the contract WA_OpaquePaintEvent carries - "the widget paints all
+// its pixels when it receives a paint event" - which paintEvent honours by filling the whole dirty
+// rect before anything else is drawn.
+class PopupContentPanel : public QWidget {
+public:
+    using PaintFn = std::function<void(QPainter &, const QRect &)>;
+
+    PopupContentPanel(QWidget *parent, PaintFn paint) : QWidget(parent), m_paint(std::move(paint)) {
+        setAttribute(Qt::WA_OpaquePaintEvent);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *event) override {
+        QPainter painter(this);
+        painter.fillRect(event->rect(), QColor(K4Styles::Colors::PopupBackground));
+        painter.setRenderHint(QPainter::Antialiasing);
+        m_paint(painter, rect());
+    }
+
+    void resizeEvent(QResizeEvent *event) override {
+        QWidget::resizeEvent(event);
+        // WHY a mask and not a rounded fill: WA_OpaquePaintEvent promises every pixel is painted, so
+        // the panel cannot leave its corners transparent by painting round. Masking them away instead
+        // leaves the card's own antialiased corner, drawn by K4PopupBase::paintEvent, showing through.
+        // Nothing repaints out there on its own, so the corners never go stale.
+        const int r = K4Styles::Dimensions::BorderRadiusLarge;
+        QPainterPath path;
+        path.addRoundedRect(QRectF(rect()), r, r);
+        setMask(QRegion(path.toFillPolygon().toPolygon()));
+    }
+
+private:
+    PaintFn m_paint;
+};
+
+} // namespace
 
 K4PopupBase::K4PopupBase(QWidget *parent)
     : QWidget(parent), m_dismissal(new PopupDismissal(
@@ -40,11 +85,31 @@ QMargins K4PopupBase::contentMargins() const {
     return QMargins(sm + cm, sm + cm, sm + cm, sm + cm);
 }
 
+QMargins K4PopupBase::panelMargins() {
+    const int cm = K4Styles::Dimensions::PopupContentMargin;
+    return QMargins(cm, cm, cm, cm);
+}
+
+QWidget *K4PopupBase::contentPanel() {
+    if (!m_panel) {
+        // The panel paints the popup's decorations itself, so paintContent() runs against an opaque
+        // surface rather than against whatever the buffer happened to hold.
+        m_panel = new PopupContentPanel(
+            this, [this](QPainter &painter, const QRect &panelRect) { paintContent(painter, panelRect); });
+    }
+    return m_panel;
+}
+
 void K4PopupBase::initPopup() {
     QSize cs = contentSize();
     int totalWidth = cs.width() + 2 * K4Styles::Dimensions::ShadowMargin;
     int totalHeight = cs.height() + 2 * K4Styles::Dimensions::ShadowMargin;
     setFixedSize(totalWidth, totalHeight);
+
+    // Re-applied on every fit: a popup whose content size follows its state (FeatureMenuBar) is sized
+    // again before each show, and the panel has to follow the card.
+    if (m_panel)
+        m_panel->setGeometry(contentRect());
 }
 
 QRect K4PopupBase::contentRect() const {
@@ -181,7 +246,10 @@ void K4PopupBase::paintEvent(QPaintEvent *event) {
     painter.setPen(Qt::NoPen);
     painter.drawRoundedRect(cr, K4Styles::Dimensions::BorderRadiusLarge, K4Styles::Dimensions::BorderRadiusLarge);
 
-    paintContent(painter, cr);
+    // With a panel the decorations belong to it, painted over an opaque surface; painting them here
+    // too would put them under it and leave them to go stale.
+    if (!m_panel)
+        paintContent(painter, cr);
 }
 
 void K4PopupBase::paintCompactRowFrame(QPainter &painter, const QRect &contentRect,
@@ -191,7 +259,9 @@ void K4PopupBase::paintCompactRowFrame(QPainter &painter, const QRect &contentRe
 
     painter.setBrush(K4Styles::buttonGradient(contentRect.top(), contentRect.bottom()));
     painter.setPen(QPen(K4Styles::borderColor(), 1));
-    painter.drawRoundedRect(contentRect, K4Styles::Dimensions::BorderRadiusLarge,
+    // WHY the half-pixel inset: a 1 px pen straddles the path, so on a rect that reaches the card's
+    // own edge - which the content panel's rect does - the outer half would be clipped away.
+    painter.drawRoundedRect(QRectF(contentRect).adjusted(0.5, 0.5, -0.5, -0.5), K4Styles::Dimensions::BorderRadiusLarge,
                             K4Styles::Dimensions::BorderRadiusLarge);
 
     const int lineTop = contentRect.top() + DelimiterInset;

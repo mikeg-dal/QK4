@@ -139,6 +139,33 @@ protected:
     void initPopup();
 
     /**
+     * @brief The opaque surface a popup's content widgets must be children of.
+     *
+     * WHY it exists: a popup is a Qt::Tool window carrying Qt::WA_TranslucentBackground, which the
+     * Qt docs say "causes WA_NoSystemBackground to be set"; QWidget::autoFillBackground's own entry
+     * says windows "are always filled with QPalette::Window, unless the WA_OpaquePaintEvent or
+     * WA_NoSystemBackground attributes are set". Nothing therefore erases a popup's buffer between
+     * repaints: every repaint composites onto the pixels already there, so a child that does not
+     * paint all of its own rect - a QLabel with no background, a QSlider whose sheet leaves margins
+     * either side of its groove - leaves a seam that builds up with each repaint. That is the faint
+     * rectangles seen around a changed EQ value and the line a slider handle swept (bench,
+     * 2026-11-25).
+     *
+     * Qt repaints a non-opaque child by first repainting the nearest opaque ancestor beneath it.
+     * This panel is that ancestor: it declares WA_OpaquePaintEvent and fills its whole rect, so
+     * whatever a child leaves unpainted is the panel's own colour and never stale pixels.
+     *
+     * Call it from the subclass constructor before building the UI, parent every content widget to
+     * it, put the layout on it, and use panelMargins() in place of contentMargins(). A subclass
+     * that never calls it is unaffected, and paints through paintContent() as before.
+     */
+    QWidget *contentPanel();
+
+    /// Layout margins inside contentPanel(): the content padding alone, since the panel already
+    /// starts inside the shadow margin. The counterpart of contentMargins() for a panelled popup.
+    static QMargins panelMargins();
+
+    /**
      * @brief Get the content rectangle (inside shadow margins).
      *
      * Useful for custom painting in subclasses.
@@ -152,6 +179,9 @@ protected:
      *
      * Called by paintEvent() after drawing the shadow and background.
      * Default implementation does nothing.
+     *
+     * With a contentPanel() the panel calls this, and @p contentRect is the panel's own rect; the
+     * content widgets are the panel's children, so their geometry is in that same space either way.
      *
      * @param painter The painter to use
      * @param contentRect The content rectangle (inside shadow margins)
@@ -179,6 +209,7 @@ protected:
 
 private:
     bool pressIsInAChildPopup(const QPoint &globalPos) const;
+    QWidget *m_panel = nullptr; // the opaque surface, when the subclass asked for one
     // Watches application-wide while shown (from showAboveWidget() to hide): closes the popup on a
     // press outside it, Escape, and the anchor or its window going away. Owns the reopen guard.
     PopupDismissal *m_dismissal;
