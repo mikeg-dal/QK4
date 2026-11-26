@@ -51,6 +51,7 @@ private slots:
     void fastStepsAreLogicalPixelsSoMotionMatchesAcrossDisplays();
     void fillStaysOneRowPerPhysicalPixelOnEveryDisplay();
     void speedLadderShortensForAShortWindow();
+    void aWithdrawnLevelStillDrawsAndIsNeverRewritten();
     void scrollPhaseClosesOverTheRowInterval();
     void aRowCountChangePreservesTheHistory();
     void fasterRowsAreWholePixelsTall();
@@ -717,6 +718,66 @@ void TestWaterfallGeometry::speedLadderShortensForAShortWindow() {
                 QVERIFY(speedLevelFits(next, height, kMinRows, dpr, 1.0));
                 level = next;
             }
+        }
+    }
+}
+
+// A level the window is too short for is withdrawn from the LADDER, not from the renderer, and the
+// saved level is never rewritten behind the operator's back (decided 2026-11-26).
+//
+// WHY the two floors differ. `speedLevelFits` refuses anything under minRows, so the key will not
+// step onto a setting that is no longer a waterfall. `speedPlanFor` has no such floor: a level the
+// operator already chose keeps its row height and simply shows fewer rows. The alternative -
+// clamping in the plan - would silently pull a saved 9 down to whatever fits on every frame of a
+// window drag and hand back a different setting than the one that was set, which is the same mistake
+// a431e01 made with the history. Growing the window back restores the level exactly, because nothing
+// ever rewrote it.
+void TestWaterfallGeometry::aWithdrawnLevelStillDrawsAndIsNeverRewritten() {
+    using namespace WaterfallGeometry;
+    constexpr int kMinRows = 64;
+    constexpr qreal kDpr = 2.0; // level 9 is 12 panel pixels per row here, level 10 is 16
+
+    // Tall enough for the whole ladder: both top levels are offered and their rows are the height
+    // over the row height.
+    // NB speedPlanFor takes the row count FIRST, unlike every other function here.
+    const SpeedPlan tall9 = speedPlanFor(1536, 9, kDpr, 1.0);
+    const SpeedPlan tall10 = speedPlanFor(1536, 10, kDpr, 1.0);
+    QVERIFY(speedLevelFits(9, 1536, kMinRows, kDpr, 1.0));
+    QVERIFY(speedLevelFits(10, 1536, kMinRows, kDpr, 1.0));
+    QCOMPARE(tall9.visibleRows, 128);
+    QCOMPARE(tall10.visibleRows, 96);
+
+    // Short window: neither is offered any more, and both still draw - same row height, fewer rows.
+    QVERIFY(!speedLevelFits(9, 324, kMinRows, kDpr, 1.0));
+    QVERIFY(!speedLevelFits(10, 324, kMinRows, kDpr, 1.0));
+    const SpeedPlan short9 = speedPlanFor(324, 9, kDpr, 1.0);
+    QCOMPARE(short9.visibleRows, 27);
+    QCOMPARE(short9.pixelRowsPerRow, tall9.pixelRowsPerRow);
+    QCOMPARE(short9.framesPerRow, 1);
+
+    // The level itself survives every clamp on the path from disk to the renderer.
+    QCOMPARE(clampSpeedLevel(9), 9);
+    QCOMPARE(clampSpeedLevel(10), 10);
+
+    // The key is one-way while it does not fit: + runs off the top and stays put, - skips every
+    // level that does not fit and lands on the first that does.
+    QCOMPARE(stepSpeedLevel(9, +1, 324, kMinRows, kDpr, 1.0), 9);
+    QCOMPARE(stepSpeedLevel(10, +1, 324, kMinRows, kDpr, 1.0), 10);
+    QCOMPARE(stepSpeedLevel(9, -1, 324, kMinRows, kDpr, 1.0), 6); // 8 and 7 are too tall as well
+
+    // Grow the window back and the level is exactly what it was - no renumbering, no drift.
+    QCOMPARE(speedPlanFor(1536, 9, kDpr, 1.0).visibleRows, tall9.visibleRows);
+    QCOMPARE(speedPlanFor(1536, 9, kDpr, 1.0).pixelRowsPerRow, tall9.pixelRowsPerRow);
+
+    // However short the waterfall gets, a withdrawn level still produces a drawable plan: at least
+    // two rows, never more rows than pixel rows, and never a row height that drifts with the height.
+    for (int height = 2; height <= 2047; height += 7) {
+        for (const int level : {9, 10}) {
+            const SpeedPlan plan = speedPlanFor(height, level, kDpr, 1.0);
+            const QString what = QStringLiteral("level %1 at %2 rows").arg(level).arg(height);
+            QVERIFY2(plan.visibleRows >= 2, qPrintable(what));
+            QVERIFY2(plan.visibleRows <= height || height < 2, qPrintable(what));
+            QCOMPARE(plan.pixelRowsPerRow, physicalRowHeightFor(level, kDpr, 1.0));
         }
     }
 }
