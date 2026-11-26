@@ -980,13 +980,16 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         WaterfallGeometry::speedPlanFor(pixelRows, m_planLineRateHz, m_waterfallSpeedSeconds, held);
     m_planPixelRows = pixelRows;
     m_planSeconds = m_waterfallSpeedSeconds;
-    // A new row height means every stored row would be redrawn at a scale it was not captured at:
-    // the same history, suddenly covering twice or half the screen. Start the history over instead,
-    // as the tier change above does and as Flex does when its window is resized. A clean restart
-    // reads as a deliberate change; reinterpreting the rows reads as the waterfall jumping. Only the
-    // height does this - a row count that changes while the height does not simply shows more or
-    // fewer of the newest rows, with the newest still pinned to the top.
-    if (m_planVisibleRows > 0 && plan.pixelRowsPerRow != m_pixelRowsPerRow) {
+    // Any change to the row count redraws every stored row at a scale it was not captured at. The
+    // shader spans the quad with V = t * visibleFraction + scrollOffset, and visibleFraction is
+    // visibleRows / storedRows, so the full waterfall height always shows exactly visibleRows rows:
+    // fewer of them stretch taller and the picture slides. It is not a crop. Start the history over
+    // instead, as the tier change above does and as Flex does when its window is resized - a clean
+    // restart reads as a deliberate change, where reinterpreting the rows reads as the waterfall
+    // sliding up and coming back down (bench, 2026-11-25, on connect: QK4's default split gives 809
+    // rows, the radio's #WFH arrives and makes it 693, and the measured line rate settling moves it
+    // again moments later).
+    if (m_planVisibleRows > 0 && plan.visibleRows != m_planVisibleRows) {
         m_framesInRow = 0;
         m_waterfallData.fill(0);
         m_rowTierSpanHz.fill(0.0f);
@@ -1537,14 +1540,21 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     // so it moves pxPerRow further than resizing the window does. Treat a ratio change as a
     // geometry change or the most direct control over the artifact would go unrecorded.
     const bool haveBins = m_waterfallTierSpanHz > 0.0f && m_waterfallTierBinCount > 0;
+    // WHY the row count and row height are watched too: the SPEED plan can change them with the
+    // output size, the split and the row shift all unmoved, and that is precisely the event worth
+    // catching - it is what moves the whole waterfall up the screen or back down. Leaving them out
+    // meant the one thing being hunted printed nothing (2026-11-25).
     const bool sameGeometry = outputSize == m_lastLoggedOutputSize &&
                               qFuzzyCompare(m_spectrumRatio, m_lastLoggedSpectrumRatio) &&
-                              m_waterfallRowShift == m_lastLoggedRowShift;
+                              m_waterfallRowShift == m_lastLoggedRowShift && m_visibleRows == m_lastLoggedVisibleRows &&
+                              m_pixelRowsPerRow == m_lastLoggedPixelRowsPerRow;
     if (sameGeometry && (m_geometryLoggedWithBins || !haveBins))
         return;
     m_lastLoggedOutputSize = outputSize;
     m_lastLoggedSpectrumRatio = m_spectrumRatio;
     m_lastLoggedRowShift = m_waterfallRowShift;
+    m_lastLoggedVisibleRows = m_visibleRows;
+    m_lastLoggedPixelRowsPerRow = m_pixelRowsPerRow;
     m_geometryLoggedWithBins = haveBins;
 
     const float waterfallHeightPx = static_cast<float>(outputSize.height()) * (1.0f - m_spectrumRatio);
@@ -1571,11 +1581,14 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
             qPrintable(QString::asprintf("GEOMETRY    output %dx%d px  dpr %g  framebuffer/panel %.3f  "
                                          "devicePxPerRow %d  rowShift %g  spectrumRatio %g  "
                                          "waterfall %.1f px  rows %d/%d visible/stored  "
-                                         "pxPerRow %.4f (%s)  visibleBins %.0f  pxPerBin %.2f",
+                                         "pxPerRow %.4f (%s)  visibleBins %.0f  pxPerBin %.2f  "
+                                         "SPEED %ds  lineRate %.2f/%.2f Hz measured/planned  "
+                                         "pixelRowsPerRow %d  framesPerRow %d",
                                          outputSize.width(), outputSize.height(), devicePixelRatioF(),
                                          m_framebufferPerPanel, m_devicePxPerRow, m_waterfallRowShift, m_spectrumRatio,
                                          waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
-                                         visibleBins, pxPerBin)));
+                                         visibleBins, pxPerBin, m_waterfallSpeedSeconds, m_lineRateHz, m_planLineRateHz,
+                                         m_pixelRowsPerRow, m_framesPerRow)));
 }
 
 void PanadapterRhiWidget::updateDevicePxPerRow() {

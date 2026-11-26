@@ -273,6 +273,8 @@ private:
     // V shift that puts row edges on the panel's pixel grid (WaterfallGeometry::rowShiftFor).
     float m_waterfallRowShift = 0.0f;
     float m_lastLoggedRowShift = 0.0f;
+    int m_lastLoggedVisibleRows = -1;
+    int m_lastLoggedPixelRowsPerRow = -1;
     // What m_devicePxPerRow was derived from. Querying the OS enumerates display modes, so it runs
     // only when one of these changes, not per frame. The pointer is compared, never dereferenced.
     const QScreen *m_panelScaleScreen = nullptr;
