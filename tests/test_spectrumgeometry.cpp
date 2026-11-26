@@ -43,6 +43,7 @@ private slots:
     void fillIsOpaqueDownToTheBottomEdge();
     void fillBlendsWhenAColumnSpansOneBinOrLess();
     void fillPeakNeverDropsANarrowCarrier();
+    void waterfallPeakCapCoversEveryRealGeometry();
 
     void miniPanOverlaysStayPutWhileTuning();
     void miniPanOverlaysLearnTheCwOffsetOnceSettled();
@@ -333,6 +334,41 @@ void TestSpectrumGeometry::fillPeakNeverDropsANarrowCarrier() {
                      qPrintable(QString("span %1 width %2: last bin not drawn").arg(spanRatio).arg(width)));
         }
     }
+}
+
+// waterfall.frag reduces its columns with fillPeakBins' arithmetic, so the case above carries over
+// to it - but its loop is capped at WaterfallMaxBinsPerColumn (16) rather than FillMaxBinsPerPixel
+// (64), because the four vertical taps of the cubic reconstruction multiply the cost. This is the
+// gate on that cap being free: a column covers more than 16 bins only below 64 px of viewport width,
+// since width * binsPerPixel is binCount * spanRatio identically. Above that width the cap can never
+// truncate a range, so the peak the shader keeps is the peak of every bin the column covers.
+void TestSpectrumGeometry::waterfallPeakCapCoversEveryRealGeometry() {
+    const float bins = 1024.0f;
+    for (const float spanRatio : {1.0f, 0.9f, 0.75f, 0.5f, 0.25f, 0.1f}) {
+        for (int width = 64; width <= 3840; width += 29) {
+            const float binsPerPixel = bins * spanRatio / static_cast<float>(width);
+            if (binsPerPixel <= 1.0f)
+                continue; // the blend regime: one tap, no loop
+            for (int x = 0; x < width; x += qMax(1, width / 97)) {
+                const float u = (static_cast<float>(x) + 0.5f) / static_cast<float>(width);
+                const BinRange range = fillPeakBins(u, bins, spanRatio, static_cast<float>(width));
+                if (range.isEmpty())
+                    continue;
+                const int covered = range.last - range.first + 1;
+                QVERIFY2(covered <= WaterfallMaxBinsPerColumn,
+                         qPrintable(QString("span %1 width %2 x %3 covers %4 bins, over the cap of %5")
+                                        .arg(spanRatio)
+                                        .arg(width)
+                                        .arg(x)
+                                        .arg(covered)
+                                        .arg(WaterfallMaxBinsPerColumn)));
+            }
+        }
+    }
+    // And the identity the cap rests on: the work per pixel ROW does not grow with the viewport,
+    // because a wider viewport is exactly the case where each column covers fewer bins.
+    for (const int width : {64, 300, 1024, 1920, 3840})
+        QCOMPARE(qRound(bins * 1.0f / static_cast<float>(width) * static_cast<float>(width)), qRound(bins));
 }
 
 // Bench 2026-10-30: the mini-pan's markers slid while tuning, because they were placed on the last

@@ -17,7 +17,7 @@ layout(std140, binding = 0) uniform buf {
     float colorGain;
     float rowShift;         // Rows added to V so row edges land on physical pixels (vertex stage)
     float scrollPhase;      // Sub-row scroll residual added to V, <= 0 (vertex stage)
-    float pad1;
+    float binsPerPixel;     // Bins one column covers; above 1.0 the fragment stage keeps their peak
 };
 
 void main() {

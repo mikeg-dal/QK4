@@ -88,6 +88,14 @@ BinRange fillPeakBins(float u, float binCount, float spanRatio, float viewportWi
 // The most bins one column may cover; the shader loop's bound. 1024 bins over 16 px.
 inline constexpr int FillMaxBinsPerPixel = 64;
 
+// The same bound for waterfall.frag, which shares fillPeakBins' arithmetic but multiplies its cost
+// by the four vertical taps of the cubic reconstruction. A smaller cap is free: the fetches per
+// pixel ROW are 4 * binCount * spanRatio no matter how wide the viewport is, because a wider
+// viewport is exactly the case where each column covers fewer bins (width * binsPerPixel is
+// binCount * spanRatio, identically). So the cap only ever bites on a viewport under 64 px wide,
+// which the panadapter's minimum size does not allow.
+inline constexpr int WaterfallMaxBinsPerColumn = 16;
+
 // Where the mini-pan's overlays (passband, marker, notch, RTTY tone) are centred, relative to the
 // dial. The MiniPAN frame header carries the frame's own centre, but frames lag the dial: QK4 learns
 // a new dial at once and the radio's frame for it arrives later. Placing the overlays on the last

@@ -50,7 +50,7 @@ struct WaterfallUniforms {
     float colorGain;       //   WaterfallGeometry::ColorUniforms. 0 and 1 pass the texel through.
     float rowShift;        // rows added to V so row edges land on physical pixels; 0.0 for none
     float scrollPhase;     // sub-row scroll residual added to V, <= 0; WaterfallGeometry::scrollPhaseFor
-    float pad1;            // std140: the block is a whole number of 16-byte rows
+    float binsPerPixel;    // bins one column covers; above 1 the shader keeps their peak
 };
 static_assert(sizeof(WaterfallUniforms) == 48, "must match the std140 block in waterfall.{vert,frag}");
 

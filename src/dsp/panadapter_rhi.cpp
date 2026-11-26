@@ -1062,6 +1062,12 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // Layout comes from RhiUtils so it cannot drift from the shaders or from the mini-pan.
     // Rows store palette positions fixed at capture (updateWaterfallData), so the shader passes them
     // through: a REF or #WBS change recolours only rows drawn after it.
+    // Bins one column of the waterfall covers. Above one the shader keeps their peak instead of
+    // blending the two nearest, so a one-bin carrier cannot be sampled out of the picture at a span
+    // wide enough that columns are scarcer than bins.
+    const float binsPerPixel =
+        w > 0.0f ? binCount * qMin(1.0f, tierSpanHz > 0.0f ? spanHz / tierSpanHz : 1.0f) / w : 0.0f;
+
     const WaterfallGeometry::ColorUniforms color{};
     RhiUtils::WaterfallUniforms waterfallUniforms = {scrollOffset,
                                                      binCount,
@@ -1074,7 +1080,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                                                      color.colorGain,
                                                      rowShift,
                                                      m_waterfallScrollPhase,
-                                                     0.0f};
+                                                     binsPerPixel};
     rub->updateDynamicBuffer(m_gpu.waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
     if (!m_currentSpectrum.isEmpty()) {

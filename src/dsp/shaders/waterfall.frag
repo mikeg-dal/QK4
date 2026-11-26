@@ -19,8 +19,40 @@ layout(std140, binding = 0) uniform buf {
     float colorGain;
     float rowShift;         // Rows added to V so row edges land on physical pixels (vertex stage)
     float scrollPhase;      // Sub-row scroll residual added to V, <= 0 (vertex stage)
-    float pad1;
+    float binsPerPixel;     // Bins one column covers; above 1.0 the fragment stage keeps their peak
 };
+
+// The most bins one column may fold together; mirrors SpectrumGeometry::WaterfallMaxBinsPerColumn.
+const float kMaxBinsPerColumn = 16.0;
+
+// One row's level for this column, reducing bins to the column the way the data requires.
+//
+// WHY two regimes and not one blend. Below one bin per column the display is magnifying the data,
+// and a linear blend between the two nearest bins is right: it is smooth and invents nothing. Above
+// one bin per column the display is reducing it, and a blend of the two NEAREST bins ignores every
+// other bin the column covers - so a carrier one bin wide lands between the two that get sampled
+// and vanishes from the waterfall while staying sharp in the spectrum, which peak-picks its columns
+// already (SpectrumGeometry::fillPeakBins). Keeping the strongest bin instead means a narrow signal
+// can never be sampled out of existence.
+//
+// WHY the trace does not do this: a max-reduced trace rises whenever the span window changes which
+// bins each column covers, which reads as a calibration fault. The waterfall has no level to read,
+// so it loses nothing by keeping peaks.
+//
+// The bin range is SpectrumGeometry::fillPeakBins' range, in the shader. binIndex is its `centre`.
+float sampleRowLevel(float v, float binIndex, float binOffset) {
+    if (binsPerPixel <= 1.0) {
+        float binPos = clamp(binIndex, 0.5, binCount - 0.5);
+        return texture(waterfallTex, vec2((binOffset + binPos) / textureWidth, v)).r;
+    }
+    float first = max(ceil(binIndex - binsPerPixel * 0.5 - 0.5), 0.0);
+    float last = min(floor(binIndex + binsPerPixel * 0.5 - 0.5), binCount - 1.0);
+    last = min(last, first + kMaxBinsPerColumn - 1.0);
+    float best = 0.0;
+    for (float bin = first; bin <= last; bin += 1.0)
+        best = max(best, texture(waterfallTex, vec2((binOffset + bin + 0.5) / textureWidth, v)).r);
+    return best;
+}
 
 void main() {
     // Map display X [0,1] to the visible portion of the full tier data.
@@ -43,9 +75,7 @@ void main() {
     // 2026-10-30) where the K4 front panel shows a smooth waterfall even at #AVG 1. The blend is of
     // levels, before the palette, so it never invents a colour between two unrelated hues.
     // Clamped to the outer bin centres so the edges never blend with the empty texels beside the
-    // bins (they read as "no data").
-    float binPos = clamp(binIndex, 0.5, binCount - 0.5);
-    float texU = (binOffset + binPos) / textureWidth;
+    // bins (they read as "no data") - see sampleRowLevel, which owns both regimes.
 
     // Vertical reconstruction. Time is not blended by the sampler, unlike frequency above: a V
     // landing between two rows makes Linear filtering return a mix of two different moments, which
@@ -92,10 +122,10 @@ void main() {
         float r2 = (clamp(base + 1.0, oldestTap, lastRow) + 0.5) / storedRows;
         float r3 = (clamp(base + 2.0, oldestTap, lastRow) + 0.5) / storedRows;
 
-        level = w0 * texture(waterfallTex, vec2(texU, r0)).r + w1 * texture(waterfallTex, vec2(texU, r1)).r +
-                w2 * texture(waterfallTex, vec2(texU, r2)).r + w3 * texture(waterfallTex, vec2(texU, r3)).r;
+        level = w0 * sampleRowLevel(r0, binIndex, binOffset) + w1 * sampleRowLevel(r1, binIndex, binOffset) +
+                w2 * sampleRowLevel(r2, binIndex, binOffset) + w3 * sampleRowLevel(r3, binIndex, binOffset);
     } else {
-        level = texture(waterfallTex, vec2(texU, fragTexCoord.y)).r;
+        level = sampleRowLevel(fragTexCoord.y, binIndex, binOffset);
     }
     // Byte 0 is "no data" (rows not yet written, a cleared history): palette position 0 under any
     // uniforms.
