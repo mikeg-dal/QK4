@@ -301,12 +301,11 @@ private:
     int m_planVisibleRows = 0;
     int m_framesInRow = 0;
     int m_rowSpecSize = 0; // bins of the frames folded into the row being built
-    // How often frames become rows, measured: the K4 may send fewer frames than #FPS asked for.
-    // m_lineRateHz is smoothed; m_planLineRateHz only follows it past a 10 % dead band, so the plan
-    // (and the row height) does not hop with every late frame.
+    // How often frames become rows, measured and smoothed: the K4 may send fewer frames than the
+    // #FPS asked for. The plan does not use it - SPEED is a row height, chosen outright - so this is
+    // only what the SPEED key's seconds are worked out from.
     QElapsedTimer m_lineClock;
     double m_lineRateHz = 0.0;
-    double m_planLineRateHz = 0.0;
     int m_lineSamples = 0;
     void noteLineCommitted();
     bool m_waterfallNeedsFullClear = false;

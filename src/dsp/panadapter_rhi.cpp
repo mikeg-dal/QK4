@@ -1473,10 +1473,6 @@ void PanadapterRhiWidget::noteLineCommitted() {
             const double hz = 1e9 / static_cast<double>(ns);
             m_lineRateHz = m_lineSamples == 0 ? hz : m_lineRateHz + 0.1 * (hz - m_lineRateHz);
             ++m_lineSamples;
-            const bool settled = m_lineSamples >= 10;
-            if (settled &&
-                (m_planLineRateHz <= 0.0 || std::abs(m_lineRateHz - m_planLineRateHz) > 0.1 * m_planLineRateHz))
-                m_planLineRateHz = m_lineRateHz;
         }
     }
     m_lineClock.restart();
@@ -1584,13 +1580,13 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
                                          "devicePxPerRow %d  rowShift %g  spectrumRatio %g  "
                                          "waterfall %.1f px  rows %d/%d visible/stored  "
                                          "pxPerRow %.4f (%s)  visibleBins %.0f  pxPerBin %.2f  "
-                                         "SPEED %ds  lineRate %.2f/%.2f Hz measured/planned  "
+                                         "SPEED step %d  lineRate %.2f Hz measured  "
                                          "pixelRowsPerRow %d  framesPerRow %d",
                                          outputSize.width(), outputSize.height(), devicePixelRatioF(),
                                          m_framebufferPerPanel, m_devicePxPerRow, m_waterfallRowShift, m_spectrumRatio,
                                          waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
-                                         visibleBins, pxPerBin, m_waterfallSpeedStep, m_lineRateHz, m_planLineRateHz,
-                                         m_pixelRowsPerRow, m_framesPerRow)));
+                                         visibleBins, pxPerBin, m_waterfallSpeedStep, m_lineRateHz, m_pixelRowsPerRow,
+                                         m_framesPerRow)));
 }
 
 void PanadapterRhiWidget::updateDevicePxPerRow() {
@@ -1754,7 +1750,6 @@ void PanadapterRhiWidget::clear() {
     m_lineClock.invalidate(); // the first commit after a reconnect is not an interval
     m_lineSamples = 0;
     m_lineRateHz = 0.0;
-    m_planLineRateHz = 0.0;
     m_pixelRowsPerRow = 1;
     m_planVisibleRows = 0;
     m_waterfallData.fill(0);
