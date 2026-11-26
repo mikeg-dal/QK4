@@ -968,10 +968,25 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS, m_devicePxPerRow);
     // SPEED: Fill keeps one row per pixel row; a number of seconds shows fewer, taller rows or folds
     // frames together. Applied to the rows committed from the next frame on.
-    const WaterfallGeometry::SpeedPlan plan =
-        WaterfallGeometry::speedPlanFor(pixelRows, m_planLineRateHz, m_waterfallSpeedSeconds);
+    const WaterfallGeometry::SpeedPlan plan = WaterfallGeometry::speedPlanFor(
+        pixelRows, m_planLineRateHz, m_waterfallSpeedSeconds,
+        WaterfallGeometry::SpeedPlan{m_planVisibleRows, m_framesPerRow, m_pixelRowsPerRow});
+    // A new row height means every stored row would be redrawn at a scale it was not captured at:
+    // the same history, suddenly covering twice or half the screen. Start the history over instead,
+    // as the tier change above does and as Flex does when its window is resized. A clean restart
+    // reads as a deliberate change; reinterpreting the rows reads as the waterfall jumping. Only the
+    // height does this - a row count that changes while the height does not simply shows more or
+    // fewer of the newest rows, with the newest still pinned to the top.
+    if (m_planVisibleRows > 0 && plan.pixelRowsPerRow != m_pixelRowsPerRow) {
+        m_framesInRow = 0;
+        m_waterfallData.fill(0);
+        m_rowTierSpanHz.fill(0.0f);
+        m_waterfallNeedsFullClear = true;
+    }
+    m_planVisibleRows = plan.visibleRows;
     m_visibleRows = plan.visibleRows;
     m_framesPerRow = plan.framesPerRow;
+    m_pixelRowsPerRow = plan.pixelRowsPerRow;
     // Row edges onto the panel's pixel grid. The waterfall's bottom edge is this widget's bottom
     // edge (QRhi viewports are bottom-left), placed in the window's framebuffer: the window's own
     // origin is a whole number of points, so it never shifts the grid; the widget's position inside
@@ -1716,6 +1731,8 @@ void PanadapterRhiWidget::clear() {
     m_lineSamples = 0;
     m_lineRateHz = 0.0;
     m_planLineRateHz = 0.0;
+    m_pixelRowsPerRow = 1;
+    m_planVisibleRows = 0;
     m_waterfallData.fill(0);
     m_rowTierSpanHz.fill(0.0f);
     m_waterfallNeedsFullClear = true;

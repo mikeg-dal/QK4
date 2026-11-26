@@ -65,7 +65,11 @@ int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int dev
 //     fixed on screen, so a trace changed thickness and the scroll step changed size as it moved down -
 //     the uneven step one row per pixel row exists to avoid. Where the closest whole number is 1, the
 //     plan is Fill: a few seconds more history beats uneven rows.
-inline constexpr std::array<int, 6> SpeedStepsSeconds{0, 15, 30, 60, 120, 240};
+// WHY these steps: 5 to 60 in fives is the range an operator actually watches, and a close ladder
+// gives somewhere to go when one value sits badly for a given window height and frame rate. The old
+// 120 and 240 were removed as unused (Mike, 2026-11-25). Fill stays: it is the only setting that
+// guarantees every frame the radio sends gets its own row, whatever the rate.
+inline constexpr std::array<int, 13> SpeedStepsSeconds{0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60};
 inline constexpr int SpeedFill = 0;
 inline constexpr int MaxFramesPerRow = 64;
 
@@ -86,7 +90,16 @@ struct SpeedPlan {
 
 // pixelRows is visibleRowsFor's answer for this height (one row per pixel row); lineRateHz the
 // measured rate frames become rows (0 before it is known, which plans Fill).
-SpeedPlan speedPlanFor(int pixelRows, double lineRateHz, int seconds);
+//
+// `current` is the plan in force, and the reason this takes one. The frame count the seconds asked
+// for divides into the rows available at some ratio, and the plan rounds that ratio; a ratio sitting
+// on a rounding boundary flips the plan back and forth on the smallest change in the measured rate.
+// Across the 1 <-> 2 boundary that halves or doubles visibleRows, which jumps the whole waterfall up
+// the screen and back down - seen on the bench 2026-11-25 at 693 rows, 30 s and 14.9 Hz, a ratio of
+// 1.55 against a boundary at 1.50. A dead band around the value already in force is what stops it:
+// the ratio has to leave [n - SpeedHysteresis, n + SpeedHysteresis] before the plan moves off n.
+// Pass {} where there is no plan yet, which rounds as before.
+SpeedPlan speedPlanFor(int pixelRows, double lineRateHz, int seconds, const SpeedPlan &current = {});
 
 // Folds one frame's row into the row being built: each byte the larger of the two, so the brightest
 // moment of every bin over the frames survives (bytes are palette positions, rising with dBm).

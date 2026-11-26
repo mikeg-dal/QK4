@@ -284,6 +284,12 @@ private:
     // each bin's peak; m_framesInRow have been folded in so far.
     int m_waterfallSpeedSeconds = 0;
     int m_framesPerRow = 1;
+    // The plan in force, fed back to speedPlanFor so a ratio sitting on a rounding boundary cannot
+    // flip the row height - and with it the whole waterfall's position - on the smallest rate change.
+    int m_pixelRowsPerRow = 1;
+    // The plan's own row count, kept apart from m_visibleRows because that is clamped afterwards; it
+    // is also the "is there a plan yet" flag, being 0 until the first one is made.
+    int m_planVisibleRows = 0;
     int m_framesInRow = 0;
     int m_rowSpecSize = 0; // bins of the frames folded into the row being built
     // How often frames become rows, measured: the K4 may send fewer frames than #FPS asked for.

@@ -51,15 +51,39 @@ QString speedLabel(int seconds) {
     return seconds <= SpeedFill ? QStringLiteral("Fill") : QStringLiteral("%1s").arg(seconds);
 }
 
-SpeedPlan speedPlanFor(int pixelRows, double lineRateHz, int seconds) {
+namespace {
+
+// WHY 0.75 and not rounding's own 0.5: a dead band narrower than 0.5 would not be one, and 0.75
+// means the ratio must move 50 % past the boundary it last crossed before the plan moves back - far
+// more than the measured rate wanders. The cost is that a genuine rate change takes slightly longer
+// to show, which is invisible; the benefit is that the waterfall cannot hop between two heights.
+constexpr double SpeedHysteresis = 0.75;
+
+// `ideal` rounded, except that a plan already sitting on `held` keeps it while `ideal` stays within
+// the dead band around it. `held` <= 0 means there is no plan to hold on to.
+long settleOn(double ideal, int held) {
+    if (held >= 1 && std::abs(ideal - static_cast<double>(held)) <= SpeedHysteresis)
+        return held;
+    return std::lround(ideal);
+}
+
+} // namespace
+
+SpeedPlan speedPlanFor(int pixelRows, double lineRateHz, int seconds, const SpeedPlan &current) {
     if (seconds <= SpeedFill || lineRateHz <= 0.0 || pixelRows <= 0)
         return SpeedPlan{pixelRows, 1};
     const double frames = seconds * lineRateHz; // frames that make up the history asked for
+    // WHY visibleRows and not the counts themselves: a default-constructed SpeedPlan already reads
+    // 1 for both, so the counts cannot say whether there is a plan in force. visibleRows can - it is
+    // 0 until one has been made.
+    const bool havePlan = current.visibleRows > 0;
     if (frames >= pixelRows) {
-        const long perRow = std::lround(frames / pixelRows);
+        const long perRow = settleOn(frames / pixelRows, havePlan ? current.framesPerRow : 0);
         return SpeedPlan{pixelRows, static_cast<int>(std::clamp(perRow, 1L, static_cast<long>(MaxFramesPerRow)))};
     }
-    const long perRow = (std::max)(1L, std::lround(pixelRows / frames)); // whole pixel rows per row
+    // Whole pixel rows per row. This is the boundary that moves the waterfall when it flips, so it
+    // is held by the same dead band as the fold count above.
+    const long perRow = (std::max)(1L, settleOn(pixelRows / frames, havePlan ? current.pixelRowsPerRow : 0));
     if (perRow == 1)
         return SpeedPlan{pixelRows, 1, 1};
     // WHY at least 2: one row would be the whole waterfall in one colour band.

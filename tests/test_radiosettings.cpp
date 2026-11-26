@@ -214,10 +214,13 @@ private slots:
         QCOMPARE(changed.size(), 1);
         s->setWaterfallSpeedSeconds(60);
         QCOMPARE(changed.size(), 1); // unchanged: not announced
+        // 45 is a step now; 7 and 120 are not (the ladder became Fill and 5..60 in fives).
         s->setWaterfallSpeedSeconds(45);
+        QCOMPARE(s->waterfallSpeedSeconds(), 45);
+        s->setWaterfallSpeedSeconds(7);
         QCOMPARE(s->waterfallSpeedSeconds(), WaterfallGeometry::SpeedFill);
         QSettings raw(QSettings::defaultFormat(), QSettings::UserScope, "QK4", "QK4");
-        raw.setValue("display/waterfallSpeedSeconds", 37);
+        raw.setValue("display/waterfallSpeedSeconds", 120);
         raw.sync();
         QCOMPARE(s->waterfallSpeedSeconds(), WaterfallGeometry::SpeedFill);
         s->setWaterfallSpeedSeconds(WaterfallGeometry::SpeedFill);

@@ -41,6 +41,7 @@ private slots:
     void speedFillIsTodaysOneRowPerPixel();
     void speedShowsTheSecondsAskedForAtAnyHeight();
     void speedStepsAndLabels();
+    void speedPlanDoesNotHopAcrossARoundingBoundary();
     void foldKeepsEachBinsPeak();
     void fasterRowsAreWholePixelsTall();
 
@@ -473,16 +474,57 @@ void TestWaterfallGeometry::speedShowsTheSecondsAskedForAtAnyHeight() {
 
 void TestWaterfallGeometry::speedStepsAndLabels() {
     using namespace WaterfallGeometry;
-    QCOMPARE(stepSpeed(SpeedFill, +1), 15);
-    QCOMPARE(stepSpeed(15, +1), 30);
-    QCOMPARE(stepSpeed(240, +1), 240); // held at the ends
+    QCOMPARE(stepSpeed(SpeedFill, +1), 5);
+    QCOMPARE(stepSpeed(15, +1), 20);
+    QCOMPARE(stepSpeed(60, +1), 60); // held at the ends
     QCOMPARE(stepSpeed(SpeedFill, -1), SpeedFill);
-    QCOMPARE(stepSpeed(30, -1), 15);
-    QCOMPARE(stepSpeed(45, +1), 15); // not a step: counts as Fill
+    QCOMPARE(stepSpeed(30, -1), 25);
+    QCOMPARE(stepSpeed(7, +1), 5); // not a step: counts as Fill
     QVERIFY(isSpeedStep(60));
-    QVERIFY(!isSpeedStep(45));
+    QVERIFY(isSpeedStep(45));
+    QVERIFY(!isSpeedStep(7));
+    QVERIFY2(!isSpeedStep(120) && !isSpeedStep(240), "120 and 240 were dropped from the ladder");
     QCOMPARE(speedLabel(SpeedFill), QStringLiteral("Fill"));
-    QCOMPARE(speedLabel(240), QStringLiteral("240s"));
+    QCOMPARE(speedLabel(60), QStringLiteral("60s"));
+}
+
+// The bench defect of 2026-11-25: the waterfall jumped up the screen and back down with no menu
+// open. 693 rows of waterfall, SPEED 30 s and a measured 14.9 Hz put pixelRows/frames at 1.55,
+// against a rounding boundary at 1.50 - so every wander of the measured rate across ~15.4 Hz halved
+// or doubled visibleRows, and with it the window into the waterfall texture.
+void TestWaterfallGeometry::speedPlanDoesNotHopAcrossARoundingBoundary() {
+    using namespace WaterfallGeometry;
+    constexpr int Rows = 693;
+    constexpr int Seconds = 30;
+
+    // Without a plan to hold on to, the boundary is where it always was.
+    QCOMPARE(speedPlanFor(Rows, 15.3, Seconds).pixelRowsPerRow, 2);
+    QCOMPARE(speedPlanFor(Rows, 15.5, Seconds).pixelRowsPerRow, 1);
+
+    // With one, a rate wandering either side of it changes nothing: the row count, and so the
+    // position of the whole waterfall, stays put.
+    SpeedPlan plan = speedPlanFor(Rows, 14.9, Seconds);
+    QCOMPARE(plan.pixelRowsPerRow, 2);
+    const int settledRows = plan.visibleRows;
+    for (double hz : {15.5, 14.2, 16.0, 13.9, 15.9, 14.9}) {
+        plan = speedPlanFor(Rows, hz, Seconds, plan);
+        QCOMPARE(plan.visibleRows, settledRows);
+        QCOMPARE(plan.pixelRowsPerRow, 2);
+    }
+
+    // A real rate change still gets through - the dead band holds the plan, it does not freeze it.
+    plan = speedPlanFor(Rows, 19.0, Seconds, plan); // ratio 1.22, past the band
+    QCOMPARE(plan.pixelRowsPerRow, 1);
+    QCOMPARE(plan.visibleRows, Rows);
+    plan = speedPlanFor(Rows, 11.0, Seconds, plan); // ratio 2.1, past it the other way
+    QCOMPARE(plan.pixelRowsPerRow, 2);
+
+    // The fold count is held the same way, so the brightness of a row does not hop either.
+    SpeedPlan slow = speedPlanFor(Rows, 50.0, Seconds); // 1500 frames over 693 rows: ratio 2.16
+    QCOMPARE(slow.framesPerRow, 2);
+    for (double hz : {58.0, 43.0, 57.0})
+        QCOMPARE(speedPlanFor(Rows, hz, Seconds, slow).framesPerRow, 2);
+    QCOMPARE(speedPlanFor(Rows, 64.0, Seconds, slow).framesPerRow, 3); // ratio 2.77, past the band
 }
 
 // Folding frames into one row keeps each bin's brightest moment: a one-frame FT8 or CW burst is not
