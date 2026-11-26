@@ -8,10 +8,11 @@ class QPushButton;
 
 // Owns the wiring for the K4 message memory buttons that sit just under
 // the VFO row: M1-M4 (CW/voice/data message recall), REC (record), STORE
-// (store / save), RCL (recall). Each has a left-click action (the K4's
-// primary SW command) and REC/STORE/RCL each have a right-click action
-// installed via an event filter on the controller — the right-click
-// sends an alternate SW command (BANK / AF REC / AF PLAY).
+// (store / save), RCL (recall). Left-click sends the K4's primary SW
+// command for M1-M4 / REC; STORE / RCL request QK4's channel list.
+// Right-click is installed via an event filter on the controller:
+// M1-M4 send the K4's hold commands to repeat; REC/STORE/RCL send
+// BANK / AF REC / AF PLAY.
 class MemoryButtonsController : public QObject {
     Q_OBJECT
 
@@ -27,13 +28,16 @@ signals:
     void recallRequested();
 
 protected:
-    // Catches right-clicks on REC / STORE / RCL — sends the alternate SW
-    // command. Other events fall through unmodified.
+    // Right-click sends the hold/alternate SW command; other events fall through.
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     ConnectionController *m_connection; // injected, not owned
-    QPushButton *m_recBtn;              // not owned (parent-managed)
+    QPushButton *m_m1Btn;               // not owned (parent-managed)
+    QPushButton *m_m2Btn;               // not owned
+    QPushButton *m_m3Btn;               // not owned
+    QPushButton *m_m4Btn;               // not owned
+    QPushButton *m_recBtn;              // not owned
     QPushButton *m_storeBtn;            // not owned
     QPushButton *m_rclBtn;              // not owned
 };
