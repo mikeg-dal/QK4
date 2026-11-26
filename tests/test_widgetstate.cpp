@@ -514,9 +514,11 @@ private slots:
                 speed = g;
         }
         QVERIFY(wtrfall && speed);
+        // The seconds a step comes to depend on the window height and the measured frame rate, so
+        // the panadapter names them and the popup only shows what it is given.
         QCOMPARE(speed->value(), QStringLiteral("Fill"));
-        popup.setWaterfallSpeed(120);
-        QCOMPARE(speed->value(), QStringLiteral("120s"));
+        popup.setWaterfallSpeedLabel(QStringLiteral("23s"));
+        QCOMPARE(speed->value(), QStringLiteral("23s"));
 
         DisplayMenuButton *panKey = nullptr;
         int rowRight = 0;

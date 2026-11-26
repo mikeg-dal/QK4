@@ -968,18 +968,10 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS, m_devicePxPerRow);
     // SPEED: Fill keeps one row per pixel row; a number of seconds shows fewer, taller rows or folds
     // frames together. Applied to the rows committed from the next frame on.
-    // Hold the previous plan only while its two deliberate inputs are unchanged. A new SPEED or a
-    // new window height is the operator asking for something different, and must re-round from
-    // scratch: holding across those made neighbouring SPEED steps draw the same picture, which is
-    // the opposite of what a dead band is for (Mike, 2026-11-25).
-    const bool sameRequest = pixelRows == m_planPixelRows && m_waterfallSpeedSeconds == m_planSeconds;
-    const WaterfallGeometry::SpeedPlan held =
-        sameRequest ? WaterfallGeometry::SpeedPlan{m_planVisibleRows, m_framesPerRow, m_pixelRowsPerRow}
-                    : WaterfallGeometry::SpeedPlan{};
-    const WaterfallGeometry::SpeedPlan plan =
-        WaterfallGeometry::speedPlanFor(pixelRows, m_planLineRateHz, m_waterfallSpeedSeconds, held);
-    m_planPixelRows = pixelRows;
-    m_planSeconds = m_waterfallSpeedSeconds;
+    // Exact: the SPEED step is already the whole number the plan used to have to round to, so there
+    // is no measured rate in it and no boundary for the plan to hop across.
+    const WaterfallGeometry::SpeedPlan plan = WaterfallGeometry::speedPlanFor(pixelRows, m_waterfallSpeedStep);
+    updateSpeedLabel(pixelRows);
     // Any change to the row count redraws every stored row at a scale it was not captured at. The
     // shader spans the quad with V = t * visibleFraction + scrollOffset, and visibleFraction is
     // visibleRows / storedRows, so the full waterfall height always shows exactly visibleRows rows:
@@ -1490,11 +1482,21 @@ void PanadapterRhiWidget::noteLineCommitted() {
     m_lineClock.restart();
 }
 
-void PanadapterRhiWidget::setWaterfallSpeedSeconds(int seconds) {
-    if (m_waterfallSpeedSeconds != seconds) {
-        m_waterfallSpeedSeconds = seconds;
+void PanadapterRhiWidget::setWaterfallSpeedStep(int step) {
+    if (m_waterfallSpeedStep != step) {
+        m_waterfallSpeedStep = step;
         update();
     }
+}
+
+void PanadapterRhiWidget::updateSpeedLabel(int pixelRows) {
+    // The seconds a step puts on screen follow the window height and the measured frame rate, so
+    // the SPEED key's text is the panadapter's to publish, not the setting's.
+    const QString label = WaterfallGeometry::speedLabel(m_waterfallSpeedStep, pixelRows, m_lineRateHz);
+    if (label == m_speedLabel)
+        return;
+    m_speedLabel = label;
+    emit waterfallSpeedLabelChanged(label);
 }
 
 void PanadapterRhiWidget::logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz) {
@@ -1587,7 +1589,7 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
                                          outputSize.width(), outputSize.height(), devicePixelRatioF(),
                                          m_framebufferPerPanel, m_devicePxPerRow, m_waterfallRowShift, m_spectrumRatio,
                                          waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
-                                         visibleBins, pxPerBin, m_waterfallSpeedSeconds, m_lineRateHz, m_planLineRateHz,
+                                         visibleBins, pxPerBin, m_waterfallSpeedStep, m_lineRateHz, m_planLineRateHz,
                                          m_pixelRowsPerRow, m_framesPerRow)));
 }
 
@@ -1755,8 +1757,6 @@ void PanadapterRhiWidget::clear() {
     m_planLineRateHz = 0.0;
     m_pixelRowsPerRow = 1;
     m_planVisibleRows = 0;
-    m_planPixelRows = 0;
-    m_planSeconds = -1;
     m_waterfallData.fill(0);
     m_rowTierSpanHz.fill(0.0f);
     m_waterfallNeedsFullClear = true;

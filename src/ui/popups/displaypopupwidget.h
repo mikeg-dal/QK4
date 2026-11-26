@@ -57,7 +57,9 @@ public slots:
     void setWaterfallHeight(int percent);    // LCD: #WFHxx;
     void setWaterfallHeightExt(int percent); // EXT: #HWFHxx;
     // Waterfall SPEED, seconds of history on screen (0 = Fill); a QK4 setting shown beside WTRFALL.
-    void setWaterfallSpeed(int seconds);
+    // The SPEED key's text, which the panadapter works out: the seconds the current step puts on
+    // screen at this window height and this measured frame rate.
+    void setWaterfallSpeedLabel(const QString &label);
     void setWaterfallColorRange(int db);    // LCD: #WBSn; (WTR CLRS, 5-30)
     void setWaterfallColorRangeExt(int db); // EXT: #HWBSn;
 

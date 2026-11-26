@@ -477,15 +477,17 @@ void PopupManager::wireDisplayPopup() {
     // follow RadioSettings::waterfallSpeedChanged.
     const auto stepWaterfallSpeed = [](int delta) {
         RadioSettings *settings = RadioSettings::instance();
-        settings->setWaterfallSpeedSeconds(WaterfallGeometry::stepSpeed(settings->waterfallSpeedSeconds(), delta));
+        settings->setWaterfallSpeedStep(WaterfallGeometry::stepSpeed(settings->waterfallSpeedStep(), delta));
     };
     connect(m_displayPopup, &DisplayPopupWidget::waterfallSpeedIncrementRequested, this,
             [stepWaterfallSpeed]() { stepWaterfallSpeed(+1); });
     connect(m_displayPopup, &DisplayPopupWidget::waterfallSpeedDecrementRequested, this,
             [stepWaterfallSpeed]() { stepWaterfallSpeed(-1); });
-    m_displayPopup->setWaterfallSpeed(RadioSettings::instance()->waterfallSpeedSeconds());
-    connect(RadioSettings::instance(), &RadioSettings::waterfallSpeedChanged, m_displayPopup,
-            &DisplayPopupWidget::setWaterfallSpeed);
+    // The key's text is the seconds the step comes to at this window height and frame rate, which
+    // only the panadapter knows; it republishes it whenever any of the three move.
+    if (m_spectrum)
+        connect(m_spectrum, &SpectrumController::waterfallSpeedLabelChanged, m_displayPopup,
+                &DisplayPopupWidget::setWaterfallSpeedLabel);
 
     // Span +/- (per-VFO selection). + zooms in, - zooms out.
     auto adjustSpan = [this](bool zoomIn) {

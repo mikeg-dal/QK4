@@ -13,6 +13,7 @@
 #include <array>
 #include <memory>
 #include "dsp/spectrumgeometry.h"
+#include "dsp/waterfallgeometry.h"
 #include "models/radiostate/spectrumdisplaystate.h"
 #include "utils/bandplan.h"
 #include "utils/wheelaccumulator.h"
@@ -63,7 +64,7 @@ public:
     // SPEED: seconds of history on screen, 0 = Fill (WaterfallGeometry::speedPlanFor). Never changes
     // the frame rate. Rows folded at a slower speed keep the time they hold; at a faster speed the
     // whole visible history is redrawn at the new row height.
-    void setWaterfallSpeedSeconds(int seconds);
+    void setWaterfallSpeedStep(int step);
     void setSpan(int spanHz);
     void setWaterfallHeight(int percent); // 0-100: percentage of display for waterfall
     int span() const { return m_spanHz; }
@@ -93,6 +94,10 @@ public:
     void setTxMarker(qint64 freq, bool visible);
 
 signals:
+    // What the DISPLAY popup's SPEED key should read: the seconds this step puts on screen, which
+    // only this widget knows (it has the window height and the measured frame rate).
+    void waterfallSpeedLabelChanged(const QString &label);
+
     void frequencyClicked(qint64 freq);
     void frequencyDragged(qint64 freq);
     void frequencyScrolled(int steps);
@@ -154,6 +159,7 @@ private:
 
     // Re-derives m_devicePxPerRow when the widget's screen, its geometry or its scale changes.
     void updateDevicePxPerRow();
+    void updateSpeedLabel(int pixelRows);
 
     // Coordinate helpers
     qint64 displayCenterHz() const;
@@ -284,18 +290,15 @@ private:
     bool m_waterfallNeedsUpdate = false;
     // SPEED (WaterfallGeometry::speedPlanFor). The row being built takes m_framesPerRow frames,
     // each bin's peak; m_framesInRow have been folded in so far.
-    int m_waterfallSpeedSeconds = 0;
+    int m_waterfallSpeedStep = WaterfallGeometry::SpeedFill;
+    QString m_speedLabel;
     int m_framesPerRow = 1;
     // The plan in force, fed back to speedPlanFor so a ratio sitting on a rounding boundary cannot
     // flip the row height - and with it the whole waterfall's position - on the smallest rate change.
     int m_pixelRowsPerRow = 1;
-    // The plan's own row count, kept apart from m_visibleRows because that is clamped afterwards; it
-    // is also the "is there a plan yet" flag, being 0 until the first one is made. The two inputs
-    // beside it are what the held plan was made for: the dead band is there to damp the MEASURED
-    // rate, so it must not survive the operator changing SPEED or resizing the window.
+    // The plan's own row count, kept apart from m_visibleRows because that is clamped afterwards.
+    // Any change to it rescales the stored history, so it is what the restart keys on.
     int m_planVisibleRows = 0;
-    int m_planPixelRows = 0;
-    int m_planSeconds = -1;
     int m_framesInRow = 0;
     int m_rowSpecSize = 0; // bins of the frames folded into the row being built
     // How often frames become rows, measured: the K4 may send fewer frames than #FPS asked for.

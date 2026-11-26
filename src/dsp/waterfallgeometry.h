@@ -52,35 +52,45 @@ float rowShiftFor(qint64 viewportBottomFramebufferRow, int devicePxPerRow);
 // bit and the blur is back.
 int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int devicePxPerRow = 1);
 
-// ---- Speed: how many seconds of history the waterfall shows -----------------------------------
+// ---- Speed: how a stored row maps onto the screen ---------------------------------------------
 //
 // SPEED is a QK4 display setting (the K4 has no such command; Flex calls it the waterfall "rate").
-// It never changes how often the radio sends spectrum frames (#FPS): it changes how much screen each
-// frame takes. 0 is Fill, today's behaviour: one stored row per pixel row, so the history on screen
-// follows the window's height. A number is that many seconds on screen at any window size:
-//   - slower than Fill: several frames fold into one row (each bin's peak, so a short burst stays
-//     visible), and the window keeps one row per pixel row;
-//   - faster than Fill: each frame is its own row, fewer rows are shown, and each is drawn a whole
-//     number of pixel rows tall. WHY whole: 450 rows over 607 px drew rows of 1 and 2 px in a pattern
-//     fixed on screen, so a trace changed thickness and the scroll step changed size as it moved down -
-//     the uneven step one row per pixel row exists to avoid. Where the closest whole number is 1, the
-//     plan is Fill: a few seconds more history beats uneven rows.
-// WHY these steps: 5 to 60 in fives is the range an operator actually watches, and a close ladder
-// gives somewhere to go when one value sits badly for a given window height and frame rate. The old
-// 120 and 240 were removed as unused (Mike, 2026-11-25). Fill stays: it is the only setting that
-// guarantees every frame the radio sends gets its own row, whatever the rate.
-inline constexpr std::array<int, 13> SpeedStepsSeconds{0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60};
-inline constexpr int SpeedFill = 0;
+// It never changes how often the radio sends spectrum frames (#FPS): it changes how much screen
+// each frame takes.
+//
+// WHY the setting is this and not a number of seconds. Seconds of history cannot be chosen freely:
+// a row has to be a whole number of pixels tall (450 rows over 607 px drew rows of 1 and 2 px in a
+// pattern fixed on screen, so a trace changed thickness and the scroll step changed size as it
+// moved down). The attainable settings are therefore Fill divided by a whole number, which at 693
+// rows and 14.9 Hz is 46.5, 23.3, 15.5, 11.6, 9.3 ... seconds - nothing at all between 23 and 46.
+// A ladder of evenly spaced seconds cannot line up with that: it has to round, several of its steps
+// draw the identical picture, and a value landing on a rounding boundary flips between two pictures
+// on the smallest change in the measured frame rate. Both were seen on the bench (2026-11-25).
+//
+// Choosing the whole number directly removes all of it. Every step draws something different, by
+// construction, and there is no boundary left to sit on. The seconds are shown on the label, since
+// they are what the operator is actually judging.
+//
+//   n >= 1  one frame per row, drawn n pixel rows tall. n = 1 is Fill: every frame its own pixel row
+//   n <= -2 |n| frames folded into one row (each bin's peak), drawn one pixel row tall - more
+//           history than Fill can hold
+inline constexpr std::array<int, 12> SpeedSteps{-4, -3, -2, 1, 2, 3, 4, 5, 6, 8, 10, 12};
+inline constexpr int SpeedFill = 1;
 inline constexpr int MaxFramesPerRow = 64;
 
-// The step `delta` places from `seconds` (clamped to the ends); an unknown value counts as Fill.
-int stepSpeed(int seconds, int delta);
+// The step `delta` places from `step` (clamped to the ends); an unknown value counts as Fill.
+int stepSpeed(int step, int delta);
 
-// True for a value SpeedStepsSeconds holds.
-bool isSpeedStep(int seconds);
+// True for a value SpeedSteps holds.
+bool isSpeedStep(int step);
 
-// "Fill", "15s" ...
-QString speedLabel(int seconds);
+// Seconds of history `step` puts on screen over `pixelRows` at `lineRateHz`. 0 when the rate is not
+// known yet, which is the first second or so of a connection.
+double secondsOnScreen(int pixelRows, int step, double lineRateHz);
+
+// What the SPEED key reads: the seconds on screen, with Fill named, e.g. "Fill 46s" or "23s".
+// Before the rate is known it falls back to the shape alone ("Fill", "1/2", "x2").
+QString speedLabel(int step, int pixelRows, double lineRateHz);
 
 struct SpeedPlan {
     int visibleRows = 0;     // rows drawn over the waterfall's height
@@ -88,18 +98,10 @@ struct SpeedPlan {
     int pixelRowsPerRow = 1; // pixel rows each drawn row covers (faster than Fill: a whole number > 1)
 };
 
-// pixelRows is visibleRowsFor's answer for this height (one row per pixel row); lineRateHz the
-// measured rate frames become rows (0 before it is known, which plans Fill).
-//
-// `current` is the plan in force, and the reason this takes one. The frame count the seconds asked
-// for divides into the rows available at some ratio, and the plan rounds that ratio; a ratio sitting
-// on a rounding boundary flips the plan back and forth on the smallest change in the measured rate.
-// Across the 1 <-> 2 boundary that halves or doubles visibleRows, which jumps the whole waterfall up
-// the screen and back down - seen on the bench 2026-11-25 at 693 rows, 30 s and 14.9 Hz, a ratio of
-// 1.55 against a boundary at 1.50. A dead band around the value already in force is what stops it:
-// the ratio has to leave [n - SpeedHysteresis, n + SpeedHysteresis] before the plan moves off n.
-// Pass {} where there is no plan yet, which rounds as before.
-SpeedPlan speedPlanFor(int pixelRows, double lineRateHz, int seconds, const SpeedPlan &current = {});
+// pixelRows is visibleRowsFor's answer for this height (one row per pixel row). Exact: `step` is
+// already the whole number the plan used to have to round to, so nothing here depends on a measured
+// rate and nothing can hop between two answers.
+SpeedPlan speedPlanFor(int pixelRows, int step);
 
 // Folds one frame's row into the row being built: each byte the larger of the two, so the brightest
 // moment of every bin over the frames survives (bytes are palette positions, rising with dBm).

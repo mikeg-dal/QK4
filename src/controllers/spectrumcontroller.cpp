@@ -183,12 +183,16 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     });
     // Waterfall SPEED is a QK4 setting, not the radio's: both pans follow it (the mini-pans do not
     // scroll a history long enough for it to matter).
-    const auto applyWaterfallSpeed = [this](int seconds) {
-        m_panA.pad->setWaterfallSpeedSeconds(seconds);
-        m_panB.pad->setWaterfallSpeedSeconds(seconds);
+    const auto applyWaterfallSpeed = [this](int step) {
+        m_panA.pad->setWaterfallSpeedStep(step);
+        m_panB.pad->setWaterfallSpeedStep(step);
     };
-    applyWaterfallSpeed(RadioSettings::instance()->waterfallSpeedSeconds());
+    applyWaterfallSpeed(RadioSettings::instance()->waterfallSpeedStep());
     connect(RadioSettings::instance(), &RadioSettings::waterfallSpeedChanged, this, applyWaterfallSpeed);
+    // The seconds a SPEED step comes to depend on the window height and the measured frame rate, so
+    // the Main panadapter is what names them. Relayed for the DISPLAY popup's SPEED key.
+    connect(m_panA.pad, &PanadapterRhiWidget::waterfallSpeedLabelChanged, this,
+            &SpectrumController::waterfallSpeedLabelChanged);
     // #WBS is the LCD's waterfall colour range; QK4 draws what the LCD shows, so every pan uses it.
     connect(m_radioState, &RadioState::waterfallColorRangeChanged, this, [this](int db) {
         m_panA.pad->setWaterfallColorRange(db);

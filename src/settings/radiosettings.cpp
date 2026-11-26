@@ -320,19 +320,23 @@ void RadioSettings::setTextDecodeFontSize(bool subRx, int sizePx) {
     m_settings.sync();
 }
 
-int RadioSettings::waterfallSpeedSeconds() const {
-    const int seconds = m_settings.value("display/waterfallSpeedSeconds", WaterfallGeometry::SpeedFill).toInt();
-    return WaterfallGeometry::isSpeedStep(seconds) ? seconds : WaterfallGeometry::SpeedFill;
+int RadioSettings::waterfallSpeedStep() const {
+    // WHY a new key and not the old one read differently: display/waterfallSpeedSeconds held
+    // seconds, and the same small integers mean something else as a step. A build that saved 30
+    // there would be read as a step of 30, which is not on the ladder. The old key is left where it
+    // is and ignored; anyone who had set SPEED starts again at Fill.
+    const int step = m_settings.value("display/waterfallSpeedStep", WaterfallGeometry::SpeedFill).toInt();
+    return WaterfallGeometry::isSpeedStep(step) ? step : WaterfallGeometry::SpeedFill;
 }
 
-void RadioSettings::setWaterfallSpeedSeconds(int seconds) {
-    if (!WaterfallGeometry::isSpeedStep(seconds))
-        seconds = WaterfallGeometry::SpeedFill;
-    if (waterfallSpeedSeconds() == seconds)
+void RadioSettings::setWaterfallSpeedStep(int step) {
+    if (!WaterfallGeometry::isSpeedStep(step))
+        step = WaterfallGeometry::SpeedFill;
+    if (waterfallSpeedStep() == step)
         return;
-    m_settings.setValue("display/waterfallSpeedSeconds", seconds);
+    m_settings.setValue("display/waterfallSpeedStep", step);
     m_settings.sync();
-    emit waterfallSpeedChanged(seconds);
+    emit waterfallSpeedChanged(step);
 }
 
 int RadioSettings::iaruRegion() const {

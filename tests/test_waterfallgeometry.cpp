@@ -39,9 +39,10 @@ private slots:
 
     // SPEED: seconds of history on screen.
     void speedFillIsTodaysOneRowPerPixel();
-    void speedShowsTheSecondsAskedForAtAnyHeight();
+    void speedEveryStepDiffersFromItsNeighbour();
+    void speedPlanIsExactAndIndependentOfTheRate();
+    void speedSecondsFollowHeightAndRate();
     void speedStepsAndLabels();
-    void speedPlanDoesNotHopAcrossARoundingBoundary();
     void foldKeepsEachBinsPeak();
     void fasterRowsAreWholePixelsTall();
 
@@ -419,121 +420,97 @@ void TestWaterfallGeometry::smallerScaleIsBrighterLikeTheK4() {
     QCOMPARE(WaterfallGeometry::colorWindowFor(ref, 25, 14).spanDb, 25.0f);
 }
 
-// Fill (the default) is exactly the waterfall before SPEED existed: one row per pixel row, one frame per
-// row, whatever the line rate; and before the rate is measured every setting plans Fill.
+// Fill (the default) is exactly the waterfall before SPEED existed: one row per pixel row, one
+// frame per row, whatever the line rate.
 void TestWaterfallGeometry::speedFillIsTodaysOneRowPerPixel() {
     using namespace WaterfallGeometry;
     for (int rows : {64, 300, 607, 2047}) {
-        for (double hz : {0.0, 5.0, 15.0, 30.0}) {
-            const SpeedPlan fill = speedPlanFor(rows, hz, SpeedFill);
-            QCOMPARE(fill.visibleRows, rows);
-            QCOMPARE(fill.framesPerRow, 1);
-        }
-        const SpeedPlan unmeasured = speedPlanFor(rows, 0.0, 60);
-        QCOMPARE(unmeasured.visibleRows, rows);
-        QCOMPARE(unmeasured.framesPerRow, 1);
+        const SpeedPlan fill = speedPlanFor(rows, SpeedFill);
+        QCOMPARE(fill.visibleRows, rows);
+        QCOMPARE(fill.framesPerRow, 1);
+        QCOMPARE(fill.pixelRowsPerRow, 1);
     }
 }
 
-// The history on screen is the seconds asked for, at any window height: faster than Fill shows fewer,
-// taller rows of one frame each; slower folds frames so the same pixel rows hold more time. Mike's
-// FT8 case: 607 px at 15 fps holds 40 s at Fill; 30 s (two cycles) and 120 s must both be reachable.
-void TestWaterfallGeometry::speedShowsTheSecondsAskedForAtAnyHeight() {
+// Every step draws something different from the one beside it, at any window height. That is the
+// point of choosing the row height directly instead of rounding a number of seconds to it: the old
+// ladder put several of its steps on the identical picture (25 s and 30 s both landed on 2 pixel
+// rows per row at Mike's geometry) and left nothing at all between 23 s and 46 s.
+void TestWaterfallGeometry::speedEveryStepDiffersFromItsNeighbour() {
     using namespace WaterfallGeometry;
-    const SpeedPlan faster = speedPlanFor(607, 15.0, 15);
-    QCOMPARE(faster.framesPerRow, 1);
-    QCOMPARE(faster.pixelRowsPerRow, 3); // 225 frames over 607 px: rows a whole 3 px tall
-    QCOMPARE(faster.visibleRows, 202);
-    // 30 s is 450 frames over 607 px, 1.35 px each: the closest whole height is 1, so Fill (40 s).
-    const SpeedPlan nearFill = speedPlanFor(607, 15.0, 30);
-    QCOMPARE(nearFill.visibleRows, 607);
-    QCOMPARE(nearFill.pixelRowsPerRow, 1);
-    const SpeedPlan slower = speedPlanFor(607, 15.0, 120);
-    QCOMPARE(slower.visibleRows, 607);
-    QCOMPARE(slower.framesPerRow, 3); // 1800 frames over 607 rows
-    for (int seconds : SpeedStepsSeconds) {
-        if (seconds == SpeedFill)
-            continue;
-        for (int rows : {200, 607, 1100}) {
-            for (double hz : {5.0, 10.0, 15.0, 30.0}) {
-                const SpeedPlan plan = speedPlanFor(rows, hz, seconds);
-                QVERIFY(plan.visibleRows >= 2 && plan.visibleRows <= rows);
-                QVERIFY(plan.framesPerRow >= 1 && plan.framesPerRow <= MaxFramesPerRow);
-                const double shown = plan.visibleRows * plan.framesPerRow / hz;
-                // Whole frames per row cannot land every value exactly: within a third either way.
-                QVERIFY2(shown > seconds * 0.66 && shown <= seconds * 1.5,
-                         qPrintable(QStringLiteral("%1 s asked, %2 s shown (%3 rows, %4 Hz)")
-                                        .arg(seconds)
-                                        .arg(shown)
-                                        .arg(rows)
-                                        .arg(hz)));
-            }
+    for (int rows : {200, 607, 693, 1100}) {
+        for (std::size_t i = 1; i < SpeedSteps.size(); ++i) {
+            const SpeedPlan a = speedPlanFor(rows, SpeedSteps[i - 1]);
+            const SpeedPlan b = speedPlanFor(rows, SpeedSteps[i]);
+            const bool differs = a.visibleRows != b.visibleRows || a.framesPerRow != b.framesPerRow ||
+                                 a.pixelRowsPerRow != b.pixelRowsPerRow;
+            QVERIFY2(differs, qPrintable(QStringLiteral("steps %1 and %2 draw the same at %3 rows")
+                                             .arg(SpeedSteps[i - 1])
+                                             .arg(SpeedSteps[i])
+                                             .arg(rows)));
         }
     }
+}
+
+// The plan is exact, with no measured rate in it, so there is no boundary for it to hop across.
+// The bench defect of 2026-11-25: 693 rows, 30 s and 14.9 Hz put the old ratio at 1.55 against a
+// rounding boundary at 1.50, and the waterfall jumped up the screen and back down as the measured
+// rate wandered. A plan that never sees the rate cannot do it.
+void TestWaterfallGeometry::speedPlanIsExactAndIndependentOfTheRate() {
+    using namespace WaterfallGeometry;
+    for (int step : SpeedSteps) {
+        const SpeedPlan plan = speedPlanFor(693, step);
+        if (step >= SpeedFill) {
+            QCOMPARE(plan.framesPerRow, 1);
+            QCOMPARE(plan.pixelRowsPerRow, step);
+            QCOMPARE(plan.visibleRows, step == SpeedFill ? 693 : (std::max)(2, 693 / step));
+        } else {
+            QCOMPARE(plan.visibleRows, 693);
+            QCOMPARE(plan.pixelRowsPerRow, 1);
+            QCOMPARE(plan.framesPerRow, -step);
+        }
+        QVERIFY(plan.visibleRows >= 2 && plan.visibleRows <= 693);
+        QVERIFY(plan.framesPerRow >= 1 && plan.framesPerRow <= MaxFramesPerRow);
+    }
+}
+
+// The seconds on the label are the seconds the plan actually shows, and they follow the window
+// height and the measured rate rather than being the thing stored.
+void TestWaterfallGeometry::speedSecondsFollowHeightAndRate() {
+    using namespace WaterfallGeometry;
+    // Mike's bench geometry: 693 rows at 14.9 Hz. Fill holds 47 s, half the rows hold half of it.
+    QCOMPARE(qRound(secondsOnScreen(693, SpeedFill, 14.9)), 47);
+    QCOMPARE(qRound(secondsOnScreen(693, 2, 14.9)), 23);
+    QCOMPARE(qRound(secondsOnScreen(693, 3, 14.9)), 16);         // 231 rows at 14.9 Hz is 15.5 s
+    QCOMPARE(qRound(secondsOnScreen(693, -2, 14.9)), 93);        // folding holds more than Fill can
+    QCOMPARE(qRound(secondsOnScreen(346, SpeedFill, 14.9)), 23); // half the window, half the history
+    // Nothing is claimed before the rate is known, or with no window.
+    QCOMPARE(secondsOnScreen(693, 2, 0.0), 0.0);
+    QCOMPARE(secondsOnScreen(0, 2, 14.9), 0.0);
 }
 
 void TestWaterfallGeometry::speedStepsAndLabels() {
     using namespace WaterfallGeometry;
-    QCOMPARE(stepSpeed(SpeedFill, +1), 5);
-    QCOMPARE(stepSpeed(15, +1), 20);
-    QCOMPARE(stepSpeed(60, +1), 60); // held at the ends
-    QCOMPARE(stepSpeed(SpeedFill, -1), SpeedFill);
-    QCOMPARE(stepSpeed(30, -1), 25);
-    QCOMPARE(stepSpeed(7, +1), 5); // not a step: counts as Fill
-    QVERIFY(isSpeedStep(60));
-    QVERIFY(isSpeedStep(45));
-    QVERIFY(!isSpeedStep(7));
-    QVERIFY2(!isSpeedStep(120) && !isSpeedStep(240), "120 and 240 were dropped from the ladder");
-    QCOMPARE(speedLabel(SpeedFill), QStringLiteral("Fill"));
-    QCOMPARE(speedLabel(60), QStringLiteral("60s"));
-}
+    QCOMPARE(stepSpeed(SpeedFill, +1), 2);
+    QCOMPARE(stepSpeed(2, +1), 3);
+    QCOMPARE(stepSpeed(SpeedFill, -1), -2); // below Fill is the folding side
+    QCOMPARE(stepSpeed(-2, -1), -3);
+    QCOMPARE(stepSpeed(-4, -1), -4); // held at the ends
+    QCOMPARE(stepSpeed(12, +1), 12);
+    QCOMPARE(stepSpeed(7, +1), 2); // not a step: counts as Fill, so + moves one off Fill
+    QVERIFY(isSpeedStep(SpeedFill));
+    QVERIFY(isSpeedStep(-4));
+    QVERIFY(!isSpeedStep(0));
+    QVERIFY2(!isSpeedStep(30) && !isSpeedStep(15), "the old ladder held seconds; these are not steps");
 
-// The bench defect of 2026-11-25: the waterfall jumped up the screen and back down with no menu
-// open. 693 rows of waterfall, SPEED 30 s and a measured 14.9 Hz put pixelRows/frames at 1.55,
-// against a rounding boundary at 1.50 - so every wander of the measured rate across ~15.4 Hz halved
-// or doubled visibleRows, and with it the window into the waterfall texture.
-void TestWaterfallGeometry::speedPlanDoesNotHopAcrossARoundingBoundary() {
-    using namespace WaterfallGeometry;
-    constexpr int Rows = 693;
-    constexpr int Seconds = 30;
-
-    // Without a plan to hold on to, the boundary is where it always was.
-    QCOMPARE(speedPlanFor(Rows, 15.3, Seconds).pixelRowsPerRow, 2);
-    QCOMPARE(speedPlanFor(Rows, 15.5, Seconds).pixelRowsPerRow, 1);
-
-    // With one, a rate wandering either side of it changes nothing: the row count, and so the
-    // position of the whole waterfall, stays put.
-    SpeedPlan plan = speedPlanFor(Rows, 14.9, Seconds);
-    QCOMPARE(plan.pixelRowsPerRow, 2);
-    const int settledRows = plan.visibleRows;
-    for (double hz : {15.5, 14.2, 16.0, 13.9, 15.9, 14.9}) {
-        plan = speedPlanFor(Rows, hz, Seconds, plan);
-        QCOMPARE(plan.visibleRows, settledRows);
-        QCOMPARE(plan.pixelRowsPerRow, 2);
-    }
-
-    // A real rate change still gets through - the dead band holds the plan, it does not freeze it.
-    plan = speedPlanFor(Rows, 19.0, Seconds, plan); // ratio 1.22, past the band
-    QCOMPARE(plan.pixelRowsPerRow, 1);
-    QCOMPARE(plan.visibleRows, Rows);
-    plan = speedPlanFor(Rows, 11.0, Seconds, plan); // ratio 2.1, past it the other way
-    QCOMPARE(plan.pixelRowsPerRow, 2);
-
-    // The dead band damps the measured rate and nothing else. A different SPEED is the operator
-    // asking for a different picture, so it re-rounds from scratch: holding across it made
-    // neighbouring steps draw identically (15 s and 20 s both landing on 3 at 14.9 Hz). The caller
-    // enforces this by passing no held plan when seconds or pixelRows changed, so what is checked
-    // here is that a fresh plan does differ between those two steps.
-    QCOMPARE(speedPlanFor(Rows, 14.9, 15).pixelRowsPerRow, 3);
-    QCOMPARE(speedPlanFor(Rows, 14.9, 20).pixelRowsPerRow, 2);
-    QVERIFY(speedPlanFor(Rows, 14.9, 15).visibleRows != speedPlanFor(Rows, 14.9, 20).visibleRows);
-
-    // The fold count is held the same way, so the brightness of a row does not hop either.
-    SpeedPlan slow = speedPlanFor(Rows, 50.0, Seconds); // 1500 frames over 693 rows: ratio 2.16
-    QCOMPARE(slow.framesPerRow, 2);
-    for (double hz : {58.0, 43.0, 57.0})
-        QCOMPARE(speedPlanFor(Rows, hz, Seconds, slow).framesPerRow, 2);
-    QCOMPARE(speedPlanFor(Rows, 64.0, Seconds, slow).framesPerRow, 3); // ratio 2.77, past the band
+    // The label says what the step comes to, and names Fill so it can be found again.
+    QCOMPARE(speedLabel(SpeedFill, 693, 14.9), QStringLiteral("Fill 47s"));
+    QCOMPARE(speedLabel(2, 693, 14.9), QStringLiteral("23s"));
+    QCOMPARE(speedLabel(-2, 693, 14.9), QStringLiteral("93s"));
+    // Before the rate is known, the shape rather than a number that would be wrong.
+    QCOMPARE(speedLabel(SpeedFill, 693, 0.0), QStringLiteral("Fill"));
+    QCOMPARE(speedLabel(3, 693, 0.0), QStringLiteral("1/3"));
+    QCOMPARE(speedLabel(-2, 693, 0.0), QStringLiteral("x2"));
 }
 
 // Folding frames into one row keeps each bin's brightest moment: a one-frame FT8 or CW burst is not
@@ -555,9 +532,9 @@ void TestWaterfallGeometry::fasterRowsAreWholePixelsTall() {
     using namespace WaterfallGeometry;
     constexpr int kStored = 2048;
     for (int height : {200, 450, 607, 1100}) {
-        for (int seconds : {15, 30, 60}) {
-            for (double hz : {10.0, 15.0, 30.0}) {
-                const SpeedPlan plan = speedPlanFor(height, hz, seconds);
+        for (int step : SpeedSteps) {
+            {
+                const SpeedPlan plan = speedPlanFor(height, step);
                 if (plan.pixelRowsPerRow == 1)
                     continue; // Fill or folding: one row per pixel row, covered elsewhere
                 const int k = plan.pixelRowsPerRow;

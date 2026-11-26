@@ -46,6 +46,11 @@ public:
     // prevent stale spectrum data from sitting on-screen.
     void clearDisplays();
 
+signals:
+    // The DISPLAY popup's SPEED key text, relayed from the Main panadapter: the seconds the
+    // current step puts on screen at this window height and this measured frame rate.
+    void waterfallSpeedLabelChanged(const QString &label);
+
 public slots:
     void onSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
                         qint32 sampleRate, float noiseFloor);

@@ -36,59 +36,52 @@ int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int dev
     return qBound(qMin(minRows, maxRows), wanted, maxRows);
 }
 
-bool isSpeedStep(int seconds) {
-    return std::find(SpeedStepsSeconds.begin(), SpeedStepsSeconds.end(), seconds) != SpeedStepsSeconds.end();
+bool isSpeedStep(int step) {
+    return std::find(SpeedSteps.begin(), SpeedSteps.end(), step) != SpeedSteps.end();
 }
 
-int stepSpeed(int seconds, int delta) {
-    const auto it = std::find(SpeedStepsSeconds.begin(), SpeedStepsSeconds.end(), seconds);
-    const int index = it == SpeedStepsSeconds.end() ? 0 : static_cast<int>(it - SpeedStepsSeconds.begin());
-    const int last = static_cast<int>(SpeedStepsSeconds.size()) - 1;
-    return SpeedStepsSeconds[static_cast<std::size_t>(std::clamp(index + delta, 0, last))];
+int stepSpeed(int step, int delta) {
+    const auto it = std::find(SpeedSteps.begin(), SpeedSteps.end(), step);
+    // An unknown value counts as Fill, so anything saved by an older build lands somewhere sane.
+    const auto from = it == SpeedSteps.end() ? std::find(SpeedSteps.begin(), SpeedSteps.end(), SpeedFill) : it;
+    const int index = static_cast<int>(from - SpeedSteps.begin());
+    const int last = static_cast<int>(SpeedSteps.size()) - 1;
+    return SpeedSteps[static_cast<std::size_t>(std::clamp(index + delta, 0, last))];
 }
 
-QString speedLabel(int seconds) {
-    return seconds <= SpeedFill ? QStringLiteral("Fill") : QStringLiteral("%1s").arg(seconds);
+double secondsOnScreen(int pixelRows, int step, double lineRateHz) {
+    if (pixelRows <= 0 || lineRateHz <= 0.0)
+        return 0.0;
+    const SpeedPlan plan = speedPlanFor(pixelRows, step);
+    return static_cast<double>(plan.visibleRows) * plan.framesPerRow / lineRateHz;
 }
 
-namespace {
-
-// WHY 0.75 and not rounding's own 0.5: a dead band narrower than 0.5 would not be one, and 0.75
-// means the ratio must move 50 % past the boundary it last crossed before the plan moves back - far
-// more than the measured rate wanders. The cost is that a genuine rate change takes slightly longer
-// to show, which is invisible; the benefit is that the waterfall cannot hop between two heights.
-constexpr double SpeedHysteresis = 0.75;
-
-// `ideal` rounded, except that a plan already sitting on `held` keeps it while `ideal` stays within
-// the dead band around it. `held` <= 0 means there is no plan to hold on to.
-long settleOn(double ideal, int held) {
-    if (held >= 1 && std::abs(ideal - static_cast<double>(held)) <= SpeedHysteresis)
-        return held;
-    return std::lround(ideal);
-}
-
-} // namespace
-
-SpeedPlan speedPlanFor(int pixelRows, double lineRateHz, int seconds, const SpeedPlan &current) {
-    if (seconds <= SpeedFill || lineRateHz <= 0.0 || pixelRows <= 0)
-        return SpeedPlan{pixelRows, 1};
-    const double frames = seconds * lineRateHz; // frames that make up the history asked for
-    // WHY visibleRows and not the counts themselves: a default-constructed SpeedPlan already reads
-    // 1 for both, so the counts cannot say whether there is a plan in force. visibleRows can - it is
-    // 0 until one has been made.
-    const bool havePlan = current.visibleRows > 0;
-    if (frames >= pixelRows) {
-        const long perRow = settleOn(frames / pixelRows, havePlan ? current.framesPerRow : 0);
-        return SpeedPlan{pixelRows, static_cast<int>(std::clamp(perRow, 1L, static_cast<long>(MaxFramesPerRow)))};
+QString speedLabel(int step, int pixelRows, double lineRateHz) {
+    const double seconds = secondsOnScreen(pixelRows, step, lineRateHz);
+    if (seconds <= 0.0) {
+        // The rate is unknown for the first second or so of a connection. Name the shape rather
+        // than print a number that would be wrong.
+        if (step == SpeedFill)
+            return QStringLiteral("Fill");
+        return step > 0 ? QStringLiteral("1/%1").arg(step) : QStringLiteral("x%1").arg(-step);
     }
-    // Whole pixel rows per row. This is the boundary that moves the waterfall when it flips, so it
-    // is held by the same dead band as the fold count above.
-    const long perRow = (std::max)(1L, settleOn(pixelRows / frames, havePlan ? current.pixelRowsPerRow : 0));
-    if (perRow == 1)
+    const int whole = (std::max)(1, static_cast<int>(std::lround(seconds)));
+    return step == SpeedFill ? QStringLiteral("Fill %1s").arg(whole) : QStringLiteral("%1s").arg(whole);
+}
+
+SpeedPlan speedPlanFor(int pixelRows, int step) {
+    if (pixelRows <= 0)
         return SpeedPlan{pixelRows, 1, 1};
-    // WHY at least 2: one row would be the whole waterfall in one colour band.
-    const int rows = (std::max)(2, static_cast<int>(pixelRows / perRow));
-    return SpeedPlan{rows, 1, static_cast<int>(perRow)};
+    if (step <= -2) {
+        // Slower than Fill: still one pixel row per stored row, but each row is several frames
+        // peak-folded together, so the same height holds more history.
+        return SpeedPlan{pixelRows, (std::min)(-step, MaxFramesPerRow), 1};
+    }
+    if (step <= SpeedFill)
+        return SpeedPlan{pixelRows, 1, 1};
+    // Faster than Fill: each frame is its own row, drawn a whole number of pixel rows tall.
+    // WHY at least 2 rows: one row would be the whole waterfall in a single colour band.
+    return SpeedPlan{(std::max)(2, pixelRows / step), 1, step};
 }
 
 void foldPeak(quint8 *row, const quint8 *frame, int count) {

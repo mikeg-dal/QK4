@@ -206,24 +206,23 @@ private slots:
     // announced once, and anything else on disk read back as Fill.
     void waterfallSpeedRoundTripsOnlyItsSteps() {
         RadioSettings *s = RadioSettings::instance();
-        s->setWaterfallSpeedSeconds(WaterfallGeometry::SpeedFill);
+        s->setWaterfallSpeedStep(WaterfallGeometry::SpeedFill);
         QSignalSpy changed(s, &RadioSettings::waterfallSpeedChanged);
-        QCOMPARE(s->waterfallSpeedSeconds(), WaterfallGeometry::SpeedFill);
-        s->setWaterfallSpeedSeconds(60);
-        QCOMPARE(s->waterfallSpeedSeconds(), 60);
+        QCOMPARE(s->waterfallSpeedStep(), WaterfallGeometry::SpeedFill);
+        s->setWaterfallSpeedStep(4);
+        QCOMPARE(s->waterfallSpeedStep(), 4);
         QCOMPARE(changed.size(), 1);
-        s->setWaterfallSpeedSeconds(60);
-        QCOMPARE(changed.size(), 1); // unchanged: not announced
-        // 45 is a step now; 7 and 120 are not (the ladder became Fill and 5..60 in fives).
-        s->setWaterfallSpeedSeconds(45);
-        QCOMPARE(s->waterfallSpeedSeconds(), 45);
-        s->setWaterfallSpeedSeconds(7);
-        QCOMPARE(s->waterfallSpeedSeconds(), WaterfallGeometry::SpeedFill);
+        s->setWaterfallSpeedStep(4);
+        QCOMPARE(changed.size(), 1);  // unchanged: not announced
+        s->setWaterfallSpeedStep(-3); // the slower-than-Fill side of the ladder
+        QCOMPARE(s->waterfallSpeedStep(), -3);
+        s->setWaterfallSpeedStep(7); // not a step
+        QCOMPARE(s->waterfallSpeedStep(), WaterfallGeometry::SpeedFill);
         QSettings raw(QSettings::defaultFormat(), QSettings::UserScope, "QK4", "QK4");
-        raw.setValue("display/waterfallSpeedSeconds", 120);
+        raw.setValue("display/waterfallSpeedStep", 30);
         raw.sync();
-        QCOMPARE(s->waterfallSpeedSeconds(), WaterfallGeometry::SpeedFill);
-        s->setWaterfallSpeedSeconds(WaterfallGeometry::SpeedFill);
+        QCOMPARE(s->waterfallSpeedStep(), WaterfallGeometry::SpeedFill);
+        s->setWaterfallSpeedStep(WaterfallGeometry::SpeedFill);
     }
 
     // The Radio Manager reselects lastSelectedIndex after every save, and the list re-sorts on save.
