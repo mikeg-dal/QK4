@@ -46,15 +46,10 @@ public:
     // prevent stale spectrum data from sitting on-screen.
     void clearDisplays();
 
-    // The SPEED step `delta` places from `step`, skipping any the Main panadapter's current height
+    // The SPEED level `delta` places from `level`, skipping any the Main panadapter's current height
     // is too short for. The ladder's ends therefore follow the window and the #WFH split, instead of
     // offering a setting that would draw a handful of thick colour bands.
-    int speedStepAfter(int step, int delta) const;
-
-signals:
-    // The DISPLAY popup's SPEED key text, relayed from the Main panadapter: the seconds the
-    // current step puts on screen at this window height and this measured frame rate.
-    void waterfallSpeedLabelChanged(const QString &label);
+    int speedLevelAfter(int level, int delta) const;
 
 public slots:
     void onSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,

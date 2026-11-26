@@ -985,8 +985,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // is no measured rate in it and no boundary for the plan to hop across.
     m_pixelRows = pixelRows;
     const WaterfallGeometry::SpeedPlan plan =
-        WaterfallGeometry::speedPlanFor(pixelRows, m_waterfallSpeedStep, devicePixelRatioF(), m_framebufferPerPanel);
-    updateSpeedLabel(pixelRows);
+        WaterfallGeometry::speedPlanFor(pixelRows, m_waterfallSpeedLevel, devicePixelRatioF(), m_framebufferPerPanel);
     // WHY a row-count change keeps the history, where this once restarted it. Both the pixels and
     // the rows scale with the window, so a row stays at the same distance from the newest whatever
     // the height: growing the window REVEALS older rows and shrinking it hides them, and nothing is
@@ -1514,38 +1513,20 @@ void PanadapterRhiWidget::noteLineCommitted() {
     m_lineClock.restart();
 }
 
-void PanadapterRhiWidget::setWaterfallSpeedStep(int step) {
-    if (m_waterfallSpeedStep != step) {
-        m_waterfallSpeedStep = step;
+void PanadapterRhiWidget::setWaterfallSpeedLevel(int level) {
+    const int clamped = WaterfallGeometry::clampSpeedLevel(level);
+    if (m_waterfallSpeedLevel != clamped) {
+        m_waterfallSpeedLevel = clamped;
         update();
     }
 }
 
-void PanadapterRhiWidget::updateSpeedLabel(int pixelRows) {
-    // The seconds a step puts on screen follow the window height and the measured frame rate, so
-    // the SPEED key's text is the panadapter's to publish, not the setting's.
-    const double seconds = WaterfallGeometry::secondsOnScreen(pixelRows, m_waterfallSpeedStep, m_lineRateHz,
-                                                              devicePixelRatioF(), m_framebufferPerPanel);
-    // Hold the text against small drift in the measured rate: a step whose seconds sit near a
-    // rounding boundary would otherwise flicker between two numbers with nothing touched. The step
-    // itself always republishes, so changing SPEED is never held back.
-    if (m_shownStep == m_waterfallSpeedStep && !WaterfallGeometry::secondsLabelShouldChange(m_shownSeconds, seconds))
-        return;
-    m_shownStep = m_waterfallSpeedStep;
-    m_shownSeconds = seconds;
-    const QString label = WaterfallGeometry::speedLabelFor(m_waterfallSpeedStep, seconds);
-    if (label == m_speedLabel)
-        return;
-    m_speedLabel = label;
-    emit waterfallSpeedLabelChanged(label);
-}
-
-int PanadapterRhiWidget::speedStepAfter(int step, int delta) const {
-    // Before the first frame there is no row count to judge against, so offer the whole ladder.
-    if (m_pixelRows <= 0)
-        return WaterfallGeometry::stepSpeed(step, delta);
-    return WaterfallGeometry::stepSpeedFitting(step, delta, m_pixelRows, MIN_VISIBLE_ROWS, devicePixelRatioF(),
-                                               m_framebufferPerPanel);
+int PanadapterRhiWidget::speedLevelAfter(int level, int delta) const {
+    // Before the first frame there is no row count to judge against; the clamp alone then applies,
+    // and the next frame's geometry will withdraw anything that does not fit.
+    const int rows = m_pixelRows > 0 ? m_pixelRows : MIN_VISIBLE_ROWS;
+    return WaterfallGeometry::stepSpeedLevel(level, delta, rows, MIN_VISIBLE_ROWS, devicePixelRatioF(),
+                                             m_framebufferPerPanel);
 }
 
 void PanadapterRhiWidget::logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz) {
@@ -1634,6 +1615,11 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     // add detail between moments the radio never sent. Past about two physical pixels per arriving
     // row, more frames is the only thing that helps, and Display FPS in the MENU is where the
     // operator raises it (QK4 never writes #FPS unasked).
+    // Seconds of history on screen: a debug number only. The SPEED key shows a bare level, because
+    // this one moves with the window height, the #WFH split and the measured frame rate.
+    const double secondsOnScreen = WaterfallGeometry::secondsOnScreen(
+        m_visibleRows, m_waterfallSpeedLevel, m_lineRateHz, devicePixelRatioF(), m_framebufferPerPanel);
+
     const char *smoothness = m_pixelRowsPerRow <= 2.0f
                                  ? "frame-paced"
                                  : "frame-limited (raise Display FPS in the MENU for a smoother fast step)";
@@ -1653,14 +1639,14 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
                                          "devicePxPerRow %d  rowShift %g  spectrumRatio %g  "
                                          "waterfall %.1f px  rows %d/%d visible/stored  "
                                          "pxPerRow %.4f (%s)  visibleBins %.0f  pxPerBin %.2f  "
-                                         "SPEED step %d  lineRate %.2f Hz measured  "
+                                         "SPEED level %d (%.1f s on screen)  lineRate %.2f Hz measured  "
                                          "pixelRowsPerRow %.2f  framesPerRow %d  scrollPhase %g  "
                                          "smoothness %s",
                                          outputSize.width(), outputSize.height(), devicePixelRatioF(),
                                          m_framebufferPerPanel, m_devicePxPerRow, m_waterfallRowShift, m_spectrumRatio,
                                          waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
-                                         visibleBins, pxPerBin, m_waterfallSpeedStep, m_lineRateHz, m_pixelRowsPerRow,
-                                         m_framesPerRow, m_waterfallScrollPhase, smoothness)));
+                                         visibleBins, pxPerBin, m_waterfallSpeedLevel, secondsOnScreen, m_lineRateHz,
+                                         m_pixelRowsPerRow, m_framesPerRow, m_waterfallScrollPhase, smoothness)));
 }
 
 void PanadapterRhiWidget::updateDevicePxPerRow() {
@@ -1826,8 +1812,6 @@ void PanadapterRhiWidget::clear() {
     m_lineRateHz = 0.0;
     m_pixelRowsPerRow = 1.0f;
     m_pixelRows = 0;
-    m_shownSeconds = -1.0;
-    m_shownStep = WaterfallGeometry::SpeedFill;
     m_scrollRowsAdvanced = 0;
     m_waterfallScrollPhase = 0.0f;
     m_scrollClock.invalidate();

@@ -477,21 +477,22 @@ void PopupManager::wireDisplayPopup() {
     // follow RadioSettings::waterfallSpeedChanged.
     const auto stepWaterfallSpeed = [this](int delta) {
         RadioSettings *settings = RadioSettings::instance();
-        const int from = settings->waterfallSpeedStep();
-        // The panadapter skips the steps its current height is too short for, so a small window or a
-        // spectrum-heavy #WFH split gets a shorter ladder rather than settings that cannot work.
-        settings->setWaterfallSpeedStep(m_spectrum ? m_spectrum->speedStepAfter(from, delta)
-                                                   : WaterfallGeometry::stepSpeed(from, delta));
+        const int from = settings->waterfallSpeedLevel();
+        // The panadapter skips the levels its current height is too short for, so a small window or
+        // a spectrum-heavy #WFH split gets a shorter ladder rather than settings that cannot work.
+        settings->setWaterfallSpeedLevel(m_spectrum ? m_spectrum->speedLevelAfter(from, delta)
+                                                    : WaterfallGeometry::clampSpeedLevel(from + delta));
     };
     connect(m_displayPopup, &DisplayPopupWidget::waterfallSpeedIncrementRequested, this,
             [stepWaterfallSpeed]() { stepWaterfallSpeed(+1); });
     connect(m_displayPopup, &DisplayPopupWidget::waterfallSpeedDecrementRequested, this,
             [stepWaterfallSpeed]() { stepWaterfallSpeed(-1); });
-    // The key's text is the seconds the step comes to at this window height and frame rate, which
-    // only the panadapter knows; it republishes it whenever any of the three move.
-    if (m_spectrum)
-        connect(m_spectrum, &SpectrumController::waterfallSpeedLabelChanged, m_displayPopup,
-                &DisplayPopupWidget::setWaterfallSpeedLabel);
+    // The key reads the level itself - a plain 1..10. WHY not the seconds it comes to: those move
+    // with the window height, the #WFH split and the radio's measured frame rate, so the key changed
+    // on its own while nothing was touched. They stay in the qk4.spectrum.diag line instead.
+    const auto showWaterfallSpeed = [this](int level) { m_displayPopup->setWaterfallSpeedLevel(level); };
+    showWaterfallSpeed(RadioSettings::instance()->waterfallSpeedLevel());
+    connect(RadioSettings::instance(), &RadioSettings::waterfallSpeedChanged, m_displayPopup, showWaterfallSpeed);
 
     // Span +/- (per-VFO selection). + zooms in, - zooms out.
     auto adjustSpan = [this](bool zoomIn) {

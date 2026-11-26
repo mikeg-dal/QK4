@@ -64,10 +64,10 @@ public:
     // SPEED: seconds of history on screen, 0 = Fill (WaterfallGeometry::speedPlanFor). Never changes
     // the frame rate. Rows folded at a slower speed keep the time they hold; at a faster speed the
     // whole visible history is redrawn at the new row height.
-    void setWaterfallSpeedStep(int step);
-    // The SPEED step `delta` places from `step`, skipping any the current window is too short for.
+    void setWaterfallSpeedLevel(int level);
+    // The SPEED level `delta` places from `level`, skipping any the current window is too short for.
     // Only this widget knows the row count, so the ladder's ends are its to decide.
-    int speedStepAfter(int step, int delta) const;
+    int speedLevelAfter(int level, int delta) const;
     void setSpan(int spanHz);
     void setWaterfallHeight(int percent); // 0-100: percentage of display for waterfall
     int span() const { return m_spanHz; }
@@ -97,10 +97,6 @@ public:
     void setTxMarker(qint64 freq, bool visible);
 
 signals:
-    // What the DISPLAY popup's SPEED key should read: the seconds this step puts on screen, which
-    // only this widget knows (it has the window height and the measured frame rate).
-    void waterfallSpeedLabelChanged(const QString &label);
-
     void frequencyClicked(qint64 freq);
     void frequencyDragged(qint64 freq);
     void frequencyScrolled(int steps);
@@ -162,7 +158,6 @@ private:
 
     // Re-derives m_devicePxPerRow when the widget's screen, its geometry or its scale changes.
     void updateDevicePxPerRow();
-    void updateSpeedLabel(int pixelRows);
 
     // Coordinate helpers
     qint64 displayCenterHz() const;
@@ -297,8 +292,7 @@ private:
     bool m_waterfallNeedsUpdate = false;
     // SPEED (WaterfallGeometry::speedPlanFor). The row being built takes m_framesPerRow frames,
     // each bin's peak; m_framesInRow have been folded in so far.
-    int m_waterfallSpeedStep = WaterfallGeometry::SpeedFill;
-    QString m_speedLabel;
+    int m_waterfallSpeedLevel = WaterfallGeometry::SpeedLevelFill;
     int m_framesPerRow = 1;
     // Physical pixel rows each drawn row covers. Fractional at a fractional device pixel ratio,
     // which the shader's cubic reconstruction handles; it is only the old texel snap that needed a
@@ -307,10 +301,6 @@ private:
     // The row count the last render chose, so the SPEED ladder can be asked what fits this window
     // without recomputing the geometry outside a frame.
     int m_pixelRows = 0;
-    // The seconds the SPEED key is currently showing, held against small drift in the measured rate
-    // (WaterfallGeometry::secondsLabelShouldChange). The plan is never damped, only this.
-    double m_shownSeconds = -1.0;
-    int m_shownStep = WaterfallGeometry::SpeedFill;
     // Sub-row scroll: the ring advances a whole row the instant one arrives, and this closes the
     // remaining travel to zero over the measured row interval so the picture moves instead of
     // lurching (WaterfallGeometry::scrollPhaseFor).

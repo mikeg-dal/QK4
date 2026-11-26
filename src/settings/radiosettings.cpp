@@ -320,23 +320,23 @@ void RadioSettings::setTextDecodeFontSize(bool subRx, int sizePx) {
     m_settings.sync();
 }
 
-int RadioSettings::waterfallSpeedStep() const {
-    // WHY a new key and not the old one read differently: display/waterfallSpeedSeconds held
-    // seconds, and the same small integers mean something else as a step. A build that saved 30
-    // there would be read as a step of 30, which is not on the ladder. The old key is left where it
-    // is and ignored; anyone who had set SPEED starts again at Fill.
-    const int step = m_settings.value("display/waterfallSpeedStep", WaterfallGeometry::SpeedFill).toInt();
-    return WaterfallGeometry::isSpeedStep(step) ? step : WaterfallGeometry::SpeedFill;
+int RadioSettings::waterfallSpeedLevel() const {
+    // WHY a third key and not either older one: display/waterfallSpeedSeconds held seconds and
+    // display/waterfallSpeedStep held a signed row height, and the same small integers mean
+    // something else again as a level - a saved 2 would read as the 2x fold under one scheme and
+    // the second-slowest level under this one. Both old keys are left where they are and ignored;
+    // anyone who had set SPEED starts again at Fill.
+    return WaterfallGeometry::clampSpeedLevel(
+        m_settings.value("display/waterfallSpeedLevel", WaterfallGeometry::SpeedLevelFill).toInt());
 }
 
-void RadioSettings::setWaterfallSpeedStep(int step) {
-    if (!WaterfallGeometry::isSpeedStep(step))
-        step = WaterfallGeometry::SpeedFill;
-    if (waterfallSpeedStep() == step)
+void RadioSettings::setWaterfallSpeedLevel(int level) {
+    const int clamped = WaterfallGeometry::clampSpeedLevel(level);
+    if (waterfallSpeedLevel() == clamped)
         return;
-    m_settings.setValue("display/waterfallSpeedStep", step);
+    m_settings.setValue("display/waterfallSpeedLevel", clamped);
     m_settings.sync();
-    emit waterfallSpeedChanged(step);
+    emit waterfallSpeedChanged(clamped);
 }
 
 int RadioSettings::iaruRegion() const {

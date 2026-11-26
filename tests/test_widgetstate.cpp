@@ -13,6 +13,7 @@
 #include <QSet>
 #include "ui/popups/confirmpopup.h"
 #include "ui/popups/displaypopupwidget.h"
+#include "dsp/waterfallgeometry.h"
 #include "ui/styling/k4glyphs.h"
 #include "ui/styling/k4styles.h"
 #include "ui/popups/lineoutpopup.h"
@@ -514,11 +515,12 @@ private slots:
                 speed = g;
         }
         QVERIFY(wtrfall && speed);
-        // The seconds a step comes to depend on the window height and the measured frame rate, so
-        // the panadapter names them and the popup only shows what it is given.
-        QCOMPARE(speed->value(), QStringLiteral("Fill"));
-        popup.setWaterfallSpeedLabel(QStringLiteral("23s"));
-        QCOMPARE(speed->value(), QStringLiteral("23s"));
+        // SPEED shows a bare level, 1..10. WHY not the seconds it comes to: those move with the
+        // window height, the #WFH split and the measured frame rate, so the key changed on its own
+        // while nothing was touched. The popup only shows the number it is given.
+        QCOMPARE(speed->value(), QString::number(WaterfallGeometry::SpeedLevelFill));
+        popup.setWaterfallSpeedLevel(7);
+        QCOMPARE(speed->value(), QStringLiteral("7"));
 
         DisplayMenuButton *panKey = nullptr;
         int rowRight = 0;

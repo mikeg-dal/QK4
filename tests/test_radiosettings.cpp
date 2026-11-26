@@ -202,27 +202,35 @@ private slots:
         }
     }
 
-    // Waterfall SPEED is one QK4-wide setting: Fill by default, only the defined steps, a change
-    // announced once, and anything else on disk read back as Fill.
-    void waterfallSpeedRoundTripsOnlyItsSteps() {
+    // Waterfall SPEED is one QK4-wide setting: a level 1..10, Fill by default, a change announced
+    // once, and anything else on disk read back as Fill.
+    void waterfallSpeedRoundTripsOnlyItsLevels() {
         RadioSettings *s = RadioSettings::instance();
-        s->setWaterfallSpeedStep(WaterfallGeometry::SpeedFill);
+        s->setWaterfallSpeedLevel(WaterfallGeometry::SpeedLevelFill);
         QSignalSpy changed(s, &RadioSettings::waterfallSpeedChanged);
-        QCOMPARE(s->waterfallSpeedStep(), WaterfallGeometry::SpeedFill);
-        s->setWaterfallSpeedStep(4);
-        QCOMPARE(s->waterfallSpeedStep(), 4);
+        QCOMPARE(s->waterfallSpeedLevel(), WaterfallGeometry::SpeedLevelFill);
+        s->setWaterfallSpeedLevel(7);
+        QCOMPARE(s->waterfallSpeedLevel(), 7);
         QCOMPARE(changed.size(), 1);
-        s->setWaterfallSpeedStep(4);
-        QCOMPARE(changed.size(), 1);  // unchanged: not announced
-        s->setWaterfallSpeedStep(-3); // the slower-than-Fill side of the ladder
-        QCOMPARE(s->waterfallSpeedStep(), -3);
-        s->setWaterfallSpeedStep(7); // not a step
-        QCOMPARE(s->waterfallSpeedStep(), WaterfallGeometry::SpeedFill);
+        s->setWaterfallSpeedLevel(7);
+        QCOMPARE(changed.size(), 1); // unchanged: not announced
+        s->setWaterfallSpeedLevel(WaterfallGeometry::SpeedLevelMin);
+        QCOMPARE(s->waterfallSpeedLevel(), WaterfallGeometry::SpeedLevelMin);
+        s->setWaterfallSpeedLevel(WaterfallGeometry::SpeedLevelMax);
+        QCOMPARE(s->waterfallSpeedLevel(), WaterfallGeometry::SpeedLevelMax);
+        for (const int outside : {0, -3, 11, 30}) {
+            s->setWaterfallSpeedLevel(outside);
+            QCOMPARE(s->waterfallSpeedLevel(), WaterfallGeometry::SpeedLevelFill);
+        }
+        // Neither older key is read: display/waterfallSpeedSeconds held seconds and
+        // display/waterfallSpeedStep a signed row height, and the same small integers mean
+        // something else again as a level.
         QSettings raw(QSettings::defaultFormat(), QSettings::UserScope, "QK4", "QK4");
-        raw.setValue("display/waterfallSpeedStep", 30);
+        raw.setValue("display/waterfallSpeedStep", -3);
+        raw.setValue("display/waterfallSpeedSeconds", 30);
         raw.sync();
-        QCOMPARE(s->waterfallSpeedStep(), WaterfallGeometry::SpeedFill);
-        s->setWaterfallSpeedStep(WaterfallGeometry::SpeedFill);
+        QCOMPARE(s->waterfallSpeedLevel(), WaterfallGeometry::SpeedLevelFill);
+        s->setWaterfallSpeedLevel(WaterfallGeometry::SpeedLevelFill);
     }
 
     // The Radio Manager reselects lastSelectedIndex after every save, and the list re-sorts on save.

@@ -56,10 +56,11 @@ public slots:
     // Waterfall height percentage (0-100, default 50 = 50/50 split)
     void setWaterfallHeight(int percent);    // LCD: #WFHxx;
     void setWaterfallHeightExt(int percent); // EXT: #HWFHxx;
-    // Waterfall SPEED, seconds of history on screen (0 = Fill); a QK4 setting shown beside WTRFALL.
-    // The SPEED key's text, which the panadapter works out: the seconds the current step puts on
-    // screen at this window height and this measured frame rate.
-    void setWaterfallSpeedLabel(const QString &label);
+    // Waterfall SPEED: the operator's level, 1 (slowest) to 10 (fastest), shown beside WTRFALL. A
+    // QK4 setting, not the radio's. The key shows the bare number on purpose - the seconds it comes
+    // to depend on the window height, the #WFH split and the measured frame rate, so a seconds key
+    // moved on its own; those live in the qk4.spectrum.diag line instead.
+    void setWaterfallSpeedLevel(int level);
     void setWaterfallColorRange(int db);    // LCD: #WBSn; (WTR CLRS, 5-30)
     void setWaterfallColorRangeExt(int db); // EXT: #HWBSn;
 

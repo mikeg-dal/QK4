@@ -46,10 +46,10 @@ void SpectrumController::clearDisplays() {
         m_vfoB->showNormal();
 }
 
-int SpectrumController::speedStepAfter(int step, int delta) const {
-    // Main's geometry decides: it is the pan whose label the DISPLAY popup shows, so the ladder it
-    // offers and the seconds it reports come from the same window.
-    return m_panA.pad->speedStepAfter(step, delta);
+int SpectrumController::speedLevelAfter(int level, int delta) const {
+    // Main's geometry decides which levels are worth offering: it is the pan the operator is
+    // watching when they press the key.
+    return m_panA.pad->speedLevelAfter(level, delta);
 }
 
 void SpectrumController::setAmplitudeUnits(bool useSUnits) {
@@ -189,16 +189,12 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     });
     // Waterfall SPEED is a QK4 setting, not the radio's: both pans follow it (the mini-pans do not
     // scroll a history long enough for it to matter).
-    const auto applyWaterfallSpeed = [this](int step) {
-        m_panA.pad->setWaterfallSpeedStep(step);
-        m_panB.pad->setWaterfallSpeedStep(step);
+    const auto applyWaterfallSpeed = [this](int level) {
+        m_panA.pad->setWaterfallSpeedLevel(level);
+        m_panB.pad->setWaterfallSpeedLevel(level);
     };
-    applyWaterfallSpeed(RadioSettings::instance()->waterfallSpeedStep());
+    applyWaterfallSpeed(RadioSettings::instance()->waterfallSpeedLevel());
     connect(RadioSettings::instance(), &RadioSettings::waterfallSpeedChanged, this, applyWaterfallSpeed);
-    // The seconds a SPEED step comes to depend on the window height and the measured frame rate, so
-    // the Main panadapter is what names them. Relayed for the DISPLAY popup's SPEED key.
-    connect(m_panA.pad, &PanadapterRhiWidget::waterfallSpeedLabelChanged, this,
-            &SpectrumController::waterfallSpeedLabelChanged);
     // #WBS is the LCD's waterfall colour range; QK4 draws what the LCD shows, so every pan uses it.
     connect(m_radioState, &RadioState::waterfallColorRangeChanged, this, [this](int db) {
         m_panA.pad->setWaterfallColorRange(db);

@@ -37,103 +37,84 @@ int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, qreal f
     return qBound(qMin(minRows, maxRows), wanted, maxRows);
 }
 
-bool isSpeedStep(int step) {
-    return std::find(SpeedSteps.begin(), SpeedSteps.end(), step) != SpeedSteps.end();
+int clampSpeedLevel(int level) {
+    if (level < SpeedLevelMin || level > SpeedLevelMax)
+        return SpeedLevelFill; // anything saved by an older build lands somewhere sane
+    return level;
 }
 
-int stepSpeed(int step, int delta) {
-    const auto it = std::find(SpeedSteps.begin(), SpeedSteps.end(), step);
-    // An unknown value counts as Fill, so anything saved by an older build lands somewhere sane.
-    const auto from = it == SpeedSteps.end() ? std::find(SpeedSteps.begin(), SpeedSteps.end(), SpeedFill) : it;
-    const int index = static_cast<int>(from - SpeedSteps.begin());
-    const int last = static_cast<int>(SpeedSteps.size()) - 1;
-    return SpeedSteps[static_cast<std::size_t>(std::clamp(index + delta, 0, last))];
+namespace {
+const SpeedLevel &levelAt(int level) {
+    return SpeedLevels[static_cast<std::size_t>(clampSpeedLevel(level) - 1)];
 }
+// Below this a level draws Fill's picture under another number, so it is not offered.
+constexpr float kAboveFill = 1.001f;
+} // namespace
 
-float physicalRowHeightFor(int step, qreal dpr, qreal framebufferPixelsPerPanelPixel) {
-    if (step <= SpeedFill)
-        return 1.0f; // Fill and the fold steps: one row per physical pixel of the panel
+float physicalRowHeightFor(int level, qreal dpr, qreal framebufferPixelsPerPanelPixel) {
+    const SpeedLevel &entry = levelAt(level);
+    if (entry.unit == RowUnit::PanelPixel)
+        return entry.rowHeight; // Fill and the folds: one row per physical pixel of the panel
     const double logicalToFramebuffer = dpr > 0.0 ? static_cast<double>(dpr) : 1.0;
     const double framebufferPerPhysical =
         framebufferPixelsPerPanelPixel > 0.0 ? static_cast<double>(framebufferPixelsPerPanelPixel) : 1.0;
-    const double physical = static_cast<double>(step) * logicalToFramebuffer / framebufferPerPhysical;
-    // A step can only reach 1.0 where the panel's physical pixels are coarser than its logical ones,
-    // and at 1.0 it simply IS Fill - the same picture, and the label says the same seconds. That is
-    // correct rather than a fault, so clamp and let it be.
+    const double physical = static_cast<double>(entry.rowHeight) * logicalToFramebuffer / framebufferPerPhysical;
+    // A logical pixel can be smaller than a panel pixel, and a row never is: at that point the level
+    // simply IS Fill, which is correct rather than a fault. speedLevelFits withdraws it.
     return static_cast<float>((std::max)(1.0, physical));
 }
 
-double secondsOnScreen(int pixelRows, int step, double lineRateHz, qreal dpr, qreal framebufferPerPanel) {
+double secondsOnScreen(int pixelRows, int level, double lineRateHz, qreal dpr, qreal framebufferPerPanel) {
     if (pixelRows <= 0 || lineRateHz <= 0.0)
         return 0.0;
-    const SpeedPlan plan = speedPlanFor(pixelRows, step, dpr, framebufferPerPanel);
+    const SpeedPlan plan = speedPlanFor(pixelRows, level, dpr, framebufferPerPanel);
     return static_cast<double>(plan.visibleRows) * plan.framesPerRow / lineRateHz;
 }
 
-QString speedLabelFor(int step, double seconds) {
-    if (seconds <= 0.0) {
-        // The rate is unknown for the first second or so of a connection. Name the shape rather
-        // than print a number that would be wrong.
-        if (step == SpeedFill)
-            return QStringLiteral("Fill");
-        return step > 0 ? QStringLiteral("1/%1").arg(step) : QStringLiteral("x%1").arg(-step);
-    }
-    const int whole = (std::max)(1, static_cast<int>(std::lround(seconds)));
-    return step == SpeedFill ? QStringLiteral("Fill %1s").arg(whole) : QStringLiteral("%1s").arg(whole);
-}
-
-QString speedLabel(int step, int pixelRows, double lineRateHz, qreal dpr, qreal framebufferPerPanel) {
-    return speedLabelFor(step, secondsOnScreen(pixelRows, step, lineRateHz, dpr, framebufferPerPanel));
-}
-
-bool secondsLabelShouldChange(double shownSeconds, double computedSeconds) {
-    // Appearing or disappearing is always a change: before a rate is measured the key shows the
-    // shape instead of a number, and the switch between the two must not be held back.
-    if (computedSeconds <= 0.0 || shownSeconds <= 0.0)
-        return !qFuzzyCompare(1.0 + shownSeconds, 1.0 + computedSeconds);
-    return std::abs(computedSeconds - shownSeconds) > SecondsLabelHoldFraction * shownSeconds;
-}
-
-SpeedPlan speedPlanFor(int pixelRows, int step, qreal dpr, qreal framebufferPerPanel) {
+SpeedPlan speedPlanFor(int pixelRows, int level, qreal dpr, qreal framebufferPerPanel) {
     if (pixelRows <= 0)
         return SpeedPlan{pixelRows, 1, 1.0f};
-    if (step <= -2) {
-        // Slower than Fill: still one pixel row per stored row, but each row is several frames
-        // peak-folded together, so the same height holds more history.
-        return SpeedPlan{pixelRows, (std::min)(-step, MaxFramesPerRow), 1.0f};
+    const SpeedLevel &entry = levelAt(level);
+    if (entry.framesPerRow > 1) {
+        // Slower than Fill: still one row per panel pixel, but each row is several frames peak
+        // folded together, so the same height holds more history.
+        return SpeedPlan{pixelRows, (std::min)(entry.framesPerRow, MaxFramesPerRow), 1.0f};
     }
-    if (step <= SpeedFill)
+    const float height = physicalRowHeightFor(level, dpr, framebufferPerPanel);
+    if (height <= kAboveFill)
         return SpeedPlan{pixelRows, 1, 1.0f};
     // Faster than Fill: each frame is its own row, drawn `height` physical pixel rows tall. The
-    // height is not rounded to a whole number of pixels - the shader's cubic reconstruction takes a
-    // continuous phase, so it does not need one.
+    // height is not rounded to a whole number - the shader's cubic reconstruction takes a continuous
+    // phase, so it does not need one.
     // WHY at least 2 rows: one row would be the whole waterfall in a single colour band.
-    const float height = physicalRowHeightFor(step, dpr, framebufferPerPanel);
     const int rows = (std::max)(2, static_cast<int>(std::lround(static_cast<double>(pixelRows) / height)));
     return SpeedPlan{(std::min)(rows, pixelRows), 1, height};
 }
 
-bool speedStepFits(int step, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel) {
-    if (!isSpeedStep(step))
+bool speedLevelFits(int level, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel) {
+    if (level < SpeedLevelMin || level > SpeedLevelMax)
         return false;
-    if (step <= SpeedFill)
+    const SpeedLevel &entry = SpeedLevels[static_cast<std::size_t>(level - 1)];
+    if (entry.unit == RowUnit::PanelPixel)
         return true; // Fill and the folds keep every row the height can hold
-    return speedPlanFor(pixelRows, step, dpr, framebufferPerPanel).visibleRows >= minRows;
+    if (physicalRowHeightFor(level, dpr, framebufferPerPanel) <= kAboveFill)
+        return false; // it would draw Fill's picture under another number
+    return speedPlanFor(pixelRows, level, dpr, framebufferPerPanel).visibleRows >= minRows;
 }
 
-int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel) {
+int stepSpeedLevel(int level, int delta, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel) {
+    int current = clampSpeedLevel(level);
     if (delta == 0)
-        return step;
+        return current;
     const int direction = delta > 0 ? 1 : -1;
-    int current = isSpeedStep(step) ? step : SpeedFill;
     for (int remaining = std::abs(delta); remaining > 0; --remaining) {
         int candidate = current;
         for (;;) {
-            const int next = stepSpeed(candidate, direction);
-            if (next == candidate)
-                return current; // ran off the ladder: stay on the last step that fits
+            const int next = candidate + direction;
+            if (next < SpeedLevelMin || next > SpeedLevelMax)
+                return current; // ran off the ladder: stay on the last level that fits
             candidate = next;
-            if (speedStepFits(candidate, pixelRows, minRows, dpr, framebufferPerPanel))
+            if (speedLevelFits(candidate, pixelRows, minRows, dpr, framebufferPerPanel))
                 break;
         }
         current = candidate;

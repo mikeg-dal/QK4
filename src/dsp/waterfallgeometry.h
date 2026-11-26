@@ -1,7 +1,6 @@
 #ifndef DSP_WATERFALLGEOMETRY_H
 #define DSP_WATERFALLGEOMETRY_H
 
-#include <QString>
 #include <QtGlobal>
 
 #include <array>
@@ -62,74 +61,77 @@ int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, qreal f
 
 // ---- Speed: how a stored row maps onto the screen ---------------------------------------------
 //
-// SPEED is a QK4 display setting (the K4 has no such command).
-// It never changes how often the radio sends spectrum frames (#FPS): it changes how much screen
-// each frame takes.
+// SPEED is a QK4 display setting (the K4 has no such command). It never changes how often the radio
+// sends spectrum frames (#FPS): it changes how much screen each frame takes.
 //
-// WHY the setting is this and not a number of seconds. Seconds of history cannot be chosen freely:
-// a row has to be a whole number of pixels tall (450 rows over 607 px drew rows of 1 and 2 px in a
-// pattern fixed on screen, so a trace changed thickness and the scroll step changed size as it
-// moved down). The attainable settings are therefore Fill divided by a whole number, which at 693
-// rows and 14.9 Hz is 46.5, 23.3, 15.5, 11.6, 9.3 ... seconds - nothing at all between 23 and 46.
-// A ladder of evenly spaced seconds cannot line up with that: it has to round, several of its steps
-// draw the identical picture, and a value landing on a rounding boundary flips between two pictures
-// on the smallest change in the measured frame rate. Both were seen on the bench (2026-11-25).
+// The operator sees a plain number, 1 (slowest, most history) to 10 (fastest). WHY a bare ordinal
+// and not seconds: the seconds a level comes to depend on the window height, the #WFH split and the
+// radio's measured frame rate, so a seconds-valued key moved on its own as any of the three drifted,
+// and a level sitting near a rounding boundary flickered between two numbers with nothing touched
+// (SPEED 1/3 over 693 rows at 14.9 Hz computes 15.50 s exactly). Those are QK4's internals; the
+// operator picks a speed and watches the screen. Seconds remain in the qk4.spectrum.diag line, for
+// whoever is debugging it.
 //
-// Choosing the whole number directly removes all of it. Every step draws something different, by
-// construction, and there is no boundary left to sit on. The seconds are shown on the label, since
-// they are what the operator is actually judging.
+// The number is a fixed index into this table, not a position in whatever happens to fit. A level
+// the current window is too short for is SKIPPED when stepping, never renumbered, so level 7 is the
+// same speed whatever size the window is.
+enum class RowUnit {
+    // One row per PHYSICAL pixel of the panel: the sharpest picture and the longest history the
+    // display can hold. A 4K panel is meant to get more of both than a 1080p one.
+    PanelPixel,
+    // A vertical magnification, counted in LOGICAL pixels so the picture travels at the same visible
+    // speed on every display. Counting it in framebuffer pixels made the same level scroll at half
+    // the speed and hold twice the history on a 2x panel (bench, 2026-11-26).
+    LogicalPixel,
+};
+
+struct SpeedLevel {
+    int framesPerRow = 1; // above 1, that many frames peak-folded into each row
+    RowUnit unit = RowUnit::PanelPixel;
+    float rowHeight = 1.0f; // in `unit`s
+};
+
+// Slowest first. WHY it stops at a 3x fold and not 4x: at a 647-row waterfall and 16 Hz, 3x is
+// already two minutes - long enough to watch eight FT8 cycles or a band opening, which is a real
+// propagation view. 4x was 2.7 minutes, which is nobody's workflow (Mike, 2026-11-26).
 //
-//   n >= 1  one frame per row, drawn n pixel rows tall. n = 1 is Fill: every frame its own pixel row
-//   n <= -2 |n| frames folded into one row (each bin's peak), drawn one pixel row tall - more
-//           history than Fill can hold
-inline constexpr std::array<int, 12> SpeedSteps{-4, -3, -2, 1, 2, 3, 4, 5, 6, 8, 10, 12};
-inline constexpr int SpeedFill = 1;
+// WHY the fast side starts at one logical pixel rather than two: Fill is one PANEL pixel, so on a 2x
+// display a two-logical-pixel level is four times Fill, and everything between 41 s and 10 s was
+// unreachable - the range an operator actually watches. One logical pixel halves that first jump,
+// and on a 1x display it IS Fill, so it withdraws itself there.
+inline constexpr std::array<SpeedLevel, 10> SpeedLevels{{
+    {3, RowUnit::PanelPixel, 1.0f},   // 1  slowest
+    {2, RowUnit::PanelPixel, 1.0f},   // 2
+    {1, RowUnit::PanelPixel, 1.0f},   // 3  Fill
+    {1, RowUnit::LogicalPixel, 1.0f}, // 4
+    {1, RowUnit::LogicalPixel, 1.5f}, // 5
+    {1, RowUnit::LogicalPixel, 2.0f}, // 6
+    {1, RowUnit::LogicalPixel, 3.0f}, // 7
+    {1, RowUnit::LogicalPixel, 4.0f}, // 8
+    {1, RowUnit::LogicalPixel, 6.0f}, // 9
+    {1, RowUnit::LogicalPixel, 8.0f}, // 10 fastest
+}};
+inline constexpr int SpeedLevelMin = 1;
+inline constexpr int SpeedLevelMax = static_cast<int>(SpeedLevels.size());
+inline constexpr int SpeedLevelFill = 3;
 inline constexpr int MaxFramesPerRow = 64;
 
-// The step `delta` places from `step` (clamped to the ends); an unknown value counts as Fill.
-int stepSpeed(int step, int delta);
+// `level` held to the table, with anything unrecognised landing on Fill.
+int clampSpeedLevel(int level);
 
-// True for a value SpeedSteps holds.
-bool isSpeedStep(int step);
-
-// Physical pixel rows one drawn row covers at `step` on a display with this device pixel ratio.
+// Physical pixel rows one drawn row covers at `level` on a display with this device pixel ratio and
+// framebuffer-to-panel ratio.
 //
-// Fill is exactly one row per physical pixel: the sharpest picture and the longest history the panel
-// can hold, which is the whole point of it, and it is right that a 4K panel gets more of both than a
-// 1080p one. Fill's seconds therefore differ between displays, and the label says so.
-//
-// Every step above Fill is a vertical magnification, and the operator judges a magnification by how
-// fast the picture moves - so it is counted in LOGICAL pixels. The same step then scrolls at the
-// same visible speed on every display, where counting it in framebuffer pixels made it scroll at
-// half the speed and hold twice the history on a 2x panel (bench, 2026-11-26).
-//
-// The answer need not be a whole number (dpr 1.5 at step 3 is 4.5 physical pixels). That is safe
+// The answer need not be a whole number (dpr 1.5 at three logical pixels is 4.5). That is safe
 // because the shader reconstructs rows with a cubic kernel at a continuous phase instead of snapping
 // each row to a texel centre. The snap is what turned a fractional height into rows of 12 and 13
 // pixels in a pattern that slid through the picture as it scrolled.
-float physicalRowHeightFor(int step, qreal dpr, qreal framebufferPixelsPerPanelPixel);
+float physicalRowHeightFor(int level, qreal dpr, qreal framebufferPixelsPerPanelPixel);
 
-// Seconds of history `step` puts on screen over `pixelRows` at `lineRateHz`. 0 when the rate is not
-// known yet, which is the first second or so of a connection.
-double secondsOnScreen(int pixelRows, int step, double lineRateHz, qreal dpr, qreal framebufferPerPanel);
-
-// The SPEED key's text for a step already known to show `seconds` (0 if the rate is not known yet):
-// the seconds with Fill named, e.g. "Fill 46s" or "23s", falling back to the shape alone ("Fill",
-// "1/2", "x2") before a rate has been measured.
-QString speedLabelFor(int step, double seconds);
-
-// What the SPEED key reads, computed and formatted in one call.
-QString speedLabel(int step, int pixelRows, double lineRateHz, qreal dpr, qreal framebufferPerPanel);
-
-// How far the displayed seconds must move before the key's text follows.
-//
-// WHY the label needs a hold and the plan does not: the seconds are the row count divided by the
-// MEASURED frame rate, which is a live exponential average, so a step whose exact value sits near a
-// rounding boundary flips between two numbers on a fraction of a percent of drift. SPEED 1/3 over
-// 693 rows at 14.9 Hz computes 15.50 s exactly, and the key flickered between 15 and 16 with nothing
-// touched. Damp the label; never damp the plan, which is exact and has no boundary to sit on.
-inline constexpr double SecondsLabelHoldFraction = 0.05;
-bool secondsLabelShouldChange(double shownSeconds, double computedSeconds);
+// Seconds of history `level` puts on screen over `pixelRows` at `lineRateHz`. 0 when the rate is not
+// known yet, which is the first second or so of a connection. DIAGNOSTIC ONLY - this number is not
+// shown to the operator; see the note at the top of this section.
+double secondsOnScreen(int pixelRows, int level, double lineRateHz, qreal dpr, qreal framebufferPerPanel);
 
 struct SpeedPlan {
     int visibleRows = 0;          // rows drawn over the waterfall's height
@@ -137,20 +139,20 @@ struct SpeedPlan {
     float pixelRowsPerRow = 1.0f; // physical pixel rows each drawn row covers; fractional is fine
 };
 
-// pixelRows is visibleRowsFor's answer for this height (one row per physical pixel). Exact in the
-// sense that matters: nothing here reads a measured frame rate, so the plan cannot hop between two
-// answers as the rate drifts.
-SpeedPlan speedPlanFor(int pixelRows, int step, qreal dpr, qreal framebufferPerPanel);
+// pixelRows is visibleRowsFor's answer for this height (one row per panel pixel). Exact in the sense
+// that matters: nothing here reads a measured frame rate, so the plan cannot hop between two answers
+// as the rate drifts.
+SpeedPlan speedPlanFor(int pixelRows, int level, qreal dpr, qreal framebufferPerPanel);
 
-// Whether `step` is worth offering for a waterfall this tall. A step that would leave fewer than
-// `minRows` rows is a few thick colour bands rather than a waterfall, so a short window or a
-// spectrum-heavy #WFH split gets a SHORTER LADDER instead of settings that cannot work. Fill and the
-// fold steps always fit: they keep every row the height can hold.
-bool speedStepFits(int step, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel);
+// Whether `level` is worth offering for a waterfall this tall on this display. A level is withdrawn
+// when it would leave fewer than `minRows` rows - a handful of thick colour bands is not a waterfall
+// - or when its rows would come out no taller than Fill's, where it would draw Fill's picture under
+// another number. Fill and the folds always fit: they keep every row the height can hold.
+bool speedLevelFits(int level, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel);
 
-// stepSpeed, but walking past the steps this window is too short for, and stopping where it runs out
-// rather than landing on one that does not fit.
-int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel);
+// The level `delta` places from `level`, walking past the ones this window is too short for and
+// stopping where it runs out rather than landing on one that does not fit.
+int stepSpeedLevel(int level, int delta, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel);
 
 // The sub-row scroll residual, in texture-V units, to ADD to V (so <= 0, like rowShiftFor).
 //

@@ -212,12 +212,13 @@ public:
     int textDecodeFontSize(bool subRx) const;
     void setTextDecodeFontSize(bool subRx, int sizePx);
 
-    // Waterfall SPEED: how a stored row maps onto the screen (WaterfallGeometry::SpeedSteps), 1 =
-    // Fill. A QK4 display setting, the same for every radio; a value that is not a step reads as
-    // Fill. Seconds of history are not stored, because what they come to depends on the window
-    // height and the radio's frame rate - the panadapter publishes them for the key's label.
-    int waterfallSpeedStep() const;
-    void setWaterfallSpeedStep(int step);
+    // Waterfall SPEED: the operator's level, 1 (slowest) to 10 (fastest), indexing
+    // WaterfallGeometry::SpeedLevels; 3 is Fill. A QK4 display setting, the same for every radio;
+    // anything outside the ladder reads as Fill. Seconds of history are deliberately NOT stored or
+    // shown - what a level comes to depends on the window height, the #WFH split and the radio's
+    // measured frame rate, so a seconds-valued key moved on its own as any of those drifted.
+    int waterfallSpeedLevel() const;
+    void setWaterfallSpeedLevel(int level);
 
     // Station / operator info
     int iaruRegion() const; // 1, 2, or 3 — drives the panadapter band-plan overlay
@@ -269,7 +270,7 @@ public:
 
 signals:
     void radiosChanged();
-    void waterfallSpeedChanged(int step);
+    void waterfallSpeedChanged(int level);
     void kpodEnabledChanged(bool enabled);
     void kpa1500EnabledChanged(bool enabled);
     void kpa1500SettingsChanged();
