@@ -52,6 +52,13 @@ public:
     void setScale(int scale);
     void setWaterfallColorRange(int db);
 
+    // The MAIN panadapter's resolution bandwidth, in Hz per bin. The mini-pan draws on the
+    // receiver's REF, and REF only means anything at the bin width it was derived for, so this is
+    // what lets the mini-pan correct it for its own much narrower bins
+    // (SpectrumScale::refOffsetForBinWidth). 0 until a PAN frame has arrived, which leaves the
+    // display exactly as it was before the correction existed.
+    void setReferenceBinWidthHz(double hzPerBin);
+
 signals:
     void clicked(); // Emitted when user clicks to toggle back to normal view
 
@@ -82,6 +89,24 @@ private:
     void positionFrequencyLabels();
 
     void updateDbRange();
+
+    // REF corrected for the gap between this mini-pan's bin width and the main pan's. Everything
+    // that places a level on this widget - the colour window and the trace's dB range - goes
+    // through it, so the two halves can never disagree about where the noise floor sits.
+    float effectiveRefDbm() const;
+    void updateRefOffset();
+    double m_referenceHzPerBin = 0.0; // the main pan's, from SpectrumController
+    double m_binWidthHz = 0.0;        // this mini-pan's own, from its frames
+    float m_refOffsetDb = 0.0f;
+
+    // Bench measurement (qk4.spectrum.diag, about once a second): where the MiniPAN's bins actually
+    // land against the colour window built from the receiver's REF. Reports the raw byte
+    // distribution, how much of it is sitting on the byte-0 floor, and the palette positions those
+    // levels reach - the three things that tell a wrong K4_MINIPAN_DBM_OFFSET apart from a radio
+    // that is clipping the bins before it sends them.
+    void logLevelDistribution(const QByteArray &bins);
+
+    qint64 m_lastDiagLogMs = -1;
 
     // RHI resources. Every object created from m_rhi lives in m_gpu, so a QRhi change drops all of
     // them at once (releaseResources()) and a new resource cannot be missed there.

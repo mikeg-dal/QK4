@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <vector>
 
 MiniPanRhiWidget::MiniPanRhiWidget(QWidget *parent) : QRhiWidget(parent) {
     m_clock.start();
@@ -420,7 +422,7 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
         // Palette positions fixed at capture under the colour window in effect now, by the
         // panadapter's rule (REF and #WBS), so a row keeps its colour as it scrolls.
         const WaterfallGeometry::ColorWindow window =
-            WaterfallGeometry::colorWindowFor(static_cast<float>(m_refLevel), m_scale, m_waterfallColorRange);
+            WaterfallGeometry::colorWindowFor(effectiveRefDbm(), m_scale, m_waterfallColorRange);
         for (int i = 0; i < TEXTURE_WIDTH; ++i) {
             // Average downsampling for waterfall
             int startBin = static_cast<int>(static_cast<float>(i) / TEXTURE_WIDTH * dataSize);
@@ -701,16 +703,76 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerHz, i
     m_centerHz = centerHz;
     m_overlayAxis.frameArrived(centerHz, m_tunedFreq, m_clock.elapsed());
 
+    // This mini-pan's own resolution bandwidth, which with the main pan's decides how far REF has
+    // to move to mean the same thing here (SpectrumScale::refOffsetForBinWidth).
+    m_binWidthHz = static_cast<double>(spanHz) / bins.size();
+    updateRefOffset();
+
     // MiniPAN bins: 1 byte = 1 dB, dBm = byte - K4_MINIPAN_DBM_OFFSET (measured; see spectrumscale.h).
     m_spectrum.resize(bins.size());
     for (int i = 0; i < bins.size(); ++i)
         m_spectrum[i] = static_cast<quint8>(bins[i]) - SpectrumScale::K4_MINIPAN_DBM_OFFSET;
+
+    logLevelDistribution(bins);
 
     // #AVG over the last n frames, in power, like the main pan (PowerAverager)
     m_averager.addEased(m_spectrum, m_smoothedSpectrum);
 
     m_waterfallNeedsUpdate = true;
     update();
+}
+
+void MiniPanRhiWidget::logLevelDistribution(const QByteArray &bins) {
+    if (!lcSpectrumDiag().isDebugEnabled() || bins.isEmpty())
+        return;
+    const qint64 now = m_clock.elapsed();
+    if (m_lastDiagLogMs >= 0 && now - m_lastDiagLogMs < 1000)
+        return;
+    m_lastDiagLogMs = now;
+
+    // QByteArray holds char, which is signed here, so a byte above 127 would sort below one below
+    // it. Widen before sorting.
+    std::vector<quint8> sorted(static_cast<std::size_t>(bins.size()));
+    for (int i = 0; i < bins.size(); ++i)
+        sorted[static_cast<std::size_t>(i)] = static_cast<quint8>(bins[i]);
+    std::sort(sorted.begin(), sorted.end());
+    const auto percentile = [&sorted](double q) {
+        return static_cast<int>(sorted[static_cast<std::size_t>(q * static_cast<double>(sorted.size() - 1))]);
+    };
+    const int onFloor = static_cast<int>(std::count(sorted.begin(), sorted.end(), quint8(0)));
+
+    const WaterfallGeometry::ColorWindow window =
+        WaterfallGeometry::colorWindowFor(effectiveRefDbm(), m_scale, m_waterfallColorRange);
+    const auto dbm = [](int byte) { return static_cast<float>(byte) - SpectrumScale::K4_MINIPAN_DBM_OFFSET; };
+    const auto palette = [&window, &dbm](int byte) { return WaterfallGeometry::paletteFractionFor(dbm(byte), window); };
+
+    qCDebug(lcSpectrumDiag).noquote()
+        << QStringLiteral(
+               "MINIPAN bins %1 span %2 Hz | bytes min %3 p10 %4 p50 %5 p90 %6 max %7, %8% on the byte-0 floor | "
+               "dBm p50 %9 p90 %10 max %11 | REF %12 SCALE %13 #WBS %14 | RBW %20 Hz/bin vs main %21, "
+               "REF offset %22 dB | window %15 .. %16 dBm | palette p50 %17 p90 %18 max %19")
+               .arg(bins.size())
+               .arg(m_spanHz)
+               .arg(percentile(0.0))
+               .arg(percentile(0.10))
+               .arg(percentile(0.50))
+               .arg(percentile(0.90))
+               .arg(percentile(1.0))
+               .arg(100.0 * onFloor / bins.size(), 0, 'f', 1)
+               .arg(dbm(percentile(0.50)), 0, 'f', 1)
+               .arg(dbm(percentile(0.90)), 0, 'f', 1)
+               .arg(dbm(percentile(1.0)), 0, 'f', 1)
+               .arg(m_refLevel)
+               .arg(m_scale)
+               .arg(m_waterfallColorRange)
+               .arg(window.lowDbm, 0, 'f', 1)
+               .arg(window.lowDbm + window.spanDb, 0, 'f', 1)
+               .arg(palette(percentile(0.50)), 0, 'f', 3)
+               .arg(palette(percentile(0.90)), 0, 'f', 3)
+               .arg(palette(percentile(1.0)), 0, 'f', 3)
+               .arg(m_binWidthHz, 0, 'f', 1)
+               .arg(m_referenceHzPerBin, 0, 'f', 1)
+               .arg(m_refOffsetDb, 0, 'f', 2);
 }
 
 void MiniPanRhiWidget::clear() {
@@ -722,6 +784,11 @@ void MiniPanRhiWidget::clear() {
     m_refLevel = SpectrumDisplayLimits::RefLevelDefault;
     m_scale = SpectrumDisplayLimits::ScaleDefault;
     m_waterfallColorRange = -1;
+    // Both bin widths are unknown again until the next session's frames arrive, so the REF
+    // correction goes back to 0 rather than being carried across a reconnect on stale widths.
+    m_referenceHzPerBin = 0.0;
+    m_binWidthHz = 0.0;
+    m_refOffsetDb = 0.0f;
     updateDbRange();
     m_waterfallData.fill(0);
     m_waterfallNeedsFullClear = true;
@@ -765,9 +832,32 @@ void MiniPanRhiWidget::setWaterfallColorRange(int db) {
     m_waterfallColorRange = db;
 }
 
+void MiniPanRhiWidget::setReferenceBinWidthHz(double hzPerBin) {
+    if (m_referenceHzPerBin == hzPerBin)
+        return;
+    m_referenceHzPerBin = hzPerBin;
+    updateRefOffset();
+}
+
+void MiniPanRhiWidget::updateRefOffset() {
+    const float offset = SpectrumScale::refOffsetForBinWidth(m_binWidthHz, m_referenceHzPerBin);
+    if (qFuzzyCompare(1.0f + m_refOffsetDb, 1.0f + offset))
+        return;
+    m_refOffsetDb = offset;
+    // Only the window moves. Rows already captured keep the palette positions they were given, as
+    // they do when REF itself steps (WaterfallGeometry::capturedByteFor), so the history is not
+    // recoloured under a window it was not captured with.
+    updateDbRange();
+    update();
+}
+
+float MiniPanRhiWidget::effectiveRefDbm() const {
+    return static_cast<float>(m_refLevel) + m_refOffsetDb;
+}
+
 void MiniPanRhiWidget::updateDbRange() {
-    m_minDb = static_cast<float>(m_refLevel);
-    m_maxDb = static_cast<float>(m_refLevel + m_scale);
+    m_minDb = effectiveRefDbm();
+    m_maxDb = effectiveRefDbm() + static_cast<float>(m_scale);
 }
 
 void MiniPanRhiWidget::setPassbandColor(const QColor &color) {

@@ -63,6 +63,7 @@ public:
     void setMiniPanRefLevel(int level);
     void setMiniPanScale(int scale);
     void setMiniPanWaterfallColorRange(int db);
+    void setMiniPanReferenceBinWidthHz(double hzPerBin);
 
     // Access to frequency display for styling (e.g., dimming when SUB RX off)
     FrequencyDisplayWidget *frequencyDisplay() const { return m_frequencyDisplay; }
@@ -134,7 +135,8 @@ private:
     int m_pendingAveraging = 1;
     int m_pendingRefLevel = SpectrumDisplayLimits::RefLevelDefault;
     int m_pendingScale = SpectrumDisplayLimits::ScaleDefault;
-    int m_pendingWaterfallColorRange = -1; // #WBS; -1 until the radio reports it
+    int m_pendingWaterfallColorRange = -1;   // #WBS; -1 until the radio reports it
+    double m_pendingReferenceHzPerBin = 0.0; // main pan's RBW; 0 until a PAN frame has arrived
 };
 
 #endif // VFOWIDGET_H

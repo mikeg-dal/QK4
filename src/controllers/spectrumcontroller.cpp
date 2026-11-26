@@ -708,6 +708,18 @@ void SpectrumController::onSpectrumData(int receiver, const QByteArray &payload,
     } else if (receiver == 1) {
         m_panB.pad->updateSpectrum(payload, binsOffset, binCount, centerFreq, sampleRate, noiseFloor);
     }
+
+    // The mini-pan borrows this receiver's REF, and REF is only meaningful at the resolution
+    // bandwidth it was derived for: AutoRef places the noise at REF on THIS pan, whose bins are far
+    // wider than the mini-pan's. Tell the mini-pan what that width is so it can correct for its own
+    // (SpectrumScale::refOffsetForBinWidth). The tier span is the sample rate in kHz, as
+    // PanadapterRhiWidget reads it, and the bin count is the frame's own.
+    const double hzPerBin = binCount > 0 ? static_cast<double>(sampleRate) * 1000.0 / binCount : 0.0;
+    if (receiver == 0) {
+        m_vfoA->setMiniPanReferenceBinWidthHz(hzPerBin);
+    } else if (receiver == 1) {
+        m_vfoB->setMiniPanReferenceBinWidthHz(hzPerBin);
+    }
 }
 
 void SpectrumController::onMiniSpectrumData(int receiver, const QByteArray &payload, int binsOffset, int binCount,

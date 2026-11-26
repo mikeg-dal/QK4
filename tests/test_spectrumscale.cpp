@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "dsp/spectrumscale.h"
+#include "dsp/waterfallgeometry.h"
 
 // Amplitude-axis arithmetic. The bug that prompted these tests — "S1" printed at two different
 // heights while adjusting REF — was pure arithmetic reachable only through the UI, so the logic was
@@ -322,6 +323,87 @@ private slots:
                 }
             }
         }
+    }
+    // ---- REF across two resolution bandwidths -------------------------------------------------
+
+    // A bin's level is power in that bin, so it follows the bin's width: the ratio in dB is
+    // 10*log10, not 20*log10 and not the ratio itself.
+    void refOffsetIsTenLogTheBinWidthRatio() {
+        using SpectrumScale::refOffsetForBinWidth;
+        // Same width: REF already means what it says, so nothing moves.
+        QCOMPARE(refOffsetForBinWidth(187.5, 187.5), 0.0f);
+        // The bench case: 12 kHz over 1024 bins against a 192 kHz tier over 1024. Ratio 16.
+        QVERIFY(std::abs(refOffsetForBinWidth(12000.0 / 1024, 192000.0 / 1024) - -12.041f) < 0.01f);
+        // Halving the bin width is -3 dB, doubling it +3, decades are 10.
+        QVERIFY(std::abs(refOffsetForBinWidth(50.0, 100.0) - -3.0103f) < 0.001f);
+        QVERIFY(std::abs(refOffsetForBinWidth(100.0, 50.0) - 3.0103f) < 0.001f);
+        QVERIFY(std::abs(refOffsetForBinWidth(10.0, 100.0) - -10.0f) < 0.001f);
+        // Narrower bins always LOWER the window and wider ones raise it. The sign being backwards
+        // would darken the display it was written to brighten.
+        QVERIFY(refOffsetForBinWidth(11.7, 187.5) < 0.0f);
+        QVERIFY(refOffsetForBinWidth(187.5, 11.7) > 0.0f);
+    }
+
+    // An unknown width leaves the display exactly as it was, and no width can slide the window far
+    // enough to blank it.
+    void refOffsetIsInertWhenAWidthIsUnknownAndIsBounded() {
+        using SpectrumScale::refOffsetForBinWidth;
+        QCOMPARE(refOffsetForBinWidth(0.0, 187.5), 0.0f);  // before the first mini-pan frame
+        QCOMPARE(refOffsetForBinWidth(11.7, 0.0), 0.0f);   // before the first PAN frame
+        QCOMPARE(refOffsetForBinWidth(0.0, 0.0), 0.0f);    // at construction
+        QCOMPARE(refOffsetForBinWidth(-5.0, 187.5), 0.0f); // nonsense in, nothing out
+        QCOMPARE(refOffsetForBinWidth(11.7, -1.0), 0.0f);
+        const auto bounded = static_cast<float>(SpectrumScale::MaxRefOffsetDb);
+        QCOMPARE(refOffsetForBinWidth(1.0, 1.0e9), -bounded);
+        QCOMPARE(refOffsetForBinWidth(1.0e9, 1.0), bounded);
+    }
+
+    // The bench case this was written for, end to end through the colour window (K4D SN1641, 40 m
+    // SSB, 2026-11-26). Uncorrected, the mini-pan's noise median landed half a dB BELOW the bottom
+    // of the window and the whole floor drew black while an S9+ voice peak reached two thirds of
+    // the palette. Corrected, the noise sits about where the main pan's noise sits and the peak
+    // reaches the top. Every number here came off the qk4.spectrum.diag MINIPAN line, including
+    // both bin widths - the main tier was READ, not inferred from the span.
+    void miniPanNoiseLandsWhereTheMainPansDoesOnceRefIsCorrected() {
+        constexpr int kRef = -101;                  // AutoRef, so the MAIN pan's noise is here
+        constexpr int kScale = 51;                  // SCALE
+        constexpr int kWbs = 9;                     // #WBS
+        constexpr float kNoise = -113.0f;           // mini-pan median, measured
+        constexpr float kPeak = -78.0f;             // mini-pan max on an S9+ voice peak, measured
+        const double miniHzPerBin = 12000.0 / 1024; // 11.7
+        const double mainHzPerBin = 375.0;          // a 384 kHz tier over 1024 bins
+
+        // Where the main pan puts its own noise floor: that is the target.
+        const WaterfallGeometry::ColorWindow mainWindow =
+            WaterfallGeometry::colorWindowFor(static_cast<float>(kRef), kScale, kWbs);
+        const float mainNoise = WaterfallGeometry::paletteFractionFor(static_cast<float>(kRef), mainWindow);
+        QVERIFY(mainNoise > 0.15f && mainNoise < 0.30f); // visibly blue, not black
+
+        // Before: the mini-pan borrows REF untouched and its noise falls out of the bottom.
+        const WaterfallGeometry::ColorWindow before =
+            WaterfallGeometry::colorWindowFor(static_cast<float>(kRef), kScale, kWbs);
+        QCOMPARE(WaterfallGeometry::paletteFractionFor(kNoise, before), 0.0f);
+        QVERIFY(WaterfallGeometry::paletteFractionFor(kPeak, before) < 0.75f); // S9+ only two thirds up
+
+        // After: the same REF, corrected for the bin-width gap. 32x the bin width is 15.05 dB.
+        const float offset = SpectrumScale::refOffsetForBinWidth(miniHzPerBin, mainHzPerBin);
+        QVERIFY(std::abs(offset - -15.05f) < 0.01f);
+        const WaterfallGeometry::ColorWindow after =
+            WaterfallGeometry::colorWindowFor(static_cast<float>(kRef) + offset, kScale, kWbs);
+        const float noiseAfter = WaterfallGeometry::paletteFractionFor(kNoise, after);
+        QVERIFY(noiseAfter > 0.20f); // out of the black, which is the whole point
+
+        // Within about 4 dB of where the main pan puts its own noise - not closer, and the gap is
+        // expected rather than slop: the radio clips a quarter to a third of the mini-pan's bins at
+        // byte 0, which truncates the bottom of the distribution and biases the measured median
+        // upward. Tightening this below the clipping bias would pin noise, not arithmetic.
+        QVERIFY2(std::abs(noiseAfter - mainNoise) < 0.08f,
+                 qPrintable(QStringLiteral("mini-pan noise at %1, main pan at %2").arg(noiseAfter).arg(mainNoise)));
+        QVERIFY(WaterfallGeometry::paletteFractionFor(kPeak, after) > 0.88f); // S9+ near the top
+
+        // That clipped tail carries no information, but it must still be drawn as dim colour rather
+        // than as the palette's "no data" black, or the correction has only moved the problem.
+        QVERIFY(WaterfallGeometry::paletteFractionFor(-118.0f, after) > 0.05f);
     }
 };
 

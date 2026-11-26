@@ -282,6 +282,7 @@ void VFOWidget::showMiniPan() {
         m_miniPan->setRefLevel(m_pendingRefLevel);
         m_miniPan->setScale(m_pendingScale);
         m_miniPan->setWaterfallColorRange(m_pendingWaterfallColorRange);
+        m_miniPan->setReferenceBinWidthHz(m_pendingReferenceHzPerBin);
 
         // Connect mini-pan click to show normal view and emit signal
         connect(m_miniPan, &MiniPanRhiWidget::clicked, this, [this]() {
@@ -366,6 +367,12 @@ void VFOWidget::setMiniPanWaterfallColorRange(int db) {
         m_miniPan->setWaterfallColorRange(db);
 }
 
+void VFOWidget::setMiniPanReferenceBinWidthHz(double hzPerBin) {
+    m_pendingReferenceHzPerBin = hzPerBin;
+    if (m_miniPan)
+        m_miniPan->setReferenceBinWidthHz(hzPerBin);
+}
+
 void VFOWidget::resetToDefaults() {
     setFrequency(QString());
     setSMeterValue(0);
@@ -390,6 +397,7 @@ void VFOWidget::resetToDefaults() {
     m_pendingRefLevel = SpectrumDisplayLimits::RefLevelDefault;
     m_pendingScale = SpectrumDisplayLimits::ScaleDefault;
     m_pendingWaterfallColorRange = -1;
+    m_pendingReferenceHzPerBin = 0.0;
     setMiniPanNotchFilter(false, 0);
 }
 

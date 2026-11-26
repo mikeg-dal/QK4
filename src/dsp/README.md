@@ -100,9 +100,29 @@ Byte 0 (-118 dBm) is the floor; much of the noise arrives as 0.
 Its window is its receiver's `[REF, REF + SCALE]` — `#REF` for Main, `#REF$` for Sub, the shared
 `#SCL` — through `SpectrumScale::normalizedForDb`, and its waterfall colours come from
 `WaterfallGeometry::colorWindowFor` with the same REF and `#WBS`. The K4 has no mini-pan REF or SCALE
-of its own (the Programmer's Reference lists only `#MP` / `#MP$`), and with the measured offset the
-mini-pan's noise sits at that REF (median -112 dBm against REF -110 on the K4D, 2026-10-30), so it
-lands on the bottom edge as on the panadapter. As there, nothing is subtracted: the old mini-pan read
+of its own (the Programmer's Reference lists only `#MP` / `#MP$`), so it borrows the receiver's.
+
+**REF is corrected for the bin width first** (`SpectrumScale::refOffsetForBinWidth`, 2026-11-26). A
+bin's level is power in that bin, so it scales with the bin's width, and REF only means anything at
+the resolution bandwidth it was derived for — AutoRef places the *main* pan's noise at REF. The
+mini-pan is 1024 bins over 3 or 12 kHz where the main pan is 1024 over a tier up to 384 kHz, so its
+bins can be thirty-two times narrower and its noise correspondingly lower. `SpectrumController`
+passes the main tier's Hz per bin down on every PAN frame and the mini-pan adds
+`10*log10(ownHzPerBin / mainHzPerBin)` to REF; the offset is 0 until both widths are known, which is
+exactly the old behaviour. Uncorrected, on 40 m against a 384 kHz tier the gap was 15 dB: the
+mini-pan's noise median (-113 dBm) sat half a dB *below* the bottom of a window built from REF -101,
+so the whole floor drew black at palette 0.000 while an S9+ voice peak reached only 0.68 (bench, K4D
+SN1641, 2026-11-26). Corrected, the noise sits at 0.28 and the peak at 0.97.
+`test_spectrumscale::miniPanNoiseLandsWhereTheMainPansDoesOnceRefIsCorrected` pins that geometry end
+to end.
+
+The byte-0 clipping above is not recoverable — a quarter to a third of the bins arrive there — so
+the bottom of the mini-pan's noise reads flatter than the panadapter's, and the clipped tail biases
+its median about 3 dB high against the main pan's noise. `qk4.spectrum.diag` prints a `MINIPAN` line
+once a second with the byte distribution, both bin widths, the offset and the palette positions
+reached; that line is how all of the above was measured.
+
+As on the panadapter, nothing is subtracted: the old mini-pan read
 `byte / 10` over a fixed window and removed a smoothed per-frame minimum, the tracker this README
 forbids. Smoothing is a `PowerAverager`, like the panadapter's.
 

@@ -36,6 +36,31 @@ constexpr float K4_DBM_OFFSET = 162.0f;
 // Byte 0 (dBm -118) is the floor: much of the mini-pan's noise arrives as 0.
 constexpr float K4_MINIPAN_DBM_OFFSET = 118.0f;
 
+// The furthest refOffsetForBinWidth will move a window. A ratio this large means one of the two
+// bin widths is wrong, and silently sliding the window 60 dB would blank a display rather than
+// report the fault.
+constexpr double MaxRefOffsetDb = 40.0;
+
+// dB to add to a REF before applying it to a display whose bins are a different width.
+//
+// WHY. REF is one number in dBm, but a bin's level is power in that bin, so it scales with the
+// bin's width: halve the bandwidth and the noise in it drops 3 dB while a carrier does not move.
+// REF is therefore only meaningful at the resolution bandwidth it was derived for. The K4 derives
+// it from the main panadapter (AutoRef puts that pan's noise at REF), and QK4 has no mini-pan REF
+// to use instead - the Programmer's Reference lists none - so the mini-pan borrows the main one and
+// has to correct it for its own, much narrower bins.
+//
+// Measured on the bench, 2026-11-26, K4D SN1641 on 40 m: the mini-pan is 1024 bins over 12 kHz
+// (11.7 Hz each) while the main pan was 1024 bins over a 384 kHz tier (375 Hz each), a ratio of 32,
+// so 10*log10(32) = 15.05 dB. Uncorrected, with REF -101 and SCALE 51, the mini-pan's noise median
+// (-113 dBm) sat half a dB BELOW the bottom of the colour window: the whole floor drew black at
+// palette 0.000 while an S9+ voice peak reached only 0.68. Corrected, the noise sits at 0.28 and
+// the peak at 0.97.
+//
+// Returns 0 when either width is unknown (<= 0), which leaves the display exactly as it was before
+// this correction existed.
+float refOffsetForBinWidth(double displayHzPerBin, double referenceHzPerBin);
+
 // S9 and the width of one S-unit, in dBm/dB.
 constexpr float S9_DBM = -73.0f;
 constexpr float DB_PER_S_UNIT = 6.0f;

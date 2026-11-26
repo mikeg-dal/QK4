@@ -45,6 +45,15 @@ float minDbSeparation(float minDb, float maxDb, int availablePx, float lineSpaci
 
 } // namespace
 
+float refOffsetForBinWidth(double displayHzPerBin, double referenceHzPerBin) {
+    // Either width unknown: leave the window where it was. The mini-pan runs this way for the first
+    // frame or two of a connection, before a PAN frame has said what the main tier's bins are.
+    if (displayHzPerBin <= 0.0 || referenceHzPerBin <= 0.0)
+        return 0.0f;
+    const double db = 10.0 * std::log10(displayHzPerBin / referenceHzPerBin);
+    return static_cast<float>(qBound(-MaxRefOffsetDb, db, MaxRefOffsetDb));
+}
+
 float sUnitDbm(int sUnit) {
     const int s = qBound(1, sUnit, 9);
     return S9_DBM - static_cast<float>(9 - s) * DB_PER_S_UNIT;
