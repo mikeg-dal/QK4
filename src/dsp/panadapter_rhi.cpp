@@ -976,11 +976,10 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // shader spans the quad with V = t * visibleFraction + scrollOffset, and visibleFraction is
     // visibleRows / storedRows, so the full waterfall height always shows exactly visibleRows rows:
     // fewer of them stretch taller and the picture slides. It is not a crop. Start the history over
-    // instead, as the tier change above does and as Flex does when its window is resized - a clean
-    // restart reads as a deliberate change, where reinterpreting the rows reads as the waterfall
-    // sliding up and coming back down (bench, 2026-11-25, on connect: QK4's default split gives 809
-    // rows, the radio's #WFH arrives and makes it 693, and the measured line rate settling moves it
-    // again moments later).
+    // instead, as the tier change above does: a clean restart reads as a deliberate change, where
+    // reinterpreting the rows reads as the waterfall sliding up and coming back down (bench,
+    // 2026-11-25, on connect: QK4's default split gives 809 rows, the radio's #WFH arrives and makes
+    // it 693, and the measured line rate settling moves it again moments later).
     if (m_planVisibleRows > 0 && plan.visibleRows != m_planVisibleRows) {
         m_framesInRow = 0;
         m_waterfallData.fill(0);

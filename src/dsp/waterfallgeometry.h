@@ -54,7 +54,7 @@ int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int dev
 
 // ---- Speed: how a stored row maps onto the screen ---------------------------------------------
 //
-// SPEED is a QK4 display setting (the K4 has no such command; Flex calls it the waterfall "rate").
+// SPEED is a QK4 display setting (the K4 has no such command).
 // It never changes how often the radio sends spectrum frames (#FPS): it changes how much screen
 // each frame takes.
 //
