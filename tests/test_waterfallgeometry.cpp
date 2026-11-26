@@ -33,6 +33,7 @@ private slots:
     void devicePxPerRowHonoursOnlyWholeDownscales();
     void visibleRowsCountsPhysicalPixels();
     void fractionalViewportStaysOneToOne();
+    void fractionalScaledModeCountsPanelPixelsNotFramebufferOnes();
     void oneDevicePxRowsShareAPhysicalPixelUnderDownscale();
     void twoDevicePxRowsScrollByWholePhysicalPixels();
     void rowShiftFollowsTheFramebufferParity();
@@ -54,6 +55,8 @@ private slots:
     void scrollPhaseClosesOverTheRowInterval();
     void aRowCountChangePreservesTheHistory();
     void fasterRowsAreWholePixelsTall();
+    void everyDisplayAndSplitSweep();
+    void namedGeometriesNeverRegress();
 
     // Colour window (WaterfallGeometry::colorWindowFor and the shader mirror).
     void noiseAtRefIsMidBlueNotBlack();
@@ -235,6 +238,44 @@ void TestWaterfallGeometry::fractionalViewportStaysOneToOne() {
                          (oldest + px) % stored);
         }
     }
+}
+
+// Mike's test configuration, 2026-11-26: a 4K panel driven at 3008x1692, which macOS renders at
+// 6016x3384 and the display pipeline scales down to 3840x2160 - a ratio of 1.567, not a whole
+// number. Only a whole factor could be honoured before, so this mode fell through to one row per
+// FRAMEBUFFER pixel: 0.64 of a panel pixel per row, so about three rows were merged into every two
+// panel pixels and that detail was simply gone. Counting PANEL pixels instead gives one row per
+// panel pixel, which is the most the display can actually show.
+//
+// This is only available because the shader reconstructs rows at a continuous phase; with the old
+// texel snap a row 1.567 pixels tall alternated between one and two.
+void TestWaterfallGeometry::fractionalScaledModeCountsPanelPixelsNotFramebufferOnes() {
+    using namespace WaterfallGeometry;
+    const qreal ratio = 6016.0 / 3840.0;   // 1.5667, as PanelScale reports it for that mode
+    QCOMPARE(devicePxPerRowFor(ratio), 1); // still no whole factor to honour, and none is claimed
+
+    // 809 framebuffer pixels of waterfall is 516 panel pixels, so 516 rows - not 809.
+    QCOMPARE(visibleRowsFor(809.0f, 4096, 64, ratio), 516);
+    QCOMPARE(visibleRowsFor(809.0f, 4096, 64, 1.0), 809); // native 4K, unchanged
+
+    // The property that matters: never more than one row per panel pixel, at any height, so the
+    // display pipeline can no longer merge two rows into one pixel.
+    for (float framebufferPx = 100.0f; framebufferPx <= 3300.0f; framebufferPx += 13.0f) {
+        const int rows = visibleRowsFor(framebufferPx, 4096, 64, ratio);
+        const double panelPx = framebufferPx / ratio;
+        QVERIFY2(rows <= static_cast<int>(std::ceil(panelPx)),
+                 qPrintable(QStringLiteral("%1 framebuffer px is %2 panel px but asked for %3 rows")
+                                .arg(framebufferPx)
+                                .arg(panelPx)
+                                .arg(rows)));
+    }
+
+    // A whole factor is unchanged by the switch to a real-valued ratio.
+    QCOMPARE(visibleRowsFor(554.4f, 2048, 64, 2.0), visibleRowsFor(554.4f, 2048, 64, 2));
+
+    // A fast step is still logical pixels, so it scales by dpr over the panel ratio: at dpr 2 on
+    // this panel one logical pixel is 2/1.567 = 1.28 panel pixels.
+    QVERIFY(std::abs(physicalRowHeightFor(3, 2.0, ratio) - 3.0f * 2.0f / float(ratio)) < 1e-4f);
 }
 
 // The defect: at one device pixel per row under a 2:1 downscale, each physical pixel is two rows
@@ -771,6 +812,164 @@ void TestWaterfallGeometry::aRowCountChangePreservesTheHistory() {
             }
         }
     }
+}
+
+namespace {
+
+// What the renderer does with a window, so the sweep exercises the same path as render():
+// the split's remainder in framebuffer pixels, then rows at one per panel pixel.
+struct Geometry {
+    int framebufferHeightPx = 0;
+    qreal dpr = 1.0;
+    qreal framebufferPerPanel = 1.0;
+    int waterfallPercent = 100;
+
+    float waterfallFramebufferPx() const {
+        // The remainder of the split, exactly as render() derives it - never a second truncation.
+        const float spectrumRatio = static_cast<float>(100 - waterfallPercent) / 100.0f;
+        const float spectrum = std::floor(static_cast<float>(framebufferHeightPx) * spectrumRatio);
+        return static_cast<float>(framebufferHeightPx) - spectrum;
+    }
+    int pixelRows(int storedRows, int minRows) const {
+        return WaterfallGeometry::visibleRowsFor(waterfallFramebufferPx(), storedRows, minRows, framebufferPerPanel);
+    }
+};
+
+} // namespace
+
+// The resolution gate. QK4 is developed on one Mac at one resolution; this is what stops that
+// machine deciding whether the display is correct. Every combination of window height, device pixel
+// ratio, framebuffer-to-panel ratio, #WFH split and SPEED step, against the invariants that have to
+// hold for the picture to look the same everywhere.
+void TestWaterfallGeometry::everyDisplayAndSplitSweep() {
+    using namespace WaterfallGeometry;
+    constexpr int kStored = 4096;
+    constexpr int kMinRows = 64;
+    const double rate = 15.0; // a measured frame rate; the invariants hold at any
+
+    for (const int framebufferHeight : {600, 900, 1080, 1692, 2160, 3384}) {
+        for (const qreal dpr : {1.0, 1.25, 1.5, 2.0, 3.0}) {
+            for (const qreal ratio : {1.0, 6016.0 / 3840.0, 2.0}) {
+                for (const int percent : {0, 25, 50, 75, 100}) {
+                    const Geometry g{framebufferHeight, dpr, ratio, percent};
+                    const int pixelRows = g.pixelRows(kStored, kMinRows);
+                    const QString where = QStringLiteral("fb %1 dpr %2 ratio %3 wfh %4")
+                                              .arg(framebufferHeight)
+                                              .arg(dpr)
+                                              .arg(ratio)
+                                              .arg(percent);
+                    if (percent == 0)
+                        continue; // spectrum only: there is no waterfall to judge
+
+                    // Never more rows than panel pixels, so the display pipeline cannot merge two
+                    // rows into one pixel and take the detail with them.
+                    QVERIFY2(pixelRows <= static_cast<int>(std::ceil(g.waterfallFramebufferPx() / ratio)),
+                             qPrintable(where));
+                    // And never clamped by the ring: past that the rows stretch and 1:1 is gone.
+                    QVERIFY2(pixelRows < kStored - 1, qPrintable(where + " hit the stored-row ceiling"));
+
+                    for (const int step : SpeedSteps) {
+                        const SpeedPlan plan = speedPlanFor(pixelRows, step, dpr, ratio);
+                        const QString at = where + QStringLiteral(" step %1").arg(step);
+
+                        QVERIFY2(plan.visibleRows >= 1 && plan.visibleRows <= pixelRows, qPrintable(at));
+                        QVERIFY2(plan.framesPerRow >= 1 && plan.framesPerRow <= MaxFramesPerRow, qPrintable(at));
+                        QVERIFY2(plan.pixelRowsPerRow >= 1.0f, qPrintable(at));
+
+                        // Fill and the folds are panel-native: one row per panel pixel, whatever the
+                        // display. That is Fill's whole point - the sharpest the panel can show.
+                        if (step <= SpeedFill) {
+                            QCOMPARE(plan.pixelRowsPerRow, 1.0f);
+                            QCOMPARE(plan.visibleRows, pixelRows);
+                        } else {
+                            // A fast step is `step` LOGICAL pixels per frame, so the picture travels
+                            // at step * rate logical pixels a second on every display. This is the
+                            // invariant the framebuffer-pixel version broke: the same window scrolled
+                            // at half the speed on a 2x panel.
+                            const double panelPxPerLogical = ratio > 0.0 ? dpr / ratio : dpr;
+                            const double logicalPxPerSecond = plan.pixelRowsPerRow / panelPxPerLogical * rate;
+                            QVERIFY2(std::abs(logicalPxPerSecond - step * rate) < 0.01 * step * rate,
+                                     qPrintable(at + QStringLiteral(" travels %1 logical px/s, not %2")
+                                                         .arg(logicalPxPerSecond)
+                                                         .arg(step * rate)));
+                        }
+
+                        // Every step the ladder actually offers leaves a waterfall behind.
+                        if (speedStepFits(step, pixelRows, kMinRows, dpr, ratio))
+                            QVERIFY2(step <= SpeedFill || plan.visibleRows >= kMinRows, qPrintable(at));
+
+                        // The seconds reported are the seconds the plan shows, and are positive
+                        // wherever a rate is known.
+                        const double seconds = secondsOnScreen(pixelRows, step, rate, dpr, ratio);
+                        QVERIFY2(seconds > 0.0, qPrintable(at));
+                        QVERIFY2(!speedLabelFor(step, seconds).isEmpty(), qPrintable(at));
+
+                        // The scroll residual is bounded and closes within one row interval at every
+                        // geometry, so the picture can never jitter backwards or stall part-way.
+                        const double msPerRow = 1000.0 * plan.framesPerRow / rate;
+                        QCOMPARE(scrollPhaseFor(1, kStored, msPerRow, msPerRow), 0.0f);
+                        for (double ms = 0.0; ms < msPerRow; ms += msPerRow / 8.0) {
+                            const float phase = scrollPhaseFor(1, kStored, ms, msPerRow);
+                            QVERIFY2(phase <= 0.0f && phase >= -1.0f / kStored, qPrintable(at));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The four geometries that must never regress quietly: the window QK4 opens at, the smallest it
+// allows, and both of Mike's test configurations. A sweep can drift away from the cases a person
+// actually looks at; these are those cases, by name.
+void TestWaterfallGeometry::namedGeometriesNeverRegress() {
+    using namespace WaterfallGeometry;
+    constexpr int kStored = 4096;
+    constexpr int kMinRows = 64;
+
+    struct Named {
+        const char *name;
+        Geometry geometry;
+    };
+    // 3008x1692 is a macOS scaled mode on a 4K panel: rendered at 6016x3384, scaled to 3840x2160.
+    const Named cases[] = {
+        {"3008x1692 scaled on 4K, DPR 2, full window, 60% waterfall", {3384, 2.0, 6016.0 / 3840.0, 60}},
+        {"3840x2160 native, DPR 1, full window, 60% waterfall", {2160, 1.0, 1.0, 60}},
+        {"default window, DPR 2, 60% waterfall", {1200, 2.0, 1.0, 60}},
+        {"smallest allowed window, DPR 1, 25% waterfall", {768, 1.0, 1.0, 25}},
+    };
+
+    for (const auto &[name, g] : cases) {
+        const int pixelRows = g.pixelRows(kStored, kMinRows);
+        const QString where = QString::fromLatin1(name);
+
+        // A waterfall worth the name, and never clamped by the ring.
+        QVERIFY2(pixelRows >= kMinRows, qPrintable(where + " has too few rows"));
+        QVERIFY2(pixelRows < kStored - 1, qPrintable(where + " hit the stored-row ceiling"));
+
+        // Fill fills it, one row per panel pixel.
+        const SpeedPlan fill = speedPlanFor(pixelRows, SpeedFill, g.dpr, g.framebufferPerPanel);
+        QCOMPARE(fill.visibleRows, pixelRows);
+        QCOMPARE(fill.pixelRowsPerRow, 1.0f);
+
+        // At least one step faster than Fill is offered in every one of them: a window this size
+        // must be able to speed up, or the ladder's floor is too aggressive.
+        QVERIFY2(stepSpeedFitting(SpeedFill, +1, pixelRows, kMinRows, g.dpr, g.framebufferPerPanel) != SpeedFill,
+                 qPrintable(where + " offers no step faster than Fill"));
+
+        // And the fast steps travel at the same logical speed in all four, which is the whole point.
+        const SpeedPlan plan = speedPlanFor(pixelRows, 3, g.dpr, g.framebufferPerPanel);
+        const double panelPxPerLogical = g.dpr / g.framebufferPerPanel;
+        QVERIFY2(std::abs(plan.pixelRowsPerRow / panelPxPerLogical - 3.0) < 0.01,
+                 qPrintable(where + QStringLiteral(" step 1/3 travels %1 logical px per frame, not 3")
+                                        .arg(plan.pixelRowsPerRow / panelPxPerLogical)));
+    }
+
+    // The two configurations Mike compares directly: the scaled mode must no longer ask for more
+    // rows than the panel can show, which is what made it look softer than 4K native.
+    const Geometry scaled{3384, 2.0, 6016.0 / 3840.0, 60};
+    const Geometry native{2160, 1.0, 1.0, 60};
+    QCOMPARE(scaled.pixelRows(kStored, kMinRows), native.pixelRows(kStored, kMinRows));
 }
 
 QTEST_MAIN(TestWaterfallGeometry)

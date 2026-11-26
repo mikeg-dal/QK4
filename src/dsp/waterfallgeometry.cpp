@@ -25,14 +25,15 @@ float rowShiftFor(qint64 viewportBottomFramebufferRow, int devicePxPerRow) {
     return -static_cast<float>(phase) / static_cast<float>(devicePxPerRow);
 }
 
-int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int devicePxPerRow) {
+int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, qreal framebufferPixelsPerPanelPixel) {
     if (storedRows <= 0)
         return 0;
     // One row is always reserved for the write head: showing all storedRows would wrap the window
     // onto the whole ring and put the in-flight row back on screen.
     const int maxRows = storedRows - 1;
-    const int wanted =
-        static_cast<int>(std::lround(waterfallHeightPx / static_cast<float>((std::max)(1, devicePxPerRow))));
+    const double perPanel =
+        framebufferPixelsPerPanelPixel > 0.0 ? static_cast<double>(framebufferPixelsPerPanelPixel) : 1.0;
+    const int wanted = static_cast<int>(std::lround(static_cast<double>(waterfallHeightPx) / perPanel));
     return qBound(qMin(minRows, maxRows), wanted, maxRows);
 }
 
@@ -49,11 +50,12 @@ int stepSpeed(int step, int delta) {
     return SpeedSteps[static_cast<std::size_t>(std::clamp(index + delta, 0, last))];
 }
 
-float physicalRowHeightFor(int step, qreal dpr, int devicePxPerRow) {
+float physicalRowHeightFor(int step, qreal dpr, qreal framebufferPixelsPerPanelPixel) {
     if (step <= SpeedFill)
         return 1.0f; // Fill and the fold steps: one row per physical pixel of the panel
     const double logicalToFramebuffer = dpr > 0.0 ? static_cast<double>(dpr) : 1.0;
-    const double framebufferPerPhysical = (std::max)(1, devicePxPerRow);
+    const double framebufferPerPhysical =
+        framebufferPixelsPerPanelPixel > 0.0 ? static_cast<double>(framebufferPixelsPerPanelPixel) : 1.0;
     const double physical = static_cast<double>(step) * logicalToFramebuffer / framebufferPerPhysical;
     // A step can only reach 1.0 where the panel's physical pixels are coarser than its logical ones,
     // and at 1.0 it simply IS Fill - the same picture, and the label says the same seconds. That is
@@ -61,10 +63,10 @@ float physicalRowHeightFor(int step, qreal dpr, int devicePxPerRow) {
     return static_cast<float>((std::max)(1.0, physical));
 }
 
-double secondsOnScreen(int pixelRows, int step, double lineRateHz, qreal dpr, int devicePxPerRow) {
+double secondsOnScreen(int pixelRows, int step, double lineRateHz, qreal dpr, qreal framebufferPerPanel) {
     if (pixelRows <= 0 || lineRateHz <= 0.0)
         return 0.0;
-    const SpeedPlan plan = speedPlanFor(pixelRows, step, dpr, devicePxPerRow);
+    const SpeedPlan plan = speedPlanFor(pixelRows, step, dpr, framebufferPerPanel);
     return static_cast<double>(plan.visibleRows) * plan.framesPerRow / lineRateHz;
 }
 
@@ -80,8 +82,8 @@ QString speedLabelFor(int step, double seconds) {
     return step == SpeedFill ? QStringLiteral("Fill %1s").arg(whole) : QStringLiteral("%1s").arg(whole);
 }
 
-QString speedLabel(int step, int pixelRows, double lineRateHz, qreal dpr, int devicePxPerRow) {
-    return speedLabelFor(step, secondsOnScreen(pixelRows, step, lineRateHz, dpr, devicePxPerRow));
+QString speedLabel(int step, int pixelRows, double lineRateHz, qreal dpr, qreal framebufferPerPanel) {
+    return speedLabelFor(step, secondsOnScreen(pixelRows, step, lineRateHz, dpr, framebufferPerPanel));
 }
 
 bool secondsLabelShouldChange(double shownSeconds, double computedSeconds) {
@@ -92,7 +94,7 @@ bool secondsLabelShouldChange(double shownSeconds, double computedSeconds) {
     return std::abs(computedSeconds - shownSeconds) > SecondsLabelHoldFraction * shownSeconds;
 }
 
-SpeedPlan speedPlanFor(int pixelRows, int step, qreal dpr, int devicePxPerRow) {
+SpeedPlan speedPlanFor(int pixelRows, int step, qreal dpr, qreal framebufferPerPanel) {
     if (pixelRows <= 0)
         return SpeedPlan{pixelRows, 1, 1.0f};
     if (step <= -2) {
@@ -106,20 +108,20 @@ SpeedPlan speedPlanFor(int pixelRows, int step, qreal dpr, int devicePxPerRow) {
     // height is not rounded to a whole number of pixels - the shader's cubic reconstruction takes a
     // continuous phase, so it does not need one.
     // WHY at least 2 rows: one row would be the whole waterfall in a single colour band.
-    const float height = physicalRowHeightFor(step, dpr, devicePxPerRow);
+    const float height = physicalRowHeightFor(step, dpr, framebufferPerPanel);
     const int rows = (std::max)(2, static_cast<int>(std::lround(static_cast<double>(pixelRows) / height)));
     return SpeedPlan{(std::min)(rows, pixelRows), 1, height};
 }
 
-bool speedStepFits(int step, int pixelRows, int minRows, qreal dpr, int devicePxPerRow) {
+bool speedStepFits(int step, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel) {
     if (!isSpeedStep(step))
         return false;
     if (step <= SpeedFill)
         return true; // Fill and the folds keep every row the height can hold
-    return speedPlanFor(pixelRows, step, dpr, devicePxPerRow).visibleRows >= minRows;
+    return speedPlanFor(pixelRows, step, dpr, framebufferPerPanel).visibleRows >= minRows;
 }
 
-int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr, int devicePxPerRow) {
+int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel) {
     if (delta == 0)
         return step;
     const int direction = delta > 0 ? 1 : -1;
@@ -131,7 +133,7 @@ int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr,
             if (next == candidate)
                 return current; // ran off the ladder: stay on the last step that fits
             candidate = next;
-            if (speedStepFits(candidate, pixelRows, minRows, dpr, devicePxPerRow))
+            if (speedStepFits(candidate, pixelRows, minRows, dpr, framebufferPerPanel))
                 break;
         }
         current = candidate;

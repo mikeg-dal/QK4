@@ -970,14 +970,14 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // above devicePxPerRow.
     updateDevicePxPerRow();
     const int pixelRows =
-        WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS, m_devicePxPerRow);
+        WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS, m_framebufferPerPanel);
     // SPEED: Fill keeps one row per pixel row; a number of seconds shows fewer, taller rows or folds
     // frames together. Applied to the rows committed from the next frame on.
     // Exact: the SPEED step is already the whole number the plan used to have to round to, so there
     // is no measured rate in it and no boundary for the plan to hop across.
     m_pixelRows = pixelRows;
     const WaterfallGeometry::SpeedPlan plan =
-        WaterfallGeometry::speedPlanFor(pixelRows, m_waterfallSpeedStep, devicePixelRatioF(), m_devicePxPerRow);
+        WaterfallGeometry::speedPlanFor(pixelRows, m_waterfallSpeedStep, devicePixelRatioF(), m_framebufferPerPanel);
     updateSpeedLabel(pixelRows);
     // WHY a row-count change keeps the history, where this once restarted it. Both the pixels and
     // the rows scale with the window, so a row stays at the same distance from the newest whatever
@@ -1517,7 +1517,7 @@ void PanadapterRhiWidget::updateSpeedLabel(int pixelRows) {
     // The seconds a step puts on screen follow the window height and the measured frame rate, so
     // the SPEED key's text is the panadapter's to publish, not the setting's.
     const double seconds = WaterfallGeometry::secondsOnScreen(pixelRows, m_waterfallSpeedStep, m_lineRateHz,
-                                                              devicePixelRatioF(), m_devicePxPerRow);
+                                                              devicePixelRatioF(), m_framebufferPerPanel);
     // Hold the text against small drift in the measured rate: a step whose seconds sit near a
     // rounding boundary would otherwise flicker between two numbers with nothing touched. The step
     // itself always republishes, so changing SPEED is never held back.
@@ -1537,7 +1537,7 @@ int PanadapterRhiWidget::speedStepAfter(int step, int delta) const {
     if (m_pixelRows <= 0)
         return WaterfallGeometry::stepSpeed(step, delta);
     return WaterfallGeometry::stepSpeedFitting(step, delta, m_pixelRows, MIN_VISIBLE_ROWS, devicePixelRatioF(),
-                                               m_devicePxPerRow);
+                                               m_framebufferPerPanel);
 }
 
 void PanadapterRhiWidget::logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz) {
@@ -1607,10 +1607,13 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     const float waterfallHeightPx = static_cast<float>(outputSize.height()) - spectrumHeightPx;
     const float pxPerRow = m_visibleRows > 0 ? waterfallHeightPx / m_visibleRows : 0.0f;
 
-    // Rows follow physical pixel height, so pxPerRow is ~devicePxPerRow; anything above means a
-    // clamp bit: the window is either taller than the stored rows or shorter than MIN_VISIBLE_ROWS.
-    const float perPhysical = pxPerRow / static_cast<float>(m_devicePxPerRow);
-    const char *verdict = perPhysical <= 1.05f ? "1:1 physical"
+    // Rows follow PANEL pixels, so pxPerRow is ~framebufferPerPanel and the ratio below is 1:1
+    // against the panel, not against the framebuffer. Judging it against the old whole-number
+    // devicePxPerRow reported "1:1 physical" in a fractional scaled mode where it was really 0.64 of
+    // a panel pixel per row - the one case where the verdict mattered most.
+    const float perPhysical =
+        m_framebufferPerPanel > 0.0 ? pxPerRow / static_cast<float>(m_framebufferPerPanel) : pxPerRow;
+    const char *verdict = perPhysical <= 1.05f ? "1:1 panel"
                           : perPhysical < 2.0f ? "above 1:1, clamped by stored rows"
                                                : "well above 1:1, blur returning";
 

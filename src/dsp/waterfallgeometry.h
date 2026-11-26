@@ -47,10 +47,18 @@ int devicePxPerRowFor(qreal framebufferPixelsPerPanelPixel);
 // the caller must keep visibleRows <= storedRows - 2 whenever this is non-zero.
 float rowShiftFor(qint64 viewportBottomFramebufferRow, int devicePxPerRow);
 
-// Rows to draw for a waterfall this tall, one row per devicePxPerRow device pixels, clamped to what
-// is stored less the row reserved for the write head. pxPerRow above devicePxPerRow means a clamp
-// bit and the blur is back.
-int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, int devicePxPerRow = 1);
+// Rows to draw for a waterfall this tall: one row per PHYSICAL pixel of the panel, clamped to what
+// is stored less the row reserved for the write head. A result below the height over the ratio means
+// the clamp bit and the rows are stretched.
+//
+// framebufferPixelsPerPanelPixel is PanelScale's real-valued ratio, not a whole number. WHY it need
+// not be whole any more: the shader reconstructs rows with a cubic kernel at a continuous phase, so
+// a row 1.566 framebuffer pixels tall is drawn as 1.566. Before that, only a whole factor could be
+// honoured and macOS's fractional "scaled" modes fell through to one row per FRAMEBUFFER pixel - on
+// a 4K panel driven at 3008x1692 that is 0.64 of a panel pixel per row, so the display pipeline
+// merged about three rows into every two panel pixels and the detail went with it (Mike's test
+// configuration, 2026-11-26).
+int visibleRowsFor(float waterfallHeightPx, int storedRows, int minRows, qreal framebufferPixelsPerPanelPixel = 1.0);
 
 // ---- Speed: how a stored row maps onto the screen ---------------------------------------------
 //
@@ -99,11 +107,11 @@ bool isSpeedStep(int step);
 // because the shader reconstructs rows with a cubic kernel at a continuous phase instead of snapping
 // each row to a texel centre. The snap is what turned a fractional height into rows of 12 and 13
 // pixels in a pattern that slid through the picture as it scrolled.
-float physicalRowHeightFor(int step, qreal dpr, int devicePxPerRow);
+float physicalRowHeightFor(int step, qreal dpr, qreal framebufferPixelsPerPanelPixel);
 
 // Seconds of history `step` puts on screen over `pixelRows` at `lineRateHz`. 0 when the rate is not
 // known yet, which is the first second or so of a connection.
-double secondsOnScreen(int pixelRows, int step, double lineRateHz, qreal dpr, int devicePxPerRow);
+double secondsOnScreen(int pixelRows, int step, double lineRateHz, qreal dpr, qreal framebufferPerPanel);
 
 // The SPEED key's text for a step already known to show `seconds` (0 if the rate is not known yet):
 // the seconds with Fill named, e.g. "Fill 46s" or "23s", falling back to the shape alone ("Fill",
@@ -111,7 +119,7 @@ double secondsOnScreen(int pixelRows, int step, double lineRateHz, qreal dpr, in
 QString speedLabelFor(int step, double seconds);
 
 // What the SPEED key reads, computed and formatted in one call.
-QString speedLabel(int step, int pixelRows, double lineRateHz, qreal dpr, int devicePxPerRow);
+QString speedLabel(int step, int pixelRows, double lineRateHz, qreal dpr, qreal framebufferPerPanel);
 
 // How far the displayed seconds must move before the key's text follows.
 //
@@ -132,17 +140,17 @@ struct SpeedPlan {
 // pixelRows is visibleRowsFor's answer for this height (one row per physical pixel). Exact in the
 // sense that matters: nothing here reads a measured frame rate, so the plan cannot hop between two
 // answers as the rate drifts.
-SpeedPlan speedPlanFor(int pixelRows, int step, qreal dpr, int devicePxPerRow);
+SpeedPlan speedPlanFor(int pixelRows, int step, qreal dpr, qreal framebufferPerPanel);
 
 // Whether `step` is worth offering for a waterfall this tall. A step that would leave fewer than
 // `minRows` rows is a few thick colour bands rather than a waterfall, so a short window or a
 // spectrum-heavy #WFH split gets a SHORTER LADDER instead of settings that cannot work. Fill and the
 // fold steps always fit: they keep every row the height can hold.
-bool speedStepFits(int step, int pixelRows, int minRows, qreal dpr, int devicePxPerRow);
+bool speedStepFits(int step, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel);
 
 // stepSpeed, but walking past the steps this window is too short for, and stopping where it runs out
 // rather than landing on one that does not fit.
-int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr, int devicePxPerRow);
+int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr, qreal framebufferPerPanel);
 
 // The sub-row scroll residual, in texture-V units, to ADD to V (so <= 0, like rowShiftFor).
 //
