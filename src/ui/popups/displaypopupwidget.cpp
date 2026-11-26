@@ -300,7 +300,7 @@ QWidget *DisplayPopupWidget::createWaterfallControlPage() {
 
     m_waterfallSpeedGroup = new ControlGroupWidget("SPEED", page);
     m_waterfallSpeedGroup->setCompact(true);
-    m_waterfallSpeedGroup->setValue(WaterfallGeometry::speedLabel(WaterfallGeometry::SpeedFill, 0, 0.0));
+    m_waterfallSpeedGroup->setValue(WaterfallGeometry::speedLabelFor(WaterfallGeometry::SpeedFill, 0.0));
     // PopupManager steps RadioSettings, which both panadapters and this popup follow.
     connect(m_waterfallSpeedGroup, &ControlGroupWidget::decrementClicked, this,
             &DisplayPopupWidget::waterfallSpeedDecrementRequested);

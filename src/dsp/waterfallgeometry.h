@@ -84,24 +84,79 @@ int stepSpeed(int step, int delta);
 // True for a value SpeedSteps holds.
 bool isSpeedStep(int step);
 
+// Physical pixel rows one drawn row covers at `step` on a display with this device pixel ratio.
+//
+// Fill is exactly one row per physical pixel: the sharpest picture and the longest history the panel
+// can hold, which is the whole point of it, and it is right that a 4K panel gets more of both than a
+// 1080p one. Fill's seconds therefore differ between displays, and the label says so.
+//
+// Every step above Fill is a vertical magnification, and the operator judges a magnification by how
+// fast the picture moves - so it is counted in LOGICAL pixels. The same step then scrolls at the
+// same visible speed on every display, where counting it in framebuffer pixels made it scroll at
+// half the speed and hold twice the history on a 2x panel (bench, 2026-11-26).
+//
+// The answer need not be a whole number (dpr 1.5 at step 3 is 4.5 physical pixels). That is safe
+// because the shader reconstructs rows with a cubic kernel at a continuous phase instead of snapping
+// each row to a texel centre. The snap is what turned a fractional height into rows of 12 and 13
+// pixels in a pattern that slid through the picture as it scrolled.
+float physicalRowHeightFor(int step, qreal dpr, int devicePxPerRow);
+
 // Seconds of history `step` puts on screen over `pixelRows` at `lineRateHz`. 0 when the rate is not
 // known yet, which is the first second or so of a connection.
-double secondsOnScreen(int pixelRows, int step, double lineRateHz);
+double secondsOnScreen(int pixelRows, int step, double lineRateHz, qreal dpr, int devicePxPerRow);
 
-// What the SPEED key reads: the seconds on screen, with Fill named, e.g. "Fill 46s" or "23s".
-// Before the rate is known it falls back to the shape alone ("Fill", "1/2", "x2").
-QString speedLabel(int step, int pixelRows, double lineRateHz);
+// The SPEED key's text for a step already known to show `seconds` (0 if the rate is not known yet):
+// the seconds with Fill named, e.g. "Fill 46s" or "23s", falling back to the shape alone ("Fill",
+// "1/2", "x2") before a rate has been measured.
+QString speedLabelFor(int step, double seconds);
+
+// What the SPEED key reads, computed and formatted in one call.
+QString speedLabel(int step, int pixelRows, double lineRateHz, qreal dpr, int devicePxPerRow);
+
+// How far the displayed seconds must move before the key's text follows.
+//
+// WHY the label needs a hold and the plan does not: the seconds are the row count divided by the
+// MEASURED frame rate, which is a live exponential average, so a step whose exact value sits near a
+// rounding boundary flips between two numbers on a fraction of a percent of drift. SPEED 1/3 over
+// 693 rows at 14.9 Hz computes 15.50 s exactly, and the key flickered between 15 and 16 with nothing
+// touched. Damp the label; never damp the plan, which is exact and has no boundary to sit on.
+inline constexpr double SecondsLabelHoldFraction = 0.05;
+bool secondsLabelShouldChange(double shownSeconds, double computedSeconds);
 
 struct SpeedPlan {
-    int visibleRows = 0;     // rows drawn over the waterfall's height
-    int framesPerRow = 1;    // spectrum frames folded into each stored row
-    int pixelRowsPerRow = 1; // pixel rows each drawn row covers (faster than Fill: a whole number > 1)
+    int visibleRows = 0;          // rows drawn over the waterfall's height
+    int framesPerRow = 1;         // spectrum frames folded into each stored row
+    float pixelRowsPerRow = 1.0f; // physical pixel rows each drawn row covers; fractional is fine
 };
 
-// pixelRows is visibleRowsFor's answer for this height (one row per pixel row). Exact: `step` is
-// already the whole number the plan used to have to round to, so nothing here depends on a measured
-// rate and nothing can hop between two answers.
-SpeedPlan speedPlanFor(int pixelRows, int step);
+// pixelRows is visibleRowsFor's answer for this height (one row per physical pixel). Exact in the
+// sense that matters: nothing here reads a measured frame rate, so the plan cannot hop between two
+// answers as the rate drifts.
+SpeedPlan speedPlanFor(int pixelRows, int step, qreal dpr, int devicePxPerRow);
+
+// Whether `step` is worth offering for a waterfall this tall. A step that would leave fewer than
+// `minRows` rows is a few thick colour bands rather than a waterfall, so a short window or a
+// spectrum-heavy #WFH split gets a SHORTER LADDER instead of settings that cannot work. Fill and the
+// fold steps always fit: they keep every row the height can hold.
+bool speedStepFits(int step, int pixelRows, int minRows, qreal dpr, int devicePxPerRow);
+
+// stepSpeed, but walking past the steps this window is too short for, and stopping where it runs out
+// rather than landing on one that does not fit.
+int stepSpeedFitting(int step, int delta, int pixelRows, int minRows, qreal dpr, int devicePxPerRow);
+
+// The sub-row scroll residual, in texture-V units, to ADD to V (so <= 0, like rowShiftFor).
+//
+// WHY: a row arrives every 1/lineRate seconds - about 66 ms at 15 Hz - and the ring's write row
+// jumps a whole row the instant it does. At Fill that jump is one physical pixel and nobody can see
+// it; at SPEED 1/12 it is twelve, so the picture stands still for four display refreshes and then
+// lurches twelve pixels, fifteen times a second. That is the stutter.
+//
+// So the ring advances immediately and the shader is handed a residual that starts at the whole
+// distance just jumped and closes to zero over the measured row interval. The travel is spread
+// across every refresh in between, and the picture moves instead of lurching. Returns 0 before a
+// rate has been measured and during a pause, where animating against a guess would be worse than
+// not animating at all.
+float scrollPhaseFor(int rowsAdvanced, int storedRows, double elapsedMs, double msPerRow);
 
 // Folds one frame's row into the row being built: each byte the larger of the two, so the brightest
 // moment of every bin over the frames survives (bytes are palette positions, rising with dBm).

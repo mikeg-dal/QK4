@@ -947,6 +947,11 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         // advanced once it holds them all. Until then it is the write head, which is never drawn.
         if (++m_framesInRow >= m_framesPerRow) {
             m_framesInRow = 0;
+            // The ring is about to jump a whole row. Start the clock that closes the picture's
+            // remaining travel to zero over the row interval, so the jump is spread across the
+            // display refreshes in between instead of landing in one lurch.
+            ++m_scrollRowsAdvanced;
+            m_scrollClock.restart();
             QRhiTextureSubresourceUploadDescription rowUpload(
                 m_waterfallData.constData() + static_cast<qsizetype>(m_waterfallWriteRow) * m_textureWidth,
                 m_textureWidth);
@@ -970,7 +975,9 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // frames together. Applied to the rows committed from the next frame on.
     // Exact: the SPEED step is already the whole number the plan used to have to round to, so there
     // is no measured rate in it and no boundary for the plan to hop across.
-    const WaterfallGeometry::SpeedPlan plan = WaterfallGeometry::speedPlanFor(pixelRows, m_waterfallSpeedStep);
+    m_pixelRows = pixelRows;
+    const WaterfallGeometry::SpeedPlan plan =
+        WaterfallGeometry::speedPlanFor(pixelRows, m_waterfallSpeedStep, devicePixelRatioF(), m_devicePxPerRow);
     updateSpeedLabel(pixelRows);
     // Any change to the row count redraws every stored row at a scale it was not captured at. The
     // shader spans the quad with V = t * visibleFraction + scrollOffset, and visibleFraction is
@@ -999,11 +1006,32 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     // The shift is in rows; a row SPEED draws k pixel rows tall needs a k-th of it to put its edges on
     // the same physical-pixel grid.
     const float rowShift =
-        WaterfallGeometry::rowShiftFor(waterfallBottomRow, m_devicePxPerRow) / static_cast<float>(plan.pixelRowsPerRow);
+        WaterfallGeometry::rowShiftFor(waterfallBottomRow, m_devicePxPerRow) / (std::max)(1.0f, plan.pixelRowsPerRow);
     m_waterfallRowShift = rowShift;
-    // WHY: a shifted window shows a partial row older than the oldest; keep that row off the write head.
-    if (rowShift != 0.0f)
-        m_visibleRows = (std::min)(m_visibleRows, m_waterfallHistory - 2);
+
+    // The sub-row scroll residual for this frame: how much of the last row advance has yet to be
+    // travelled, in ring fractions. Measured against the row interval the frames are actually
+    // arriving at, so it closes exactly as the next row lands.
+    const double msPerRow = m_lineRateHz > 0.0 ? 1000.0 * m_framesPerRow / m_lineRateHz : 0.0;
+    const double sinceRow = m_scrollClock.isValid() ? static_cast<double>(m_scrollClock.nsecsElapsed()) / 1e6 : 0.0;
+    m_waterfallScrollPhase =
+        WaterfallGeometry::scrollPhaseFor(m_scrollRowsAdvanced, m_waterfallHistory, sinceRow, msPerRow);
+    if (m_waterfallScrollPhase == 0.0f)
+        m_scrollRowsAdvanced = 0;
+
+    // WHY three rows and not one: both rowShift and the scroll residual sample below the oldest
+    // visible row, and the shader's cubic kernel reaches one row further again. Keeping that slack
+    // off the write head is what stops a row still being built from bleeding into the picture.
+    if (rowShift != 0.0f || m_waterfallScrollPhase != 0.0f)
+        m_visibleRows = (std::min)(m_visibleRows, m_waterfallHistory - 3);
+
+    // Keep presenting while the residual closes, so the travel is drawn at the display's cadence
+    // rather than only when the next row arrives. Qt: "Calling update() from within render() will
+    // lead to updating continuously, throttled by vsync" (QRhiWidget::render, 6.10 docs) - so this
+    // is a vsync-paced loop, not a spin, and it ends itself the moment the phase reaches zero,
+    // which is what keeps an idle panadapter free.
+    if (m_waterfallScrollPhase != 0.0f)
+        update();
 
     // Logged here rather than earlier in the frame: the geometry line reports pxPerRow, which is
     // only meaningful once the visible row count for this frame has been chosen.
@@ -1045,7 +1073,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                                                      color.colorLow,
                                                      color.colorGain,
                                                      rowShift,
-                                                     0.0f,
+                                                     m_waterfallScrollPhase,
                                                      0.0f};
     rub->updateDynamicBuffer(m_gpu.waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
@@ -1487,11 +1515,28 @@ void PanadapterRhiWidget::setWaterfallSpeedStep(int step) {
 void PanadapterRhiWidget::updateSpeedLabel(int pixelRows) {
     // The seconds a step puts on screen follow the window height and the measured frame rate, so
     // the SPEED key's text is the panadapter's to publish, not the setting's.
-    const QString label = WaterfallGeometry::speedLabel(m_waterfallSpeedStep, pixelRows, m_lineRateHz);
+    const double seconds = WaterfallGeometry::secondsOnScreen(pixelRows, m_waterfallSpeedStep, m_lineRateHz,
+                                                              devicePixelRatioF(), m_devicePxPerRow);
+    // Hold the text against small drift in the measured rate: a step whose seconds sit near a
+    // rounding boundary would otherwise flicker between two numbers with nothing touched. The step
+    // itself always republishes, so changing SPEED is never held back.
+    if (m_shownStep == m_waterfallSpeedStep && !WaterfallGeometry::secondsLabelShouldChange(m_shownSeconds, seconds))
+        return;
+    m_shownStep = m_waterfallSpeedStep;
+    m_shownSeconds = seconds;
+    const QString label = WaterfallGeometry::speedLabelFor(m_waterfallSpeedStep, seconds);
     if (label == m_speedLabel)
         return;
     m_speedLabel = label;
     emit waterfallSpeedLabelChanged(label);
+}
+
+int PanadapterRhiWidget::speedStepAfter(int step, int delta) const {
+    // Before the first frame there is no row count to judge against, so offer the whole ladder.
+    if (m_pixelRows <= 0)
+        return WaterfallGeometry::stepSpeed(step, delta);
+    return WaterfallGeometry::stepSpeedFitting(step, delta, m_pixelRows, MIN_VISIBLE_ROWS, devicePixelRatioF(),
+                                               m_devicePxPerRow);
 }
 
 void PanadapterRhiWidget::logTierCrossing(qint32 oldSampleRate, qint32 newSampleRate, qint32 newTierSpanHz) {
@@ -1580,12 +1625,12 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
                                          "waterfall %.1f px  rows %d/%d visible/stored  "
                                          "pxPerRow %.4f (%s)  visibleBins %.0f  pxPerBin %.2f  "
                                          "SPEED step %d  lineRate %.2f Hz measured  "
-                                         "pixelRowsPerRow %d  framesPerRow %d",
+                                         "pixelRowsPerRow %.2f  framesPerRow %d  scrollPhase %g",
                                          outputSize.width(), outputSize.height(), devicePixelRatioF(),
                                          m_framebufferPerPanel, m_devicePxPerRow, m_waterfallRowShift, m_spectrumRatio,
                                          waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
                                          visibleBins, pxPerBin, m_waterfallSpeedStep, m_lineRateHz, m_pixelRowsPerRow,
-                                         m_framesPerRow)));
+                                         m_framesPerRow, m_waterfallScrollPhase)));
 }
 
 void PanadapterRhiWidget::updateDevicePxPerRow() {
@@ -1749,7 +1794,13 @@ void PanadapterRhiWidget::clear() {
     m_lineClock.invalidate(); // the first commit after a reconnect is not an interval
     m_lineSamples = 0;
     m_lineRateHz = 0.0;
-    m_pixelRowsPerRow = 1;
+    m_pixelRowsPerRow = 1.0f;
+    m_pixelRows = 0;
+    m_shownSeconds = -1.0;
+    m_shownStep = WaterfallGeometry::SpeedFill;
+    m_scrollRowsAdvanced = 0;
+    m_waterfallScrollPhase = 0.0f;
+    m_scrollClock.invalidate();
     m_planVisibleRows = 0;
     m_waterfallData.fill(0);
     m_rowTierSpanHz.fill(0.0f);

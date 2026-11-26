@@ -65,6 +65,9 @@ public:
     // the frame rate. Rows folded at a slower speed keep the time they hold; at a faster speed the
     // whole visible history is redrawn at the new row height.
     void setWaterfallSpeedStep(int step);
+    // The SPEED step `delta` places from `step`, skipping any the current window is too short for.
+    // Only this widget knows the row count, so the ladder's ends are its to decide.
+    int speedStepAfter(int step, int delta) const;
     void setSpan(int spanHz);
     void setWaterfallHeight(int percent); // 0-100: percentage of display for waterfall
     int span() const { return m_spanHz; }
@@ -280,7 +283,7 @@ private:
     float m_waterfallRowShift = 0.0f;
     float m_lastLoggedRowShift = 0.0f;
     int m_lastLoggedVisibleRows = -1;
-    int m_lastLoggedPixelRowsPerRow = -1;
+    float m_lastLoggedPixelRowsPerRow = -1.0f;
     // What m_devicePxPerRow was derived from. Querying the OS enumerates display modes, so it runs
     // only when one of these changes, not per frame. The pointer is compared, never dereferenced.
     const QScreen *m_panelScaleScreen = nullptr;
@@ -293,9 +296,23 @@ private:
     int m_waterfallSpeedStep = WaterfallGeometry::SpeedFill;
     QString m_speedLabel;
     int m_framesPerRow = 1;
-    // The plan in force, fed back to speedPlanFor so a ratio sitting on a rounding boundary cannot
-    // flip the row height - and with it the whole waterfall's position - on the smallest rate change.
-    int m_pixelRowsPerRow = 1;
+    // Physical pixel rows each drawn row covers. Fractional at a fractional device pixel ratio,
+    // which the shader's cubic reconstruction handles; it is only the old texel snap that needed a
+    // whole number and turned 12.16 into rows of 12 and 13 sliding through the picture.
+    float m_pixelRowsPerRow = 1.0f;
+    // The row count the last render chose, so the SPEED ladder can be asked what fits this window
+    // without recomputing the geometry outside a frame.
+    int m_pixelRows = 0;
+    // The seconds the SPEED key is currently showing, held against small drift in the measured rate
+    // (WaterfallGeometry::secondsLabelShouldChange). The plan is never damped, only this.
+    double m_shownSeconds = -1.0;
+    int m_shownStep = WaterfallGeometry::SpeedFill;
+    // Sub-row scroll: the ring advances a whole row the instant one arrives, and this closes the
+    // remaining travel to zero over the measured row interval so the picture moves instead of
+    // lurching (WaterfallGeometry::scrollPhaseFor).
+    QElapsedTimer m_scrollClock;
+    int m_scrollRowsAdvanced = 0;
+    float m_waterfallScrollPhase = 0.0f;
     // The plan's own row count, kept apart from m_visibleRows because that is clamped afterwards.
     // Any change to it rescales the stored history, so it is what the restart keys on.
     int m_planVisibleRows = 0;

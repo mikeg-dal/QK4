@@ -5,6 +5,7 @@
 #include <QHash>
 #include <QtTest>
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 // The shaders cannot be unit tested, so these assert the arithmetic that feeds them via the mirror
@@ -44,6 +45,13 @@ private slots:
     void speedSecondsFollowHeightAndRate();
     void speedStepsAndLabels();
     void foldKeepsEachBinsPeak();
+
+    // Resolution independence: the same setting must look the same on every display.
+    void fastStepsAreLogicalPixelsSoMotionMatchesAcrossDisplays();
+    void fillStaysOneRowPerPhysicalPixelOnEveryDisplay();
+    void speedLadderShortensForAShortWindow();
+    void secondsLabelHoldsAgainstRateDrift();
+    void scrollPhaseClosesOverTheRowInterval();
     void fasterRowsAreWholePixelsTall();
 
     // Colour window (WaterfallGeometry::colorWindowFor and the shader mirror).
@@ -425,10 +433,10 @@ void TestWaterfallGeometry::smallerScaleIsBrighterLikeTheK4() {
 void TestWaterfallGeometry::speedFillIsTodaysOneRowPerPixel() {
     using namespace WaterfallGeometry;
     for (int rows : {64, 300, 607, 2047}) {
-        const SpeedPlan fill = speedPlanFor(rows, SpeedFill);
+        const SpeedPlan fill = speedPlanFor(rows, SpeedFill, 1.0, 1);
         QCOMPARE(fill.visibleRows, rows);
         QCOMPARE(fill.framesPerRow, 1);
-        QCOMPARE(fill.pixelRowsPerRow, 1);
+        QCOMPARE(fill.pixelRowsPerRow, 1.0f);
     }
 }
 
@@ -440,8 +448,8 @@ void TestWaterfallGeometry::speedEveryStepDiffersFromItsNeighbour() {
     using namespace WaterfallGeometry;
     for (int rows : {200, 607, 693, 1100}) {
         for (std::size_t i = 1; i < SpeedSteps.size(); ++i) {
-            const SpeedPlan a = speedPlanFor(rows, SpeedSteps[i - 1]);
-            const SpeedPlan b = speedPlanFor(rows, SpeedSteps[i]);
+            const SpeedPlan a = speedPlanFor(rows, SpeedSteps[i - 1], 1.0, 1);
+            const SpeedPlan b = speedPlanFor(rows, SpeedSteps[i], 1.0, 1);
             const bool differs = a.visibleRows != b.visibleRows || a.framesPerRow != b.framesPerRow ||
                                  a.pixelRowsPerRow != b.pixelRowsPerRow;
             QVERIFY2(differs, qPrintable(QStringLiteral("steps %1 and %2 draw the same at %3 rows")
@@ -459,14 +467,14 @@ void TestWaterfallGeometry::speedEveryStepDiffersFromItsNeighbour() {
 void TestWaterfallGeometry::speedPlanIsExactAndIndependentOfTheRate() {
     using namespace WaterfallGeometry;
     for (int step : SpeedSteps) {
-        const SpeedPlan plan = speedPlanFor(693, step);
+        const SpeedPlan plan = speedPlanFor(693, step, 1.0, 1);
         if (step >= SpeedFill) {
             QCOMPARE(plan.framesPerRow, 1);
-            QCOMPARE(plan.pixelRowsPerRow, step);
-            QCOMPARE(plan.visibleRows, step == SpeedFill ? 693 : (std::max)(2, 693 / step));
+            QCOMPARE(plan.pixelRowsPerRow, static_cast<float>(step));
+            QCOMPARE(plan.visibleRows, step == SpeedFill ? 693 : qRound(693.0 / step));
         } else {
             QCOMPARE(plan.visibleRows, 693);
-            QCOMPARE(plan.pixelRowsPerRow, 1);
+            QCOMPARE(plan.pixelRowsPerRow, 1.0f);
             QCOMPARE(plan.framesPerRow, -step);
         }
         QVERIFY(plan.visibleRows >= 2 && plan.visibleRows <= 693);
@@ -479,14 +487,14 @@ void TestWaterfallGeometry::speedPlanIsExactAndIndependentOfTheRate() {
 void TestWaterfallGeometry::speedSecondsFollowHeightAndRate() {
     using namespace WaterfallGeometry;
     // Mike's bench geometry: 693 rows at 14.9 Hz. Fill holds 47 s, half the rows hold half of it.
-    QCOMPARE(qRound(secondsOnScreen(693, SpeedFill, 14.9)), 47);
-    QCOMPARE(qRound(secondsOnScreen(693, 2, 14.9)), 23);
-    QCOMPARE(qRound(secondsOnScreen(693, 3, 14.9)), 16);         // 231 rows at 14.9 Hz is 15.5 s
-    QCOMPARE(qRound(secondsOnScreen(693, -2, 14.9)), 93);        // folding holds more than Fill can
-    QCOMPARE(qRound(secondsOnScreen(346, SpeedFill, 14.9)), 23); // half the window, half the history
+    QCOMPARE(qRound(secondsOnScreen(693, SpeedFill, 14.9, 1.0, 1)), 47);
+    QCOMPARE(qRound(secondsOnScreen(693, 2, 14.9, 1.0, 1)), 23);
+    QCOMPARE(qRound(secondsOnScreen(693, 3, 14.9, 1.0, 1)), 16);         // 231 rows at 14.9 Hz is 15.5 s
+    QCOMPARE(qRound(secondsOnScreen(693, -2, 14.9, 1.0, 1)), 93);        // folding holds more than Fill can
+    QCOMPARE(qRound(secondsOnScreen(346, SpeedFill, 14.9, 1.0, 1)), 23); // half the window, half the history
     // Nothing is claimed before the rate is known, or with no window.
-    QCOMPARE(secondsOnScreen(693, 2, 0.0), 0.0);
-    QCOMPARE(secondsOnScreen(0, 2, 14.9), 0.0);
+    QCOMPARE(secondsOnScreen(693, 2, 0.0, 1.0, 1), 0.0);
+    QCOMPARE(secondsOnScreen(0, 2, 14.9, 1.0, 1), 0.0);
 }
 
 void TestWaterfallGeometry::speedStepsAndLabels() {
@@ -504,13 +512,13 @@ void TestWaterfallGeometry::speedStepsAndLabels() {
     QVERIFY2(!isSpeedStep(30) && !isSpeedStep(15), "the old ladder held seconds; these are not steps");
 
     // The label says what the step comes to, and names Fill so it can be found again.
-    QCOMPARE(speedLabel(SpeedFill, 693, 14.9), QStringLiteral("Fill 47s"));
-    QCOMPARE(speedLabel(2, 693, 14.9), QStringLiteral("23s"));
-    QCOMPARE(speedLabel(-2, 693, 14.9), QStringLiteral("93s"));
+    QCOMPARE(speedLabel(SpeedFill, 693, 14.9, 1.0, 1), QStringLiteral("Fill 47s"));
+    QCOMPARE(speedLabel(2, 693, 14.9, 1.0, 1), QStringLiteral("23s"));
+    QCOMPARE(speedLabel(-2, 693, 14.9, 1.0, 1), QStringLiteral("93s"));
     // Before the rate is known, the shape rather than a number that would be wrong.
-    QCOMPARE(speedLabel(SpeedFill, 693, 0.0), QStringLiteral("Fill"));
-    QCOMPARE(speedLabel(3, 693, 0.0), QStringLiteral("1/3"));
-    QCOMPARE(speedLabel(-2, 693, 0.0), QStringLiteral("x2"));
+    QCOMPARE(speedLabel(SpeedFill, 693, 0.0, 1.0, 1), QStringLiteral("Fill"));
+    QCOMPARE(speedLabel(3, 693, 0.0, 1.0, 1), QStringLiteral("1/3"));
+    QCOMPARE(speedLabel(-2, 693, 0.0, 1.0, 1), QStringLiteral("x2"));
 }
 
 // Folding frames into one row keeps each bin's brightest moment: a one-frame FT8 or CW burst is not
@@ -528,16 +536,22 @@ void TestWaterfallGeometry::foldKeepsEachBinsPeak() {
 // The spectrum expert's review, 2026-11-02: rows of 1 and 2 px in a pattern fixed on screen made a
 // trace change thickness as it scrolled. Faster than Fill, every row covers k pixel rows, or k + 1
 // for at most k - 1 of them where the height does not divide (never 1 and 2 alternating).
+//
+// k now comes from the plan's own row count rather than from the step, because the row height is no
+// longer required to be a whole number of pixels: the shader reconstructs rows with a cubic kernel
+// at a continuous phase, so a height of 12.16 is drawn as 12.16 instead of alternating 12 and 13 in
+// a pattern that slid through the picture. What still has to hold, on any integer pixel grid, is
+// that the rows differ by at most one pixel and that every row gets some.
 void TestWaterfallGeometry::fasterRowsAreWholePixelsTall() {
     using namespace WaterfallGeometry;
     constexpr int kStored = 2048;
     for (int height : {200, 450, 607, 1100}) {
         for (int step : SpeedSteps) {
             {
-                const SpeedPlan plan = speedPlanFor(height, step);
-                if (plan.pixelRowsPerRow == 1)
+                const SpeedPlan plan = speedPlanFor(height, step, 1.0, 1);
+                if (plan.visibleRows >= height)
                     continue; // Fill or folding: one row per pixel row, covered elsewhere
-                const int k = plan.pixelRowsPerRow;
+                const int k = height / plan.visibleRows;
                 QHash<int, int> pixelsPerRow;
                 for (int pixel = 0; pixel < height; ++pixel)
                     ++pixelsPerRow[rowForPixel(pixel, float(height), 900, plan.visibleRows, kStored)];
@@ -548,9 +562,162 @@ void TestWaterfallGeometry::fasterRowsAreWholePixelsTall() {
                              qPrintable(QStringLiteral("a row of %1 px with k = %2").arg(count).arg(k)));
                     taller += count == k + 1;
                 }
-                QVERIFY(taller <= k - 1);
+                // Exactly the remainder of the division is a pixel taller - the most even split an
+                // integer pixel grid allows, and no alternating pattern beyond one pixel.
+                QCOMPARE(taller, height % plan.visibleRows);
             }
         }
+    }
+}
+
+// Fill means one row per PHYSICAL pixel on every display: the sharpest picture and the longest
+// history the panel can hold. A 4K panel is meant to get more of both than a 1080p one, which is
+// why Fill's seconds differ between displays and the label says what they came to.
+void TestWaterfallGeometry::fillStaysOneRowPerPhysicalPixelOnEveryDisplay() {
+    using namespace WaterfallGeometry;
+    for (const qreal dpr : {1.0, 1.25, 1.5, 2.0, 3.0}) {
+        for (const int perPanel : {1, 2}) {
+            QCOMPARE(physicalRowHeightFor(SpeedFill, dpr, perPanel), 1.0f);
+            for (const int fold : {-2, -3, -4})
+                QCOMPARE(physicalRowHeightFor(fold, dpr, perPanel), 1.0f);
+            const SpeedPlan plan = speedPlanFor(800, SpeedFill, dpr, perPanel);
+            QCOMPARE(plan.visibleRows, 800);
+            QCOMPARE(plan.pixelRowsPerRow, 1.0f);
+        }
+    }
+}
+
+// The bench defect of 2026-11-26: the step was counted in FRAMEBUFFER pixels, so the identical
+// window scrolled at half the speed and held twice the history on a 2x display. Counted in logical
+// pixels, a step covers the same visible distance per frame everywhere - which is what the operator
+// is judging when they pick a speed.
+void TestWaterfallGeometry::fastStepsAreLogicalPixelsSoMotionMatchesAcrossDisplays() {
+    using namespace WaterfallGeometry;
+    for (const int step : {2, 3, 4, 5, 6, 8, 10, 12}) {
+        // One logical pixel is dpr framebuffer pixels; with one framebuffer pixel per panel pixel
+        // that is dpr physical pixels, so the step's physical height scales exactly with dpr.
+        QCOMPARE(physicalRowHeightFor(step, 1.0, 1), static_cast<float>(step));
+        QCOMPARE(physicalRowHeightFor(step, 2.0, 1), static_cast<float>(step * 2));
+        QCOMPARE(physicalRowHeightFor(step, 1.5, 1), static_cast<float>(step) * 1.5f);
+
+        // The travel per frame in LOGICAL pixels is what must match across displays. A window of
+        // the same logical height shows the same seconds on every one of them.
+        const double logicalHeight = 400.0;
+        double firstSeconds = 0.0;
+        for (const qreal dpr : {1.0, 1.25, 1.5, 2.0, 3.0}) {
+            const int physicalRows = static_cast<int>(std::lround(logicalHeight * dpr));
+            const double seconds = secondsOnScreen(physicalRows, step, 15.0, dpr, 1);
+            if (firstSeconds == 0.0)
+                firstSeconds = seconds;
+            // Within a row of rounding: the row count is an integer at every scale.
+            QVERIFY2(std::abs(seconds - firstSeconds) <= 1.0 / 15.0 * 2.0,
+                     qPrintable(QStringLiteral("step %1 at dpr %2 shows %3 s, not %4 s")
+                                    .arg(step)
+                                    .arg(dpr)
+                                    .arg(seconds)
+                                    .arg(firstSeconds)));
+        }
+    }
+}
+
+// A step that would leave a handful of thick colour bands is not a waterfall, so a short window or
+// a spectrum-heavy #WFH split gets a SHORTER LADDER rather than settings that cannot work. Fill and
+// the folds always fit: they keep every row the height can hold.
+void TestWaterfallGeometry::speedLadderShortensForAShortWindow() {
+    using namespace WaterfallGeometry;
+    constexpr int kMinRows = 64;
+
+    // A tall window holds the whole ladder.
+    for (const int step : SpeedSteps)
+        QVERIFY2(speedStepFits(step, 1512, kMinRows, 1.0, 1), qPrintable(QStringLiteral("step %1").arg(step)));
+
+    // A 150-pixel waterfall cannot hold 64 rows past 1/2, so the fast end is withdrawn.
+    QVERIFY(speedStepFits(SpeedFill, 150, kMinRows, 1.0, 1));
+    QVERIFY(speedStepFits(-4, 150, kMinRows, 1.0, 1));
+    QVERIFY(speedStepFits(2, 150, kMinRows, 1.0, 1));  // 75 rows
+    QVERIFY(!speedStepFits(3, 150, kMinRows, 1.0, 1)); // 50 rows
+    QVERIFY(!speedStepFits(12, 150, kMinRows, 1.0, 1));
+
+    // Stepping up stops on the last step that fits instead of landing on one that does not.
+    QCOMPARE(stepSpeedFitting(2, +1, 150, kMinRows, 1.0, 1), 2);
+    QCOMPARE(stepSpeedFitting(SpeedFill, +1, 150, kMinRows, 1.0, 1), 2);
+    // Downward is never withdrawn: folding adds history, it never costs rows.
+    QCOMPARE(stepSpeedFitting(2, -1, 150, kMinRows, 1.0, 1), SpeedFill);
+    QCOMPARE(stepSpeedFitting(SpeedFill, -1, 150, kMinRows, 1.0, 1), -2);
+
+    // Every step the ladder offers, at any height, actually leaves a waterfall behind.
+    for (int height = 64; height <= 2047; height += 7) {
+        for (const qreal dpr : {1.0, 1.5, 2.0}) {
+            int step = SpeedFill;
+            for (int i = 0; i < 20; ++i) {
+                const int next = stepSpeedFitting(step, +1, height, kMinRows, dpr, 1);
+                QVERIFY(speedStepFits(next, height, kMinRows, dpr, 1));
+                if (next == step)
+                    break;
+                step = next;
+            }
+        }
+    }
+}
+
+// The label is damped and the plan is not. SPEED 1/3 over 693 rows at 14.9 Hz computes 15.50 s
+// exactly, so a fraction of a percent of drift in the measured rate flipped the key between 15 and
+// 16 with nothing touched (bench, 2026-11-26).
+void TestWaterfallGeometry::secondsLabelHoldsAgainstRateDrift() {
+    using namespace WaterfallGeometry;
+    // The boundary case itself: the rate wanders either side of the value that rounds to 15.5.
+    const double a = secondsOnScreen(693, 3, 14.88, 1.0, 1);
+    const double b = secondsOnScreen(693, 3, 14.93, 1.0, 1);
+    QVERIFY(qRound(a) != qRound(b)); // the numbers really do differ - this is the defect
+    QVERIFY2(!secondsLabelShouldChange(a, b), "a rate wobble must not move the key");
+
+    // A real change still gets through: one step of the ladder is far more than the hold.
+    const double oneStepAway = secondsOnScreen(693, 4, 14.9, 1.0, 1);
+    QVERIFY(secondsLabelShouldChange(a, oneStepAway));
+    // So does appearing or disappearing, which is the switch between a number and the shape.
+    QVERIFY(secondsLabelShouldChange(0.0, a));
+    QVERIFY(secondsLabelShouldChange(a, 0.0));
+    QVERIFY(!secondsLabelShouldChange(0.0, 0.0));
+    // The hold is a fraction of what is shown, so it scales with the value.
+    QVERIFY(!secondsLabelShouldChange(100.0, 103.0));
+    QVERIFY(secondsLabelShouldChange(100.0, 110.0));
+}
+
+// The stutter fix. The ring jumps a whole row the instant one arrives; the residual starts at that
+// whole distance and closes to zero over the row interval, so the travel is spread across the
+// display refreshes in between instead of landing in one lurch of `step` pixels.
+void TestWaterfallGeometry::scrollPhaseClosesOverTheRowInterval() {
+    using namespace WaterfallGeometry;
+    constexpr int kStored = 2048;
+    const double msPerRow = 1000.0 / 15.0; // ~66.7 ms, Mike's measured rate
+
+    // At the instant the row lands the picture has the whole row still to travel, and it is pulled
+    // BACK toward the older rows (negative, like rowShiftFor).
+    const float atArrival = scrollPhaseFor(1, kStored, 0.0, msPerRow);
+    QCOMPARE(atArrival, -1.0f / kStored);
+    // Halfway through the interval, half of it remains.
+    QVERIFY(std::abs(scrollPhaseFor(1, kStored, msPerRow / 2.0, msPerRow) - -0.5f / kStored) < 1e-6f);
+    // By the end it has closed, and it does not overshoot past it.
+    QCOMPARE(scrollPhaseFor(1, kStored, msPerRow, msPerRow), 0.0f);
+    QCOMPARE(scrollPhaseFor(1, kStored, msPerRow * 4.0, msPerRow), 0.0f);
+
+    // Several rows at once (a burst after a stall) travel together, never more than they advanced.
+    QCOMPARE(scrollPhaseFor(3, kStored, 0.0, msPerRow), -3.0f / kStored);
+    QCOMPARE(scrollPhaseFor(3, kStored, msPerRow * 3.0, msPerRow), 0.0f);
+
+    // Nothing is animated against a guess: before a rate is measured, or with no advance, the
+    // picture simply sits where the ring puts it.
+    QCOMPARE(scrollPhaseFor(1, kStored, 10.0, 0.0), 0.0f);
+    QCOMPARE(scrollPhaseFor(0, kStored, 10.0, msPerRow), 0.0f);
+    QCOMPARE(scrollPhaseFor(1, 0, 10.0, msPerRow), 0.0f);
+
+    // Monotone and bounded at every phase, so the picture never jitters backwards.
+    float previous = -2.0f;
+    for (double ms = 0.0; ms <= msPerRow * 1.5; ms += msPerRow / 32.0) {
+        const float phase = scrollPhaseFor(1, kStored, ms, msPerRow);
+        QVERIFY(phase >= -1.0f / kStored && phase <= 0.0f);
+        QVERIFY(phase >= previous);
+        previous = phase;
     }
 }
 

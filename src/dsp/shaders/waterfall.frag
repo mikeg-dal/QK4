@@ -18,8 +18,8 @@ layout(std140, binding = 0) uniform buf {
     float colorLow;         // Palette position = clamp((texel - colorLow) * colorGain, 0, 1)
     float colorGain;
     float rowShift;         // Rows added to V so row edges land on physical pixels (vertex stage)
+    float scrollPhase;      // Sub-row scroll residual added to V, <= 0 (vertex stage)
     float pad1;
-    float pad2;
 };
 
 void main() {
@@ -47,20 +47,56 @@ void main() {
     float binPos = clamp(binIndex, 0.5, binCount - 0.5);
     float texU = (binOffset + binPos) / textureWidth;
 
-    // Snap V to a texel centre (time is not blended, unlike frequency above). A V landing between
-    // two rows makes Linear filtering return a blend of two different moments in time, which is
-    // the vertical smear. Snapping also makes any rows-per-pixel ratio unblended, not just 1:1.
-    // Composes with the ring wrap: Repeat addressing handles a snapped coordinate past 1.0 the
-    // same as an unsnapped one. storedRows 0.0 opts out — the mini-pan shares these shaders but
-    // may be downsampling its 100-row buffer, where the blend is a box filter worth keeping.
-    float texV = fragTexCoord.y;
-    if (storedRows > 0.0)
-        texV = (floor(texV * storedRows) + 0.5) / storedRows;
-
+    // Vertical reconstruction. Time is not blended by the sampler, unlike frequency above: a V
+    // landing between two rows makes Linear filtering return a mix of two different moments, which
+    // is the vertical smear.
+    //
+    // WHY a cubic B-spline and not the texel-centre snap this replaced. Snapping killed the smear
+    // but its frequency response depends on the phase: as the sample point sweeps across a row the
+    // kernel alternates between one sharp row and a half-and-half blend, so a noisy waterfall
+    // pulses — and once rows are several pixels tall, or the scroll moves by a fraction of a row,
+    // that sweep happens constantly. A cubic B-spline over the four nearest rows has the same
+    // response at every phase, so there is no pulse, and it is what allows the sub-row scroll
+    // residual to move the picture smoothly between arriving frames.
+    //
+    // Taps are clamped to the rows the window may show, so the kernel can never reach the write
+    // head (which holds a row still being built) nor wrap the newest row in under the oldest. The
+    // two rows of slack below the oldest visible row are what rowShift and scrollPhase reach into;
+    // the renderer reserves them by holding visibleRows at storedRows - 3.
+    //
+    // storedRows 0.0 opts out — the mini-pan shares these shaders but may be downsampling its
+    // 100-row buffer, where the sampler's own box filter is worth keeping.
+    //
     // The texel is the bin's palette position, fixed when its row was captured
     // (WaterfallGeometry::capturedByteFor); both widgets pass it through with colorLow 0 and
-    // colorGain 1. WaterfallGeometry::shaderFractionFor mirrors this line.
-    float level = texture(waterfallTex, vec2(texU, texV)).r;
+    // colorGain 1. WaterfallGeometry::shaderFractionFor mirrors the colour line below.
+    float level;
+    if (storedRows > 0.0) {
+        float firstRow = scrollOffset * storedRows;
+        float lastRow = firstRow + visibleFraction * storedRows - 1.0;
+        float oldestTap = firstRow - 2.0;
+
+        float logicalTexel = fragTexCoord.y * storedRows - 0.5;
+        float base = floor(logicalTexel);
+        float f = logicalTexel - base;
+        float f2 = f * f;
+        float f3 = f2 * f;
+        float w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+        float w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+        float w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+        float w3 = f3 / 6.0;
+
+        // Repeat addressing wraps the ring, so a row index outside 0..storedRows needs no modulo.
+        float r0 = (clamp(base - 1.0, oldestTap, lastRow) + 0.5) / storedRows;
+        float r1 = (clamp(base, oldestTap, lastRow) + 0.5) / storedRows;
+        float r2 = (clamp(base + 1.0, oldestTap, lastRow) + 0.5) / storedRows;
+        float r3 = (clamp(base + 2.0, oldestTap, lastRow) + 0.5) / storedRows;
+
+        level = w0 * texture(waterfallTex, vec2(texU, r0)).r + w1 * texture(waterfallTex, vec2(texU, r1)).r +
+                w2 * texture(waterfallTex, vec2(texU, r2)).r + w3 * texture(waterfallTex, vec2(texU, r3)).r;
+    } else {
+        level = texture(waterfallTex, vec2(texU, fragTexCoord.y)).r;
+    }
     // Byte 0 is "no data" (rows not yet written, a cleared history): palette position 0 under any
     // uniforms.
     float palettePos = level < 0.5 / 255.0 ? 0.0 : clamp((level - colorLow) * colorGain, 0.0, 1.0);

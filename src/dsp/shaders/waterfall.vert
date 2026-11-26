@@ -16,8 +16,8 @@ layout(std140, binding = 0) uniform buf {
     float colorLow;         // Palette position = clamp((texel - colorLow) * colorGain, 0, 1)
     float colorGain;
     float rowShift;         // Rows added to V so row edges land on physical pixels (vertex stage)
+    float scrollPhase;      // Sub-row scroll residual added to V, <= 0 (vertex stage)
     float pad1;
-    float pad2;
 };
 
 void main() {
@@ -28,6 +28,10 @@ void main() {
     // V wraps, which is what makes the ring buffer scroll.
     // rowShift (a fraction of a row, <= 0) moves the row edges onto the panel's physical pixel grid
     // when rows are several device pixels tall; WaterfallGeometry::rowShiftFor explains it.
+    // scrollPhase is already a fraction of the ring, not a row count: the ring advances a whole row
+    // the instant one arrives, and this pulls V back toward the older rows and releases it to zero
+    // over the row interval, so the picture travels smoothly between frames instead of lurching a
+    // whole row at a time (WaterfallGeometry::scrollPhaseFor).
     float shift = storedRows > 0.0 ? rowShift / storedRows : 0.0;
-    fragTexCoord = vec2(texCoord.x, texCoord.y * visibleFraction + scrollOffset + shift);
+    fragTexCoord = vec2(texCoord.x, texCoord.y * visibleFraction + scrollOffset + shift + scrollPhase);
 }

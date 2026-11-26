@@ -475,9 +475,13 @@ void PopupManager::wireDisplayPopup() {
 
     // Waterfall SPEED - / +: a QK4 setting, nothing sent to the radio. Both panadapters and this popup
     // follow RadioSettings::waterfallSpeedChanged.
-    const auto stepWaterfallSpeed = [](int delta) {
+    const auto stepWaterfallSpeed = [this](int delta) {
         RadioSettings *settings = RadioSettings::instance();
-        settings->setWaterfallSpeedStep(WaterfallGeometry::stepSpeed(settings->waterfallSpeedStep(), delta));
+        const int from = settings->waterfallSpeedStep();
+        // The panadapter skips the steps its current height is too short for, so a small window or a
+        // spectrum-heavy #WFH split gets a shorter ladder rather than settings that cannot work.
+        settings->setWaterfallSpeedStep(m_spectrum ? m_spectrum->speedStepAfter(from, delta)
+                                                   : WaterfallGeometry::stepSpeed(from, delta));
     };
     connect(m_displayPopup, &DisplayPopupWidget::waterfallSpeedIncrementRequested, this,
             [stepWaterfallSpeed]() { stepWaterfallSpeed(+1); });

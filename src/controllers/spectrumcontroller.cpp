@@ -46,6 +46,12 @@ void SpectrumController::clearDisplays() {
         m_vfoB->showNormal();
 }
 
+int SpectrumController::speedStepAfter(int step, int delta) const {
+    // Main's geometry decides: it is the pan whose label the DISPLAY popup shows, so the ladder it
+    // offers and the seconds it reports come from the same window.
+    return m_panA.pad->speedStepAfter(step, delta);
+}
+
 void SpectrumController::setAmplitudeUnits(bool useSUnits) {
     for (PanUi *ui : {&m_panA, &m_panB})
         if (ui->pad)
