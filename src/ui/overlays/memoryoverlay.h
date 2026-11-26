@@ -39,15 +39,17 @@ public:
     static QString formatFrequency(qint64 hz);
 
 signals:
+    // Any single left click on the row, wherever it lands: select this channel, nothing more.
     void clicked();
-    // A press in the name cell — the part of the row a name is written in. That is the gesture
-    // that opens the editor; a press anywhere else only selects.
-    void nameAreaClicked();
+    // A DOUBLE click in the name cell — the part of the row a name is written in. That is the
+    // gesture that opens the editor; a single click anywhere, the name cell included, only selects.
+    void nameAreaDoubleClicked();
     void renamed(int channel, const QString &label);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
 
 private:

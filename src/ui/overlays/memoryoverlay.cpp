@@ -199,13 +199,23 @@ void MemoryRowWidget::keyPressEvent(QKeyEvent *event) {
 }
 
 void MemoryRowWidget::mousePressEvent(QMouseEvent *event) {
-    if (event->button() == Qt::LeftButton) {
-        if (event->position().x() <= nameColumnRight())
-            emit nameAreaClicked();
-        else
-            emit clicked();
-    }
+    // A single click only ever selects, wherever in the row it lands. WHY: this list is read far
+    // more often than it is renamed, and selecting the name cell is the ordinary way to pick a
+    // channel by name - opening an editor on that press put the operator into a text field every
+    // time they aimed at the obvious part of the row (Mike, 2026-11-26). Renaming is the rarer,
+    // more deliberate act, so it takes the more deliberate gesture.
+    if (event->button() == Qt::LeftButton)
+        emit clicked();
     QWidget::mousePressEvent(event);
+}
+
+void MemoryRowWidget::mouseDoubleClickEvent(QMouseEvent *event) {
+    // The press that began this double click has already selected the row, so this only has to
+    // open the editor - and only over the name cell, which is the part of the row a name lives in.
+    if (event->button() == Qt::LeftButton && event->position().x() <= nameColumnRight())
+        emit nameAreaDoubleClicked();
+    // Deliberately NOT calling the base: QWidget::mouseDoubleClickEvent forwards to
+    // mousePressEvent, which would emit a second clicked() for one gesture.
 }
 
 int MemoryRowWidget::nameColumnRight() const {
@@ -351,10 +361,13 @@ void MemoryOverlayWidget::buildRows() {
     for (int channel = MemoryModel::MinChannel; channel <= MemoryModel::MaxChannel; ++channel) {
         auto *row = new MemoryRowWidget(channel, m_model, m_listContainer);
         connect(row, &MemoryRowWidget::clicked, this, [this, channel]() { selectChannel(channel); });
-        connect(row, &MemoryRowWidget::nameAreaClicked, this, [this, channel, row]() {
-            // The name cell is where a name goes, so clicking it is how one is written. Clicking
-            // the rest of the row only selects. A blank channel has nothing to name, and
-            // beginRename() refuses it.
+        connect(row, &MemoryRowWidget::nameAreaDoubleClicked, this, [this, channel, row]() {
+            // The name cell is where a name goes, so double-clicking it is how one is written. Any
+            // single click, this cell included, only selects. A blank channel has nothing to name,
+            // and beginRename() refuses it.
+            //
+            // selectChannel is kept although the opening press has already run it: it is idempotent,
+            // and this way the editor can never open on a row that is not the selected one.
             selectChannel(channel);
             row->beginRename();
         });

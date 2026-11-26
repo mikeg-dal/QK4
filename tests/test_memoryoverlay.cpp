@@ -276,7 +276,7 @@ private slots:
         QCOMPARE(empty, 12);
     }
 
-    void aSecondClickOnAStoredChannelNamesIt() {
+    void aDoubleClickOnTheNameCellOfAStoredChannelNamesIt() {
         MemoryModel model;
         model.parseMCDF(kChannel1); // in use, unnamed
         MemoryOverlayWidget overlay(&model);
@@ -297,8 +297,18 @@ private slots:
         QCOMPARE(overlay.selectedChannel(), 1);
         QVERIFY(!row->isRenaming());
 
-        // A click in the name cell opens it.
+        // A SINGLE click in the name cell selects and nothing else. This is the regression: it used
+        // to drop the operator into a text field every time they aimed at the obvious part of the
+        // row. Move the selection away first, so this proves the click still selects rather than
+        // finding the row already selected.
+        QTest::mouseClick(blank, Qt::LeftButton, Qt::NoModifier, inFrequencies);
+        QCOMPARE(overlay.selectedChannel(), 2);
         QTest::mouseClick(row, Qt::LeftButton, Qt::NoModifier, inNameCell);
+        QCOMPARE(overlay.selectedChannel(), 1);
+        QVERIFY(!row->isRenaming());
+
+        // A double click in the name cell opens it.
+        QTest::mouseDClick(row, Qt::LeftButton, Qt::NoModifier, inNameCell);
         QVERIFY(row->isRenaming());
         QLineEdit *editor = row->findChild<QLineEdit *>();
         QVERIFY(editor);
@@ -311,9 +321,18 @@ private slots:
         QVERIFY(!row->isRenaming());
 
         // A blank channel cannot be named: there is nothing to store the name against.
-        QTest::mouseClick(blank, Qt::LeftButton, Qt::NoModifier, inNameCell);
+        QTest::mouseDClick(blank, Qt::LeftButton, Qt::NoModifier, inNameCell);
         QVERIFY(!blank->isRenaming());
         QCOMPARE(renames.count(), 1);
+
+        // A double click outside the name cell selects without opening an editor - the frequency
+        // columns are not a place a name is written.
+        // Only the editor is asserted here, not the selection: QTest::mouseDClick does not
+        // reliably synthesise the press that precedes a real double click, so asserting selection
+        // through it would test the harness rather than the widget. Selection on a press is
+        // covered above, by the single-click cases.
+        QTest::mouseDClick(row, Qt::LeftButton, Qt::NoModifier, inFrequencies);
+        QVERIFY(!row->isRenaming());
         overlay.hide();
     }
 
