@@ -267,7 +267,11 @@ private:
     // sampled — the radio always sends 1024 bins, they are written 1:1 into the middle, and the
     // shader samples at exact texel centres — so width past that is alignment headroom, not
     // resolution. 8192 was measured and produced bit-identical output for twice the memory.
-    static constexpr int MAX_WATERFALL_HISTORY = 2048;
+    // WHY 4096 and not 2048: visibleRows is clamped to what is stored, and past that the rows
+    // stretch and the 1:1 sharpness is gone. A 4K panel with #WFH 100 (waterfall only, which the K4
+    // allows) asks for more than 2048 physical rows full-screen, so the ceiling was reachable on
+    // hardware. The ring is single-channel, so this costs 16 MB of texture instead of 8.
+    static constexpr int MAX_WATERFALL_HISTORY = 4096;
     static constexpr int MIN_VISIBLE_ROWS = 64;
     static constexpr int BASE_TEXTURE_WIDTH = 4096;
     int m_textureWidth = BASE_TEXTURE_WIDTH;
@@ -313,9 +317,6 @@ private:
     QElapsedTimer m_scrollClock;
     int m_scrollRowsAdvanced = 0;
     float m_waterfallScrollPhase = 0.0f;
-    // The plan's own row count, kept apart from m_visibleRows because that is clamped afterwards.
-    // Any change to it rescales the stored history, so it is what the restart keys on.
-    int m_planVisibleRows = 0;
     int m_framesInRow = 0;
     int m_rowSpecSize = 0; // bins of the frames folded into the row being built
     // How often frames become rows, measured and smoothed: the K4 may send fewer frames than the

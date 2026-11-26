@@ -979,21 +979,16 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     const WaterfallGeometry::SpeedPlan plan =
         WaterfallGeometry::speedPlanFor(pixelRows, m_waterfallSpeedStep, devicePixelRatioF(), m_devicePxPerRow);
     updateSpeedLabel(pixelRows);
-    // Any change to the row count redraws every stored row at a scale it was not captured at. The
-    // shader spans the quad with V = t * visibleFraction + scrollOffset, and visibleFraction is
-    // visibleRows / storedRows, so the full waterfall height always shows exactly visibleRows rows:
-    // fewer of them stretch taller and the picture slides. It is not a crop. Start the history over
-    // instead, as the tier change above does: a clean restart reads as a deliberate change, where
-    // reinterpreting the rows reads as the waterfall sliding up and coming back down (bench,
-    // 2026-11-25, on connect: QK4's default split gives 809 rows, the radio's #WFH arrives and makes
-    // it 693, and the measured line rate settling moves it again moments later).
-    if (m_planVisibleRows > 0 && plan.visibleRows != m_planVisibleRows) {
-        m_framesInRow = 0;
-        m_waterfallData.fill(0);
-        m_rowTierSpanHz.fill(0.0f);
-        m_waterfallNeedsFullClear = true;
-    }
-    m_planVisibleRows = plan.visibleRows;
+    // WHY a row-count change keeps the history, where this once restarted it. Both the pixels and
+    // the rows scale with the window, so a row stays at the same distance from the newest whatever
+    // the height: growing the window REVEALS older rows and shrinking it hides them, and nothing is
+    // redrawn at a scale it was not captured at (test_waterfallgeometry's
+    // aRowCountChangePreservesTheHistory pins it at Fill and at every fast step). The slide Mike saw
+    // on 2026-11-25 was the old plan's rounding boundary - 693/447 sitting at 1.55 against a
+    // boundary at 1.50 - which flipped the row height, and with it the whole picture, on the
+    // smallest wander in the measured rate. The step is chosen outright now, so there is no boundary
+    // left and no reason to throw the history away. Restarting it here instead blanked the waterfall
+    // on every frame of a window drag.
     m_visibleRows = plan.visibleRows;
     m_framesPerRow = plan.framesPerRow;
     m_pixelRowsPerRow = plan.pixelRowsPerRow;
@@ -1605,7 +1600,11 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     m_lastLoggedPixelRowsPerRow = m_pixelRowsPerRow;
     m_geometryLoggedWithBins = haveBins;
 
-    const float waterfallHeightPx = static_cast<float>(outputSize.height()) * (1.0f - m_spectrumRatio);
+    // The SAME value render() uses, derived as the remainder of the split rather than truncated a
+    // second time from the ratio: the two expressions differ by a pixel for most window heights, and
+    // a diagnostic that disagrees with the renderer by a pixel is worse than none.
+    const float spectrumHeightPx = std::floor(static_cast<float>(outputSize.height()) * m_spectrumRatio);
+    const float waterfallHeightPx = static_cast<float>(outputSize.height()) - spectrumHeightPx;
     const float pxPerRow = m_visibleRows > 0 ? waterfallHeightPx / m_visibleRows : 0.0f;
 
     // Rows follow physical pixel height, so pxPerRow is ~devicePxPerRow; anything above means a
@@ -1614,6 +1613,15 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
     const char *verdict = perPhysical <= 1.05f ? "1:1 physical"
                           : perPhysical < 2.0f ? "above 1:1, clamped by stored rows"
                                                : "well above 1:1, blur returning";
+
+    // What limits how smoothly the picture moves at this step. The sub-row scroll spreads each row
+    // advance across the display's refreshes, so drawing is no longer the constraint - but it cannot
+    // add detail between moments the radio never sent. Past about two physical pixels per arriving
+    // row, more frames is the only thing that helps, and Display FPS in the MENU is where the
+    // operator raises it (QK4 never writes #FPS unasked).
+    const char *smoothness = m_pixelRowsPerRow <= 2.0f
+                                 ? "frame-paced"
+                                 : "frame-limited (raise Display FPS in the MENU for a smoother fast step)";
 
     const float visibleBins = m_waterfallTierSpanHz > 0.0f
                                   ? static_cast<float>(m_waterfallTierBinCount) *
@@ -1631,12 +1639,13 @@ void PanadapterRhiWidget::logRenderGeometry(const QSize &outputSize) {
                                          "waterfall %.1f px  rows %d/%d visible/stored  "
                                          "pxPerRow %.4f (%s)  visibleBins %.0f  pxPerBin %.2f  "
                                          "SPEED step %d  lineRate %.2f Hz measured  "
-                                         "pixelRowsPerRow %.2f  framesPerRow %d  scrollPhase %g",
+                                         "pixelRowsPerRow %.2f  framesPerRow %d  scrollPhase %g  "
+                                         "smoothness %s",
                                          outputSize.width(), outputSize.height(), devicePixelRatioF(),
                                          m_framebufferPerPanel, m_devicePxPerRow, m_waterfallRowShift, m_spectrumRatio,
                                          waterfallHeightPx, m_visibleRows, m_waterfallHistory, pxPerRow, verdict,
                                          visibleBins, pxPerBin, m_waterfallSpeedStep, m_lineRateHz, m_pixelRowsPerRow,
-                                         m_framesPerRow, m_waterfallScrollPhase)));
+                                         m_framesPerRow, m_waterfallScrollPhase, smoothness)));
 }
 
 void PanadapterRhiWidget::updateDevicePxPerRow() {
@@ -1807,7 +1816,6 @@ void PanadapterRhiWidget::clear() {
     m_scrollRowsAdvanced = 0;
     m_waterfallScrollPhase = 0.0f;
     m_scrollClock.invalidate();
-    m_planVisibleRows = 0;
     m_waterfallData.fill(0);
     m_rowTierSpanHz.fill(0.0f);
     m_waterfallNeedsFullClear = true;

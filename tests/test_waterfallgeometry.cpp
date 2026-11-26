@@ -52,6 +52,7 @@ private slots:
     void speedLadderShortensForAShortWindow();
     void secondsLabelHoldsAgainstRateDrift();
     void scrollPhaseClosesOverTheRowInterval();
+    void aRowCountChangePreservesTheHistory();
     void fasterRowsAreWholePixelsTall();
 
     // Colour window (WaterfallGeometry::colorWindowFor and the shader mirror).
@@ -718,6 +719,57 @@ void TestWaterfallGeometry::scrollPhaseClosesOverTheRowInterval() {
         QVERIFY(phase >= -1.0f / kStored && phase <= 0.0f);
         QVERIFY(phase >= previous);
         previous = phase;
+    }
+}
+
+// Resizing the window, dragging the #WFH split or moving to another display changes how many rows
+// are on screen - and must NOT throw the history away. Both the pixels and the rows scale with the
+// height, so a row stays at the same distance from the newest whatever that height is: a taller
+// window REVEALS older rows, a shorter one hides them, and no row is ever redrawn at a scale it was
+// not captured at.
+//
+// This is the gate on a fix that was wrong. a431e01 restarted the history on any row-count change,
+// believing a change rescaled the stored rows; it does not, and restarting blanked the waterfall on
+// every frame of a window drag. The slide that prompted it was the old plan's rounding boundary
+// (693/447 at 1.55 against a boundary at 1.50), which the explicit step removed.
+void TestWaterfallGeometry::aRowCountChangePreservesTheHistory() {
+    using namespace WaterfallGeometry;
+    constexpr int kStored = 2048;
+    constexpr int kWrite = 900;
+
+    // Fill: one row per physical pixel, so the newest N rows are the same N rows at any height.
+    for (const auto [from, to] :
+         {std::pair{809, 693}, std::pair{693, 809}, std::pair{1512, 693}, std::pair{400, 1200}, std::pair{64, 2000}}) {
+        for (int distance = 0; distance < (std::min)(from, to); ++distance) {
+            const int before = rowForPixel(from - 1 - distance, float(from), kWrite, from, kStored);
+            const int after = rowForPixel(to - 1 - distance, float(to), kWrite, to, kStored);
+            QCOMPARE(after, before);
+        }
+    }
+
+    // And at the fast steps, where the rows are taller: the row count scales with the height, so
+    // the same row is still the same distance back through the history.
+    for (const int step : {2, 3, 6, 12}) {
+        for (const auto [from, to] : {std::pair{809, 693}, std::pair{1512, 693}, std::pair{693, 1512}}) {
+            const SpeedPlan a = speedPlanFor(from, step, 1.0, 1);
+            const SpeedPlan b = speedPlanFor(to, step, 1.0, 1);
+            const int shared = (std::min)(a.visibleRows, b.visibleRows);
+            for (int distance = 0; distance < shared; ++distance) {
+                // The pixel that sits `distance` rows back from the newest, in each geometry.
+                const int pixelA = static_cast<int>((from - 1) - distance * double(from) / a.visibleRows);
+                const int pixelB = static_cast<int>((to - 1) - distance * double(to) / b.visibleRows);
+                const int before = rowForPixel(pixelA, float(from), kWrite, a.visibleRows, kStored);
+                const int after = rowForPixel(pixelB, float(to), kWrite, b.visibleRows, kStored);
+                QVERIFY2(after == before, qPrintable(QStringLiteral("step 1/%1, %2 -> %3 rows: distance %4 moved "
+                                                                    "from row %5 to row %6")
+                                                         .arg(step)
+                                                         .arg(from)
+                                                         .arg(to)
+                                                         .arg(distance)
+                                                         .arg(before)
+                                                         .arg(after)));
+            }
+        }
     }
 }
 
