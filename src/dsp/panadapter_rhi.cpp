@@ -968,9 +968,18 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         WaterfallGeometry::visibleRowsFor(waterfallHeight, m_waterfallHistory, MIN_VISIBLE_ROWS, m_devicePxPerRow);
     // SPEED: Fill keeps one row per pixel row; a number of seconds shows fewer, taller rows or folds
     // frames together. Applied to the rows committed from the next frame on.
-    const WaterfallGeometry::SpeedPlan plan = WaterfallGeometry::speedPlanFor(
-        pixelRows, m_planLineRateHz, m_waterfallSpeedSeconds,
-        WaterfallGeometry::SpeedPlan{m_planVisibleRows, m_framesPerRow, m_pixelRowsPerRow});
+    // Hold the previous plan only while its two deliberate inputs are unchanged. A new SPEED or a
+    // new window height is the operator asking for something different, and must re-round from
+    // scratch: holding across those made neighbouring SPEED steps draw the same picture, which is
+    // the opposite of what a dead band is for (Mike, 2026-11-25).
+    const bool sameRequest = pixelRows == m_planPixelRows && m_waterfallSpeedSeconds == m_planSeconds;
+    const WaterfallGeometry::SpeedPlan held =
+        sameRequest ? WaterfallGeometry::SpeedPlan{m_planVisibleRows, m_framesPerRow, m_pixelRowsPerRow}
+                    : WaterfallGeometry::SpeedPlan{};
+    const WaterfallGeometry::SpeedPlan plan =
+        WaterfallGeometry::speedPlanFor(pixelRows, m_planLineRateHz, m_waterfallSpeedSeconds, held);
+    m_planPixelRows = pixelRows;
+    m_planSeconds = m_waterfallSpeedSeconds;
     // A new row height means every stored row would be redrawn at a scale it was not captured at:
     // the same history, suddenly covering twice or half the screen. Start the history over instead,
     // as the tier change above does and as Flex does when its window is resized. A clean restart
@@ -1733,6 +1742,8 @@ void PanadapterRhiWidget::clear() {
     m_planLineRateHz = 0.0;
     m_pixelRowsPerRow = 1;
     m_planVisibleRows = 0;
+    m_planPixelRows = 0;
+    m_planSeconds = -1;
     m_waterfallData.fill(0);
     m_rowTierSpanHz.fill(0.0f);
     m_waterfallNeedsFullClear = true;

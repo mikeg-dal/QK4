@@ -519,6 +519,15 @@ void TestWaterfallGeometry::speedPlanDoesNotHopAcrossARoundingBoundary() {
     plan = speedPlanFor(Rows, 11.0, Seconds, plan); // ratio 2.1, past it the other way
     QCOMPARE(plan.pixelRowsPerRow, 2);
 
+    // The dead band damps the measured rate and nothing else. A different SPEED is the operator
+    // asking for a different picture, so it re-rounds from scratch: holding across it made
+    // neighbouring steps draw identically (15 s and 20 s both landing on 3 at 14.9 Hz). The caller
+    // enforces this by passing no held plan when seconds or pixelRows changed, so what is checked
+    // here is that a fresh plan does differ between those two steps.
+    QCOMPARE(speedPlanFor(Rows, 14.9, 15).pixelRowsPerRow, 3);
+    QCOMPARE(speedPlanFor(Rows, 14.9, 20).pixelRowsPerRow, 2);
+    QVERIFY(speedPlanFor(Rows, 14.9, 15).visibleRows != speedPlanFor(Rows, 14.9, 20).visibleRows);
+
     // The fold count is held the same way, so the brightness of a row does not hop either.
     SpeedPlan slow = speedPlanFor(Rows, 50.0, Seconds); // 1500 frames over 693 rows: ratio 2.16
     QCOMPARE(slow.framesPerRow, 2);

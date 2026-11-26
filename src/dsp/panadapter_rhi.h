@@ -288,8 +288,12 @@ private:
     // flip the row height - and with it the whole waterfall's position - on the smallest rate change.
     int m_pixelRowsPerRow = 1;
     // The plan's own row count, kept apart from m_visibleRows because that is clamped afterwards; it
-    // is also the "is there a plan yet" flag, being 0 until the first one is made.
+    // is also the "is there a plan yet" flag, being 0 until the first one is made. The two inputs
+    // beside it are what the held plan was made for: the dead band is there to damp the MEASURED
+    // rate, so it must not survive the operator changing SPEED or resizing the window.
     int m_planVisibleRows = 0;
+    int m_planPixelRows = 0;
+    int m_planSeconds = -1;
     int m_framesInRow = 0;
     int m_rowSpecSize = 0; // bins of the frames folded into the row being built
     // How often frames become rows, measured: the K4 may send fewer frames than #FPS asked for.
