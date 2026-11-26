@@ -309,6 +309,19 @@ target_include_directories(test_bandplan PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_bandplan Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME BandPlanTests COMMAND test_bandplan)
 
+# Graphic-equalizer popup: band behaviour and the popup opacity invariant (offscreen)
+add_executable(test_eqpopup
+    test_eqpopup.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/rxeqpopupwidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/popups/k4popupbase.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/featuremenubar.cpp
+)
+target_link_libraries(test_eqpopup qk4_test_widgets)
+target_include_directories(test_eqpopup PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_eqpopup Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+add_test(NAME EqPopupTests COMMAND test_eqpopup)
+set_tests_properties(EqPopupTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # KPA1500 sub-antenna enable map + antenna labels
 add_executable(test_kpa1500antennas test_kpa1500antennas.cpp)
 target_link_libraries(test_kpa1500antennas qk4_test_common)

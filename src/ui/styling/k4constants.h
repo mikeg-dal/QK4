@@ -362,6 +362,25 @@ constexpr int SliderHandleRadius = 8;  // Handle border radius (half of width)
 constexpr int SliderMinHeight = 20;    // Minimum widget height to prevent handle clipping
 
 // =============================================================================
+// Graphic Equalizer (the RX EQ / TX EQ popup) - one self-painted column per band, laid out as the
+// K4's own RX GRAPHIC EQUALIZER screen: the dB value, a track with a + cap and a - cap, and the
+// frequency key under it. The radio's knob and "A" icons are deliberately not replicated.
+// =============================================================================
+constexpr int EqBandWidth = 46;    // One band column; fits "3200" on its key at FontSizeCaption
+constexpr int EqBandSpacing = 6;   // Between two columns
+constexpr int EqValueHeight = 16;  // The dB value above the track
+constexpr int EqTrackHeight = 152; // The track, + cap to - cap
+constexpr int EqCapHeight = 24;    // The + and - keys at the track's two ends
+constexpr int EqHandleHeight = 20; // The grip the value is read from
+constexpr int EqKeyHeight = 26;    // The frequency key under the track
+constexpr int EqColumnGap = 4;     // Value to track, track to key, bands to the units column
+constexpr int EqUnitsWidth = 26;   // The painted "dB" / "Hz" column right of the bands
+constexpr int EqTitleHeight = 28;  // The title band across the top of the card
+constexpr int EqPresetKeyWidth = 52;
+// Presets and FLAT share the right column's width: a preset name key, a gap, and its square S key.
+constexpr int EqRightColumnWidth = EqPresetKeyWidth + SidePanelItemSpacing + ButtonHeightMini;
+
+// =============================================================================
 // Network-Health Sparkline Popup (NetHealthPopup)
 // =============================================================================
 constexpr int ChartPopupContentWidth = 242; // Card content width (excl. shadow margin)

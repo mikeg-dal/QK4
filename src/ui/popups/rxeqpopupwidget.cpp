@@ -3,198 +3,234 @@
 #include <QContextMenuEvent>
 #include <QHBoxLayout>
 #include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPainterPath>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+namespace {
+using namespace K4Styles::Dimensions;
+
+// Hairline rules and outlines: the frame of a key or a track, never text.
+constexpr int HairlineWidth = 1;
+// The grip's three lines, as the K4 draws them, and how far in from the grip's edges they run.
+constexpr int GripLines = 3;
+constexpr int GripInsetX = 6;
+constexpr int GripLineGap = 4;
+} // namespace
+
 // =============================================================================
-// EqBandWidget Implementation
+// EqBandWidget
 // =============================================================================
 
 EqBandWidget::EqBandWidget(int bandIndex, const QString &freqLabel, const QString &accentColor, QWidget *parent)
-    : QWidget(parent), m_bandIndex(bandIndex) {
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(2);
-
-    // dB value label (top)
-    m_valueLabel = new QLabel("0", this);
-    m_valueLabel->setAlignment(Qt::AlignCenter);
-    m_valueLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                    .arg(K4Styles::Colors::TextPrimary)
-                                    .arg(K4Styles::Dimensions::FontSizeCaption));
-    m_valueLabel->setFixedHeight(K4Styles::Dimensions::CheckboxSize);
-    layout->addWidget(m_valueLabel);
-
-    // Plus button
-    m_plusBtn = new QPushButton("+", this);
-    m_plusBtn->setFixedSize(32, K4Styles::Dimensions::ButtonHeightMini);
-    m_plusBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
-    connect(m_plusBtn, &QPushButton::clicked, this, &EqBandWidget::onPlusClicked);
-    layout->addWidget(m_plusBtn, 0, Qt::AlignCenter);
-
-    // Vertical slider
-    m_slider = new QSlider(Qt::Vertical, this);
-    m_slider->setMinimum(MIN_DB);
-    m_slider->setMaximum(MAX_DB);
-    m_slider->setValue(0);
-    m_slider->setFixedSize(32, K4Styles::Dimensions::InputFieldWidthMedium);
-
-    // Vertical slider stylesheet with the accent-colour fill below the handle
-    QString sliderStyle = QString("QSlider::groove:vertical {"
-                                  "  border: 1px solid %1;"
-                                  "  width: 10px;"
-                                  "  background: %2;"
-                                  "  border-radius: 5px;"
-                                  "  margin: 0 10px;"
-                                  "}"
-                                  "QSlider::handle:vertical {"
-                                  "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                                  "    stop:0 %3, stop:0.5 %4, stop:1 %5);"
-                                  "  border: 1px solid %6;"
-                                  "  height: 16px;"
-                                  "  margin: 0 -10px;"
-                                  "  border-radius: %8px;"
-                                  "}"
-                                  "QSlider::add-page:vertical {"
-                                  "  background: %7;"
-                                  "  border-radius: 5px;"
-                                  "  margin: 0 10px;"
-                                  "}"
-                                  "QSlider::sub-page:vertical {"
-                                  "  background: %2;"
-                                  "  border-radius: 5px;"
-                                  "  margin: 0 10px;"
-                                  "}")
-                              .arg(K4Styles::Colors::BorderNormal)            // groove border
-                              .arg(K4Styles::Colors::DarkBackground)          // groove bg (unfilled)
-                              .arg(K4Styles::Colors::SelectedTop)             // handle gradient top
-                              .arg(K4Styles::Colors::SelectedMid1)            // handle gradient mid
-                              .arg(K4Styles::Colors::SelectedBottom)          // handle gradient bottom
-                              .arg(K4Styles::Colors::BorderNormal)            // handle border
-                              .arg(accentColor)                               // fill colour (accent)
-                              .arg(K4Styles::Dimensions::SliderBorderRadius); // handle border radius
-
-    m_slider->setStyleSheet(sliderStyle);
-    connect(m_slider, &QSlider::valueChanged, this, &EqBandWidget::onSliderChanged);
-    layout->addWidget(m_slider, 0, Qt::AlignCenter);
-
-    // Minus button
-    m_minusBtn = new QPushButton("-", this);
-    m_minusBtn->setFixedSize(32, K4Styles::Dimensions::ButtonHeightMini);
-    m_minusBtn->setStyleSheet(K4Styles::menuBarButtonSmall());
-    connect(m_minusBtn, &QPushButton::clicked, this, &EqBandWidget::onMinusClicked);
-    layout->addWidget(m_minusBtn, 0, Qt::AlignCenter);
-
-    // Frequency label (bottom)
-    m_freqLabel = new QLabel(freqLabel, this);
-    m_freqLabel->setAlignment(Qt::AlignCenter);
-    m_freqLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;"
-                                       "background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                                       "  stop:0 %3, stop:0.4 %4, stop:0.6 %5, stop:1 %6);"
-                                       "border: 1px solid %7;"
-                                       "border-radius: 4px;"
-                                       "padding: 2px 4px;")
-                                   .arg(K4Styles::Colors::TextPrimary)
-                                   .arg(K4Styles::Dimensions::FontSizeCaption)
-                                   .arg(K4Styles::Colors::GradientTop)
-                                   .arg(K4Styles::Colors::GradientMid1)
-                                   .arg(K4Styles::Colors::GradientMid2)
-                                   .arg(K4Styles::Colors::GradientBottom)
-                                   .arg(K4Styles::Colors::BorderNormal));
-    m_freqLabel->setFixedHeight(22);
-    layout->addWidget(m_freqLabel);
-
-    setFixedWidth(50);
+    : QWidget(parent), m_bandIndex(bandIndex), m_freqLabel(freqLabel), m_accent(accentColor) {
+    // The column owns every pixel it covers; see the WHY on the class.
+    setAttribute(Qt::WA_OpaquePaintEvent);
+    setFixedSize(columnSize());
+    setCursor(Qt::PointingHandCursor);
 }
 
-int EqBandWidget::value() const {
-    return m_value;
+QSize EqBandWidget::columnSize() {
+    return QSize(EqBandWidth, EqValueHeight + EqColumnGap + EqTrackHeight + EqColumnGap + EqKeyHeight);
+}
+
+QRect EqBandWidget::trackRect() const {
+    return QRect(0, EqValueHeight + EqColumnGap, width(), EqTrackHeight);
+}
+
+QRect EqBandWidget::plusCapRect() const {
+    const QRect t = trackRect();
+    return QRect(t.left(), t.top(), t.width(), EqCapHeight);
+}
+
+QRect EqBandWidget::minusCapRect() const {
+    const QRect t = trackRect();
+    return QRect(t.left(), t.bottom() + 1 - EqCapHeight, t.width(), EqCapHeight);
+}
+
+QRect EqBandWidget::bodyRect() const {
+    const QRect t = trackRect();
+    return QRect(t.left(), t.top() + EqCapHeight, t.width(), t.height() - 2 * EqCapHeight);
+}
+
+QRect EqBandWidget::handleRect() const {
+    const QRect b = bodyRect();
+    const int travel = b.height() - EqHandleHeight;
+    // +16 puts the grip at the top of the body, -16 at the bottom.
+    const double fraction = double(MAX_DB - m_value) / double(MAX_DB - MIN_DB);
+    const int y = b.top() + qRound(fraction * travel);
+    return QRect(b.left(), y, b.width(), EqHandleHeight);
+}
+
+QRect EqBandWidget::keyRect() const {
+    const QRect t = trackRect();
+    return QRect(0, t.bottom() + 1 + EqColumnGap, width(), EqKeyHeight);
+}
+
+int EqBandWidget::valueFromY(int y) const {
+    const QRect b = bodyRect();
+    const int travel = b.height() - EqHandleHeight;
+    if (travel <= 0)
+        return m_value;
+    const int top = qBound(b.top(), y - EqHandleHeight / 2, b.top() + travel);
+    const double fraction = double(top - b.top()) / double(travel);
+    return MAX_DB - qRound(fraction * (MAX_DB - MIN_DB));
 }
 
 void EqBandWidget::setValue(int dB) {
     dB = qBound(MIN_DB, dB, MAX_DB);
-    if (m_value != dB) {
-        m_value = dB;
-        m_slider->blockSignals(true);
-        m_slider->setValue(dB);
-        m_slider->blockSignals(false);
-        updateValueLabel();
-    }
+    if (m_value == dB)
+        return;
+    m_value = dB;
+    update();
 }
 
-void EqBandWidget::wheelEvent(QWheelEvent *event) {
-    int steps = m_wheelAccumulator.accumulate(event);
-    if (steps != 0) {
-        int newValue = qBound(MIN_DB, m_value + steps, MAX_DB);
-        if (newValue != m_value) {
-            m_value = newValue;
-            m_slider->blockSignals(true);
-            m_slider->setValue(m_value);
-            m_slider->blockSignals(false);
-            updateValueLabel();
-            emit valueChanged(m_bandIndex, m_value);
-        }
+void EqBandWidget::setSelected(bool selected) {
+    if (m_selected == selected)
+        return;
+    m_selected = selected;
+    update();
+}
+
+void EqBandWidget::applyValue(int dB) {
+    emit selectionRequested(m_bandIndex);
+    dB = qBound(MIN_DB, dB, MAX_DB);
+    if (m_value == dB)
+        return;
+    m_value = dB;
+    update();
+    emit valueChanged(m_bandIndex, m_value);
+}
+
+void EqBandWidget::mousePressEvent(QMouseEvent *event) {
+    if (event->button() != Qt::LeftButton) {
+        QWidget::mousePressEvent(event);
+        return;
+    }
+    const QPoint pos = event->position().toPoint();
+    if (plusCapRect().contains(pos)) {
+        applyValue(m_value + 1);
+    } else if (minusCapRect().contains(pos)) {
+        applyValue(m_value - 1);
+    } else if (bodyRect().contains(pos)) {
+        // A press anywhere on the body takes the grip there and keeps it, as the radio's own
+        // touchscreen does; there is no separate "grab the handle first" step.
+        m_dragging = true;
+        applyValue(valueFromY(pos.y()));
+    } else if (keyRect().contains(pos)) {
+        emit selectionRequested(m_bandIndex); // the key selects without moving the value
     }
     event->accept();
 }
 
-void EqBandWidget::onPlusClicked() {
-    if (m_value < MAX_DB) {
-        m_value++;
-        m_slider->blockSignals(true);
-        m_slider->setValue(m_value);
-        m_slider->blockSignals(false);
-        updateValueLabel();
-        emit valueChanged(m_bandIndex, m_value);
-    }
+void EqBandWidget::mouseMoveEvent(QMouseEvent *event) {
+    if (m_dragging)
+        applyValue(valueFromY(event->position().toPoint().y()));
+    event->accept();
 }
 
-void EqBandWidget::onMinusClicked() {
-    if (m_value > MIN_DB) {
-        m_value--;
-        m_slider->blockSignals(true);
-        m_slider->setValue(m_value);
-        m_slider->blockSignals(false);
-        updateValueLabel();
-        emit valueChanged(m_bandIndex, m_value);
-    }
+void EqBandWidget::mouseReleaseEvent(QMouseEvent *event) {
+    m_dragging = false;
+    event->accept();
 }
 
-void EqBandWidget::onSliderChanged(int value) {
-    if (m_value != value) {
-        m_value = value;
-        updateValueLabel();
-        emit valueChanged(m_bandIndex, m_value);
-    }
+void EqBandWidget::wheelEvent(QWheelEvent *event) {
+    const int steps = m_wheelAccumulator.accumulate(event);
+    if (steps != 0)
+        applyValue(m_value + steps);
+    event->accept();
 }
 
-void EqBandWidget::updateValueLabel() {
-    if (m_value > 0) {
-        m_valueLabel->setText(QString("+%1").arg(m_value));
-    } else {
-        m_valueLabel->setText(QString::number(m_value));
+void EqBandWidget::paintEvent(QPaintEvent *event) {
+    QPainter painter(this);
+    // WA_OpaquePaintEvent promises every pixel: fill first, decorate after.
+    painter.fillRect(event->rect(), QColor(K4Styles::Colors::PopupBackground));
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // --- the dB value -------------------------------------------------------------------------
+    painter.setFont(K4Styles::Fonts::paintFont(FontSizeCaption));
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
+    const QString valueText = m_value > 0 ? QStringLiteral("+%1").arg(m_value) : QString::number(m_value);
+    painter.drawText(QRect(0, 0, width(), EqValueHeight), Qt::AlignCenter, valueText);
+
+    // --- the track ----------------------------------------------------------------------------
+    const QRect track = trackRect();
+    const QRect body = bodyRect();
+    const QRect grip = handleRect();
+    QPainterPath trackPath;
+    trackPath.addRoundedRect(QRectF(track).adjusted(0.5, 0.5, -0.5, -0.5), BorderRadius, BorderRadius);
+
+    painter.save();
+    painter.setClipPath(trackPath);
+
+    // Grey from the + cap down to the grip, the accent from the grip down through the - cap, which
+    // is how the radio shades it.
+    painter.fillRect(QRect(track.left(), track.top(), track.width(), grip.top() - track.top()),
+                     QColor(K4Styles::Colors::BorderNormal));
+    painter.fillRect(QRect(track.left(), grip.bottom() + 1, track.width(), track.bottom() - grip.bottom()), m_accent);
+
+    // The two caps: the + sits in the grey, the - in the accent, each marked off by a hairline.
+    const QRect plusCap = plusCapRect();
+    const QRect minusCap = minusCapRect();
+    painter.fillRect(plusCap, QColor(K4Styles::Colors::LightGradientTop));
+    painter.setPen(QPen(QColor(K4Styles::Colors::PanelBorder), HairlineWidth));
+    painter.drawLine(plusCap.bottomLeft(), plusCap.bottomRight());
+    painter.drawLine(minusCap.topLeft(), minusCap.topRight());
+
+    painter.setFont(K4Styles::Fonts::paintFont(FontSizeReadout));
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
+    painter.drawText(plusCap, Qt::AlignCenter, QStringLiteral("+"));
+    painter.setPen(QColor(K4Styles::Colors::TextOnAccent));
+    painter.drawText(minusCap, Qt::AlignCenter, QStringLiteral("-"));
+
+    // The grip, with the K4's three lines across it.
+    QRectF gripF = QRectF(grip).adjusted(0.5, 0.5, -0.5, -0.5);
+    painter.setBrush(K4Styles::selectedGradient(grip.top(), grip.bottom()));
+    painter.setPen(QPen(QColor(K4Styles::Colors::PanelBorder), HairlineWidth));
+    painter.drawRoundedRect(gripF, SliderBorderRadius, SliderBorderRadius);
+    painter.setPen(QPen(QColor(K4Styles::Colors::TextOnLight), HairlineWidth));
+    const int gripMid = grip.center().y();
+    for (int i = 0; i < GripLines; ++i) {
+        const int y = gripMid + (i - GripLines / 2) * GripLineGap;
+        painter.drawLine(grip.left() + GripInsetX, y, grip.right() - GripInsetX, y);
     }
+
+    painter.restore();
+
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(K4Styles::borderColor(), HairlineWidth));
+    painter.drawPath(trackPath);
+
+    // --- the frequency key --------------------------------------------------------------------
+    const QRect key = keyRect();
+    painter.setBrush(m_selected ? K4Styles::selectedGradient(key.top(), key.bottom())
+                                : K4Styles::buttonGradient(key.top(), key.bottom()));
+    painter.setPen(QPen(K4Styles::borderColor(), HairlineWidth));
+    painter.drawRoundedRect(QRectF(key).adjusted(0.5, 0.5, -0.5, -0.5), BorderRadius, BorderRadius);
+    painter.setFont(K4Styles::Fonts::paintFont(FontSizeCaption));
+    painter.setPen(QColor(m_selected ? K4Styles::Colors::TextOnLight : K4Styles::Colors::TextPrimary));
+    painter.drawText(key, Qt::AlignCenter, m_freqLabel);
 }
 
 // =============================================================================
-// EqPresetRowWidget Implementation
+// EqPresetRowWidget
 // =============================================================================
 
 EqPresetRowWidget::EqPresetRowWidget(int presetIndex, QWidget *parent) : QWidget(parent), m_presetIndex(presetIndex) {
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(2);
+    layout->setSpacing(SidePanelItemSpacing);
 
-    // Preset name/load button
     m_loadBtn = new QPushButton("---", this);
-    m_loadBtn->setFixedSize(48, 26);
+    m_loadBtn->setFixedSize(EqPresetKeyWidth, ButtonHeightMini);
     m_loadBtn->setStyleSheet(K4Styles::eqPresetLoadButton());
     connect(m_loadBtn, &QPushButton::clicked, this, &EqPresetRowWidget::onLoadClicked);
     layout->addWidget(m_loadBtn);
 
-    // Save button
     m_saveBtn = new QPushButton("S", this);
-    m_saveBtn->setFixedSize(K4Styles::Dimensions::ButtonHeightMini, 26);
+    m_saveBtn->setFixedSize(ButtonHeightMini, ButtonHeightMini);
     m_saveBtn->setStyleSheet(
         K4Styles::menuBarButtonSmall() +
         QString("QPushButton { font-size: %1px; font-weight: bold; }").arg(K4Styles::Dimensions::FontSizeCaption));
@@ -210,9 +246,8 @@ void EqPresetRowWidget::setPresetName(const QString &name) {
 }
 
 void EqPresetRowWidget::onLoadClicked() {
-    if (hasPreset()) {
+    if (hasPreset())
         emit loadClicked(m_presetIndex);
-    }
 }
 
 void EqPresetRowWidget::onSaveClicked() {
@@ -220,133 +255,133 @@ void EqPresetRowWidget::onSaveClicked() {
 }
 
 void EqPresetRowWidget::contextMenuEvent(QContextMenuEvent *event) {
-    if (hasPreset()) {
-        QMenu menu(this);
-        QAction *clearAction = menu.addAction("Clear Preset");
-        QAction *selected = menu.exec(event->globalPos());
-        if (selected == clearAction) {
-            emit clearRequested(m_presetIndex);
-        }
-    }
+    if (!hasPreset())
+        return;
+    QMenu menu(this);
+    QAction *clearAction = menu.addAction("Clear Preset");
+    if (menu.exec(event->globalPos()) == clearAction)
+        emit clearRequested(m_presetIndex);
 }
 
 // =============================================================================
-// RxEqPopupWidget Implementation
+// RxEqPopupWidget
 // =============================================================================
 
 RxEqPopupWidget::RxEqPopupWidget(const QString &title, const QString &accentColor, QWidget *parent)
-    : K4PopupBase(parent) {
-    setupUi(title, accentColor);
+    : K4PopupBase(parent), m_title(title) {
+    setupUi(accentColor);
     initPopup();
 }
 
-void RxEqPopupWidget::setupUi(const QString &title, const QString &accentColor) {
-    auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(contentMargins());
-    mainLayout->setSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+void RxEqPopupWidget::setupUi(const QString &accentColor) {
+    // Everything is a child of the opaque panel; nothing is a child of the popup itself.
+    QWidget *panel = contentPanel();
 
-    // Title bar
-    auto *titleLabel = new QLabel(title, this);
-    titleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;"
-                                      "background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-                                      "  stop:0 %3, stop:1 %4);"
-                                      "padding: 6px 12px;"
-                                      "border-radius: 4px;")
-                                  .arg(K4Styles::Colors::TextPrimary)
-                                  .arg(K4Styles::Dimensions::FontSizeHeading)
-                                  .arg(K4Styles::Colors::GradientTop)
-                                  .arg(K4Styles::Colors::GradientBottom));
-    mainLayout->addWidget(titleLabel);
+    auto *mainLayout = new QVBoxLayout(panel);
+    const QMargins m = panelMargins();
+    // The title band is painted across the top of the panel, so the content starts below it.
+    mainLayout->setContentsMargins(m.left(), EqTitleHeight + m.top(), m.right(), m.bottom());
+    mainLayout->setSpacing(0);
 
-    // Content area: bands + right side buttons
     auto *contentLayout = new QHBoxLayout();
-    contentLayout->setSpacing(4);
+    contentLayout->setSpacing(0);
 
-    // EQ bands row
     auto *bandsLayout = new QHBoxLayout();
-    bandsLayout->setSpacing(K4Styles::Dimensions::PopupButtonSpacing);
-
+    bandsLayout->setSpacing(EqBandSpacing);
     for (int i = 0; i < 8; i++) {
-        auto *band = new EqBandWidget(i, FREQ_LABELS[i], accentColor, this);
-        connect(band, &EqBandWidget::valueChanged, this, &RxEqPopupWidget::onBandValueChanged);
+        auto *band = new EqBandWidget(i, FREQ_LABELS[i], accentColor, panel);
+        connect(band, &EqBandWidget::valueChanged, this, &RxEqPopupWidget::bandValueChanged);
+        connect(band, &EqBandWidget::selectionRequested, this, &RxEqPopupWidget::selectBand);
         m_bands.append(band);
         bandsLayout->addWidget(band);
     }
-
     contentLayout->addLayout(bandsLayout);
 
-    // dB and Hz labels column
-    auto *labelsLayout = new QVBoxLayout();
-    labelsLayout->setSpacing(0);
+    // The "dB" / "Hz" column and the rule before the preset column are painted by paintContent();
+    // these spacers are the room they occupy.
+    contentLayout->addSpacing(EqColumnGap + EqUnitsWidth);
+    contentLayout->addSpacing(2 * PopupContentMargin);
 
-    auto *dbLabel = new QLabel("dB", this);
-    dbLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                               .arg(K4Styles::Colors::TextPrimary)
-                               .arg(K4Styles::Dimensions::FontSizeCaption));
-    dbLabel->setAlignment(Qt::AlignCenter);
-    labelsLayout->addWidget(dbLabel);
-
-    labelsLayout->addStretch();
-
-    auto *hzLabel = new QLabel("Hz", this);
-    hzLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                               .arg(K4Styles::Colors::TextPrimary)
-                               .arg(K4Styles::Dimensions::FontSizeCaption));
-    hzLabel->setAlignment(Qt::AlignCenter);
-    labelsLayout->addWidget(hzLabel);
-
-    contentLayout->addLayout(labelsLayout);
-
-    // Right side buttons column
-    auto *buttonsLayout = new QVBoxLayout();
-    buttonsLayout->setSpacing(4);
-
-    // 4 preset rows
+    auto *rightColumn = new QVBoxLayout();
+    rightColumn->setSpacing(SidePanelItemSpacing);
     for (int i = 0; i < 4; i++) {
-        auto *presetRow = new EqPresetRowWidget(i, this);
-        connect(presetRow, &EqPresetRowWidget::loadClicked, this, &RxEqPopupWidget::onPresetLoadClicked);
-        connect(presetRow, &EqPresetRowWidget::saveClicked, this, &RxEqPopupWidget::onPresetSaveClicked);
-        connect(presetRow, &EqPresetRowWidget::clearRequested, this, &RxEqPopupWidget::onPresetClearClicked);
+        auto *presetRow = new EqPresetRowWidget(i, panel);
+        connect(presetRow, &EqPresetRowWidget::loadClicked, this, &RxEqPopupWidget::presetLoadRequested);
+        connect(presetRow, &EqPresetRowWidget::saveClicked, this, &RxEqPopupWidget::presetSaveRequested);
+        connect(presetRow, &EqPresetRowWidget::clearRequested, this, &RxEqPopupWidget::presetClearRequested);
         m_presetRows.append(presetRow);
-        buttonsLayout->addWidget(presetRow);
+        rightColumn->addWidget(presetRow);
     }
+    rightColumn->addStretch();
 
-    buttonsLayout->addStretch();
-
-    // FLAT button
-    m_flatBtn = new QPushButton("FLAT", this);
-    m_flatBtn->setFixedSize(76, K4Styles::Dimensions::ButtonHeightMedium);
+    m_flatBtn = new QPushButton("FLAT", panel);
+    m_flatBtn->setFixedSize(EqRightColumnWidth, ButtonHeightMedium);
     m_flatBtn->setStyleSheet(K4Styles::popupButtonNormal());
     connect(m_flatBtn, &QPushButton::clicked, this, &RxEqPopupWidget::onFlatClicked);
-    buttonsLayout->addWidget(m_flatBtn);
+    rightColumn->addWidget(m_flatBtn);
 
-    contentLayout->addLayout(buttonsLayout);
-
+    contentLayout->addLayout(rightColumn);
     mainLayout->addLayout(contentLayout);
+
+    m_bands[m_selectedBand]->setSelected(true);
 }
 
 QSize RxEqPopupWidget::contentSize() const {
-    int cm = K4Styles::Dimensions::PopupContentMargin;
-    // 8 bands * 50px + 7 gaps * 8px + labels column ~30px + buttons column ~85px + margins
-    int width = 8 * 50 + 7 * 8 + 30 + 85 + 2 * cm;
-    int height = 310 + 2 * cm;
+    const int cm = PopupContentMargin;
+    const int bands = 8 * EqBandWidth + 7 * EqBandSpacing;
+    const int width = cm + bands + EqColumnGap + EqUnitsWidth + 2 * cm + EqRightColumnWidth + cm;
+    const int height = EqTitleHeight + cm + EqBandWidget::columnSize().height() + cm;
     return QSize(width, height);
 }
 
+void RxEqPopupWidget::paintContent(QPainter &painter, const QRect &panelRect) {
+    const int cm = PopupContentMargin;
+
+    // --- the title band, across the whole card as the radio draws it ----------------------------
+    const QRect title(panelRect.left(), panelRect.top(), panelRect.width(), EqTitleHeight);
+    painter.fillRect(title, QColor(K4Styles::Colors::OverlayHeaderBg));
+    painter.setPen(QPen(QColor(K4Styles::Colors::PanelBorder), HairlineWidth));
+    painter.drawLine(title.bottomLeft(), title.bottomRight());
+    painter.setFont(K4Styles::Fonts::paintFont(FontSizeReadout));
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
+    painter.drawText(title.adjusted(cm, 0, -cm, 0), Qt::AlignVCenter | Qt::AlignLeft, m_title);
+
+    if (m_bands.isEmpty() || m_presetRows.isEmpty())
+        return;
+
+    // --- the units column, lined up with the rows it labels --------------------------------------
+    const QRect column = m_bands.last()->geometry();
+    const QRect units(column.right() + 1 + EqColumnGap, column.top(), EqUnitsWidth, column.height());
+    painter.setFont(K4Styles::Fonts::paintFont(FontSizeCaption));
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
+    painter.drawText(QRect(units.left(), units.top(), units.width(), EqValueHeight), Qt::AlignCenter,
+                     QStringLiteral("dB"));
+    painter.drawText(QRect(units.left(), units.bottom() + 1 - EqKeyHeight, units.width(), EqKeyHeight), Qt::AlignCenter,
+                     QStringLiteral("Hz"));
+
+    // --- the rule between the bands and the preset column ----------------------------------------
+    const int rightColumnLeft = m_presetRows.first()->geometry().left();
+    const int ruleX = (units.right() + rightColumnLeft) / 2;
+    painter.setPen(QPen(QColor(K4Styles::Colors::PanelBorder), HairlineWidth));
+    painter.drawLine(ruleX, title.bottom() + 1 + cm, ruleX, panelRect.bottom() - cm);
+}
+
+void RxEqPopupWidget::selectBand(int bandIndex) {
+    if (bandIndex < 0 || bandIndex >= m_bands.size())
+        return;
+    m_selectedBand = bandIndex;
+    for (int i = 0; i < m_bands.size(); ++i)
+        m_bands[i]->setSelected(i == bandIndex);
+}
+
 void RxEqPopupWidget::setAllBands(const QVector<int> &values) {
-    for (int i = 0; i < qMin(values.size(), m_bands.size()); i++) {
+    for (int i = 0; i < qMin(values.size(), m_bands.size()); i++)
         m_bands[i]->setValue(values[i]);
-    }
 }
 
 void RxEqPopupWidget::resetToFlat() {
-    for (auto *band : m_bands) {
+    for (auto *band : m_bands)
         band->setValue(0);
-    }
-}
-
-void RxEqPopupWidget::onBandValueChanged(int bandIndex, int dB) {
-    emit bandValueChanged(bandIndex, dB);
 }
 
 void RxEqPopupWidget::onFlatClicked() {
@@ -355,19 +390,6 @@ void RxEqPopupWidget::onFlatClicked() {
 }
 
 void RxEqPopupWidget::updatePresetName(int index, const QString &name) {
-    if (index >= 0 && index < m_presetRows.size()) {
+    if (index >= 0 && index < m_presetRows.size())
         m_presetRows[index]->setPresetName(name);
-    }
-}
-
-void RxEqPopupWidget::onPresetLoadClicked(int index) {
-    emit presetLoadRequested(index);
-}
-
-void RxEqPopupWidget::onPresetSaveClicked(int index) {
-    emit presetSaveRequested(index);
-}
-
-void RxEqPopupWidget::onPresetClearClicked(int index) {
-    emit presetClearRequested(index);
 }
