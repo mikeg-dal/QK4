@@ -129,6 +129,10 @@ Sidebar — not directly a protocol *quirk*, but non-obvious enough to belong he
 | `KZLnnnn;` | remote paddle **key-down initial delay**, 0–1000 ms, default 80. The K4 holds a remote key-down this long before transmitting, so the timed commands that follow arrive in time: a jitter buffer. **The operator's setting. QK4 reads it from the RDY dump and writes it only when the operator moves Key-Down Delay (Options → HaliKey → Remote Keying; `CwController::setKeyDownInitialDelay`).** It is *not* the element length |
 | `KZD####;` / `KZU####;` | timed key-down / key-up: `KZD` = the gap in ms before this key-down, `KZU` = how long it was down. The K4 replays the intervals behind its `KZL` delay, so network jitter cannot change an element. **QK4's HaliKey keyer sends only these** (since 2026-10-27; K4/0 and K4-Companion do the same) |
 
+The Vail adapter path also sends timed `KZD`/`KZU` edges, with the same operator-controlled
+`KZL` delay. Its onboard keyer and buzzer generate the CW timing; QK4 timestamps and forwards
+it without invoking `PaddleKeyer`. For example, `KZD0000;KZU0090;` is a 90 ms mark.
+
 **`KZL` was misread until 2026-10-27.** From `0bd443d` QK4 sent `KZL` = 1200 / WPM, two digits,
 on every connect and every speed change, taking it for the element length. That set the K4's
 remote-keying delay buffer to 30 ms at 40 WPM, shrinking it as the speed rose. The K4 stores the

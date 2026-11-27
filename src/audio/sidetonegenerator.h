@@ -12,6 +12,7 @@
 
 #include "hardware/keyertiming.h"
 #include "utils/rtsan.h"
+#include "audio/livesidetone.h"
 
 class SidetoneScheduler;
 
@@ -26,6 +27,8 @@ class SidetoneScheduler;
  * exact frame, so each tone sounds its true length with a fixed delay. Envelope and tone follow
  * K4-Companion's mix_sidetone (Dale Farnsworth, GPL-3.0): 4 ms raised-cosine rise and fall, an
  * exact-period sine table, continuous phase.
+ * Vail's optional computer sidetone renders already-keyed timestamped edges through the same
+ * paced output and format conversion, independently of the paddle keyer's scheduler.
  *
  * WHY its own sink for now rather than mixed into the RX output: the RX path is being reworked.
  * Phase 2 of docs/cw-keyer-port-plan.md moves this render into AudioEngine's output, so the tone
@@ -52,6 +55,10 @@ public:
     // output device.
     Q_INVOKABLE void setStreamWanted(bool wanted);
     Q_INVOKABLE void setOutputDevice(const QString &deviceId);
+
+    Q_INVOKABLE void setKeyDown(bool down);
+    Q_INVOKABLE void setKeyDownAt(bool down, qint64 timestampNs);
+    Q_INVOKABLE void resetKeyedTone();
 
     // The sidetone's own clock, as the scheduler sees it: the keyer clock while a stream is open,
     // nullopt otherwise. Thread-safe.
@@ -85,6 +92,9 @@ private:
     std::atomic<bool> m_streamActive{false};
     std::atomic<int> m_frequency{600};
     std::atomic<float> m_volume{0.3f};
+    bool m_started = false;
+    bool m_liveMode = false;
+    LiveSidetone m_liveTone;
 
     // Render state (sidetone thread only).
     int m_rate = 0;

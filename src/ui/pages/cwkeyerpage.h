@@ -12,10 +12,11 @@ class HalikeyDevice;
 class HaliKeyPortScan;
 class RadioState;
 class CwController;
+class QFormLayout;
 
 /**
- * @brief OptionsDialog "HaliKey" tab: device type (V1.4 serial / MIDI), port and connect, keyer
- *        settings, sidetone volume, and the K4's key-down delay (KZL, via CwController). Settings
+ * @brief OptionsDialog "CW Keyer" tab: HaliKey or Vail device, port and connect, keyer settings,
+ *        sidetone source and volume, and the K4's key-down delay (KZL, via CwController). Settings
  *        persist in RadioSettings.
  */
 class CwKeyerPage : public QWidget {
@@ -47,6 +48,7 @@ private:
     void updateCwKeyerDescription();
     void showKeyDownDelay(int ms);
     void sendKeyDownDelay();
+    void updateSidetoneControls();
 
     HalikeyDevice *m_halikeyDevice;
     QComboBox *m_cwKeyerDeviceTypeCombo = nullptr;
@@ -57,10 +59,16 @@ private:
     QLabel *m_cwKeyerStatusLabel = nullptr;
     QSlider *m_sidetoneVolumeSlider = nullptr;
     QLabel *m_sidetoneVolumeValueLabel = nullptr;
+    QWidget *m_halikeyKeyerSettings = nullptr;
     RadioState *m_radioState;
     CwController *m_cwController;
     QSlider *m_keyDownDelaySlider = nullptr;
     QLabel *m_keyDownDelayValueLabel = nullptr;
+    QWidget *m_sidetoneSourceRow = nullptr;
+    QComboBox *m_sidetoneSourceCombo = nullptr;
+    QWidget *m_sidetoneVolumeRow = nullptr;
+    QLabel *m_sidetoneHelpLabel = nullptr;
+    QFormLayout *m_sidetoneForm = nullptr;
     HaliKeyPortScan *m_portScan = nullptr;
     int m_scanType = -1; // device type of the list being shown or scanned
     // WHY a poll: macOS, Windows and Linux announce no serial port arrivals to Qt (QSerialPortInfo
