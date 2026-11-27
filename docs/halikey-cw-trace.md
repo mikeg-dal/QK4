@@ -119,4 +119,5 @@ modem-line change logged in between (the `raw pins` trace of the time). A blocki
 debounce needs.
 
 The V1.4 pin map: `CTS` = dit lever (and a foot pedal, indistinguishable — which is why footswitch
-PTT is withdrawn), `DCD ∥ DSR` = dah lever.
+PTT is withdrawn), `DCD ∥ DSR` = dah lever. The ORB Control Device uses the same worker with its own
+map (`src/hardware/README.md`, `serialpaddleinput.h`).

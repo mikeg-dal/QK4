@@ -564,6 +564,12 @@ target_include_directories(test_seriallinepoller PRIVATE ${CMAKE_SOURCE_DIR}/src
 target_link_libraries(test_seriallinepoller Qt6::Core Qt6::Test)
 add_test(NAME SerialLinePollerTests COMMAND test_seriallinepoller)
 
+# Serial paddle devices: each device's modem-line map, and paddle/straight-key switching.
+add_executable(test_serialpaddleinput test_serialpaddleinput.cpp ${CMAKE_SOURCE_DIR}/src/hardware/seriallinepoller.cpp)
+target_include_directories(test_serialpaddleinput PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_serialpaddleinput Qt6::Core Qt6::Test)
+add_test(NAME SerialPaddleInputTests COMMAND test_serialpaddleinput)
+
 add_executable(test_sidetonescheduler test_sidetonescheduler.cpp ${CMAKE_SOURCE_DIR}/src/audio/sidetonescheduler.cpp)
 target_include_directories(test_sidetonescheduler PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_sidetonescheduler Qt6::Core Qt6::Test)

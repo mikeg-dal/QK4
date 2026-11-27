@@ -41,7 +41,7 @@ class KpodPlusDevice;
 //   src                                  | dst                         | thread
 //   -------------------------------------|-----------------------------|-----------------------------
 //   PaddleKeyer → ForwardingLink         | TcpClient's KzEgress        | keyer → I/O (lock-free post)
-//   HalikeyDevice::paddleChanged (V1.4)  | PaddleKeyer::paddleEvent    | runs ON the HaliKey worker
+//   HalikeyDevice::paddleChanged (serial)| PaddleKeyer::paddleEvent    | runs ON the HaliKey worker
 //   HalikeyDevice MIDI sink (MIDI)       | PaddleKeyer::midiMessage    | runs ON RtMidi's thread
 //   RadioState keyer speed/KP/pitch/ML/KZL| keyer + sidetone + KPOD+    | main
 //   RadioState::modeChanged, radioReady,  | PaddleKeyer::setInhibited   | main
@@ -60,9 +60,9 @@ class KpodPlusDevice;
 //
 // Threading invariants
 // --------------------
-//   1. The V1.4 line handler runs DirectConnection on the HaliKey worker, and the MIDI sink on
+//   1. The serial line handler runs DirectConnection on the HaliKey worker, and the MIDI sink on
 //      RtMidi's thread. Both stamp the edge on arrival; a queued hop would be timing error.
-//   2. m_cachedIsV14 and m_reversed are stored on the main thread (release) and loaded on those
+//   2. m_cachedIsSerial and m_reversed are stored on the main thread (release) and loaded on those
 //      device threads (acquire).
 //   3. The keyer's commands reach TcpClient through ForwardingLink → KzEgress, a lock-free queue
 //      the I/O thread drains in order. FIFO per producer, so KZD/KZU stay in order. The keyer
@@ -70,20 +70,20 @@ class KpodPlusDevice;
 //      request to the keyer's queue and never sends KZ or ML; the monitor restore is the keyer's
 //      own deadline.
 //   4. KPOD+ EP02 keyer data goes from the EP02 worker to the same KzEgress.
-//   5. The destructor cuts the V1.4 line handler first (CONVENTIONS Rule 11). That stops new
+//   5. The destructor cuts the serial line handler first (CONVENTIONS Rule 11). That stops new
 //      calls only; an edge already in flight on the worker is ruled out by shutdownDevices().
 //   6. The link is never gated: a KZU closing an open KZD must always reach the K4. Suppression
 //      is the inhibit's job, upstream of the keyer.
 //
 // Footswitch PTT: REMOVED, deliberately
 // -------------------------------------
-//   Neither transport keys PTT from a footswitch. On V1.4 the pedal and the dit lever both drive
+//   No device keys PTT from a footswitch or PTT jack. On V1.4 the pedal and the dit lever both drive
 //   CTS and are indistinguishable on the wire; the MIDI variant's note 31 is ignored. A footswitch
-//   plugged into the K4 itself is unaffected.
+//   plugged into the K4 itself is unaffected. The ORB's PTT/KEY jack is read only as a straight key.
 //
 // Verification (before a release)
 // -------------------------------
-//   - HaliKey V1.4 and MIDI paddle keying at 20-50 WPM, Iambic A and B; Ultimatic; straight key
+//   - HaliKey V1.4, HaliKey MIDI and ORB paddle keying at 20-50 WPM, Iambic A and B; Ultimatic; straight key
 //   - KPOD+ keying unchanged (paddle → on-device keyer → EP02 → K4)
 //   - Sidetone audible with a constant delay; silent while the KPOD+ owns CW
 //   - Hold a paddle in CW and switch to SSB mid-press: keying stops, nothing stuck
@@ -126,7 +126,7 @@ private:
     HalikeyDevice *m_halikey;      // owned by HardwareController
     KpodPlusDevice *m_kpodPlus;    // owned by HardwareController
 
-    // The V1.4 line handler (invariant 1). Kept so the destructor can cut it: it runs on the HaliKey
+    // The serial line handler (invariant 1). Kept so the destructor can cut it: it runs on the HaliKey
     // worker, and ~QObject would drop it only after this object's members are gone.
     QMetaObject::Connection m_paddleConnection;
 
@@ -135,8 +135,8 @@ private:
     bool m_kpodPlusGate = false;
     bool m_sidetoneStreamWanted = false; // last value sent to SidetoneGenerator::setStreamWanted
 
-    // true = V1.4 serial (deviceType 0), false = MIDI (deviceType 1). See invariant 2.
-    std::atomic<bool> m_cachedIsV14{true};
+    // false = MIDI. See invariant 2.
+    std::atomic<bool> m_cachedIsSerial{true};
     // The K4's KP paddle orientation is Reverse. See invariant 2.
     std::atomic<bool> m_reversed{false};
 };

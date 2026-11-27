@@ -2,6 +2,7 @@
 #include "ui/styling/k4styles.h"
 #include "controllers/cwcontroller.h"
 #include "hardware/halikeydevice.h"
+#include "hardware/halikeydevicetype.h"
 #include "models/radiostate.h"
 #include "settings/radiosettings.h"
 #include "hardware/halikeyportscan.h"
@@ -37,9 +38,10 @@ CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, C
 
     m_cwKeyerDeviceTypeCombo = new QComboBox(this);
     m_cwKeyerDeviceTypeCombo->setStyleSheet(K4Styles::Dialog::comboBox());
-    m_cwKeyerDeviceTypeCombo->addItem("HaliKey V1.4", HaliKeyPortScan::kSerialType);
-    m_cwKeyerDeviceTypeCombo->addItem("HaliKey MIDI", HaliKeyPortScan::kMidiType);
-    m_cwKeyerDeviceTypeCombo->setCurrentIndex(RadioSettings::instance()->halikeyDeviceType());
+    for (const int type : {HaliKeyType::kSerialV14, HaliKeyType::kMidi, HaliKeyType::kOrb})
+        m_cwKeyerDeviceTypeCombo->addItem(HaliKeyType::name(type), type);
+    m_cwKeyerDeviceTypeCombo->setCurrentIndex(
+        m_cwKeyerDeviceTypeCombo->findData(RadioSettings::instance()->halikeyDeviceType()));
     updateCwKeyerDescription();
     connect(m_cwKeyerDeviceTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         int type = m_cwKeyerDeviceTypeCombo->itemData(index).toInt();
@@ -273,7 +275,7 @@ void CwKeyerPage::hideEvent(QHideEvent *event) {
 
 void CwKeyerPage::startScan(int deviceType) {
     m_portScan->request(deviceType, [deviceType]() {
-        if (deviceType == HaliKeyPortScan::kMidiType)
+        if (deviceType == HaliKeyType::kMidi)
             return HalikeyDevice::availableMidiDevices();
         QStringList names;
         const auto ports = HalikeyDevice::availablePortsDetailed();
@@ -318,10 +320,14 @@ void CwKeyerPage::updateCwKeyerDescription() {
         return;
 
     int type = m_cwKeyerDeviceTypeCombo->currentData().toInt();
-    if (type == HaliKeyPortScan::kMidiType) {
+    if (type == HaliKeyType::kMidi) {
         // WHY no PTT here: the footswitch/PTT input is deliberately not wired (CwController).
         m_cwKeyerDescLabel->setText("Connect a HaliKey MIDI paddle interface to send CW via the K4's keyer. "
                                     "The HaliKey MIDI uses standard MIDI note events to detect paddle inputs.");
+    } else if (type == HaliKeyType::kOrb) {
+        m_cwKeyerDescLabel->setText("Connect an ORB Control Device to send CW via the K4's keyer. Plug paddles into "
+                                    "its paddle jack, or a straight key into its PTT/KEY jack with Input set to the "
+                                    "straight key. The ORB has two serial ports: choose the one for channel A.");
     } else {
         m_cwKeyerDescLabel->setText("Connect a HaliKey paddle interface to send CW via the K4's keyer. "
                                     "The HaliKey uses serial port flow control signals to detect paddle inputs.");

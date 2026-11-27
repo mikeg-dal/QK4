@@ -7,6 +7,7 @@
 #include <QTemporaryDir>
 
 #include "dsp/waterfallgeometry.h"
+#include "hardware/halikeydevicetype.h"
 #include "settings/radiosettings.h"
 
 // RadioSettings: the "connect at startup" rule.
@@ -139,7 +140,7 @@ private slots:
         QCOMPARE(m_loaded.value(QStringLiteral("kpaPoll")).toInt(), 100);
         QCOMPARE(m_loaded.value(QStringLiteral("spotAge")).toInt(), 300);
         QCOMPARE(m_loaded.value(QStringLiteral("sidetone")).toInt(), 100);
-        QCOMPARE(m_loaded.value(QStringLiteral("deviceType")).toInt(), 1);
+        QCOMPARE(m_loaded.value(QStringLiteral("deviceType")).toInt(), HaliKeyType::kOrb);
         QCOMPARE(m_loaded.value(QStringLiteral("encodeMode")).toInt(), 1);
         // A K4 port that cannot be valid falls back to the default for its TLS mode, never 0.
         QCOMPARE(m_loaded.value(QStringLiteral("radio:Wrapped")).toInt(), int(K4Protocol::DEFAULT_PORT));
@@ -161,8 +162,9 @@ private slots:
         const quint16 kpaPort = s->kpa1500Port();
         s->setKpa1500Port(0);
         QCOMPARE(s->kpa1500Port(), kpaPort); // 0 is "any port"; refused
+        s->setHalikeyDeviceType(HaliKeyType::kMidi);
         s->setHalikeyDeviceType(5);
-        QCOMPARE(s->halikeyDeviceType(), 1);
+        QCOMPARE(s->halikeyDeviceType(), HaliKeyType::kOrb);
         s->setHalikeyDeviceType(0);
         RadioEntry r = makeRadio(QStringLiteral("NoPort"), QStringLiteral("10.0.0.9"));
         r.port = 0;

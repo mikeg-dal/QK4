@@ -167,7 +167,7 @@ public:
     QString halikeyPortName() const;
     void setHalikeyPortName(const QString &portName);
     int halikeyDeviceType() const;
-    void setHalikeyDeviceType(int type); // 0=V14, 1=MiDi
+    void setHalikeyDeviceType(int type); // HaliKeyType
     int sidetoneVolume() const;
     void setSidetoneVolume(int value); // 0-100, default 30
     // HaliKey keyer (PaddleKeyer). Mode: 0 = follow the K4's Iambic A/B (KP), 1 = Plain Iambic,
@@ -325,7 +325,7 @@ private:
 
     // HaliKey settings
     QString m_halikeyPortName;
-    int m_halikeyDeviceType = 0; // 0=V14, 1=MiDi
+    int m_halikeyDeviceType = 0; // HaliKeyType
     int m_sidetoneVolume = 30;   // Default 30%
     int m_halikeyKeyerMode = 0;
     bool m_halikeyStraightKey = false;

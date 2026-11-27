@@ -1,4 +1,5 @@
 #include "halikeydevice.h"
+#include "halikeydevicetype.h"
 #include "logging/logcategories.h"
 #include "logging/logsink.h"
 #include "halikeymidiworker.h"
@@ -40,11 +41,11 @@ bool HalikeyDevice::openPort(const QString &portName) {
 
     m_portName = portName;
 
-    // Create worker based on injected device type (0 = V1.4, 1 = MIDI)
-    if (m_deviceType == 1) {
+    // Create worker based on injected device type
+    if (!HaliKeyType::isSerial(m_deviceType)) {
         m_worker = new HaliKeyMidiWorker(portName, m_midiSink);
     } else {
-        m_worker = new HaliKeyV14Worker(portName);
+        m_worker = new HaliKeyV14Worker(portName, m_deviceType);
     }
 
     m_workerThread = new QThread(this);
@@ -56,7 +57,7 @@ bool HalikeyDevice::openPort(const QString &portName) {
     connect(m_worker, &HaliKeyWorkerBase::paddleChanged, this, &HalikeyDevice::paddleChanged, Qt::DirectConnection);
     m_worker->setStraightKey(m_straightKey.load(std::memory_order_acquire));
     connect(m_worker, &HaliKeyWorkerBase::portOpened, this, [this]() {
-        qCInfo(lcCwHalikey) << "HaliKey opened on" << m_portName << (m_deviceType == 1 ? "(MIDI)" : "(V1.4 serial)");
+        qCInfo(lcCwHalikey) << "Paddle device opened on" << m_portName << HaliKeyType::name(m_deviceType);
         m_connected = true;
         emit connected();
     });

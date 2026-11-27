@@ -471,6 +471,8 @@ set(HEADERS
     src/hardware/cwgate.h
     src/hardware/keyerruntime.h
     src/hardware/seriallinepoller.h
+    src/hardware/serialpaddleinput.h
+    src/hardware/halikeydevicetype.h
 )
 
 if(UNIX AND NOT APPLE)

@@ -37,9 +37,6 @@ public:
     /// else -1 (leave the list's own default).
     static int chooseIndex(const QStringList &ports, const QString &savedPort, int deviceType);
 
-    static constexpr int kSerialType = 0;
-    static constexpr int kMidiType = 1;
-
 signals:
     void finished(int deviceType, const QStringList &ports);
 

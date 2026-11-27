@@ -18,7 +18,7 @@ struct HaliKeyPortInfo {
 };
 
 /**
- * @brief Owner of the HaliKey CW paddle device. Creates a worker (V1.4 serial or MIDI — see
+ * @brief Owner of the CW paddle device (HaliKey or ORB). Creates a worker (serial or MIDI — see
  *        HaliKeyWorkerBase) on `m_workerThread` and passes its paddle input straight through.
  *        What a paddle MEANS is the caller's business — see CwController.
  *
@@ -32,7 +32,7 @@ class HalikeyDevice : public QObject {
     Q_OBJECT
 
 public:
-    // deviceType: 0 = V1.4 serial, 1 = MIDI. HardwareController passes
+    // deviceType: a HaliKeyType value. HardwareController passes
     // the current RadioSettings value at construction and re-sets it
     // via setDeviceType() when settings change — this device class
     // never reads RadioSettings itself, keeping the hardware layer
@@ -79,7 +79,7 @@ private:
 
     QString m_portName;
     bool m_connected = false;
-    int m_deviceType = 0; // 0 = V1.4 serial, 1 = MIDI. Set via ctor / setDeviceType.
+    int m_deviceType = 0; // HaliKeyType. Set via ctor / setDeviceType.
     std::atomic<bool> m_straightKey{false};
 };
 

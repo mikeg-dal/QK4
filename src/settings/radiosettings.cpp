@@ -1,4 +1,5 @@
 #include "radiosettings.h"
+#include "hardware/halikeydevicetype.h"
 #include "dsp/waterfallgeometry.h"
 #include "logging/logrules.h"
 #include "logging/logsink.h"
@@ -75,7 +76,7 @@ int percent(qint64 value) {
 }
 
 int halikeyDeviceTypeIndex(qint64 type) {
-    return static_cast<int>(std::clamp<qint64>(type, 0, 1)); // 0 = V1.4 serial, 1 = MIDI
+    return static_cast<int>(std::clamp<qint64>(type, HaliKeyType::kFirst, HaliKeyType::kLast));
 }
 
 int halikeyKeyerModeIndex(qint64 mode) {
