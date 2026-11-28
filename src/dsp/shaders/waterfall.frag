@@ -23,7 +23,7 @@ layout(std140, binding = 0) uniform buf {
 };
 
 // The most bins one column may fold together; mirrors SpectrumGeometry::WaterfallMaxBinsPerColumn.
-const float kMaxBinsPerColumn = 16.0;
+const int kMaxBinsPerColumn = 16;
 
 // One row's level for this column, reducing bins to the column the way the data requires.
 //
@@ -47,10 +47,16 @@ float sampleRowLevel(float v, float binIndex, float binOffset) {
     }
     float first = max(ceil(binIndex - binsPerPixel * 0.5 - 0.5), 0.0);
     float last = min(floor(binIndex + binsPerPixel * 0.5 - 0.5), binCount - 1.0);
-    last = min(last, first + kMaxBinsPerColumn - 1.0);
     float best = 0.0;
-    for (float bin = first; bin <= last; bin += 1.0)
+    // WHY an integer loop with a constant bound: the DirectX compiler has to unroll a loop that
+    // samples with texture(), and it cannot find the end of one counted in floats up to a uniform
+    // (error X3511). qsb then ships HLSL source instead of bytecode, and the build still succeeds.
+    for (int i = 0; i < kMaxBinsPerColumn; i++) {
+        float bin = first + float(i);
+        if (bin > last)
+            break;
         best = max(best, texture(waterfallTex, vec2((binOffset + bin + 0.5) / textureWidth, v)).r);
+    }
     return best;
 }
 
