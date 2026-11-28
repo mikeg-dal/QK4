@@ -564,6 +564,18 @@ target_include_directories(test_seriallinepoller PRIVATE ${CMAKE_SOURCE_DIR}/src
 target_link_libraries(test_seriallinepoller Qt6::Core Qt6::Test)
 add_test(NAME SerialLinePollerTests COMMAND test_seriallinepoller)
 
+# The ORB's PTT/KEY jack as push-to-talk: when it keys and when it lets go (pure logic).
+add_executable(test_orbptt test_orbptt.cpp)
+target_include_directories(test_orbptt PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_orbptt Qt6::Core Qt6::Test)
+add_test(NAME OrbPttTests COMMAND test_orbptt)
+
+# Serial paddle devices: each device's modem-line map, and paddle/straight-key switching.
+add_executable(test_serialpaddleinput test_serialpaddleinput.cpp ${CMAKE_SOURCE_DIR}/src/hardware/seriallinepoller.cpp)
+target_include_directories(test_serialpaddleinput PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_serialpaddleinput Qt6::Core Qt6::Test)
+add_test(NAME SerialPaddleInputTests COMMAND test_serialpaddleinput)
+
 add_executable(test_sidetonescheduler test_sidetonescheduler.cpp ${CMAKE_SOURCE_DIR}/src/audio/sidetonescheduler.cpp)
 target_include_directories(test_sidetonescheduler PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_sidetonescheduler Qt6::Core Qt6::Test)

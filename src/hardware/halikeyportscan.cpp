@@ -1,5 +1,6 @@
 #include "hardware/halikeyportscan.h"
 
+#include "hardware/halikeydevicetype.h"
 #include "logging/logcategories.h"
 #include "utils/threadshutdown.h"
 
@@ -74,7 +75,7 @@ void HaliKeyPortScan::onWorkerDone(int deviceType, const QStringList &ports) {
 
 int HaliKeyPortScan::chooseIndex(const QStringList &ports, const QString &savedPort, int deviceType) {
     const int saved = savedPort.isEmpty() ? -1 : static_cast<int>(ports.indexOf(savedPort));
-    if (saved >= 0 || deviceType != kMidiType)
+    if (saved >= 0 || deviceType != HaliKeyType::kMidi)
         return saved;
     for (int i = 0; i < ports.size(); ++i) {
         if (ports[i].contains(QStringLiteral("HaliKey"), Qt::CaseInsensitive))

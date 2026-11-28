@@ -9,12 +9,25 @@ USB / serial / MIDI device wrappers. Owned by `controllers/hardwarecontroller.cp
 - `halikey_midi_ports.h` — header-only, no RtMidi dependency. Finds the HaliKey MIDI port by case-insensitive name containment, not equality: the WinMM backend appends the port index to the name, and Windows renumbers ports when any MIDI device is removed.
 - `kpoddevice.{cpp,h}` — Thin Qt façade over `KpodHidWorker`; owns `m_hidThread` and re-emits the worker's signals. **No `hid_*` call lives here** — see the hidapi section below. Detection runs on the worker thread as soon as it starts, so the window appears immediately; consumers observe `deviceInfoReady()` before reading `isDetected()`.
 - `kpodplusdevice.{cpp,h}` — Façade for the KPOD+ tuning knob + CW keyer. Owns **two** threads: `m_usbThread` (EP01 encoder/buttons/rocker polling and every config command) and `m_ep02Thread` (the keyer reader). Nothing here touches libusb. Configurable keyer parameters (speed, pitch, iambic mode, paddle orientation, encode mode, stuck timeout) are dispatched to the USB worker on change.
-- `halikeydevice.{cpp,h}` — HaliKey CW paddle. Delegates to one of 2 workers (selected by `deviceType`: 0 = V1.4 serial, 1 = MIDI); owns its own `m_workerThread`. Passes input straight through, with no debounce or queue of its own: `paddleChanged` from the V1.4 worker, and the MIDI sink set by `setMidiSink`.
+- `halikeydevice.{cpp,h}` — CW paddle device (HaliKey or ORB Control Device). Delegates to the serial or the MIDI worker (selected by `deviceType`, a `HaliKeyType`); owns its own `m_workerThread`. Passes input straight through, with no debounce or queue of its own: `paddleChanged` from the V1.4 worker, and the MIDI sink set by `setMidiSink`.
 - `halikeyworkerbase.{cpp,h}` — Abstract base for the workers. Declares `paddleChanged` (V1.4) and `HaliKeyMidiSink` (MIDI). `prepareShutdown()` runs on the main thread before the join; the MIDI worker closes its port there so RtMidi's callback thread stops.
 - `kpodplususbworker.{cpp,h}` — owns the libusb context and handle for KPOD+, running all libusb I/O on its own QThread. Open/close and parameter setters are dispatched from the main thread as slots. Its pure command builders and decoders are covered by `test_kpodplususbworker`.
 - `kpodudevworker.{cpp,h}` — Linux-only udev poll loop for KPOD hotplug detection, wired to `QThread::started` and run until `stop()`.
 - `kpodudevmatch.h` — header-only, platform-neutral: whether a udev event is the KPOD, from the event's `PRODUCT` (fallback `ID_VENDOR_ID`/`ID_MODEL_ID`) properties. Sysattrs are gone by the time a `remove` arrives, which is why an unplug was never reported. Covered by `test_usbdevicelifecycle`.
-- `halikeyv14worker.{cpp,h}` — V1.4 hardware-protocol worker (serial). Opens the port natively, powers the contacts with DTR/RTS, and polls the lines every 1 ms on every platform on a drift-free 1 ms grid (a periodic high-resolution waitable timer on Windows, absolute-deadline sleeps through `SteadyKeyerClock::sleepUntil` elsewhere) through `SerialLinePoller`. Dit = CTS, dah = DCD ∥ DSR. Emits `paddleChanged(dah, asserted, delta)`. Polling, not edge waits, on every OS: a blocking wait can't time a straight key's 20 ms debounce, and FTDI drivers on Windows miss isolated modem-line events.
+- `halikeyv14worker.{cpp,h}` — Serial paddle worker (HaliKey V1.4 and ORB). Opens the port natively, turns DTR/RTS on for the HaliKey (they power its contacts) and off for the ORB, and polls the lines every 1 ms on every platform on a drift-free 1 ms grid (a periodic high-resolution waitable timer on Windows, absolute-deadline sleeps through `SteadyKeyerClock::sleepUntil` elsewhere) through `SerialPaddleInput`. Emits `paddleChanged(dah, asserted, delta)`. Polling, not edge waits, on every OS: a blocking wait can't time a straight key's 20 ms debounce, and FTDI drivers on Windows miss isolated modem-line events.
+- `halikeydevicetype.h` — `HaliKeyType::`, header-only: the stored device-type values (0 = HaliKey V1.4, 1 = HaliKey MIDI, 2 = ORB Control Device) and their names. A build that predates a value clamps it to 1 (MIDI) on load.
+- `serialpaddleinput.h` — `SerialPaddleInput`, header-only: each serial device's modem-line map, feeding `SerialLinePoller`. On a paddle/straight-key change the contacts as they stand, mapped for the new mode, become the rest state. Covered by `test_serialpaddleinput`.
+
+  | Device, input | Dit | Dah |
+  |---|---|---|
+  | HaliKey V1.4 | CTS | DCD ∥ DSR |
+  | ORB, paddles (paddle jack: tip, ring) | DSR | DCD |
+  | ORB, straight key (PTT/KEY jack tip) | CTS | not read |
+
+  On the ORB, `pollJack()` also reports the PTT/KEY jack (CTS) as a switch in either input mode, debounced
+  20 ms, and only when it differs from the last report: a shorter bounce must not look like a new press.
+- `orbptt.h` — `OrbPtt::`, header-only: when that switch may key the transmitter (option on, ORB selected, voice mode on the transmit VFO, VFO A not in CW) and the gate that keys only on a press made while allowed. `OrbPttController` feeds it. Covered by `test_orbptt`.
+
 - `halikeymidiworker.{cpp,h}` — MIDI-variant worker. Notes 20 = dit, 21 = dah, 31 = PTT (ignored). Every raw message also goes straight from RtMidi's thread to the `HaliKeyMidiSink` that `HalikeyDevice::setMidiSink` sets. CwController points it at `PaddleKeyer::midiMessage`, which decodes MoMIDI's own time stamps (note velocity = ms since the previous event, CC/poly aftertouch on channel 0 = 126 ms steps, velocity 0/127 = no time, use RtMidi's delta). Notes on any channel are normalised to channel 0; for a non-MoMIDI device a note-on with velocity 0 is passed as a note-off.
 - `mididevicewatcher.{cpp,h}` — Keeps macOS's MIDI device list current. CoreMIDI updates a process's devices only through notifications delivered on the run loop of the thread that created its client; QK4's first client used to be created on a port-scan thread with no run loop, so a HaliKey MIDI plugged in later never appeared. The watcher owns a client on its own thread with a running CFRunLoop, created first by `HardwareController`, and reports `devicesChanged()`. No-op on Windows and Linux.
 - `halikeyportscan.{cpp,h}` — Lists HaliKey serial or MIDI ports on a short-lived worker thread and delivers them queued to the caller's thread, for the Options page. The first CoreMIDI enumeration in a process took 0.8–1.9 s on macOS, and SetupAPI COM enumeration is slow on Windows with Bluetooth serial ports; both used to run on the GUI thread. One scan at a time: a repeat request is absorbed, a request for the other device type replaces the outdated scan. `chooseIndex()` is the saved-port / first-HaliKey-MIDI selection rule. The object owns its scan thread: reaped on `finished()`, joined with a deadline when the page is destroyed (disowned, not destroyed, if an enumeration is stuck).
@@ -79,7 +92,7 @@ closed and switched off.
 
 ## Keyer flow
 
-- **V1.4:** paddle → V1.4 worker's 1 ms poll → `SerialLinePoller` → `HalikeyDevice::paddleChanged` → `CwController::onPaddle` (paddle reversal; DirectConnection) → `PaddleKeyer::paddleEvent`, stamped on arrival.
+- **Serial (V1.4, ORB):** paddle → serial worker's 1 ms poll → `SerialPaddleInput` (`SerialLinePoller`) → `HalikeyDevice::paddleChanged` → `CwController::onPaddle` (paddle reversal; DirectConnection) → `PaddleKeyer::paddleEvent`, stamped on arrival.
 - **MIDI:** paddle → RtMidi callback → `HaliKeyMidiSink` → `PaddleKeyer::midiMessage`, stamped by MoMIDI's own clock.
 - **Keyer thread:** `PaddleKeyer::run()` → timed `KZD####` / `KZU####` (and `ML0000` / restore if the monitor mute is on) → `ForwardingLink` → `KzEgress` (a lock-free queue the I/O thread drains and writes; see `src/network/README.md`). The keyer thread is the only sender of KZ and ML: `releasePaddles()`, the inhibit and `close()` from the main thread post requests to its queue, and the monitor restore is a deadline the keyer keeps itself (its wait for the next event ends there), so a straight key's KZU always follows its KZD. The main thread takes no lock the keyer or a paddle thread waits on: configuration is atomic, requests go into rings only requesters lock, the keyer wakes on an `RtSemaphore`, and the keyer itself carries out a release (stamping the paddles up as of the moment it was asked for) at its next decision, including any wait to cancel a scheduled sidetone edge. Sidetone edges are scheduled on `SidetoneScheduler`, and `SidetoneGenerator`'s paced push places them on exact frames.
 
@@ -102,6 +115,13 @@ application code. Lowering it to 1 ms removes that delay:
 - **Linux**: `echo 1 | sudo tee /sys/bus/usb-serial/devices/<dev>/latency_timer` — resets
   on re-plug; use a udev rule for persistence.
 - **macOS**: not user-tunable with the stock driver.
+
+**ORB on macOS** (Apple's FTDI driver, measured 2026-11-27 on macOS 27.0.1 with a standalone probe
+of the worker's poll loop at its real-time priority, idle port, four runs of 20 s in all): reading
+the lines took about 2 ms at the median, so polls came about 2 ms apart, not 1 ms; at real-time
+priority the 99th percentile was 3.2 ms and the worst 4.3 ms in one run, 9.8 ms in the other. A
+later 10-minute run at real-time priority averaged 2.04 ms between polls, 12% of them over 3 ms; the
+worst gap was 40 ms, and the longest single read took 39 ms. The cause is not established. A contact change shorter than the gap between polls can be missed.
 
 The MIDI variant is unaffected (no serial bridge in the path).
 

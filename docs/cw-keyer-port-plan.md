@@ -218,7 +218,7 @@ changing either.
   Dale's A keeps the dit memory (a dit closed after a dah was heard is sent) but no dah memory and
   no squeeze-release memory. The port follows Dale; `iambicAKeepsDitMemoryOnly` pins it.
 - **Serial pin map — stayed fixed.** The plan was a per-paddle setting. What landed is the
-  bench-verified V1.4 wiring, hard-coded in `HaliKeyV14Worker::readPinState`: dit = CTS,
+  bench-verified V1.4 wiring, hard-coded in `SerialPaddleInput::map`: dit = CTS,
   dah = DCD ∥ DSR (the V1.4 asserts both together). `PaddleKeyer::setDitSignal` / `setDahSignal` /
   `serialSignalChanged` exist but only tests call them.
 - Weighting follows the K4's `KP`, which QK4 already parses.
@@ -238,4 +238,4 @@ changing either.
    become the level the keyer restores, and the unmute would send `ML0000` again.
 4. Does `KY \x04;RX;` (Esc) stop `KZD` playback already queued in the K4?
 5. ~~Which modem line does the HaliKey V1.4 assert for dah?~~ **Answered:** DCD and DSR together
-   (`HaliKeyV14Worker::readPinState`).
+   (`SerialPaddleInput::map`).

@@ -7,6 +7,7 @@
 #include "connectioncontroller.h"
 #include "hardware/cwgate.h"
 #include "hardware/halikeydevice.h"
+#include "hardware/halikeydevicetype.h"
 #include "hardware/keyerruntime.h"
 #include "hardware/kpodplusdevice.h"
 #include "hardware/paddlekeyer.h"
@@ -33,7 +34,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // Configuration from the K4 (the source of truth) and from settings
     // =========================================================================
     auto *settings = RadioSettings::instance();
-    m_cachedIsV14.store(settings->halikeyDeviceType() != 1, std::memory_order_release);
+    m_cachedIsSerial.store(HaliKeyType::isSerial(settings->halikeyDeviceType()), std::memory_order_release);
     m_keyer->setStraightKeying(settings->halikeyStraightKey());
     m_keyer->setDitMemoryDelayPercent(settings->halikeyDitMemoryDelay());
     m_keyer->setMuteRadioMonitor(settings->halikeyMuteRadioMonitor());
@@ -79,7 +80,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
             [this](int ms) { m_keyer->setKeyDownInitialDelayMs(ms); });
 
     connect(settings, &RadioSettings::halikeyDeviceTypeChanged, this, [this](int type) {
-        m_cachedIsV14.store(type != 1, std::memory_order_release);
+        m_cachedIsSerial.store(HaliKeyType::isSerial(type), std::memory_order_release);
         m_keyer->releasePaddles();
     });
     connect(settings, &RadioSettings::halikeyKeyerModeChanged, this, [this](int) { applyMode(); });
@@ -114,7 +115,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // =========================================================================
     // HaliKey → keyer
     // =========================================================================
-    // V1.4 serial: one edge per change from the worker's 1 ms poll, on the worker thread
+    // Serial devices: one edge per change from the worker's 1 ms poll, on the worker thread
     // (invariant 1). The poller has already applied rest state, straight-key debounce and the
     // per-line delta.
     m_paddleConnection = connect(
@@ -125,7 +126,7 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     // MIDI: raw messages with RtMidi's delta, on RtMidi's thread (invariant 1). MoMIDI's own time
     // stamps are decoded by the keyer.
     m_halikey->setMidiSink([this](int status, int note, int velocity, double deltaTime) {
-        if (!m_cachedIsV14.load(std::memory_order_acquire))
+        if (!m_cachedIsSerial.load(std::memory_order_acquire))
             m_keyer->midiMessage(status, note, velocity, deltaTime);
     });
 
@@ -210,7 +211,7 @@ void CwController::updateInhibit() {
 }
 
 void CwController::onPaddle(bool dah, bool asserted, double deltaTime) {
-    if (!m_cachedIsV14.load(std::memory_order_acquire))
+    if (!m_cachedIsSerial.load(std::memory_order_acquire))
         return; // MIDI reaches the keyer through the raw sink
     if (m_reversed.load(std::memory_order_acquire))
         dah = !dah;

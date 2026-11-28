@@ -12,6 +12,7 @@ class HalikeyDevice;
 class HaliKeyPortScan;
 class RadioState;
 class CwController;
+class QCheckBox;
 
 /**
  * @brief OptionsDialog "HaliKey" tab: device type (V1.4 serial / MIDI), port and connect, keyer
@@ -45,6 +46,7 @@ private:
     void startScan(int deviceType);
     void applyCwKeyerPorts(int deviceType, const QStringList &ports);
     void updateCwKeyerDescription();
+    void showOrbPttRows(); // the PTT option, shown for the ORB only
     void showKeyDownDelay(int ms);
     void sendKeyDownDelay();
 
@@ -55,6 +57,8 @@ private:
     QPushButton *m_cwKeyerRefreshBtn = nullptr;
     QPushButton *m_cwKeyerConnectBtn = nullptr;
     QLabel *m_cwKeyerStatusLabel = nullptr;
+    QCheckBox *m_orbPttCheck = nullptr;
+    QLabel *m_orbPttHelp = nullptr;
     QSlider *m_sidetoneVolumeSlider = nullptr;
     QLabel *m_sidetoneVolumeValueLabel = nullptr;
     RadioState *m_radioState;

@@ -26,6 +26,7 @@ namespace TransmitOwner {
 enum class Owner {
     None,
     PttButton, // the bottom-row PTT button (and its right-click latch)
+    OrbPtt,    // a switch in the ORB Control Device's PTT/KEY jack
     Xmit,      // the side-panel XMIT button
     CatClient, // WSJT-X and friends over the native CAT server
     TciClient, // a TCI client
@@ -116,7 +117,7 @@ inline bool keyedByCat(Route r) {
 // the operator is here and the client is not — the rule PR #133 established for TCI and which this
 // generalises. Remote never preempts anything, including a transmission the radio started itself.
 inline bool isLocal(Owner o) {
-    return o == Owner::PttButton || o == Owner::Xmit;
+    return o == Owner::PttButton || o == Owner::OrbPtt || o == Owner::Xmit;
 }
 
 inline AudioSource sourceFor(Owner o) {

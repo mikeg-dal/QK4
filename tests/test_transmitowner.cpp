@@ -174,7 +174,7 @@ private slots:
     // Esc, losing the radio, and shutting down all release whoever holds it. AUD-001 was exactly
     // this not happening: the gate survived a disconnect and the next mic-device change transmitted.
     void releaseAllReleasesAnyOwner() {
-        for (auto who : {Owner::PttButton, Owner::Xmit, Owner::CatClient, Owner::TciClient}) {
+        for (auto who : {Owner::PttButton, Owner::OrbPtt, Owner::Xmit, Owner::CatClient, Owner::TciClient}) {
             const Route how = (who == Owner::Xmit) ? Route::RadioLocal : Route::StreamedFromHere;
             State s;
             engage(s, who, how);
@@ -413,12 +413,39 @@ private slots:
         QCOMPARE(remote.owner, Owner::Radio);
     }
 
+    // ---- ORB PTT --------------------------------------------------------------------------------
+
+    // The ORB's switch and the on-screen button are two operators' hands on one transmitter: each
+    // is refused while the other holds it, and neither one's release ends the other's.
+    void orbPttAndPttButtonDoNotReleaseEachOther() {
+        for (auto holder : {Owner::PttButton, Owner::OrbPtt}) {
+            const Owner other = holder == Owner::OrbPtt ? Owner::PttButton : Owner::OrbPtt;
+            State s;
+            engage(s, holder, Route::StreamedFromHere);
+            QVERIFY(engage(s, other, Route::StreamedFromHere).refused);
+            QVERIFY(release(s, other).ignored);
+            QCOMPARE(s.owner, holder);
+        }
+    }
+
+    // Local, as the PTT button is: it takes the transmitter from a remote client, with the microphone.
+    void orbPttTakesItFromRemote() {
+        State s;
+        engage(s, Owner::TciClient, Route::StreamedFromHere);
+        const Effects e = engage(s, Owner::OrbPtt, Route::StreamedFromHere);
+        QVERIFY(!e.refused);
+        QCOMPARE(s.owner, Owner::OrbPtt);
+        QVERIFY(e.setSource);
+        QCOMPARE(e.source, AudioSource::Microphone);
+        QVERIFY(!e.sendTx);
+    }
+
     // ---- Invariants over every transition -----------------------------------------------------
 
     // TX; and RX; are mutually exclusive in a single decision, the gate is only written when it
     // actually changes, and `transmitting` always agrees with the state the call left behind.
     void everyTransitionIsSelfConsistent() {
-        const Owner owners[] = {Owner::None,      Owner::PttButton, Owner::Xmit,
+        const Owner owners[] = {Owner::None,      Owner::PttButton, Owner::OrbPtt, Owner::Xmit,
                                 Owner::CatClient, Owner::TciClient, Owner::Radio};
         const Route routes[] = {Route::None, Route::StreamedFromHere, Route::RadioLocal, Route::CatKeyedAndStreamed,
                                 Route::Observed};

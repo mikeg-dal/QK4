@@ -67,6 +67,9 @@ public:
     // the next poll.
     void setStraightKey(bool straight) { m_straightKey.store(straight, std::memory_order_release); }
 
+    // Whether pttJackChanged is wanted now. Thread-safe; takes effect on the next poll.
+    void setPttJackWanted(bool wanted) { m_pttJackWanted.store(wanted, std::memory_order_release); }
+
 public slots:
     virtual void start() = 0; // Called when thread starts
     void stop();              // Requests the worker to stop; never cleared, so it holds even before start()
@@ -77,6 +80,10 @@ signals:
     // the moment the 1 ms poll sees it. Port of K4-Companion's serial callback.
     void paddleChanged(bool dah, bool asserted, double deltaTime);
 
+    // The ORB's PTT/KEY jack closed or opened, debounced (serial worker, ORB only). Reported in
+    // every input mode while setPttJackWanted(true); what it means is the receiver's business.
+    void pttJackChanged(bool pressed);
+
     void errorOccurred(const QString &error);
     void portOpened();
 
@@ -85,6 +92,7 @@ protected:
 
     QString m_portName;
     std::atomic<bool> m_straightKey{false};
+    std::atomic<bool> m_pttJackWanted{false};
 
 private:
     // WHY a request flag rather than a running flag the loop sets on entry: stop() can arrive

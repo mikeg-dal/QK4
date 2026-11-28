@@ -28,8 +28,8 @@ here: two hand-maintained lists drift apart, and this one already had.
 
 ### Main-thread coordinators
 `SpectrumController` (panadapters, span, click/scroll tune), `CwController` (keying across the
-HardwareController-owned devices) and `TransmitController` (the single owner of "are we
-transmitting") own no thread.
+HardwareController-owned devices), `TransmitController` (the single owner of "are we
+transmitting") and `OrbPttController` (the ORB's PTT/KEY jack as push-to-talk) own no thread.
 
 ### Popup family
 `PopupManager`, `ModePopupController`, `FeatureMenuController`, `AntennaConfigController`,

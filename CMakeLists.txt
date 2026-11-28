@@ -155,6 +155,7 @@ set(SOURCES
     src/controllers/memorybuttonscontroller.cpp
     src/controllers/cwcontroller.cpp
     src/controllers/transmitcontroller.cpp
+    src/controllers/orbpttcontroller.cpp
     src/network/tcpclient.cpp
     src/network/pingtracker.cpp
     src/network/kzegress.cpp
@@ -345,6 +346,8 @@ set(HEADERS
     src/controllers/rightsidecontroller.h
     src/controllers/memorybuttonscontroller.h
     src/controllers/cwcontroller.h
+    src/controllers/orbpttcontroller.h
+    src/hardware/orbptt.h
     src/network/tcpclient.h
     src/network/pingtracker.h
     src/network/kzegress.h
@@ -471,6 +474,8 @@ set(HEADERS
     src/hardware/cwgate.h
     src/hardware/keyerruntime.h
     src/hardware/seriallinepoller.h
+    src/hardware/serialpaddleinput.h
+    src/hardware/halikeydevicetype.h
 )
 
 if(UNIX AND NOT APPLE)

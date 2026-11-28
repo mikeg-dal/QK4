@@ -1,4 +1,5 @@
 #include "halikeydevice.h"
+#include "halikeydevicetype.h"
 #include "logging/logcategories.h"
 #include "logging/logsink.h"
 #include "halikeymidiworker.h"
@@ -29,6 +30,12 @@ void HalikeyDevice::setStraightKey(bool straight) {
         m_worker->setStraightKey(straight);
 }
 
+void HalikeyDevice::setPttJackWanted(bool wanted) {
+    m_pttJackWanted = wanted;
+    if (m_worker)
+        m_worker->setPttJackWanted(wanted);
+}
+
 HalikeyDevice::~HalikeyDevice() {
     closePort();
 }
@@ -40,11 +47,11 @@ bool HalikeyDevice::openPort(const QString &portName) {
 
     m_portName = portName;
 
-    // Create worker based on injected device type (0 = V1.4, 1 = MIDI)
-    if (m_deviceType == 1) {
+    // Create worker based on injected device type
+    if (!HaliKeyType::isSerial(m_deviceType)) {
         m_worker = new HaliKeyMidiWorker(portName, m_midiSink);
     } else {
-        m_worker = new HaliKeyV14Worker(portName);
+        m_worker = new HaliKeyV14Worker(portName, m_deviceType);
     }
 
     m_workerThread = new QThread(this);
@@ -55,8 +62,17 @@ bool HalikeyDevice::openPort(const QString &portName) {
     // Straight through, on the worker thread: the keyer stamps the edge on arrival.
     connect(m_worker, &HaliKeyWorkerBase::paddleChanged, this, &HalikeyDevice::paddleChanged, Qt::DirectConnection);
     m_worker->setStraightKey(m_straightKey.load(std::memory_order_acquire));
+    m_worker->setPttJackWanted(m_pttJackWanted);
+    // Queued to this thread, unlike the paddles: PTT is not timed by its arrival, and its consumer
+    // lives here. WHY the session check: disconnect() need not cancel an event already queued, and
+    // a press from a closed port arriving after disconnected() would key with no release to come.
+    const quint64 session = ++m_session;
+    connect(m_worker, &HaliKeyWorkerBase::pttJackChanged, this, [this, session](bool pressed) {
+        if (session == m_session && m_connected)
+            emit pttJackChanged(pressed);
+    });
     connect(m_worker, &HaliKeyWorkerBase::portOpened, this, [this]() {
-        qCInfo(lcCwHalikey) << "HaliKey opened on" << m_portName << (m_deviceType == 1 ? "(MIDI)" : "(V1.4 serial)");
+        qCInfo(lcCwHalikey) << "Paddle device opened on" << m_portName << HaliKeyType::name(m_deviceType);
         m_connected = true;
         emit connected();
     });
@@ -77,6 +93,8 @@ bool HalikeyDevice::openPort(const QString &portName) {
 }
 
 void HalikeyDevice::closePort() {
+    ++m_session;
+
     // Disconnect worker signals FIRST — prevent stale queued events
     // from reaching slots after state reset
     if (m_worker) {

@@ -42,6 +42,7 @@
 #include "controllers/spectrumcontroller.h"
 #include "controllers/audiocontroller.h"
 #include "controllers/cwcontroller.h"
+#include "controllers/orbpttcontroller.h"
 #include "controllers/transmitcontroller.h"
 #include "controllers/hardwarecontroller.h"
 #include "controllers/kpa1500uicontroller.h"
@@ -364,6 +365,10 @@ void MainWindow::setupHardwareController() {
     // keyer. Wired here rather than inside CwController because that would mean a second reader of
     // the device state, which is the arrangement USB-002 and USB-003 both came out of.
     connect(m_hardwareController, &HardwareController::kpodPlusOwnsCw, m_cwController, &CwController::setKpodPlusGate);
+
+    // The ORB's PTT/KEY jack as push-to-talk in voice modes. See orbpttcontroller.h.
+    new OrbPttController(m_radioState, m_connectionController, m_hardwareController->halikeyDevice(),
+                         m_transmitController, this);
 
     // KPOD button presses → macro execution
     connect(m_hardwareController, &HardwareController::macroRequested, m_macroController,

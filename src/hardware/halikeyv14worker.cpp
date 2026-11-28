@@ -2,7 +2,6 @@
 #include "logging/logcategories.h"
 #include "halikeyworkerbase.h"
 #include "hardware/keyerruntime.h"
-#include "hardware/seriallinepoller.h"
 #include "utils/rtscheduling.h"
 #include <QDebug>
 #include <cstring>
@@ -17,7 +16,8 @@
 #include <unistd.h>
 #endif
 
-HaliKeyV14Worker::HaliKeyV14Worker(const QString &portName, QObject *parent) : HaliKeyWorkerBase(portName, parent) {}
+HaliKeyV14Worker::HaliKeyV14Worker(const QString &portName, int deviceType, QObject *parent)
+    : HaliKeyWorkerBase(portName, parent), m_deviceType(deviceType) {}
 
 HaliKeyV14Worker::~HaliKeyV14Worker() {
     closeNativePort();
@@ -66,8 +66,11 @@ bool HaliKeyV14Worker::openNativePort() {
     dcb.ByteSize = 8;
     dcb.Parity = NOPARITY;
     dcb.StopBits = ONESTOPBIT;
-    dcb.fDtrControl = DTR_CONTROL_ENABLE;
-    dcb.fRtsControl = RTS_CONTROL_ENABLE;
+    // The HaliKey powers its contacts from DTR and RTS. The ORB does not need them, and its manual
+    // says RTS used as power can interfere.
+    const bool powerContacts = m_deviceType != HaliKeyType::kOrb;
+    dcb.fDtrControl = powerContacts ? DTR_CONTROL_ENABLE : DTR_CONTROL_DISABLE;
+    dcb.fRtsControl = powerContacts ? RTS_CONTROL_ENABLE : RTS_CONTROL_DISABLE;
     if (!SetCommState(m_handle, &dcb)) {
         QString error = "Failed to configure port " + m_portName;
         qCWarning(lcCwHalikey) << "HaliKeyV14Worker:" << error;
@@ -106,6 +109,18 @@ bool HaliKeyV14Worker::openNativePort() {
         return false;
     }
 
+    // WHY first thing for the ORB: open() raises DTR and RTS on macOS and Linux, so they must be
+    // cleared, not merely left unset, and the sooner the shorter they are up.
+    int outputs = TIOCM_DTR | TIOCM_RTS;
+    if (m_deviceType == HaliKeyType::kOrb && ioctl(m_fd, TIOCMBIC, &outputs) < 0) {
+        QString error =
+            QString("Failed to clear DTR/RTS on %1: %2").arg(m_portName, QString::fromLocal8Bit(strerror(errno)));
+        qCWarning(lcCwHalikey) << "HaliKeyV14Worker:" << error;
+        closeNativePort();
+        emit errorOccurred(error);
+        return false;
+    }
+
     // Configure raw serial
     struct termios tio = {};
     if (tcgetattr(m_fd, &tio) < 0) {
@@ -120,11 +135,13 @@ bool HaliKeyV14Worker::openNativePort() {
     cfsetispeed(&tio, B9600);
     cfsetospeed(&tio, B9600);
     tio.c_cflag |= CLOCAL; // Ignore modem control lines for opening
+    if (m_deviceType == HaliKeyType::kOrb)
+        tio.c_cflag &= ~CRTSCTS; // hardware flow control would drive RTS
     tcsetattr(m_fd, TCSANOW, &tio);
 
     // Enable DTR and RTS so the HaliKey has power to sense paddle contacts
-    int bits = TIOCM_DTR | TIOCM_RTS;
-    ioctl(m_fd, TIOCMBIS, &bits);
+    if (m_deviceType != HaliKeyType::kOrb)
+        ioctl(m_fd, TIOCMBIS, &outputs);
 
     return true;
 #endif
@@ -144,35 +161,24 @@ void HaliKeyV14Worker::closeNativePort() {
 #endif
 }
 
-bool HaliKeyV14Worker::readPinState(bool &ditState, bool &dahState) {
-    // WHY this mapping: HaliKey V1.4 firmware exposes raw modem-status pins. Bench-verified (NORMAL
-    // paddle wiring):
-    //
-    //   dah lever  → DCD and DSR, always together, so DCD || DSR is one stable edge
-    //   dit lever  → CTS
-    //   foot pedal → CTS too, indistinguishable from the dit lever — which is why footswitch PTT
-    //                is withdrawn (see cwcontroller.h)
+bool HaliKeyV14Worker::readModemLines(ModemLines &lines) noexcept {
 #ifdef Q_OS_WIN
     DWORD modemStatus = 0;
     if (!GetCommModemStatus(m_handle, &modemStatus)) {
         return false;
     }
-    bool cts = (modemStatus & MS_CTS_ON) != 0;
-    bool dsr = (modemStatus & MS_DSR_ON) != 0;
-    bool dcd = (modemStatus & MS_RLSD_ON) != 0;
-    ditState = cts;
-    dahState = dcd || dsr;
+    lines.cts = (modemStatus & MS_CTS_ON) != 0;
+    lines.dsr = (modemStatus & MS_DSR_ON) != 0;
+    lines.dcd = (modemStatus & MS_RLSD_ON) != 0;
     return true;
 #else
     int status = 0;
     if (ioctl(m_fd, TIOCMGET, &status) < 0) {
         return false;
     }
-    bool cts = (status & TIOCM_CTS) != 0;
-    bool dsr = (status & TIOCM_DSR) != 0;
-    bool dcd = (status & TIOCM_CD) != 0;
-    ditState = cts;
-    dahState = dcd || dsr;
+    lines.cts = (status & TIOCM_CTS) != 0;
+    lines.dsr = (status & TIOCM_DSR) != 0;
+    lines.dcd = (status & TIOCM_CD) != 0;
     return true;
 #endif
 }
@@ -191,13 +197,10 @@ void HaliKeyV14Worker::monitorLoop() {
     // time-stamped history, so a bounce inside an element changes nothing on the air. A blocking
     // edge wait would not do: it cannot time the 20 ms quiet a straight key needs.
     //
-    // Line map (see readPinState): dit lever = CTS, dah lever = DCD || DSR.
-    using Signal = PaddleKeyer::Signal;
-    bool ditLine = false;
-    bool dahLine = false;
-    auto sample = [&]() { return readPinState(ditLine, dahLine); };
-    // One read per poll, shared by both lines, so the pair is always a joint sample.
-    const SerialLinePoller::ReadLine read = [&](Signal s) { return s == Signal::CTS ? ditLine : dahLine; };
+    // Which line is which contact depends on the device: SerialPaddleInput::map. One read per poll,
+    // so the lines are always a joint sample.
+    ModemLines lines;
+    SerialPaddleInput input(m_deviceType);
 
     auto fail = [this]() {
         if (stopRequested())
@@ -212,14 +215,12 @@ void HaliKeyV14Worker::monitorLoop() {
     };
 
     SteadyKeyerClock clock;
-    bool straight = m_straightKey.load(std::memory_order_acquire);
-    if (!sample()) {
+    if (!readModemLines(lines)) {
         fail();
         closeNativePort();
         return;
     }
-    SerialLinePoller poller(Signal::CTS, Signal::DCD, straight);
-    poller.start(read);
+    input.start(lines, m_straightKey.load(std::memory_order_acquire));
 
 #ifdef Q_OS_WIN
     // WHY a high-resolution waitable timer: GetCommModemStatus polled with Sleep(1) runs at the
@@ -257,23 +258,22 @@ void HaliKeyV14Worker::monitorLoop() {
             nextPoll = clock.now() + kPollSeconds;
         clock.sleepUntil(nextPoll);
 #endif
-        if (!sample()) {
+        if (!readModemLines(lines)) {
             fail();
             break;
         }
-        // Switching between paddles and a straight key changes the debounce and which lines are
-        // watched; the lines as they stand now are the new rest state.
-        const bool nowStraight = m_straightKey.load(std::memory_order_acquire);
-        if (nowStraight != straight) {
-            straight = nowStraight;
-            poller = SerialLinePoller(Signal::CTS, Signal::DCD, straight);
-            poller.start(read);
-            continue;
-        }
         // No log line per edge: this is a real-time thread (CONVENTIONS Rule 16). What the keyer
         // made of the edges is in the CAT traffic bench item.
-        for (const auto &change : poller.poll(read, clock.now()))
-            emit paddleChanged(change.signal != Signal::CTS, change.asserted, change.deltaTime);
+        const bool straight = m_straightKey.load(std::memory_order_acquire);
+        for (const auto &change : input.poll(lines, straight, clock.now()))
+            emit paddleChanged(change.signal == SerialPaddleInput::kDah, change.asserted, change.deltaTime);
+        // Polled every time, so a switch held while unwanted is never reported as a new press.
+        // WHY sent only when wanted: this signal is queued to the main thread, which allocates, on a
+        // real-time thread. Unwanted (option off, CW), it must cost nothing - a straight key's every
+        // element moves this line.
+        const auto jack = input.pollJack(lines, clock.now());
+        if (jack && m_pttJackWanted.load(std::memory_order_acquire))
+            emit pttJackChanged(*jack);
     }
 
 #ifdef Q_OS_WIN

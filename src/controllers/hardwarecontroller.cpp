@@ -5,6 +5,7 @@
 #include "audio/sidetonescheduler.h"
 #include "connectioncontroller.h"
 #include "hardware/halikeydevice.h"
+#include "hardware/halikeydevicetype.h"
 #include "hardware/keyerruntime.h"
 #include "hardware/paddlekeyer.h"
 #include "hardware/kpoddevice.h"
@@ -288,8 +289,7 @@ QString HardwareController::halikeyName() const {
     // RadioSettings is the only place that knows which transport is configured; HalikeyDevice is
     // constructed from the same value. Named for the operator, matching the Options dropdown, so a
     // notification and the settings page cannot disagree about what the device is called.
-    return RadioSettings::instance()->halikeyDeviceType() == 1 ? QStringLiteral("HaliKey MIDI")
-                                                               : QStringLiteral("HaliKey V1.4");
+    return QString::fromLatin1(HaliKeyType::name(RadioSettings::instance()->halikeyDeviceType()));
 }
 
 void HardwareController::reportThreadScheduling() {

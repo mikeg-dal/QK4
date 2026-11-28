@@ -18,7 +18,7 @@ struct HaliKeyPortInfo {
 };
 
 /**
- * @brief Owner of the HaliKey CW paddle device. Creates a worker (V1.4 serial or MIDI — see
+ * @brief Owner of the CW paddle device (HaliKey or ORB). Creates a worker (serial or MIDI — see
  *        HaliKeyWorkerBase) on `m_workerThread` and passes its paddle input straight through.
  *        What a paddle MEANS is the caller's business — see CwController.
  *
@@ -32,7 +32,7 @@ class HalikeyDevice : public QObject {
     Q_OBJECT
 
 public:
-    // deviceType: 0 = V1.4 serial, 1 = MIDI. HardwareController passes
+    // deviceType: a HaliKeyType value. HardwareController passes
     // the current RadioSettings value at construction and re-sets it
     // via setDeviceType() when settings change — this device class
     // never reads RadioSettings itself, keeping the hardware layer
@@ -63,6 +63,9 @@ public:
     // Straight key / external keyer on the dit line (serial: 20 ms debounce, dah line ignored).
     void setStraightKey(bool straight);
 
+    // ORB: whether pttJackChanged is wanted now. Off until asked for.
+    void setPttJackWanted(bool wanted);
+
 signals:
     void connected();
     void disconnected();
@@ -72,6 +75,10 @@ signals:
     // worker thread.
     void paddleChanged(bool dah, bool asserted, double deltaTime);
 
+    // ORB only: the PTT/KEY jack closed or opened. Emitted on this object's thread, and only for
+    // the port that is open now. No release follows a closePort(): watch disconnected() too.
+    void pttJackChanged(bool pressed);
+
 private:
     std::shared_ptr<HaliKeyMidiSink> m_midiSink;
     QThread *m_workerThread = nullptr;
@@ -79,8 +86,10 @@ private:
 
     QString m_portName;
     bool m_connected = false;
-    int m_deviceType = 0; // 0 = V1.4 serial, 1 = MIDI. Set via ctor / setDeviceType.
+    quint64 m_session = 0; // counts openPort/closePort, to drop queued events from a closed port
+    int m_deviceType = 0;  // HaliKeyType. Set via ctor / setDeviceType.
     std::atomic<bool> m_straightKey{false};
+    bool m_pttJackWanted = false; // main thread; handed to each new worker
 };
 
 #endif // HALIKEYDEVICE_H

@@ -22,6 +22,8 @@ const char *ownerName(TransmitOwner::Owner o) {
         return "none";
     case TransmitOwner::Owner::PttButton:
         return "PTT button";
+    case TransmitOwner::Owner::OrbPtt:
+        return "ORB PTT";
     case TransmitOwner::Owner::Xmit:
         return "XMIT";
     case TransmitOwner::Owner::CatClient:
