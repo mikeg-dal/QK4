@@ -1,7 +1,12 @@
 #include "cwcontroller.h"
 #include "logging/logcategories.h"
 
+#include <QApplication>
 #include <QLoggingCategory>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QTimer>
+#include <QWidget>
 
 #include "audio/sidetonegenerator.h"
 #include "connectioncontroller.h"
@@ -14,12 +19,19 @@
 #include "network/kzegress.h"
 #include "network/tcpclient.h"
 #include "settings/radiosettings.h"
+#include "ui/styling/k4styles.h"
 
 CwController::CwController(RadioState *radioState, ConnectionController *connection, PaddleKeyer *keyer,
                            ForwardingLink *link, SidetoneGenerator *sidetone, HalikeyDevice *halikey,
                            KpodPlusDevice *kpodPlus, QObject *parent)
     : QObject(parent), m_radioState(radioState), m_connection(connection), m_keyer(keyer), m_link(link),
       m_sidetone(sidetone), m_halikey(halikey), m_kpodPlus(kpodPlus) {
+
+    m_dialogParent = qobject_cast<QWidget *>(parent);
+    m_halikey->disarmKeying();
+    m_safetyTimer = new QTimer(this);
+    m_safetyTimer->setInterval(10);
+    connect(m_safetyTimer, &QTimer::timeout, this, &CwController::checkKeyingSafety);
 
     // =========================================================================
     // Keyer → K4
@@ -79,15 +91,18 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
             [this](int ms) { m_keyer->setKeyDownInitialDelayMs(ms); });
 
     connect(settings, &RadioSettings::halikeyDeviceTypeChanged, this, [this](int type) {
+        resetKeyingSafety();
         m_cachedIsV14.store(type != 1, std::memory_order_release);
         m_keyer->releasePaddles();
     });
     connect(settings, &RadioSettings::halikeyKeyerModeChanged, this, [this](int) { applyMode(); });
     m_halikey->setStraightKey(settings->halikeyStraightKey());
     connect(settings, &RadioSettings::halikeyStraightKeyChanged, this, [this](bool straight) {
+        resetKeyingSafety();
         m_keyer->setStraightKeying(straight);
         m_halikey->setStraightKey(straight);
         applyReversal();
+        checkKeyingSafety();
     });
     connect(settings, &RadioSettings::halikeyDitMemoryDelayChanged, this,
             [this](int percent) { m_keyer->setDitMemoryDelayPercent(percent); });
@@ -101,12 +116,13 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
     connect(m_connection, &ConnectionController::radioReady, this, [this]() {
         m_radioReady = true;
         updateInhibit();
+        checkKeyingSafety();
     });
     connect(m_connection, &ConnectionController::connectionStateChanged, this,
             [this](TcpClient::ConnectionState state) {
                 if (state != TcpClient::Connected) {
                     m_radioReady = false;
-                    updateInhibit();
+                    resetKeyingSafety();
                 }
             });
     updateInhibit();
@@ -124,17 +140,24 @@ CwController::CwController(RadioState *radioState, ConnectionController *connect
 
     // MIDI: raw messages with RtMidi's delta, on RtMidi's thread (invariant 1). MoMIDI's own time
     // stamps are decoded by the keyer.
-    m_halikey->setMidiSink([this](int status, int note, int velocity, double deltaTime) {
-        if (!m_cachedIsV14.load(std::memory_order_acquire))
+    m_halikey->setMidiSink(
+        [this, epoch = std::uint64_t{0}](int status, int note, int velocity, double deltaTime) mutable {
+            if (m_cachedIsV14.load(std::memory_order_acquire))
+                return;
+            const auto current = m_halikey->keyingEpoch();
+            if (epoch != current) {
+                m_keyer->resetMidiInput();
+                epoch = current;
+            }
             m_keyer->midiMessage(status, note, velocity, deltaTime);
-    });
+        });
 
     // A lost device releases the key: a held paddle's release would otherwise never arrive.
-    connect(m_halikey, &HalikeyDevice::disconnected, this, [this]() {
-        m_keyer->releasePaddles();
-        updateInhibit(); // the sidetone stream closes with the last keying source
+    connect(m_halikey, &HalikeyDevice::disconnected, this, [this]() { resetKeyingSafety(); });
+    connect(m_halikey, &HalikeyDevice::connected, this, [this]() {
+        updateInhibit();
+        checkKeyingSafety();
     });
-    connect(m_halikey, &HalikeyDevice::connected, this, [this]() { updateInhibit(); });
 
     // =========================================================================
     // KPOD+ EP02 keyer data
@@ -152,6 +175,7 @@ CwController::~CwController() {
     // ~MainWindow) calling HardwareController::shutdownDevices() while ConnectionController is still
     // alive; a disconnect
     // cannot stop a call the worker has already started.
+    closeKeyingDialog();
     disconnect(m_paddleConnection);
     // WHY the MIDI sink is NOT cleared here: HardwareController, and with it the HaliKey, is
     // destroyed before this (construction order), so m_halikey dangles by now. Clearing it here
@@ -198,6 +222,7 @@ void CwController::updateInhibit() {
     const auto mode = m_radioState->mode();
     CwGate::Inputs in;
     in.radioReady = m_radioReady;
+    in.keyingArmed = m_halikey->keyingArmed();
     in.inCwMode = mode == RadioState::CW || mode == RadioState::CW_R;
     in.kpodPlusOwnsCw = m_kpodPlusGate;
     in.halikeyOpen = m_halikey->isConnected();
@@ -236,4 +261,112 @@ void CwController::setKpodPlusGate(bool active) {
                                  : "DOWN - QK4's own keyer owns CW again");
     m_kpodPlusGate = active;
     updateInhibit();
+}
+
+void CwController::setKeyingStatus(const QString &status) {
+    if (m_keyingStatus == status)
+        return;
+    m_keyingStatus = status;
+    emit keyingStatusChanged(status);
+}
+
+void CwController::closeKeyingDialog() {
+    if (!m_keyingDialog)
+        return;
+    disconnect(m_keyingDialog, nullptr, this, nullptr);
+    m_keyingDialog->close();
+    m_keyingDialog = nullptr;
+}
+
+void CwController::resetKeyingSafety() {
+    m_keyer->setInhibited(true);
+    m_halikey->disarmKeying();
+    m_waitingForRelease = false;
+    m_prompted = false;
+    m_safetyTimer->stop();
+    closeKeyingDialog();
+    m_keyer->releasePaddles();
+    updateInhibit();
+    setKeyingStatus(tr("Keying disabled"));
+}
+
+void CwController::checkKeyingSafety() {
+    if (!m_radioReady || !m_halikey->isConnected())
+        return;
+    if (!m_prompted) {
+        requestKeyingEnable();
+        return;
+    }
+    if (m_waitingForRelease && m_halikey->keyingArmed()) {
+        m_waitingForRelease = false;
+        m_safetyTimer->stop();
+        updateInhibit();
+        setKeyingStatus(tr("Keying enabled"));
+        if (m_keyingDialog) {
+            disconnect(m_keyingDialog, nullptr, this, nullptr);
+            m_keyingDialog->setText(tr("HaliKey keying enabled. Subsequent presses can transmit in CW mode."));
+            m_keyingDialog->setStandardButtons(QMessageBox::Ok);
+            m_keyingDialog->setDefaultButton(QMessageBox::Ok);
+        }
+    }
+}
+
+void CwController::requestKeyingEnable() {
+    if (!m_radioReady || !m_halikey->isConnected() || m_keyingDialog)
+        return;
+    m_prompted = true;
+    m_keyer->setInhibited(true);
+    m_halikey->disarmKeying();
+    updateInhibit();
+    setKeyingStatus(tr("Keying disabled"));
+    auto *dialog =
+        new QMessageBox(QMessageBox::Question, tr("HaliKey keying"), tr("HaliKey detected. Enable paddle keying?"),
+                        QMessageBox::Yes | QMessageBox::No, keyingDialogParent());
+    m_keyingDialog = dialog;
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setStyleSheet(K4Styles::dialogButton());
+    dialog->button(QMessageBox::Yes)->setText(tr("Enable"));
+    dialog->button(QMessageBox::No)->setText(tr("Keep disabled"));
+    dialog->setDefaultButton(QMessageBox::No);
+    dialog->setEscapeButton(QMessageBox::No);
+    connect(dialog, &QMessageBox::finished, this, [this](int result) {
+        m_keyingDialog = nullptr;
+        if (result == QMessageBox::Yes && m_radioReady && m_halikey->isConnected())
+            waitForRelease();
+    });
+    dialog->open();
+}
+
+void CwController::waitForRelease() {
+    const bool midi = !m_cachedIsV14.load(std::memory_order_acquire);
+    const bool straight = RadioSettings::instance()->halikeyStraightKey();
+    const QString instruction =
+        midi ? (straight
+                    ? tr("Tap and release the key to finish enabling keying. This action will not transmit.")
+                    : tr("Tap and release both paddles to finish enabling keying. These actions will not transmit."))
+             : tr("Release the key or both paddles to finish enabling keying.");
+    setKeyingStatus(instruction);
+    auto *dialog = new QMessageBox(QMessageBox::Information, tr("HaliKey keying"), instruction, QMessageBox::Cancel,
+                                   keyingDialogParent());
+    m_keyingDialog = dialog;
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setStyleSheet(K4Styles::dialogButton());
+    connect(dialog, &QMessageBox::finished, this, [this](int) {
+        m_keyingDialog = nullptr;
+        m_waitingForRelease = false;
+        m_safetyTimer->stop();
+        m_keyer->setInhibited(true);
+        m_halikey->disarmKeying();
+        updateInhibit();
+        setKeyingStatus(tr("Keying disabled"));
+    });
+    m_waitingForRelease = true;
+    m_halikey->enableKeying();
+    m_safetyTimer->start();
+    dialog->open();
+}
+
+QWidget *CwController::keyingDialogParent() const {
+    auto *modal = QApplication::activeModalWidget();
+    return modal ? modal : m_dialogParent;
 }

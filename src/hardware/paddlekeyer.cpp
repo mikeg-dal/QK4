@@ -282,6 +282,14 @@ void PaddleKeyer::close() {
 
 // ---- input ----
 
+void PaddleKeyer::resetMidiInput() noexcept {
+    m_midiDelta = 0;
+    m_ditWasDown = false;
+    m_dahWasDown = false;
+    m_midiDeviceClock = 0;
+    m_midiClockOffset.reset();
+}
+
 void PaddleKeyer::midiMessage(int status, int note, int velocity, double rtmidiDelta) noexcept {
     if (status == 0xb0 || status == 0xa0) {
         m_midiDelta = (velocity * 126) / 1000.0;

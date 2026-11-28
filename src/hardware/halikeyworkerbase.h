@@ -6,6 +6,7 @@
 #include <QString>
 
 #include "utils/rtsan.h"
+#include "hardware/halikeysafety.h"
 
 #include <atomic>
 #include <functional>
@@ -60,6 +61,8 @@ public:
     explicit HaliKeyWorkerBase(const QString &portName, QObject *parent = nullptr);
     ~HaliKeyWorkerBase() override = default;
 
+    void setSafety(std::shared_ptr<HaliKeySafety> safety) { m_safety = std::move(safety); }
+
     virtual void prepareShutdown() {} // Override for platform-specific unblocking
 
     // A straight key (or external keyer) on the dit line rather than paddles. The serial worker
@@ -83,6 +86,7 @@ signals:
 protected:
     bool stopRequested() const { return m_stopRequested.load(std::memory_order_acquire); }
 
+    std::shared_ptr<HaliKeySafety> m_safety;
     QString m_portName;
     std::atomic<bool> m_straightKey{false};
 

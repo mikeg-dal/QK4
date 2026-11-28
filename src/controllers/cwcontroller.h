@@ -3,7 +3,11 @@
 
 #include <QObject>
 #include <atomic>
+#include <QPointer>
 
+class QTimer;
+class QMessageBox;
+class QWidget;
 class RadioState;
 class ConnectionController;
 class PaddleKeyer;
@@ -53,10 +57,10 @@ class KpodPlusDevice;
 // Inhibit
 // -------
 // The keyer keys nothing unless the radio is ready, the mode is CW or CW-R, and the KPOD+ does not
-// own CW (CwGate::keyerInhibited). The sidetone's output stream is open only while, in addition, a
-// HaliKey port is open (CwGate::sidetoneStreamWanted), so nothing is pumped while idle (#92). Raising the inhibit
-// releases whatever is keyed (an open straight-key KZD gets its KZU) and drops paddle events at the door. The
-// keyer reads its paddles from time-stamped history, so a single release is all a gate needs.
+// own CW, and an open HaliKey has been approved and released (CwGate::keyerInhibited). The sidetone's output stream is
+// open only while, in addition, a HaliKey port is open (CwGate::sidetoneStreamWanted), so nothing is pumped while idle
+// (#92). Raising the inhibit releases whatever is keyed (an open straight-key KZD gets its KZU) and drops paddle events
+// at the door. The keyer reads its paddles from time-stamped history, so a single release is all a gate needs.
 //
 // Threading invariants
 // --------------------
@@ -110,8 +114,19 @@ public:
     /// Esc: stop QK4's own keying now. The burst ends at its next element boundary; an open
     /// straight-key KZD gets its KZU.
     void stopKeying();
+    void requestKeyingEnable();
+    QString keyingStatus() const { return m_keyingStatus; }
+
+signals:
+    void keyingStatusChanged(const QString &status);
 
 private:
+    QWidget *keyingDialogParent() const;
+    void resetKeyingSafety();
+    void checkKeyingSafety();
+    void closeKeyingDialog();
+    void setKeyingStatus(const QString &status);
+    void waitForRelease();
     void applySpeed();
     void applyMode();
     void applyReversal();
@@ -131,6 +146,12 @@ private:
     QMetaObject::Connection m_paddleConnection;
 
     // Main thread only.
+    QTimer *m_safetyTimer = nullptr;
+    QPointer<QMessageBox> m_keyingDialog;
+    QWidget *m_dialogParent = nullptr;
+    bool m_prompted = false;
+    bool m_waitingForRelease = false;
+    QString m_keyingStatus = QStringLiteral("Keying disabled");
     bool m_radioReady = false;
     bool m_kpodPlusGate = false;
     bool m_sidetoneStreamWanted = false; // last value sent to SidetoneGenerator::setStreamWanted
