@@ -176,6 +176,8 @@ public:
     void setHalikeyKeyerMode(int mode);
     bool halikeyStraightKey() const; // a straight key or external keyer on the dit line
     void setHalikeyStraightKey(bool straight);
+    bool halikeyOrbPtt() const; // ORB only: its PTT/KEY jack keys the transmitter in voice modes
+    void setHalikeyOrbPtt(bool enabled);
     int halikeyDitMemoryDelay() const; // Iambic B dit memory delay, percent 0-100, default 33
     void setHalikeyDitMemoryDelay(int percent);
     bool halikeyMuteRadioMonitor() const; // mute the K4's CW monitor during each burst
@@ -287,6 +289,7 @@ signals:
     void sidetoneVolumeChanged(int value);
     void halikeyKeyerModeChanged(int mode);
     void halikeyStraightKeyChanged(bool straight);
+    void halikeyOrbPttChanged(bool enabled);
     void halikeyDitMemoryDelayChanged(int percent);
     void halikeyMuteRadioMonitorChanged(bool mute);
     void dxClusterSettingsChanged();
@@ -329,6 +332,7 @@ private:
     int m_sidetoneVolume = 30;   // Default 30%
     int m_halikeyKeyerMode = 0;
     bool m_halikeyStraightKey = false;
+    bool m_halikeyOrbPtt = false; // off unless the operator asks: a wrong port could then transmit
     int m_halikeyDitMemoryDelay = 33;
     bool m_halikeyMuteRadioMonitor = false;
 

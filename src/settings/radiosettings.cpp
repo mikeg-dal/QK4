@@ -743,6 +743,18 @@ void RadioSettings::setHalikeyStraightKey(bool straight) {
     }
 }
 
+bool RadioSettings::halikeyOrbPtt() const {
+    return m_halikeyOrbPtt;
+}
+
+void RadioSettings::setHalikeyOrbPtt(bool enabled) {
+    if (m_halikeyOrbPtt != enabled) {
+        m_halikeyOrbPtt = enabled;
+        save();
+        emit halikeyOrbPttChanged(enabled);
+    }
+}
+
 int RadioSettings::halikeyDitMemoryDelay() const {
     return m_halikeyDitMemoryDelay;
 }
@@ -1001,6 +1013,7 @@ void RadioSettings::load() {
     m_sidetoneVolume = percent(storedInt(m_settings.value("halikey/sidetoneVolume"), 30));
     m_halikeyKeyerMode = halikeyKeyerModeIndex(storedInt(m_settings.value("halikey/keyerMode"), 0));
     m_halikeyStraightKey = m_settings.value("halikey/straightKey", false).toBool();
+    m_halikeyOrbPtt = m_settings.value("halikey/orbPtt", false).toBool();
     m_halikeyDitMemoryDelay = percent(storedInt(m_settings.value("halikey/ditMemoryDelay"), 33));
     m_halikeyMuteRadioMonitor = m_settings.value("halikey/muteRadioMonitor", false).toBool();
 
@@ -1122,6 +1135,7 @@ void RadioSettings::save() {
     m_settings.setValue("halikey/sidetoneVolume", m_sidetoneVolume);
     m_settings.setValue("halikey/keyerMode", m_halikeyKeyerMode);
     m_settings.setValue("halikey/straightKey", m_halikeyStraightKey);
+    m_settings.setValue("halikey/orbPtt", m_halikeyOrbPtt);
     m_settings.setValue("halikey/ditMemoryDelay", m_halikeyDitMemoryDelay);
     m_settings.setValue("halikey/muteRadioMonitor", m_halikeyMuteRadioMonitor);
 

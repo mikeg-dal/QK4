@@ -75,11 +75,13 @@ class KpodPlusDevice;
 //   6. The link is never gated: a KZU closing an open KZD must always reach the K4. Suppression
 //      is the inhibit's job, upstream of the keyer.
 //
-// Footswitch PTT: REMOVED, deliberately
-// -------------------------------------
-//   No device keys PTT from a footswitch or PTT jack. On V1.4 the pedal and the dit lever both drive
+// Footswitch PTT: REMOVED from both HaliKeys, deliberately
+// --------------------------------------------------------
+//   No HaliKey keys PTT from a footswitch or PTT jack. On V1.4 the pedal and the dit lever both drive
 //   CTS and are indistinguishable on the wire; the MIDI variant's note 31 is ignored. A footswitch
-//   plugged into the K4 itself is unaffected. The ORB's PTT/KEY jack is read only as a straight key.
+//   plugged into the K4 itself is unaffected.
+//   The ORB differs: its PTT/KEY jack has CTS to itself. It can key PTT in voice modes, off by
+//   default, through OrbPttController (not this class). Here the jack is only a straight key.
 //
 // Verification (before a release)
 // -------------------------------

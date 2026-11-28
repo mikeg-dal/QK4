@@ -267,6 +267,13 @@ void HaliKeyV14Worker::monitorLoop() {
         const bool straight = m_straightKey.load(std::memory_order_acquire);
         for (const auto &change : input.poll(lines, straight, clock.now()))
             emit paddleChanged(change.signal == SerialPaddleInput::kDah, change.asserted, change.deltaTime);
+        // Polled every time, so a switch held while unwanted is never reported as a new press.
+        // WHY sent only when wanted: this signal is queued to the main thread, which allocates, on a
+        // real-time thread. Unwanted (option off, CW), it must cost nothing - a straight key's every
+        // element moves this line.
+        const auto jack = input.pollJack(lines, clock.now());
+        if (jack && m_pttJackWanted.load(std::memory_order_acquire))
+            emit pttJackChanged(*jack);
     }
 
 #ifdef Q_OS_WIN

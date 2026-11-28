@@ -10,6 +10,8 @@
 #include "hardware/seriallinepoller.h"
 #include "utils/rtsan.h"
 
+#include <optional>
+
 /// One joint reading of the port's modem-status inputs. true = asserted.
 struct ModemLines {
     bool cts = false;
@@ -50,12 +52,12 @@ public:
     SerialPaddleInput(const SerialPaddleInput &) = delete;
     SerialPaddleInput &operator=(const SerialPaddleInput &) = delete;
 
-    /// Takes the contacts as they stand as rest: nothing is reported for them.
+    /// Takes the contacts and the PTT/KEY jack as they stand as rest: nothing is reported for them.
     void start(ModemLines lines, bool straightKey) noexcept QK4_NONBLOCKING {
-        m_straight = straightKey;
-        m_contacts = map(m_deviceType, lines, straightKey);
-        m_poller = SerialLinePoller(kDit, kDah, straightKey);
-        m_poller.start(m_read);
+        startContacts(lines, straightKey);
+        m_jack = lines.cts;
+        m_jackReported = lines.cts;
+        m_jackPoller.start(m_readJack);
     }
 
     /// One poll at time `now`.
@@ -64,14 +66,42 @@ public:
     // nothing made.
     SerialLinePoller::Changes poll(ModemLines lines, bool straightKey, double now) noexcept QK4_NONBLOCKING {
         if (straightKey != m_straight) {
-            start(lines, straightKey);
+            startContacts(lines, straightKey);
             return {};
         }
         m_contacts = map(m_deviceType, lines, straightKey);
         return m_poller.poll(m_read, now);
     }
 
+    /// The ORB's PTT/KEY jack as a push-to-talk contact, whatever the input mode: its new state
+    /// when it has changed and held for the straight key's 20 ms, otherwise nothing. Always nothing
+    /// on other devices. Poll at time `now`, as for poll().
+    // WHY apart from poll(): in paddle mode the jack is not a CW contact at all, and a paddle /
+    // straight-key switch must not reset it, or a held jack would be forgotten without a release.
+    // WHY the last report is remembered: the poller reports where the line settled after any
+    // change, so a bounce shorter than 20 ms reports the old state again. For a switch held since
+    // before PTT was allowed, that would look like a fresh press and key the transmitter.
+    std::optional<bool> pollJack(ModemLines lines, double now) noexcept QK4_NONBLOCKING {
+        if (m_deviceType != HaliKeyType::kOrb)
+            return std::nullopt;
+        m_jack = lines.cts;
+        for (const auto &change : m_jackPoller.poll(m_readJack, now)) {
+            if (change.asserted != m_jackReported) {
+                m_jackReported = change.asserted;
+                return change.asserted;
+            }
+        }
+        return std::nullopt;
+    }
+
 private:
+    void startContacts(ModemLines lines, bool straightKey) noexcept QK4_NONBLOCKING {
+        m_straight = straightKey;
+        m_contacts = map(m_deviceType, lines, straightKey);
+        m_poller = SerialLinePoller(kDit, kDah, straightKey);
+        m_poller.start(m_read);
+    }
+
     const int m_deviceType;
     bool m_straight = false;
     Contacts m_contacts;
@@ -80,6 +110,12 @@ private:
         return s == kDit ? m_contacts.dit : m_contacts.dah;
     };
     SerialLinePoller m_poller{kDit, kDah, false};
+
+    bool m_jack = false;
+    bool m_jackReported = false;
+    const SerialLinePoller::ReadLine m_readJack = [this](PaddleKeyer::Signal) { return m_jack; };
+    // A straight-key poller: one contact, debounced.
+    SerialLinePoller m_jackPoller{kDit, kDah, true};
 };
 
 #endif // SERIALPADDLEINPUT_H

@@ -73,6 +73,79 @@ private slots:
         QCOMPARE(c[0].asserted, true);
     }
 
+    // The PTT/KEY jack as push-to-talk: in either input mode, debounced both ways.
+    void orbJackReportsInBothModes_data() {
+        QTest::addColumn<bool>("straight");
+        QTest::newRow("paddle") << false;
+        QTest::newRow("straight") << true;
+    }
+
+    void orbJackReportsInBothModes() {
+        QFETCH(bool, straight);
+        const ModemLines closed{true, false, false};
+        SerialPaddleInput input(HaliKeyType::kOrb);
+        input.start({}, straight);
+        QVERIFY(!input.pollJack(closed, 1.000).has_value()); // debouncing
+        QCOMPARE(input.pollJack(closed, 1.025), std::optional<bool>(true));
+        QVERIFY(!input.pollJack(closed, 1.100).has_value()); // reported once
+        QVERIFY(!input.pollJack({}, 2.000).has_value());
+        QCOMPARE(input.pollJack({}, 2.025), std::optional<bool>(false));
+    }
+
+    void orbJackIgnoresShortPulsesAndPaddleLines() {
+        SerialPaddleInput input(HaliKeyType::kOrb);
+        input.start({}, false);
+        QVERIFY(!input.pollJack({true, false, false}, 1.000).has_value());
+        QVERIFY(!input.pollJack({}, 1.010).has_value()); // gone before 20 ms
+        QVERIFY(!input.pollJack({}, 1.100).has_value());
+        QVERIFY(!input.pollJack({false, true, true}, 2.000).has_value()); // paddle jack
+        QVERIFY(!input.pollJack({false, true, true}, 2.100).has_value());
+    }
+
+    // Held at connect is rest, not a press: only its release and the next press are reported.
+    void orbJackHeldAtOpenIsNotAPress() {
+        const ModemLines closed{true, false, false};
+        SerialPaddleInput input(HaliKeyType::kOrb);
+        input.start(closed, false);
+        QVERIFY(!input.pollJack(closed, 1.000).has_value());
+        QVERIFY(!input.pollJack(closed, 1.100).has_value());
+        QVERIFY(!input.pollJack({}, 2.000).has_value());
+        QCOMPARE(input.pollJack({}, 2.025), std::optional<bool>(false));
+    }
+
+    // A brief break in a held switch must not report a second press: for a switch held since
+    // before PTT was allowed, that would key.
+    void orbJackBounceWhileHeldIsNotANewPress() {
+        const ModemLines closed{true, false, false};
+        SerialPaddleInput input(HaliKeyType::kOrb);
+        input.start(closed, false);
+        QVERIFY(!input.pollJack({}, 1.000).has_value());
+        QVERIFY(!input.pollJack(closed, 1.010).has_value()); // back before 20 ms
+        QVERIFY(!input.pollJack(closed, 1.100).has_value());
+    }
+
+    // A paddle / straight-key switch while the jack is held must not lose its release.
+    void orbJackSurvivesAnInputModeSwitch() {
+        const ModemLines closed{true, false, false};
+        SerialPaddleInput input(HaliKeyType::kOrb);
+        input.start({}, false);
+        input.pollJack(closed, 1.000);
+        QCOMPARE(input.pollJack(closed, 1.025), std::optional<bool>(true));
+        QVERIFY(input.poll(closed, true, 1.100).empty());
+        QVERIFY(!input.pollJack(closed, 1.100).has_value());
+        input.pollJack({}, 2.000);
+        QCOMPARE(input.pollJack({}, 2.025), std::optional<bool>(false));
+    }
+
+    // The HaliKey V1.4's CTS is a paddle lever, never a PTT switch.
+    void v14HasNoJack() {
+        const ModemLines closed{true, false, false};
+        SerialPaddleInput input(HaliKeyType::kSerialV14);
+        input.start({}, false);
+        QVERIFY(!input.pollJack(closed, 1.000).has_value());
+        QVERIFY(!input.pollJack(closed, 1.100).has_value());
+    }
+
     void modeChangeTakesHeldContactsAsRest_data() {
         QTest::addColumn<int>("type");
         QTest::addColumn<bool>("toStraight");

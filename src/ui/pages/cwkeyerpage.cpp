@@ -51,6 +51,7 @@ CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, C
             m_halikeyDevice->closePort();
         }
         updateCwKeyerDescription();
+        showOrbPttRows();
         populateCwKeyerPorts();
     });
     OptionsPageLayout::addRow(form, this, "Device Type", m_cwKeyerDeviceTypeCombo);
@@ -112,6 +113,18 @@ CwKeyerPage::CwKeyerPage(HalikeyDevice *halikeyDevice, RadioState *radioState, C
         RadioSettings::instance()->setHalikeyStraightKey(inputCombo->itemData(index).toBool());
     });
     OptionsPageLayout::addRow(form, this, "Input", inputCombo);
+
+    m_orbPttCheck = new QCheckBox("Use the PTT/KEY jack as PTT in voice modes", this);
+    m_orbPttCheck->setStyleSheet(K4Styles::Dialog::checkBox());
+    m_orbPttCheck->setChecked(RadioSettings::instance()->halikeyOrbPtt());
+    connect(m_orbPttCheck, &QCheckBox::toggled, this, [](bool on) { RadioSettings::instance()->setHalikeyOrbPtt(on); });
+    form->addRow(QString(), m_orbPttCheck);
+    m_orbPttHelp = OptionsPageLayout::addFieldHelp(
+        form, this,
+        "In USB, LSB, AM and FM, hold the switch to transmit with QK4's Audio Input device. In CW the jack "
+        "keys only as a straight key. Check the port first: with this on, another device's port could make "
+        "the radio transmit.");
+    showOrbPttRows();
 
     auto *ditMemSlider = new QSlider(Qt::Horizontal, this);
     ditMemSlider->setRange(0, 100);
@@ -321,7 +334,7 @@ void CwKeyerPage::updateCwKeyerDescription() {
 
     int type = m_cwKeyerDeviceTypeCombo->currentData().toInt();
     if (type == HaliKeyType::kMidi) {
-        // WHY no PTT here: the footswitch/PTT input is deliberately not wired (CwController).
+        // WHY no PTT here: this device's footswitch/PTT input is deliberately not wired (CwController).
         m_cwKeyerDescLabel->setText("Connect a HaliKey MIDI paddle interface to send CW via the K4's keyer. "
                                     "The HaliKey MIDI uses standard MIDI note events to detect paddle inputs.");
     } else if (type == HaliKeyType::kOrb) {
@@ -332,6 +345,15 @@ void CwKeyerPage::updateCwKeyerDescription() {
         m_cwKeyerDescLabel->setText("Connect a HaliKey paddle interface to send CW via the K4's keyer. "
                                     "The HaliKey uses serial port flow control signals to detect paddle inputs.");
     }
+}
+
+void CwKeyerPage::showOrbPttRows() {
+    // Also reached from the device type combo, which is built before these rows are.
+    if (!m_orbPttCheck || !m_orbPttHelp)
+        return;
+    const bool orb = m_cwKeyerDeviceTypeCombo->currentData().toInt() == HaliKeyType::kOrb;
+    m_orbPttCheck->setVisible(orb);
+    m_orbPttHelp->setVisible(orb);
 }
 
 void CwKeyerPage::onCwKeyerRefreshClicked() {

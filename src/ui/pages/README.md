@@ -11,7 +11,7 @@ Tab pages for `OptionsDialog`. Each is a `QWidget` that plugs into the dialog's 
 - `tciserverpage` — TCI server enable/port, audio on/off, TCI transmit level, live status and connected-client list. Talks to `TciController`.
 - `audioinputpage` — microphone device and Mic Gain.
 - `audiooutputpage` — speaker device and RX Audio Boost.
-- `cwkeyerpage` — the "HaliKey" page: paddle device (HaliKey or ORB) + iambic keyer config, and the K4's remote key-down delay (KZL, via `CwController::setKeyDownInitialDelay`). Port lists come from `HaliKeyPortScan` off the GUI thread; the list shows "Scanning…" until they arrive.
+- `cwkeyerpage` — the "HaliKey" page: paddle device (HaliKey or ORB) + iambic keyer config, the ORB-only PTT/KEY-jack-as-PTT option, and the K4's remote key-down delay (KZL, via `CwController::setKeyDownInitialDelay`). Port lists come from `HaliKeyPortScan` off the GUI thread; the list shows "Scanning…" until they arrive.
 - `dxclusterpage` — per-cluster host/port + auto-connect list, shared callsign/spot settings, and the cluster console, which takes all the spare height and does not wrap.
 - `diagnosticspage` — the log file switch, Open Log Folder (`QDesktopServices::openUrl` on the folder) and Copy Path, the level (Warnings only / Normal / Everything), a debug switch per subsystem, and the bench diagnostics, which are not saved. Edits `RadioSettings` only; `main.cpp` applies the result through `Logging::apply()` on `loggingChanged`, so every switch is live. A note appears when `QT_LOGGING_RULES`, `QT_LOGGING_CONF` or `--log-rules` overrides the page. See `src/logging/README.md`.
 - `kpa1500page` — KPA1500: status, enable, host/port, poll rate, Connect, and an Amplifier Info section.
